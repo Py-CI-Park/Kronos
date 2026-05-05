@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STOM Kronos OHLCV Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    body { margin: 0; font-family: "Segoe UI", "Malgun Gothic", sans-serif; background: #f1f5f9; color: #0f172a; }
+    header { background: linear-gradient(135deg, #0f172a, #2563eb); color: white; padding: 28px 40px; }
+    header h1 { margin: 0 0 8px 0; font-size: 30px; }
+    header p { margin: 0; opacity: .9; }
+    main { max-width: 1480px; margin: 0 auto; padding: 24px; }
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 20px; align-items: start; }
+    .card { background: white; border-radius: 14px; padding: 20px; box-shadow: 0 8px 24px rgba(15, 23, 42, .08); margin-bottom: 18px; }
+    .card h2 { font-size: 20px; margin: 0 0 14px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; }
+    .metric { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; }
+    .metric span:last-child { font-weight: 700; color: #1d4ed8; }
+    .steps li { margin-bottom: 10px; line-height: 1.45; }
+    select, button { width: 100%; padding: 11px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; }
+    button { background: #2563eb; color: white; border: none; font-weight: 700; cursor: pointer; margin-top: 10px; }
+    button:hover { background: #1d4ed8; }
+    code, pre { background: #0f172a; color: #dbeafe; border-radius: 8px; }
+    pre { padding: 14px; overflow-x: auto; line-height: 1.5; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-size: 13px; }
+    th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+    .status { padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+    .status.info { background: #dbeafe; color: #1e3a8a; }
+    .status.error { background: #fee2e2; color: #991b1b; }
+    #chart { min-height: 540px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>STOM Tick DB → Kronos OHLCV 학습/검증 대시보드</h1>
+  <p>전체 주식 테이블 OHLCV 준비, 파일럿 학습, 실제값 vs 예측값 검증을 한 화면에서 추적합니다.</p>
+</header>
+<main>
+  <div id="status" class="status info">대시보드 데이터를 불러오는 중입니다...</div>
+  <div class="grid">
+    <section>
+      <div class="card">
+        <h2>Page 1. 목표/상태</h2>
+        <div id="summary"></div>
+      </div>
+      <div class="card">
+        <h2>Page 2~5 진행 계획</h2>
+        <ol class="steps">
+          <li><b>환경 점검:</b> CUDA/PyTorch/Flask/모델 경로 확인</li>
+          <li><b>데이터 준비:</b> STOM DB를 grouped OHLCV CSV로 변환</li>
+          <li><b>파일럿 학습:</b> 100~300개 종목, max_samples로 smoke 학습</li>
+          <li><b>예측 검증:</b> holdout window의 실제값/예측값 CSV 생성</li>
+          <li><b>대시보드:</b> 예측 파일을 선택해 chart/metrics/top-k 확인</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h2>바로 실행 명령</h2>
+        <pre>python finetune_csv/stom_ohlcv_pipeline.py env-check
+python finetune_csv/prepare_stom_1tick.py export --db _database/stock_tick_back.db --output finetune_csv/data/stom_1tick_kline_pilot.csv --lookback-window 300 --predict-window 60 --max-tables 100 --price-mode close_only
+python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_kline_pilot.csv --output webui/stom_predictions/pilot_predictions.csv --lookback-window 300 --predict-window 60 --max-windows 20 --mode baseline</pre>
+      </div>
+      <div class="card">
+        <h2>예측 파일 선택</h2>
+        <select id="fileSelect"></select>
+        <select id="windowSelect"></select>
+        <button onclick="loadPrediction()">실제값/예측값 표시</button>
+      </div>
+    </section>
+    <section>
+      <div class="card">
+        <h2>Page 5. 실제값 vs 예측값</h2>
+        <div id="metrics"></div>
+        <div id="chart"></div>
+      </div>
+      <div class="card">
+        <h2>Top-K 예상등락률 검증</h2>
+        <table>
+          <thead>
+            <tr><th>Window</th><th>Symbol</th><th>Pred %</th><th>Actual %</th><th>Hit</th></tr>
+          </thead>
+          <tbody id="topk"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</main>
+<script>
+const statusEl = document.getElementById('status');
+const fileSelect = document.getElementById('fileSelect');
+const windowSelect = document.getElementById('windowSelect');
+
+function fmt(value, digits = 4) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '-';
+  if (typeof value === 'number') return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return value;
+}
+
+function setStatus(message, kind = 'info') {
+  statusEl.textContent = message;
+  statusEl.className = `status ${kind}`;
+}
+
+async function loadSummary() {
+  const res = await axios.get('/api/stom/summary');
+  const s = res.data;
+  document.getElementById('summary').innerHTML = `
+    <div class="metric"><span>전체 테이블</span><span>${fmt(s.table_count, 0)}</span></div>
+    <div class="metric"><span>주식 테이블</span><span>${fmt(s.compatible_stock_table_count, 0)}</span></div>
+    <div class="metric"><span>학습 가능 그룹</span><span>${fmt(s.eligible_group_count, 0)}</span></div>
+    <div class="metric"><span>예상 window</span><span>${fmt(s.estimated_samples, 0)}</span></div>
+    <div class="metric"><span>제외 테이블</span><span>${(s.excluded_tables || []).join(', ')}</span></div>
+  `;
+}
+
+async function loadFiles() {
+  const res = await axios.get('/api/stom/prediction-files');
+  fileSelect.innerHTML = '';
+  if (!res.data.files || res.data.files.length === 0) {
+    const opt = document.createElement('option');
+    opt.textContent = '예측 파일 없음 - stom_prediction_eval.py를 먼저 실행하세요';
+    opt.value = '';
+    fileSelect.appendChild(opt);
+    return;
+  }
+  res.data.files.forEach(file => {
+    const opt = document.createElement('option');
+    opt.value = file.name;
+    opt.textContent = `${file.name} (${fmt(file.size_bytes, 0)} bytes)`;
+    fileSelect.appendChild(opt);
+  });
+}
+
+async function loadPrediction() {
+  if (!fileSelect.value) {
+    setStatus('예측 파일이 없습니다. 먼저 예측 검증 CSV를 생성하세요.', 'error');
+    return;
+  }
+  const params = { file: fileSelect.value };
+  if (windowSelect.value) params.window_id = windowSelect.value;
+  const res = await axios.get('/api/stom/prediction', { params });
+  const data = res.data;
+  const m = data.metrics;
+  document.getElementById('metrics').innerHTML = `
+    <div class="metric"><span>Rows / Windows / Symbols</span><span>${fmt(m.rows, 0)} / ${fmt(m.windows, 0)} / ${fmt(m.symbols, 0)}</span></div>
+    <div class="metric"><span>MAE / RMSE / MAPE</span><span>${fmt(m.mae)} / ${fmt(m.rmse)} / ${fmt(m.mape)}%</span></div>
+    <div class="metric"><span>방향 정확도</span><span>${fmt(m.direction_accuracy * 100, 2)}%</span></div>
+    <div class="metric"><span>평균 예측/실제 등락률</span><span>${fmt(m.avg_pred_return, 4)}% / ${fmt(m.avg_actual_return, 4)}%</span></div>
+  `;
+  const chart = JSON.parse(data.chart);
+  Plotly.newPlot('chart', chart.data, chart.layout, {responsive: true});
+  windowSelect.innerHTML = '';
+  data.windows.forEach(w => {
+    const opt = document.createElement('option');
+    opt.value = w;
+    opt.textContent = `window ${w}`;
+    windowSelect.appendChild(opt);
+  });
+  document.getElementById('topk').innerHTML = data.topk.map(row => `
+    <tr>
+      <td>${row.window_id}</td>
+      <td>${row.symbol}</td>
+      <td>${fmt(row.pred_return_window, 4)}</td>
+      <td>${fmt(row.actual_return_window, 4)}</td>
+      <td>${row.direction_hit_window ? 'Y' : 'N'}</td>
+    </tr>
+  `).join('');
+  setStatus('예측 검증 데이터를 표시했습니다.');
+}
+
+async function init() {
+  try {
+    await loadSummary();
+    await loadFiles();
+    if (fileSelect.value) await loadPrediction();
+    else setStatus('대시보드는 준비되었습니다. 예측 검증 CSV를 생성하면 차트가 표시됩니다.');
+  } catch (err) {
+    setStatus(err.response?.data?.error || err.message, 'error');
+  }
+}
+
+init();
+</script>
+</body>
+</html>

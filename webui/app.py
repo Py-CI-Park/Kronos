@@ -14,12 +14,51 @@ warnings.filterwarnings('ignore')
 # Add project root directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+Kronos = None
+KronosTokenizer = None
+KronosPredictor = None
+MODEL_AVAILABLE = True
+MODEL_IMPORT_ERROR = None
+
+def ensure_kronos_imported():
+    """Import Kronos lazily so dashboard routes work even when torch/model deps are broken."""
+    global Kronos, KronosTokenizer, KronosPredictor, MODEL_AVAILABLE, MODEL_IMPORT_ERROR
+    if Kronos is not None and KronosTokenizer is not None and KronosPredictor is not None:
+        return True
+    try:
+        from model import Kronos as _Kronos
+        from model import KronosPredictor as _KronosPredictor
+        from model import KronosTokenizer as _KronosTokenizer
+
+        Kronos = _Kronos
+        KronosTokenizer = _KronosTokenizer
+        KronosPredictor = _KronosPredictor
+        MODEL_AVAILABLE = True
+        MODEL_IMPORT_ERROR = None
+        return True
+    except Exception as exc:
+        MODEL_AVAILABLE = False
+        MODEL_IMPORT_ERROR = str(exc)
+        print(f"Warning: Kronos model cannot be imported ({exc}), prediction model loading is disabled")
+        return False
+
 try:
-    from model import Kronos, KronosTokenizer, KronosPredictor
-    MODEL_AVAILABLE = True
-except ImportError:
-    MODEL_AVAILABLE = False
-    print("Warning: Kronos model cannot be imported, will use simulated data for demonstration")
+    from stom_dashboard import (
+        list_prediction_files,
+        load_prediction_frame,
+        load_training_summary,
+        prediction_chart_json,
+        prediction_metrics,
+        topk_rows,
+    )
+except Exception as exc:
+    print(f"Warning: STOM dashboard helpers cannot be imported ({exc})")
+    list_prediction_files = None
+    load_prediction_frame = None
+    load_training_summary = None
+    prediction_chart_json = None
+    prediction_metrics = None
+    topk_rows = None
 
 app = Flask(__name__)
 CORS(app)
@@ -332,6 +371,43 @@ def index():
     """Home page"""
     return render_template('index.html')
 
+@app.route('/stom')
+def stom_dashboard_page():
+    """STOM OHLCV actual-vs-predicted dashboard."""
+    return render_template('stom_dashboard.html')
+
+@app.route('/api/stom/summary')
+def stom_summary():
+    if load_training_summary is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    return jsonify(load_training_summary())
+
+@app.route('/api/stom/prediction-files')
+def stom_prediction_files():
+    if list_prediction_files is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    return jsonify({'files': list_prediction_files()})
+
+@app.route('/api/stom/prediction')
+def stom_prediction_file():
+    if load_prediction_frame is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        df = load_prediction_frame(file_name)
+        window_id_arg = request.args.get('window_id')
+        window_id = int(window_id_arg) if window_id_arg not in (None, '') else None
+        return jsonify({
+            'metrics': prediction_metrics(df),
+            'chart': prediction_chart_json(df, window_id=window_id),
+            'topk': topk_rows(df),
+            'windows': sorted(int(v) for v in df['window_id'].dropna().unique().tolist())[:500],
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
 @app.route('/api/data-files')
 def get_data_files():
     """Get available data file list"""
@@ -629,8 +705,8 @@ def load_model():
     global tokenizer, model, predictor
     
     try:
-        if not MODEL_AVAILABLE:
-            return jsonify({'error': 'Kronos model library not available'}), 400
+        if not ensure_kronos_imported():
+            return jsonify({'error': f'Kronos model library not available: {MODEL_IMPORT_ERROR}'}), 400
         
         data = request.get_json()
         model_key = data.get('model_key', 'kronos-small')
@@ -667,7 +743,8 @@ def get_available_models():
     """Get available model list"""
     return jsonify({
         'models': AVAILABLE_MODELS,
-        'model_available': MODEL_AVAILABLE
+        'model_available': MODEL_AVAILABLE,
+        'model_import_error': MODEL_IMPORT_ERROR
     })
 
 @app.route('/api/model-status')
@@ -694,15 +771,11 @@ def get_model_status():
         return jsonify({
             'available': False,
             'loaded': False,
-            'message': 'Kronos model library not available, please install related dependencies'
+            'message': f'Kronos model library not available: {MODEL_IMPORT_ERROR}'
         })
 
 if __name__ == '__main__':
     print("Starting Kronos Web UI...")
-    print(f"Model availability: {MODEL_AVAILABLE}")
-    if MODEL_AVAILABLE:
-        print("Tip: You can load Kronos model through /api/load-model endpoint")
-    else:
-        print("Tip: Will use simulated data for demonstration")
+    print("Tip: Kronos model is imported lazily when /api/load-model is called")
     
     app.run(debug=True, host='0.0.0.0', port=7070)
