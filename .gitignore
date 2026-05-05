@@ -48,6 +48,11 @@ Desktop.ini
 *.parquet
 *.h5
 *.hdf5
+_database/
+finetune_csv/data/stom_*.csv
+finetune_csv/data/stom_*.json
+webui/stom_predictions/*.csv
+webui/stom_predictions/*.json
 
 # Model files (large files)
 *.pth

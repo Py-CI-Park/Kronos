@@ -150,9 +150,12 @@ class SequentialTrainer:
         print("Starting Basemodel Fine-tuning Phase")
         print("="*60)
         
-        if getattr(self.config, 'pre_trained_tokenizer', True):
-            if not os.path.exists(self.config.finetuned_tokenizer_path):
-                raise FileNotFoundError(f"Fine-tuned tokenizer does not exist: {self.config.finetuned_tokenizer_path}")
+        tokenizer_load_path = self.config.finetuned_tokenizer_path
+        if getattr(self.config, 'pre_trained_tokenizer', True) and not getattr(self.config, 'train_tokenizer', True):
+            tokenizer_load_path = self.config.pretrained_tokenizer_path
+        elif getattr(self.config, 'pre_trained_tokenizer', True):
+            if not os.path.exists(tokenizer_load_path):
+                raise FileNotFoundError(f"Fine-tuned tokenizer does not exist: {tokenizer_load_path}")
         
         _, basemodel_exists = self._check_existing_models()
         if basemodel_exists and self.config.skip_existing:
@@ -165,10 +168,10 @@ class SequentialTrainer:
         set_seed(self.config.seed)
         
         if getattr(self.config, 'pre_trained_tokenizer', True):
-            logger.info("Loading fine-tuned tokenizer...")
+            logger.info(f"Loading tokenizer: {tokenizer_load_path}")
             if self.rank == 0:
-                print("Loading fine-tuned tokenizer...")
-            tokenizer = KronosTokenizer.from_pretrained(self.config.finetuned_tokenizer_path)
+                print(f"Loading tokenizer: {tokenizer_load_path}")
+            tokenizer = KronosTokenizer.from_pretrained(tokenizer_load_path)
         else:
             if self.rank == 0:
                 print("pre_trained_tokenizer=False, randomly initializing Tokenizer architecture for Predictor training")
@@ -237,7 +240,7 @@ class SequentialTrainer:
         logger.info(f"Learning rate: {self.config.predictor_learning_rate}")
         logger.info(f"Training epochs: {self.config.basemodel_epochs}")
         logger.info(f"Device: {self.device}")
-        logger.info(f"Tokenizer path: {self.config.finetuned_tokenizer_path}")
+        logger.info(f"Tokenizer path: {tokenizer_load_path}")
         logger.info(f"Pretrained model path: {self.config.pretrained_predictor_path}")
         
         logger.info("Starting fine-tuning training...")
