@@ -3,7 +3,6 @@ import importlib.util
 import json
 import os
 import platform
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
@@ -158,23 +157,6 @@ def build_commands(
             "--max-windows 20 --mode baseline"
         ),
         "6_dashboard": "python webui/run.py  # open http://localhost:7070/stom",
-    }
-
-
-def run_command(command: str, cwd: Path = PROJECT_ROOT) -> Dict[str, Any]:
-    completed = subprocess.run(
-        command,
-        cwd=str(cwd),
-        shell=True,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return {
-        "command": command,
-        "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
     }
 
 
