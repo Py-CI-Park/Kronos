@@ -7,15 +7,15 @@
 ## 전체 진행률
 
 ```text
-██████████████████░░  9A / 9 진행 중, 약 93%
+███████████████████░  9B / 9 진행 중, 약 97%
 ```
 
 현재 단계:
 
 ```text
-현재 단계: 9B — 1,000개 테이블 학습 확대 준비
-직전 완료: 9A — 300개 테이블 export/train/predict/dashboard 검증
-다음 목표: 300개 검증 결과를 기준으로 1,000개 테이블로 확대한다.
+현재 단계: 9C — 전체 2,425개 학습 가능 테이블 확대 준비
+직전 완료: 9B — 1,000개 테이블 export/train/predict/dashboard/headless 검증
+다음 목표: 1,000개 검증 결과를 기준으로 전체 테이블 확대용 config와 실행 범위를 결정한다.
 ```
 
 ## 단계별 현황
@@ -30,7 +30,7 @@
 | 6 | GPU 파일럿 학습 실행 | 완료 | `finetune_csv/finetuned/stom_1tick_gpu_pilot_lookback300_pred60/basemodel/best_model` 생성 |
 | 7 | 학습 모델 예측 CSV 생성 | 완료 | `webui/stom_predictions/kronos_gpu_pilot_predictions.csv` 생성 |
 | 8 | 웹 대시보드 실제값/예측값 검증 | 완료 | `http://127.0.0.1:7071/stom` API/HTML/headless screenshot 검증 |
-| 9 | 전체 2,425개 테이블 학습으로 확대 | 진행 중 | 9A 300개 테이블 검증 완료, 9B 1,000개 테이블 예정 |
+| 9 | 전체 2,425개 테이블 학습으로 확대 | 진행 중 | 9A 300개 완료, 9B 1,000개 완료, 9C 전체 테이블 예정 |
 
 ## 5단계 완료 상세: 파일럿 데이터 export
 
@@ -621,18 +621,38 @@ python -m pip check
 No broken requirements found
 ```
 
-## 다음 단계: 9B 1,000개 테이블 학습 확대
+## 9B 완료 상세: 1,000개 테이블 학습 확대
 
-남은 확대 순서:
+이번 9B에서는 300개 검증 결과를 기준으로 1,000개 테이블까지 확대했다. export, GPU 학습, 예측 CSV 생성, Flask helper/API, 실제 웹 화면 headless screenshot, 회귀 테스트까지 모두 완료했다.
+
+### 9B config
+
+추가한 config:
 
 ```text
-1. 1,000개 테이블 export/train/predict/dashboard 검증
-2. 전체 2,425개 테이블 export/train/predict/dashboard 검증
+finetune_csv/configs/config_stom_1tick_1000.yaml
 ```
 
-다음 실행 명령 예시:
+핵심 설정:
 
-### 1,000개 테이블 export
+```yaml
+data:
+  data_path: "finetune_csv/data/stom_1tick_kline_1000.csv"
+  sample_stride: 10
+  max_samples: 200000
+
+training:
+  basemodel_epochs: 1
+  batch_size: 8
+  num_workers: 0
+
+model_paths:
+  exp_name: "stom_1tick_1000_lookback300_pred60"
+```
+
+### 9B-1. 1,000개 테이블 export
+
+실행 명령:
 
 ```powershell
 python finetune_csv\prepare_stom_1tick.py export `
@@ -644,35 +664,58 @@ python finetune_csv\prepare_stom_1tick.py export `
   --price-mode close_only
 ```
 
-### 학습 config 복사 후 data_path/max_samples 조정
+결과:
 
-```powershell
-Copy-Item finetune_csv\configs\config_stom_1tick_300.yaml finetune_csv\configs\config_stom_1tick_1000.yaml
+```text
+selected_table_count: 1,000
+written_rows: 52,547,096
+written_groups: 31,641
+skipped_groups: 154
+CSV size: 약 3,891.05 MB
+trainable_csv_created: true
+exit code: 0
 ```
 
-`config_stom_1tick_1000.yaml`에서 최소 조정:
+CSV 헤더:
 
-```yaml
-data:
-  data_path: "finetune_csv/data/stom_1tick_kline_1000.csv"
-  sample_stride: 10
-  max_samples: 200000
-
-training:
-  basemodel_epochs: 1
-  batch_size: 8
-
-model_paths:
-  exp_name: "stom_1tick_1000_lookback300_pred60"
+```text
+symbol,session,timestamps,open,high,low,close,volume,amount
 ```
 
-### 1,000개 테이블 GPU 학습
+### 9B-2. 1,000개 테이블 GPU 학습
+
+실행 명령:
 
 ```powershell
 python finetune_csv\train_sequential.py --config finetune_csv\configs\config_stom_1tick_1000.yaml
 ```
 
-### 1,000개 테이블 예측 검증
+결과:
+
+```text
+device: cuda:0
+steps: 25,000
+training loss: 2.3204
+validation loss: 2.3030
+epoch time: 1,800.01 seconds
+basemodel training time: 35.22 minutes
+total training time: 35.25 minutes
+exit code: 0
+```
+
+생성 checkpoint:
+
+```text
+finetune_csv/finetuned/stom_1tick_1000_lookback300_pred60/basemodel/best_model/config.json
+finetune_csv/finetuned/stom_1tick_1000_lookback300_pred60/basemodel/best_model/model.safetensors
+finetune_csv/finetuned/stom_1tick_1000_lookback300_pred60/basemodel/best_model/README.md
+```
+
+checkpoint는 대용량 재생성 산출물이므로 commit하지 않는다.
+
+### 9B-3. 1,000개 모델 예측 CSV 생성
+
+실행 명령:
 
 ```powershell
 python finetune_csv\stom_prediction_eval.py `
@@ -684,6 +727,159 @@ python finetune_csv\stom_prediction_eval.py `
   --stride 120 `
   --mode kronos `
   --model-path finetune_csv\finetuned\stom_1tick_1000_lookback300_pred60\basemodel\best_model `
+  --tokenizer-path NeoQuasar/Kronos-Tokenizer-base `
+  --device cuda:0
+```
+
+결과:
+
+```text
+mode: kronos
+windows: 200
+rows: 12,000
+symbols: 6
+mae: 91.56418504842122
+rmse: 239.203680163673
+mape: 0.5583030424351193
+direction_accuracy: 0.49
+avg_pred_return: -0.18787922462498305
+avg_actual_return: -0.04811741245771569
+exit code: 0
+```
+
+생성 산출물:
+
+```text
+webui/stom_predictions/kronos_1000_predictions.csv
+webui/stom_predictions/kronos_1000_predictions.metrics.json
+```
+
+예측 CSV와 metrics JSON은 재생성 가능 산출물이므로 commit하지 않는다.
+
+해석 메모:
+
+```text
+9B의 validation loss는 9A 대비 낮아졌다.
+direction_accuracy는 9A 0.58에서 9B 0.49로 하락했다.
+따라서 다음 9C에서는 데이터 규모 확대만으로 판단하지 말고 종목/시간대별 편차, 예측 score화, 조건식 필터 결합을 별도 평가해야 한다.
+```
+
+### 9B-4. 대시보드/API/headless 검증
+
+대시보드 helper 검증:
+
+```text
+has_kronos_1000: True
+rows: 12,000
+windows: 200
+symbols: 6
+chart_keys: data, layout
+chart_data_traces: 2
+topk_count: 20
+```
+
+Flask route 검증:
+
+```text
+/stom -> 200 text/html; charset=utf-8
+/api/stom/summary -> 200 application/json
+/api/stom/prediction-files -> 200 application/json
+/api/stom/prediction?file=kronos_1000_predictions.csv -> 200 application/json
+```
+
+실제 웹 화면 검증:
+
+```text
+검증 URL: http://127.0.0.1:7072/stom?file=kronos_1000_predictions.csv
+screenshot: .omx/specs/stom-dashboard-stage9b/stom_dashboard_stage9b_1000.png
+file size: 160,973 bytes
+browser: Chrome headless
+검증 후 7072 포트 해제
+```
+
+회귀 검증:
+
+```powershell
+python -m compileall -q finetune_csv webui tests docs
+python -m pytest tests/test_stom_tick_dataset.py tests/test_stom_training_cli.py tests/test_stom_prediction_eval.py tests/test_stom_dashboard_helpers.py tests/test_cli_import_paths.py -q
+python -m pip check
+```
+
+결과:
+
+```text
+13 passed, 1 warning
+No broken requirements found
+```
+
+## 다음 단계: 9C 전체 2,425개 학습 가능 테이블 확대
+
+남은 확대 순서:
+
+```text
+1. 전체 테이블 export 용량/시간 확인
+2. 전체 테이블 학습 config 생성
+3. GPU 학습 실행 또는 먼저 bounded max_samples로 안전 검증
+4. 예측 CSV 생성 및 300/1,000 결과와 비교
+5. 대시보드에서 신규 prediction 파일 표시 검증
+```
+
+다음 실행 명령 예시:
+
+### 전체 테이블 export
+
+```powershell
+python finetune_csv\prepare_stom_1tick.py export `
+  --db _database\stock_tick_back.db `
+  --output finetune_csv\data\stom_1tick_kline_all.csv `
+  --lookback-window 300 `
+  --predict-window 60 `
+  --max-tables 0 `
+  --price-mode close_only
+```
+
+### 학습 config 생성 후 data_path/max_samples 조정
+
+```powershell
+Copy-Item finetune_csv\configs\config_stom_1tick_1000.yaml finetune_csv\configs\config_stom_1tick_all.yaml
+```
+
+`config_stom_1tick_all.yaml`에서 최소 조정:
+
+```yaml
+data:
+  data_path: "finetune_csv/data/stom_1tick_kline_all.csv"
+  sample_stride: 10
+  max_samples: 500000
+
+training:
+  basemodel_epochs: 1
+  batch_size: 8
+
+model_paths:
+  exp_name: "stom_1tick_all_lookback300_pred60"
+```
+
+처음부터 무제한 샘플로 가지 말고 `max_samples: 500000` 정도로 bounded 검증 후, 시간/VRAM/validation loss를 보고 전체 샘플 확대 여부를 결정한다.
+
+### 전체 테이블 GPU 학습
+
+```powershell
+python finetune_csv\train_sequential.py --config finetune_csv\configs\config_stom_1tick_all.yaml
+```
+
+### 전체 테이블 예측 검증
+
+```powershell
+python finetune_csv\stom_prediction_eval.py `
+  --data finetune_csv\data\stom_1tick_kline_all.csv `
+  --output webui\stom_predictions\kronos_all_predictions.csv `
+  --lookback-window 300 `
+  --predict-window 60 `
+  --max-windows 300 `
+  --stride 120 `
+  --mode kronos `
+  --model-path finetune_csv\finetuned\stom_1tick_all_lookback300_pred60\basemodel\best_model `
   --tokenizer-path NeoQuasar/Kronos-Tokenizer-base `
   --device cuda:0
 ```
@@ -724,11 +920,12 @@ http://localhost:7071/stom
 이번 단계에서는 다음 OMX 흐름을 사용했다.
 
 ```text
-1. plan 성격의 단계/진행률 관리
+1. autopilot 성격의 자율 진행: 단계 산출물 생성, 검증, 문서화, commit까지 연결
 2. note 성격의 진행 기록을 .omx/notepad.md에 보존
-3. explore 시도: Windows POSIX 래퍼 미지원으로 실패
-4. sparkshell 시도: 경로 오류로 실패
-5. 일반 PowerShell fallback으로 실행/검증 지속
+3. code-review 성격의 diff 자체 점검: 변경 범위가 config/문서 중심인지 확인
+4. explore 시도: Windows POSIX 래퍼 미지원으로 실패
+5. sparkshell 시도: 현재 세션에서 program not found로 실패
+6. 일반 PowerShell fallback으로 export/train/predict/dashboard/test 검증 지속
 ```
 
 ## Commit 관리 원칙
