@@ -7,15 +7,15 @@
 ## 전체 진행률
 
 ```text
-███████████████░░░░░  7 / 9 완료, 약 78%
+█████████████████░░░  8 / 9 완료, 약 89%
 ```
 
 현재 단계:
 
 ```text
-현재 단계: 8단계 — 웹 대시보드 실제값/예측값 검증 준비
-직전 완료: 7단계 — 학습 모델 예측 CSV 생성
-다음 목표: 생성된 예측 CSV를 웹 대시보드에서 시각화하고 API 응답을 확인한다.
+현재 단계: 9단계 — 전체 2,425개 테이블 학습 확대 준비
+직전 완료: 8단계 — 웹 대시보드 실제값/예측값 검증
+다음 목표: 파일럿 결과를 기준으로 300개/1,000개/전체 테이블 학습으로 안전하게 확대한다.
 ```
 
 ## 단계별 현황
@@ -29,8 +29,8 @@
 | 5 | 파일럿 데이터 export | 완료 | `finetune_csv/data/stom_1tick_kline.csv` 생성 |
 | 6 | GPU 파일럿 학습 실행 | 완료 | `finetune_csv/finetuned/stom_1tick_gpu_pilot_lookback300_pred60/basemodel/best_model` 생성 |
 | 7 | 학습 모델 예측 CSV 생성 | 완료 | `webui/stom_predictions/kronos_gpu_pilot_predictions.csv` 생성 |
-| 8 | 웹 대시보드 실제값/예측값 검증 | 다음 | `http://localhost:7070/stom` 확인 예정 |
-| 9 | 전체 2,425개 테이블 학습으로 확대 | 남음 | 파일럿 결과 안정화 후 단계적 확대 |
+| 8 | 웹 대시보드 실제값/예측값 검증 | 완료 | `http://127.0.0.1:7071/stom` API/HTML/headless screenshot 검증 |
+| 9 | 전체 2,425개 테이블 학습으로 확대 | 다음 | 파일럿 결과 안정화 후 단계적 확대 |
 
 ## 5단계 완료 상세: 파일럿 데이터 export
 
@@ -339,11 +339,187 @@ python -m pip check
 No broken requirements found
 ```
 
-## 다음 단계: 8단계 웹 대시보드 실제값/예측값 검증
+## 8단계 완료 상세: 웹 대시보드 실제값/예측값 검증
 
-다음 실행 명령:
+사전 발견:
+
+```text
+7070 포트는 AnyDesk 서비스가 사용 중이었다.
+```
+
+대응:
+
+```text
+webui/run.py가 환경변수로 host/port/browser-open 여부를 받을 수 있도록 보완했다.
+KRONOS_WEBUI_HOST
+KRONOS_WEBUI_PORT 또는 PORT
+KRONOS_WEBUI_OPEN_BROWSER
+```
+
+추가 발견:
+
+```text
+Windows PowerShell 리다이렉션 환경에서 이모지 로그가 cp949 인코딩으로 실패했다.
+```
+
+대응:
+
+```text
+webui/run.py에서 stdout/stderr를 UTF-8, errors=replace로 재설정했다.
+```
+
+검증 서버 실행 명령:
 
 ```powershell
+$env:PYTHONIOENCODING='utf-8'
+$env:KRONOS_WEBUI_HOST='127.0.0.1'
+$env:KRONOS_WEBUI_PORT='7071'
+$env:KRONOS_WEBUI_OPEN_BROWSER='0'
+python webui\run.py
+```
+
+검증 URL:
+
+```text
+http://127.0.0.1:7071/stom
+```
+
+서버 실행 증거:
+
+```text
+Access URL: http://127.0.0.1:7071
+Running on http://127.0.0.1:7071
+```
+
+HTTP/API 검증:
+
+```text
+/stom -> 200 text/html; charset=utf-8
+/api/stom/summary -> 200 application/json
+/api/stom/prediction-files -> 200 application/json
+/api/stom/prediction?file=kronos_gpu_pilot_predictions.csv -> 200 application/json
+```
+
+예측 파일 API 검증:
+
+```text
+file_count: 3
+has_kronos_file: True
+names:
+  - kronos_gpu_pilot_predictions.csv
+  - pilot_export_smoke.csv
+  - pilot_predictions.csv
+```
+
+예측 payload 검증:
+
+```text
+metrics.rows: 1,200
+metrics.windows: 20
+metrics.symbols: 2
+metrics.mae: 5.330419387817383
+metrics.rmse: 10.139999867404422
+metrics.mape: 0.8288770468725435
+metrics.direction_accuracy: 0.5
+windows_count: 20
+topk_count: 20
+chart_len: 12,328
+```
+
+Headless browser fallback 검증:
+
+```text
+Browser Use plugin skill은 로드했지만 이 세션에는 Node REPL js 실행 도구가 노출되지 않았다.
+대신 Chrome headless로 실제 페이지 screenshot 생성을 검증했다.
+```
+
+생성된 screenshot 증거:
+
+```text
+.omx/specs/stom-dashboard-stage8/stom_dashboard_stage8.png
+format: PNG
+size: 1500 x 1200
+file size: 206,607 bytes
+non_blank: True
+```
+
+검증 후 서버는 종료했고 `7071` 포트가 해제되었다.
+
+## 다음 단계: 9단계 전체 테이블 학습 확대
+
+권장 확대 순서:
+
+```text
+1. 300개 테이블 export/train/predict/dashboard 검증
+2. 1,000개 테이블 export/train/predict/dashboard 검증
+3. 전체 2,425개 테이블 export/train/predict/dashboard 검증
+```
+
+다음 실행 명령 예시:
+
+### 300개 테이블 export
+
+```powershell
+python finetune_csv\prepare_stom_1tick.py export `
+  --db _database\stock_tick_back.db `
+  --output finetune_csv\data\stom_1tick_kline_300.csv `
+  --lookback-window 300 `
+  --predict-window 60 `
+  --max-tables 300 `
+  --price-mode close_only
+```
+
+### 학습 config 복사 후 data_path/max_samples 조정
+
+```powershell
+Copy-Item finetune_csv\configs\config_stom_1tick_pilot.yaml finetune_csv\configs\config_stom_1tick_300.yaml
+```
+
+`config_stom_1tick_300.yaml`에서 최소 조정:
+
+```yaml
+data:
+  data_path: "finetune_csv/data/stom_1tick_kline_300.csv"
+  sample_stride: 10
+  max_samples: 50000
+
+training:
+  basemodel_epochs: 1
+  batch_size: 8
+```
+
+### 300개 테이블 GPU 학습
+
+```powershell
+python finetune_csv\train_sequential.py --config finetune_csv\configs\config_stom_1tick_300.yaml
+```
+
+### 300개 테이블 예측 검증
+
+```powershell
+python finetune_csv\stom_prediction_eval.py `
+  --data finetune_csv\data\stom_1tick_kline_300.csv `
+  --output webui\stom_predictions\kronos_300_predictions.csv `
+  --lookback-window 300 `
+  --predict-window 60 `
+  --max-windows 100 `
+  --stride 120 `
+  --mode kronos `
+  --model-path finetune_csv\finetuned\stom_1tick_300_lookback300_pred60\basemodel\best_model `
+  --tokenizer-path NeoQuasar/Kronos-Tokenizer-base `
+  --device cuda:0
+```
+
+### 대시보드 실행
+
+```powershell
+python webui\run.py
+```
+
+7070 충돌 시:
+
+```powershell
+$env:KRONOS_WEBUI_PORT='7071'
 python webui\run.py
 ```
 
@@ -351,16 +527,18 @@ python webui\run.py
 
 ```text
 http://localhost:7070/stom
+또는
+http://localhost:7071/stom
 ```
 
-8단계에서 확인할 항목:
+9단계에서 확인할 항목:
 
 ```text
-1. prediction 파일 목록에서 kronos_gpu_pilot_predictions.csv가 표시되는지
-2. 실제 close vs 예측 close 차트가 렌더링되는지
-3. MAE/RMSE/MAPE/방향정확도 카드가 표시되는지
-4. 예상 등락률 Top-K 표가 표시되는지
-5. 대시보드에서 API 오류 없이 동작하는지
+1. export row/group 수가 예상 범위인지
+2. GPU 학습 시간이 감당 가능한지
+3. OOM 없이 checkpoint가 저장되는지
+4. 예측 CSV의 MAE/RMSE/MAPE/방향정확도가 파일럿 대비 개선/악화되는지
+5. 대시보드에서 신규 prediction 파일을 정상 표시하는지
 ```
 
 ## OMX 사용 기록

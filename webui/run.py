@@ -9,6 +9,11 @@ import subprocess
 import webbrowser
 import time
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 def check_dependencies():
     """Check if dependencies are installed"""
     try:
@@ -70,16 +75,23 @@ def main():
     # Start server
     try:
         from app import app
+        host = os.environ.get("KRONOS_WEBUI_HOST", "0.0.0.0")
+        port = int(os.environ.get("KRONOS_WEBUI_PORT", os.environ.get("PORT", "7070")))
+        open_browser = os.environ.get("KRONOS_WEBUI_OPEN_BROWSER", "1").lower() not in {"0", "false", "no", "off"}
+        access_host = "localhost" if host in {"0.0.0.0", "::"} else host
+        access_url = f"http://{access_host}:{port}"
+
         print("✅ Web server started successfully!")
-        print(f"🌐 Access URL: http://localhost:7070")
+        print(f"🌐 Access URL: {access_url}")
         print("💡 Tip: Press Ctrl+C to stop server")
         
-        # Auto-open browser
-        time.sleep(2)
-        webbrowser.open('http://localhost:7070')
+        # Auto-open browser unless disabled for automated verification.
+        if open_browser:
+            time.sleep(2)
+            webbrowser.open(access_url)
         
         # Start Flask application
-        app.run(debug=True, host='0.0.0.0', port=7070)
+        app.run(debug=True, host=host, port=port)
         
     except Exception as e:
         print(f"❌ Startup failed: {e}")
