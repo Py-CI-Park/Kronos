@@ -71,3 +71,10 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     assert client.get("/stom").status_code == 200
     assert client.get("/api/stom/prediction-files").status_code == 200
     assert client.get("/api/stom/prediction?file=sample.csv").status_code == 200
+
+
+def test_flask_stom_routes_work_when_imported_as_package():
+    from webui.app import app as flask_app
+
+    client = flask_app.test_client()
+    assert client.get("/api/stom/prediction-files").status_code == 200

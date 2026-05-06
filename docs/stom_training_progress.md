@@ -7,15 +7,15 @@
 ## 전체 진행률
 
 ```text
-█████████████░░░░░░░  6 / 9 완료, 약 67%
+███████████████░░░░░  7 / 9 완료, 약 78%
 ```
 
 현재 단계:
 
 ```text
-현재 단계: 7단계 — 학습 모델 예측 CSV 생성 준비
-직전 완료: 6단계 — GPU 파일럿 학습 실행
-다음 목표: 학습된 파일럿 checkpoint로 실제값/예측값 비교 CSV를 생성한다.
+현재 단계: 8단계 — 웹 대시보드 실제값/예측값 검증 준비
+직전 완료: 7단계 — 학습 모델 예측 CSV 생성
+다음 목표: 생성된 예측 CSV를 웹 대시보드에서 시각화하고 API 응답을 확인한다.
 ```
 
 ## 단계별 현황
@@ -28,8 +28,8 @@
 | 4 | CUDA PyTorch 세팅 및 RTX 4080 SUPER 검증 | 완료 | `torch 2.9.0+cu128`, `cuda_available=True` |
 | 5 | 파일럿 데이터 export | 완료 | `finetune_csv/data/stom_1tick_kline.csv` 생성 |
 | 6 | GPU 파일럿 학습 실행 | 완료 | `finetune_csv/finetuned/stom_1tick_gpu_pilot_lookback300_pred60/basemodel/best_model` 생성 |
-| 7 | 학습 모델 예측 CSV 생성 | 다음 | `webui/stom_predictions/kronos_predictions.csv` 예정 |
-| 8 | 웹 대시보드 실제값/예측값 검증 | 남음 | `http://localhost:7070/stom` 확인 예정 |
+| 7 | 학습 모델 예측 CSV 생성 | 완료 | `webui/stom_predictions/kronos_gpu_pilot_predictions.csv` 생성 |
+| 8 | 웹 대시보드 실제값/예측값 검증 | 다음 | `http://localhost:7070/stom` 확인 예정 |
 | 9 | 전체 2,425개 테이블 학습으로 확대 | 남음 | 파일럿 결과 안정화 후 단계적 확대 |
 
 ## 5단계 완료 상세: 파일럿 데이터 export
@@ -215,9 +215,9 @@ python -m pytest tests/test_stom_tick_dataset.py tests/test_stom_training_cli.py
 12 passed, 1 warning
 ```
 
-## 다음 단계: 7단계 학습 모델 예측 CSV 생성
+## 7단계 완료 상세: 학습 모델 예측 CSV 생성
 
-다음 실행 명령:
+실행 명령:
 
 ```powershell
 python finetune_csv\stom_prediction_eval.py `
@@ -233,14 +233,134 @@ python finetune_csv\stom_prediction_eval.py `
   --device cuda:0
 ```
 
-7단계에서 확인할 항목:
+첫 실행에서 발견한 명령어 문제:
 
 ```text
-1. 학습 checkpoint 로딩 성공 여부
-2. Kronos predictor가 cuda:0에서 실행되는지 여부
-3. prediction CSV 생성 여부
-4. MAE/RMSE/MAPE/방향정확도 계산 여부
-5. 웹 대시보드 입력으로 사용 가능한 컬럼 구조인지 여부
+--tokenizer-path NeoQuasar\Kronos-Tokenizer-base
+```
+
+PowerShell에서 백슬래시를 사용하면 HuggingFace repo id가 잘못 해석된다. 반드시 `/`를 사용한다.
+
+```text
+--tokenizer-path NeoQuasar/Kronos-Tokenizer-base
+```
+
+결과:
+
+```text
+mode: kronos
+windows: 20
+rows: 1,200
+mae: 5.330419387817383
+rmse: 10.139999867404422
+mape: 0.8288770468725435
+direction_accuracy: 0.5
+avg_pred_return: -0.28066592835209236
+avg_actual_return: 0.15233856575055293
+exit code: 0
+```
+
+생성 산출물:
+
+```text
+webui/stom_predictions/kronos_gpu_pilot_predictions.csv
+webui/stom_predictions/kronos_gpu_pilot_predictions.metrics.json
+```
+
+CSV 구조:
+
+```text
+window_id,symbol,session,asof_timestamp,target_timestamp,horizon_step,horizon_seconds,actual_close_t0,pred_close,actual_close,error,abs_error,pred_return_window,actual_return_window,direction_hit_window,mode
+```
+
+주의:
+
+- 예측 CSV와 metrics JSON은 대용량/재생성 산출물이므로 commit하지 않는다.
+- 이번 결과는 작은 파일럿 학습 모델의 검증용 결과이며, 실제 매매 정확도 판단용 최종 모델이 아니다.
+
+## 7단계 중 발견/수정한 문제
+
+문제:
+
+```text
+from webui.app import app
+/api/stom/prediction-files -> 500
+Warning: STOM dashboard helpers cannot be imported (No module named 'stom_dashboard')
+```
+
+원인:
+
+```text
+webui.app을 패키지로 import할 때 webui/stom_dashboard.py 상대 import가 처리되지 않았다.
+```
+
+수정:
+
+```text
+webui/app.py
+tests/test_stom_dashboard_helpers.py
+```
+
+`webui.app`에서 `.stom_dashboard` 상대 import를 우선 사용하고, 단독 실행 호환을 위해 기존 `stom_dashboard` import를 fallback으로 유지했다.
+
+## 7단계 검증
+
+대시보드 helper 검증:
+
+```text
+has_kronos_file: True
+rows: 1,200
+windows: 20
+symbols: 2
+chart_json 생성: 성공
+topk_count: 5
+```
+
+Flask route 검증:
+
+```text
+/stom -> 200
+/api/stom/prediction-files -> 200
+/api/stom/prediction?file=kronos_gpu_pilot_predictions.csv -> 200
+```
+
+회귀 검증:
+
+```powershell
+python -m compileall -q finetune_csv webui tests docs
+python -m pytest tests/test_stom_tick_dataset.py tests/test_stom_training_cli.py tests/test_stom_prediction_eval.py tests/test_stom_dashboard_helpers.py tests/test_cli_import_paths.py -q
+python -m pip check
+```
+
+결과:
+
+```text
+13 passed, 1 warning
+No broken requirements found
+```
+
+## 다음 단계: 8단계 웹 대시보드 실제값/예측값 검증
+
+다음 실행 명령:
+
+```powershell
+python webui\run.py
+```
+
+접속:
+
+```text
+http://localhost:7070/stom
+```
+
+8단계에서 확인할 항목:
+
+```text
+1. prediction 파일 목록에서 kronos_gpu_pilot_predictions.csv가 표시되는지
+2. 실제 close vs 예측 close 차트가 렌더링되는지
+3. MAE/RMSE/MAPE/방향정확도 카드가 표시되는지
+4. 예상 등락률 Top-K 표가 표시되는지
+5. 대시보드에서 API 오류 없이 동작하는지
 ```
 
 ## OMX 사용 기록
@@ -276,4 +396,3 @@ webui/stom_predictions/*.csv
 webui/stom_predictions/*.json
 모델 checkpoint
 ```
-

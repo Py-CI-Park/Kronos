@@ -43,14 +43,24 @@ def ensure_kronos_imported():
         return False
 
 try:
-    from stom_dashboard import (
-        list_prediction_files,
-        load_prediction_frame,
-        load_training_summary,
-        prediction_chart_json,
-        prediction_metrics,
-        topk_rows,
-    )
+    try:
+        from .stom_dashboard import (
+            list_prediction_files,
+            load_prediction_frame,
+            load_training_summary,
+            prediction_chart_json,
+            prediction_metrics,
+            topk_rows,
+        )
+    except ImportError:
+        from stom_dashboard import (
+            list_prediction_files,
+            load_prediction_frame,
+            load_training_summary,
+            prediction_chart_json,
+            prediction_metrics,
+            topk_rows,
+        )
 except Exception as exc:
     print(f"Warning: STOM dashboard helpers cannot be imported ({exc})")
     list_prediction_files = None
