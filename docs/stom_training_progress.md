@@ -7,15 +7,15 @@
 ## 전체 진행률
 
 ```text
-███████████░░░░░░░░░  5 / 9 완료, 약 56%
+█████████████░░░░░░░  6 / 9 완료, 약 67%
 ```
 
 현재 단계:
 
 ```text
-현재 단계: 6단계 — GPU 파일럿 학습 실행 준비
-직전 완료: 5단계 — 파일럿 데이터 export
-다음 목표: 생성된 100개 테이블 파일럿 CSV로 Kronos GPU 학습을 실행한다.
+현재 단계: 7단계 — 학습 모델 예측 CSV 생성 준비
+직전 완료: 6단계 — GPU 파일럿 학습 실행
+다음 목표: 학습된 파일럿 checkpoint로 실제값/예측값 비교 CSV를 생성한다.
 ```
 
 ## 단계별 현황
@@ -27,8 +27,8 @@
 | 3 | 예측 검증 CLI 및 웹 대시보드 구현 | 완료 | `stom_prediction_eval.py`, `/stom` 대시보드 |
 | 4 | CUDA PyTorch 세팅 및 RTX 4080 SUPER 검증 | 완료 | `torch 2.9.0+cu128`, `cuda_available=True` |
 | 5 | 파일럿 데이터 export | 완료 | `finetune_csv/data/stom_1tick_kline.csv` 생성 |
-| 6 | GPU 파일럿 학습 실행 | 다음 | `train_sequential.py` 실행 예정 |
-| 7 | 학습 모델 예측 CSV 생성 | 남음 | `webui/stom_predictions/kronos_predictions.csv` 예정 |
+| 6 | GPU 파일럿 학습 실행 | 완료 | `finetune_csv/finetuned/stom_1tick_gpu_pilot_lookback300_pred60/basemodel/best_model` 생성 |
+| 7 | 학습 모델 예측 CSV 생성 | 다음 | `webui/stom_predictions/kronos_predictions.csv` 예정 |
 | 8 | 웹 대시보드 실제값/예측값 검증 | 남음 | `http://localhost:7070/stom` 확인 예정 |
 | 9 | 전체 2,425개 테이블 학습으로 확대 | 남음 | 파일럿 결과 안정화 후 단계적 확대 |
 
@@ -106,40 +106,141 @@ rows: 180
 
 이 smoke test는 모델 품질 측정이 아니라 **생성된 CSV가 예측 검증 파이프라인 입력으로 정상 사용 가능한지 확인**하기 위한 검증이다.
 
-## 다음 단계: 6단계 GPU 파일럿 학습
+## 6단계 완료 상세: GPU 파일럿 학습
 
-현재 config:
+6단계는 기본 config를 바로 사용하지 않고, 런타임을 제한한 별도 파일럿 config로 진행했다.
+
+파일럿 config:
 
 ```text
-finetune_csv/configs/config_stom_1tick.yaml
-data.data_path = finetune_csv/data/stom_1tick_kline.csv
-device.use_cuda = true
-device.device_id = 0
+finetune_csv/configs/config_stom_1tick_pilot.yaml
 ```
+
+핵심 설정:
+
+```text
+data_path: finetune_csv/data/stom_1tick_kline.csv
+sample_stride: 20
+max_samples: 4096
+basemodel_epochs: 1
+batch_size: 8
+num_workers: 0
+device: cuda:0
+pretrained_tokenizer: NeoQuasar/Kronos-Tokenizer-base
+pretrained_predictor: NeoQuasar/Kronos-small
+```
+
+실행 명령:
+
+```powershell
+python finetune_csv\train_sequential.py --config finetune_csv\configs\config_stom_1tick_pilot.yaml
+```
+
+학습 결과:
+
+```text
+device: cuda:0
+model parameters: 24,741,376
+train groups: 3,148
+validation groups: 556
+train samples: 4,096
+validation samples: 4,096
+epoch: 1 / 1
+steps: 512
+training loss: 2.4667
+validation loss: 2.4311
+epoch time: 41.82 seconds
+basemodel training time: 1.40 minutes
+total training time: 1.47 minutes
+exit code: 0
+```
+
+생성 checkpoint:
+
+```text
+finetune_csv/finetuned/stom_1tick_gpu_pilot_lookback300_pred60/basemodel/best_model/config.json
+finetune_csv/finetuned/stom_1tick_gpu_pilot_lookback300_pred60/basemodel/best_model/model.safetensors
+finetune_csv/finetuned/stom_1tick_gpu_pilot_lookback300_pred60/basemodel/best_model/README.md
+```
+
+주의:
+
+- checkpoint는 대용량/재생성 가능 산출물이므로 commit하지 않는다.
+- `finetune_csv/finetuned/`는 `.gitignore`에 추가했다.
+
+## 6단계 중 발견/수정한 문제
+
+문제:
+
+```text
+python finetune_csv\train_sequential.py --config ...
+ModuleNotFoundError: No module named 'model'
+```
+
+원인:
+
+```text
+Python 파일 경로 실행 시 sys.path[0]이 finetune_csv로 잡히고, 기존 sys.path.append('../')는 현재 작업 디렉터리 기준이라 프로젝트 루트를 안정적으로 가리키지 않았다.
+```
+
+수정:
+
+```text
+finetune_csv/train_sequential.py
+finetune_csv/finetune_tokenizer.py
+finetune_csv/finetune_base_model.py
+finetune_csv/stom_prediction_eval.py
+```
+
+위 파일들이 `__file__` 기준으로 프로젝트 루트를 계산해 `sys.path`에 추가하도록 수정했다.
+
+회귀 테스트:
+
+```text
+tests/test_cli_import_paths.py
+```
+
+## 6단계 검증
+
+실행한 검증:
+
+```powershell
+python -m compileall -q finetune_csv webui tests docs
+python -m pytest tests/test_stom_tick_dataset.py tests/test_stom_training_cli.py tests/test_stom_prediction_eval.py tests/test_stom_dashboard_helpers.py tests/test_cli_import_paths.py -q
+```
+
+결과:
+
+```text
+12 passed, 1 warning
+```
+
+## 다음 단계: 7단계 학습 모델 예측 CSV 생성
 
 다음 실행 명령:
 
 ```powershell
-python finetune_csv\train_sequential.py --config finetune_csv\configs\config_stom_1tick.yaml
+python finetune_csv\stom_prediction_eval.py `
+  --data finetune_csv\data\stom_1tick_kline.csv `
+  --output webui\stom_predictions\kronos_gpu_pilot_predictions.csv `
+  --lookback-window 300 `
+  --predict-window 60 `
+  --max-windows 20 `
+  --stride 120 `
+  --mode kronos `
+  --model-path finetune_csv\finetuned\stom_1tick_gpu_pilot_lookback300_pred60\basemodel\best_model `
+  --tokenizer-path NeoQuasar/Kronos-Tokenizer-base `
+  --device cuda:0
 ```
 
-학습 중 확인할 항목:
+7단계에서 확인할 항목:
 
 ```text
-1. RTX 4080 SUPER GPU 메모리 사용량
-2. batch_size=32에서 OOM 발생 여부
-3. train/validation loss 출력 여부
-4. checkpoint 저장 여부
-5. 1 epoch 학습 시간
-```
-
-OOM 발생 시 조정 순서:
-
-```text
-1. batch_size 32 → 16
-2. num_workers 4 → 2
-3. max_samples 설정
-4. sample_stride 증가
+1. 학습 checkpoint 로딩 성공 여부
+2. Kronos predictor가 cuda:0에서 실행되는지 여부
+3. prediction CSV 생성 여부
+4. MAE/RMSE/MAPE/방향정확도 계산 여부
+5. 웹 대시보드 입력으로 사용 가능한 컬럼 구조인지 여부
 ```
 
 ## OMX 사용 기록
@@ -148,10 +249,10 @@ OOM 발생 시 조정 순서:
 
 ```text
 1. plan 성격의 단계/진행률 관리
-2. explore 시도: Windows POSIX 래퍼 미지원으로 실패
-3. sparkshell 시도: 경로 오류로 실패
-4. 일반 PowerShell fallback으로 검증 지속
-5. note 성격의 진행 기록은 .omx/notepad.md에 별도 보존
+2. note 성격의 진행 기록을 .omx/notepad.md에 보존
+3. explore 시도: Windows POSIX 래퍼 미지원으로 실패
+4. sparkshell 시도: 경로 오류로 실패
+5. 일반 PowerShell fallback으로 실행/검증 지속
 ```
 
 ## Commit 관리 원칙
@@ -170,6 +271,7 @@ OOM 발생 시 조정 순서:
 ```text
 _database/
 finetune_csv/data/stom_*.csv
+finetune_csv/finetuned/
 webui/stom_predictions/*.csv
 webui/stom_predictions/*.json
 모델 checkpoint

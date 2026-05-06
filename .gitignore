@@ -59,6 +59,7 @@ webui/stom_predictions/*.json
 *.pt
 *.ckpt
 *.bin
+finetune_csv/finetuned/
 
 # Logs
 *.log

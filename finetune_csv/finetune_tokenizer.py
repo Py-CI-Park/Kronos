@@ -15,7 +15,10 @@ from logging.handlers import RotatingFileHandler
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-sys.path.append("../")
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from model import KronosTokenizer
 from finetune_base_model import build_dataset_from_config
 from config_loader import CustomFinetuneConfig
