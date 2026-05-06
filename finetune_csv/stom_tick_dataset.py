@@ -289,10 +289,15 @@ def export_stom_tick_db_to_csv(
     price_mode: str = "db_ohlc",
     time_start: str = "090000",
     time_end: str = "093000",
+    max_rows_per_group: int = 0,
 ) -> Dict[str, Any]:
     """Convert STOM per-symbol SQLite tables to a grouped Kronos training CSV."""
 
     min_rows = lookback_window + predict_window + 1
+    if max_rows_per_group and max_rows_per_group > 0 and max_rows_per_group < min_rows:
+        raise ValueError(
+            f"max_rows_per_group={max_rows_per_group} is smaller than required window rows={min_rows}."
+        )
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -308,6 +313,7 @@ def export_stom_tick_db_to_csv(
         written_rows = 0
         written_groups = 0
         skipped_groups = 0
+        clipped_groups = 0
         table_reports = []
         wrote_header = False
 
@@ -323,6 +329,9 @@ def export_stom_tick_db_to_csv(
                 kept_parts = []
                 for (_, _), group in frame.groupby(DEFAULT_GROUP_COLUMNS, sort=True):
                     if len(group) >= min_rows:
+                        if max_rows_per_group and max_rows_per_group > 0 and len(group) > max_rows_per_group:
+                            group = group.head(max_rows_per_group)
+                            clipped_groups += 1
                         kept_parts.append(group)
                     else:
                         skipped_groups += 1
@@ -368,6 +377,8 @@ def export_stom_tick_db_to_csv(
             "written_rows": written_rows,
             "written_groups": written_groups,
             "skipped_groups": skipped_groups,
+            "clipped_groups": clipped_groups,
+            "max_rows_per_group": max_rows_per_group,
             "min_rows_per_group": min_rows,
             "price_mode": price_mode,
             "trainable_csv_created": written_rows > 0 and written_groups > 0,
@@ -597,6 +608,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     export_parser.add_argument("--price-mode", choices=["db_ohlc", "close_only"], default="db_ohlc")
     export_parser.add_argument("--time-start", default="090000")
     export_parser.add_argument("--time-end", default="093000")
+    export_parser.add_argument(
+        "--max-rows-per-group",
+        type=int,
+        default=0,
+        help="Clip each symbol/session group to this many contiguous rows after filtering. 0 means keep all rows.",
+    )
     export_parser.add_argument("--json-output", default=None)
 
     args = parser.parse_args(argv)
@@ -620,6 +637,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             price_mode=args.price_mode,
             time_start=args.time_start,
             time_end=args.time_end,
+            max_rows_per_group=args.max_rows_per_group,
         )
 
     print(json.dumps(payload, ensure_ascii=False, indent=2))

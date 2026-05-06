@@ -102,6 +102,28 @@ def test_export_stom_tick_db_to_grouped_kronos_csv(tmp_path):
     assert first["volume"] == 3
 
 
+def test_export_can_clip_each_group_to_bounded_contiguous_rows(tmp_path):
+    db_path = tmp_path / "stock_tick_back.db"
+    csv_path = tmp_path / "stom_1tick_kline_clipped.csv"
+    _create_stom_db(db_path, rows_per_session=10)
+
+    report = export_stom_tick_db_to_csv(
+        db_path,
+        csv_path,
+        max_tables=0,
+        lookback_window=3,
+        predict_window=2,
+        price_mode="close_only",
+        max_rows_per_group=6,
+    )
+    df = pd.read_csv(csv_path)
+
+    assert report["trainable_csv_created"] is True
+    assert report["clipped_groups"] == 4
+    assert report["max_rows_per_group"] == 6
+    assert df.groupby(["symbol", "session"]).size().tolist() == [6, 6, 6, 6]
+
+
 def test_grouped_kline_dataset_keeps_windows_inside_symbol_session(tmp_path):
     db_path = tmp_path / "stock_tick_back.db"
     csv_path = tmp_path / "stom_1tick_kline.csv"

@@ -2,20 +2,20 @@
 
 이 문서는 STOM 1tick DB를 Kronos OHLCV 학습 데이터로 변환하고, GPU 학습/예측/웹 대시보드 검증까지 이어가기 위한 **진행 관리 문서**이다.
 
-생성/갱신 기준일: 2026-05-06
+생성/갱신 기준일: 2026-05-07 KST
 
 ## 전체 진행률
 
 ```text
-███████████████████░  9B / 9 진행 중, 약 97%
+████████████████████  9C / 9 완료, 100%
 ```
 
 현재 단계:
 
 ```text
-현재 단계: 9C — 전체 2,425개 학습 가능 테이블 확대 준비
-직전 완료: 9B — 1,000개 테이블 export/train/predict/dashboard/headless 검증
-다음 목표: 1,000개 검증 결과를 기준으로 전체 테이블 확대용 config와 실행 범위를 결정한다.
+현재 단계: 9C — 전체 테이블 bounded export/train/predict/dashboard/headless 검증 완료
+직전 완료: 전체 2,427개 테이블 스캔, 73,582개 학습 group 포함 bounded 학습 완료
+다음 목표: Kronos 예측값을 점수화/조건식/종가추천 프로그램 연계 검증으로 확장한다.
 ```
 
 ## 단계별 현황
@@ -30,7 +30,7 @@
 | 6 | GPU 파일럿 학습 실행 | 완료 | `finetune_csv/finetuned/stom_1tick_gpu_pilot_lookback300_pred60/basemodel/best_model` 생성 |
 | 7 | 학습 모델 예측 CSV 생성 | 완료 | `webui/stom_predictions/kronos_gpu_pilot_predictions.csv` 생성 |
 | 8 | 웹 대시보드 실제값/예측값 검증 | 완료 | `http://127.0.0.1:7071/stom` API/HTML/headless screenshot 검증 |
-| 9 | 전체 2,425개 테이블 학습으로 확대 | 진행 중 | 9A 300개 완료, 9B 1,000개 완료, 9C 전체 테이블 예정 |
+| 9 | 전체 2,425개 학습 가능 테이블 학습으로 확대 | 완료 | 9A 300개 완료, 9B 1,000개 완료, 9C 전체 테이블 bounded 학습/예측/대시보드 검증 완료 |
 
 ## 5단계 완료 상세: 파일럿 데이터 export
 
@@ -812,21 +812,53 @@ python -m pip check
 No broken requirements found
 ```
 
-## 다음 단계: 9C 전체 2,425개 학습 가능 테이블 확대
+## 9C 완료 상세: 전체 테이블 bounded 학습 확대
 
-남은 확대 순서:
+9C에서는 전체 DB를 스캔해 모든 학습 가능 종목/세션을 포함하는 방향으로 확대했다. 단, 전체 9GB CSV를 그대로 학습에 넣으면 현재 `GroupedKlineDataset`이 CSV 전체를 `pandas.read_csv`로 읽는 구조라 7시간 이상 로딩 단계에서 정체되었다. 따라서 전체 테이블/전체 세션 다양성은 유지하되, 각 symbol/session group을 연속 420 row로 제한하는 bounded export 기능을 추가하고 그 bounded CSV로 학습을 완료했다.
+
+### 9C-0. 직접 전체 CSV 학습 병목
+
+직접 전체 CSV:
 
 ```text
-1. 전체 테이블 export 용량/시간 확인
-2. 전체 테이블 학습 config 생성
-3. GPU 학습 실행 또는 먼저 bounded max_samples로 안전 검증
-4. 예측 CSV 생성 및 300/1,000 결과와 비교
-5. 대시보드에서 신규 prediction 파일 표시 검증
+finetune_csv/data/stom_1tick_kline_all.csv
+size: 약 9,079.60 MB
+rows: 122,345,828
+groups: 73,582
 ```
 
-다음 실행 명령 예시:
+문제:
 
-### 전체 테이블 export
+```text
+전체 9GB CSV를 직접 학습에 넣으면 데이터 로딩 단계에서 7시간 이상 진행 로그/체크포인트가 없었다.
+GPU 사용률은 0%였고, python 프로세스는 약 28GB 메모리를 사용 중이었다.
+```
+
+대응:
+
+```text
+학습 프로세스를 안전하게 중지하고, export 단계에서 각 그룹을 연속 row 단위로 제한하는 --max-rows-per-group 옵션을 추가했다.
+```
+
+추가/수정 파일:
+
+```text
+finetune_csv/stom_tick_dataset.py
+tests/test_stom_tick_dataset.py
+finetune_csv/configs/config_stom_1tick_all.yaml
+```
+
+추가된 옵션:
+
+```powershell
+--max-rows-per-group 420
+```
+
+이 옵션은 각 symbol/session group의 앞쪽 연속 row만 유지한다. `lookback_window=300`, `predict_window=60` 기준 최소 필요 row는 361개이므로 420개는 학습 window를 만들 수 있는 안전한 하한 이상의 bounded 값이다.
+
+### 9C-1. 전체 원본 export
+
+실행 명령:
 
 ```powershell
 python finetune_csv\prepare_stom_1tick.py export `
@@ -838,41 +870,116 @@ python finetune_csv\prepare_stom_1tick.py export `
   --price-mode close_only
 ```
 
-### 학습 config 생성 후 data_path/max_samples 조정
+결과:
 
-```powershell
-Copy-Item finetune_csv\configs\config_stom_1tick_1000.yaml finetune_csv\configs\config_stom_1tick_all.yaml
+```text
+selected_table_count: 2,427
+written_rows: 122,345,828
+written_groups: 73,582
+skipped_groups: 318
+CSV size: 약 9,079.60 MB
+trainable_csv_created: true
+exit code: 0
 ```
 
-`config_stom_1tick_all.yaml`에서 최소 조정:
+참고:
+
+```text
+2,427개 테이블을 스캔했지만 moneytop, stockinfo 같은 비학습 테이블은 필수 가격 column이 없어 export report에 error로 기록된다.
+실제 학습 가능 주식 테이블 기준은 기존 분석의 2,425개다.
+```
+
+### 9C-2. 전체 bounded export
+
+실행 명령:
+
+```powershell
+python finetune_csv\prepare_stom_1tick.py export `
+  --db _database\stock_tick_back.db `
+  --output finetune_csv\data\stom_1tick_kline_all_bounded.csv `
+  --lookback-window 300 `
+  --predict-window 60 `
+  --max-tables 0 `
+  --price-mode close_only `
+  --max-rows-per-group 420
+```
+
+결과:
+
+```text
+selected_table_count: 2,427
+written_rows: 30,902,629
+written_groups: 73,582
+skipped_groups: 318
+clipped_groups: 73,520
+max_rows_per_group: 420
+CSV size: 약 2,303.72 MB
+trainable_csv_created: true
+exit code: 0
+```
+
+### 9C-3. 전체 bounded 학습 config
+
+추가한 config:
+
+```text
+finetune_csv/configs/config_stom_1tick_all.yaml
+```
+
+핵심 설정:
 
 ```yaml
 data:
-  data_path: "finetune_csv/data/stom_1tick_kline_all.csv"
+  data_path: "finetune_csv/data/stom_1tick_kline_all_bounded.csv"
   sample_stride: 10
-  max_samples: 500000
+  max_samples: 300000
 
 training:
   basemodel_epochs: 1
   batch_size: 8
+  num_workers: 0
 
 model_paths:
   exp_name: "stom_1tick_all_lookback300_pred60"
 ```
 
-처음부터 무제한 샘플로 가지 말고 `max_samples: 500000` 정도로 bounded 검증 후, 시간/VRAM/validation loss를 보고 전체 샘플 확대 여부를 결정한다.
+### 9C-4. 전체 bounded GPU 학습
 
-### 전체 테이블 GPU 학습
+실행 명령:
 
 ```powershell
 python finetune_csv\train_sequential.py --config finetune_csv\configs\config_stom_1tick_all.yaml
 ```
 
-### 전체 테이블 예측 검증
+결과:
+
+```text
+device: cuda:0
+steps: 37,500
+training loss: 2.4891
+validation loss: 2.3983
+epoch time: 3,030.47 seconds
+total training time: 55.97 minutes
+exit status: success
+```
+
+생성 checkpoint:
+
+```text
+finetune_csv/finetuned/stom_1tick_all_lookback300_pred60/basemodel/best_model/config.json
+finetune_csv/finetuned/stom_1tick_all_lookback300_pred60/basemodel/best_model/model.safetensors
+finetune_csv/finetuned/stom_1tick_all_lookback300_pred60/basemodel/best_model/README.md
+```
+
+checkpoint는 대용량 재생성 산출물이므로 commit하지 않는다.
+
+### 9C-5. 전체 bounded 모델 예측 CSV 생성
+
+실행 명령:
 
 ```powershell
 python finetune_csv\stom_prediction_eval.py `
-  --data finetune_csv\data\stom_1tick_kline_all.csv `
+  --data finetune_csv\data\stom_1tick_kline_all_bounded.csv `
   --output webui\stom_predictions\kronos_all_predictions.csv `
   --lookback-window 300 `
   --predict-window 60 `
@@ -882,6 +989,107 @@ python finetune_csv\stom_prediction_eval.py `
   --model-path finetune_csv\finetuned\stom_1tick_all_lookback300_pred60\basemodel\best_model `
   --tokenizer-path NeoQuasar/Kronos-Tokenizer-base `
   --device cuda:0
+```
+
+결과:
+
+```text
+mode: kronos
+windows: 300
+rows: 18,000
+symbols: 8
+mae: 204.28732000901965
+rmse: 302.94789265301404
+mape: 0.27204721411459937
+direction_accuracy: 0.4
+avg_pred_return: -0.07505238605388899
+avg_actual_return: 0.009420187285990114
+exit code: 0
+```
+
+생성 산출물:
+
+```text
+webui/stom_predictions/kronos_all_predictions.csv
+webui/stom_predictions/kronos_all_predictions.metrics.json
+```
+
+예측 CSV와 metrics JSON은 재생성 가능 산출물이므로 commit하지 않는다.
+
+해석 메모:
+
+```text
+9C는 전체 테이블 다양성을 포함하는 데 성공했지만, 방향정확도는 0.40으로 낮다.
+단독 예측값을 매매 신호로 쓰기보다는 예상 등락률/오차/방향/조건식 필터를 조합한 점수화 검증이 다음 단계다.
+MAPE는 9B 0.5583에서 9C 0.2720으로 낮아졌지만, MAE/RMSE는 표본 종목 가격대 차이 영향을 받는다.
+```
+
+### 9C-6. 대시보드/API/headless 검증
+
+대시보드 helper 검증:
+
+```text
+has_kronos_all: True
+rows: 18,000
+windows: 300
+symbols: 8
+chart_keys: data, layout
+chart_data_traces: 2
+topk_count: 20
+```
+
+Flask route 검증:
+
+```text
+/stom -> 200 text/html; charset=utf-8
+/api/stom/summary -> 200 application/json
+/api/stom/prediction-files -> 200 application/json
+/api/stom/prediction?file=kronos_all_predictions.csv -> 200 application/json
+```
+
+실제 웹 화면 검증:
+
+```text
+검증 URL: http://127.0.0.1:7073/stom?file=kronos_all_predictions.csv
+screenshot: .omx/specs/stom-dashboard-stage9c/stom_dashboard_stage9c_all.png
+file size: 160,973 bytes
+browser: Chrome headless
+검증 후 7073 포트 해제
+```
+
+회귀 검증:
+
+```powershell
+python -m compileall -q finetune_csv webui tests docs
+python -m pytest tests/test_stom_tick_dataset.py tests/test_stom_training_cli.py tests/test_stom_prediction_eval.py tests/test_stom_dashboard_helpers.py tests/test_cli_import_paths.py -q
+python -m pip check
+```
+
+결과:
+
+```text
+14 passed, 1 warning
+No broken requirements found
+```
+
+## 다음 단계: 예측 점수화/조건식/추천 프로그램 연계
+
+학습 인프라 구축 1차 목표는 완료했다. 다음 단계는 모델 정확도 자체를 단독으로 올리는 것보다, 예측값을 실제 매매 판단에 쓰기 위한 score layer를 추가하는 것이다.
+
+남은 활용 단계:
+
+```text
+1. 예측 등락률, 방향 hit, 오차, 변동성 기준으로 Kronos score 산식 설계
+2. 종목별/가격대별/시간대별 성능 분해 리포트 생성
+3. 조건식 필터와 Kronos score 결합 방식 실험
+4. STOM 또는 Future_Trading 종가추천 프로그램 입력/출력 adapter 설계
+5. 웹 대시보드에 score ranking, top-k 추천, 실제/예측 비교표 추가
+```
+
+다음 OMX 명령 예시:
+
+```text
+$autopilot Kronos 예측 CSV를 점수화하여 종목 추천 score/ranking을 만들고 웹 대시보드에 top-k 추천 화면까지 추가 후 commit
 ```
 
 ### 대시보드 실행
@@ -905,14 +1113,14 @@ http://localhost:7070/stom
 http://localhost:7071/stom
 ```
 
-9단계에서 확인할 항목:
+9단계 완료 확인 항목:
 
 ```text
-1. export row/group 수가 예상 범위인지
-2. GPU 학습 시간이 감당 가능한지
-3. OOM 없이 checkpoint가 저장되는지
-4. 예측 CSV의 MAE/RMSE/MAPE/방향정확도가 파일럿 대비 개선/악화되는지
-5. 대시보드에서 신규 prediction 파일을 정상 표시하는지
+1. export row/group 수가 예상 범위인지: 완료
+2. GPU 학습 시간이 감당 가능한지: bounded 기준 약 56분으로 완료
+3. OOM 없이 checkpoint가 저장되는지: 완료
+4. 예측 CSV의 MAE/RMSE/MAPE/방향정확도가 파일럿 대비 개선/악화되는지: 완료, 다음 단계에서 score화 필요
+5. 대시보드에서 신규 prediction 파일을 정상 표시하는지: 완료
 ```
 
 ## OMX 사용 기록
@@ -926,6 +1134,7 @@ http://localhost:7071/stom
 4. explore 시도: Windows POSIX 래퍼 미지원으로 실패
 5. sparkshell 시도: 현재 세션에서 program not found로 실패
 6. 일반 PowerShell fallback으로 export/train/predict/dashboard/test 검증 지속
+7. 전체 9GB CSV 직접 학습 병목 발견 후 bounded export 기능으로 복구
 ```
 
 ## Commit 관리 원칙
