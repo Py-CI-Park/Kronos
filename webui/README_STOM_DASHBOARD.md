@@ -97,14 +97,37 @@ Qlib `.bin` 변환/provider 검증 단계로 넘어가기 전:
 python finetune\qlib_stom_pipeline.py qlib-env-check
 ```
 
-export report가 있으면 dump command를 dry-run으로 확인합니다.
+현재 워크스테이션에서는 `pyqlib 0.9.7` 설치와 `.omx/external/qlib/scripts/dump_bin.py` 확보가 확인되었습니다. export report가 있으면 dump command를 dry-run으로 확인합니다.
 
 ```powershell
 python finetune\qlib_stom_pipeline.py dump-bin `
-  --export-report finetune\qlib_exports\stom_1s_pilot\stom_qlib_export_report.json `
-  --qlib-dir finetune\qlib_exports\stom_1s_pilot\qlib_bin `
-  --freq 1s
+  --export-report finetune\qlib_exports\stom_1min_pilot\stom_qlib_export_report.json `
+  --qlib-dir finetune\qlib_exports\stom_1min_pilot\qlib_bin `
+  --dump-bin-script .omx\external\qlib\scripts\dump_bin.py `
+  --freq 1min
 ```
+
+실제 변환은 `--execute`를 붙입니다.
+
+```powershell
+python finetune\qlib_stom_pipeline.py dump-bin `
+  --export-report finetune\qlib_exports\stom_1min_pilot\stom_qlib_export_report.json `
+  --qlib-dir finetune\qlib_exports\stom_1min_pilot\qlib_bin `
+  --dump-bin-script .omx\external\qlib\scripts\dump_bin.py `
+  --freq 1min `
+  --execute
+```
+
+provider smoke:
+
+```powershell
+python finetune\qlib_stom_pipeline.py provider-smoke `
+  --provider-uri finetune\qlib_exports\stom_1min_pilot\qlib_bin `
+  --region cn `
+  --freq 1min
+```
+
+주의: 1초봉(`--freq 1s`)은 dump_bin 변환은 가능하지만 pyqlib provider의 `D.calendar(freq="1s")`가 지원하지 않습니다. 1초봉 학습은 Qlib provider보다 `processed_datasets/*.pkl`을 통한 Kronos fine-tuning 경로를 사용하세요.
 
 ## 주의
 

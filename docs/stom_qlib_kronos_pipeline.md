@@ -134,18 +134,19 @@ export 후 다음 파일에 command가 저장된다.
 meta\qlib_dump_bin_command.txt
 ```
 
-예:
+현재 Qlib upstream `scripts/dump_bin.py` 기준 인자는 `--csv_path`가 아니라 `--data_path`이다. 예:
 
 ```powershell
 python scripts/dump_bin.py dump_all `
-  --csv_path finetune/qlib_exports/stom_1s_pilot/qlib_csv `
-  --qlib_dir finetune/qlib_exports/stom_1s_pilot/qlib_bin `
+  --data_path finetune/qlib_exports/stom_1min_pilot/qlib_csv `
+  --qlib_dir finetune/qlib_exports/stom_1min_pilot/qlib_bin `
   --date_field_name date `
   --symbol_field_name symbol `
-  --include_fields open,high,low,close,volume,amount,money,factor
+  --include_fields open,high,low,close,volume,amount,money,factor `
+  --freq 1min
 ```
 
-현재 repo에는 pyqlib을 강제 설치하지 않는다. pyqlib 설치/경로 확정 후 위 command를 실행한다.
+pyqlib은 repo 필수 dependency가 아니라 실행 환경 dependency이다. 현재 워크스테이션에서는 `python -m pip install pyqlib`로 `pyqlib 0.9.7` 설치를 완료했고, pip 패키지에는 `dump_bin.py`가 포함되지 않아 Microsoft Qlib source를 `.omx/external/qlib`에 clone하여 `scripts/dump_bin.py`를 사용했다. `.omx`는 실행 보조 산출물이며 commit 대상이 아니다.
 
 ### 5.1 Qlib 환경 점검
 
@@ -157,35 +158,40 @@ python finetune\qlib_stom_pipeline.py qlib-env-check
 
 현재 워크스테이션 점검 결과:
 
-```text
-qlib_installed: false
-dump_bin_script_found: false
-recommended_install_command: python -m pip install pyqlib
+```json
+{
+  "qlib_installed": true,
+  "qlib_version": "0.9.7",
+  "dump_bin_script_found": true,
+  "dump_bin_script": "D:\\Chanil_Park\\Project\\Programming\\Kronos\\.omx\\external\\qlib\\scripts\\dump_bin.py"
+}
 ```
 
-즉 아직 실제 Qlib provider 변환 단계는 실행 전이며, 다음 단계에서 pyqlib 설치 또는 microsoft/qlib clone 경로를 확정해야 한다.
+### 5.2 dump_bin 실행
 
-### 5.2 dump_bin command dry-run
-
-export report에서 Qlib 변환 command를 재생성한다.
+export report에서 Qlib 변환 command를 재생성한다. `--execute`를 빼면 dry-run만 수행한다.
 
 ```powershell
 python finetune\qlib_stom_pipeline.py dump-bin `
-  --export-report finetune\qlib_exports\stom_1s_pilot\stom_qlib_export_report.json `
-  --qlib-dir finetune\qlib_exports\stom_1s_pilot\qlib_bin `
-  --freq 1s
-```
-
-실제로 실행하려면 pyqlib source의 `scripts\dump_bin.py` 경로를 지정하고 `--execute`를 붙인다.
-
-```powershell
-python finetune\qlib_stom_pipeline.py dump-bin `
-  --export-report finetune\qlib_exports\stom_1s_pilot\stom_qlib_export_report.json `
-  --qlib-dir finetune\qlib_exports\stom_1s_pilot\qlib_bin `
-  --dump-bin-script D:\path\to\qlib\scripts\dump_bin.py `
-  --freq 1s `
+  --export-report finetune\qlib_exports\stom_1min_pilot\stom_qlib_export_report.json `
+  --qlib-dir finetune\qlib_exports\stom_1min_pilot\qlib_bin `
+  --dump-bin-script .omx\external\qlib\scripts\dump_bin.py `
+  --freq 1min `
   --execute
 ```
+
+2026-05-07 파일럿 검증 결과:
+
+| 구분 | 결과 |
+| --- | --- |
+| 1초봉 export | 성공: 4개 instrument/session, 4,792 rows |
+| 1초봉 dump_bin | 성공: `--freq 1s` bin 생성 |
+| 1초봉 pyqlib provider smoke | 실패/제약 확인: pyqlib `D.calendar(freq="1s")`는 초봉 freq를 지원하지 않음 |
+| 1분봉 export | 성공: 4개 instrument/session, 112 rows |
+| 1분봉 dump_bin | 성공: `--freq 1min` bin 생성 |
+| 1분봉 pyqlib provider smoke | 성공: calendar 112개 로드 |
+
+따라서 **Qlib provider/전략 연구는 1분봉 이상을 우선 사용**하고, **1초봉은 Kronos fine-tuning용 `processed_datasets/*.pkl` 경로를 우선 사용**한다.
 
 ### 5.3 Qlib provider smoke test
 
@@ -193,12 +199,26 @@ python finetune\qlib_stom_pipeline.py dump-bin `
 
 ```powershell
 python finetune\qlib_stom_pipeline.py provider-smoke `
-  --provider-uri finetune\qlib_exports\stom_1s_pilot\qlib_bin `
+  --provider-uri finetune\qlib_exports\stom_1min_pilot\qlib_bin `
   --region cn `
-  --freq 1s
+  --freq 1min
 ```
 
-이 단계가 성공해야 Qlib `D.calendar`, `D.features`, Qlib 전략 백테스트로 넘어갈 수 있다.
+성공 예:
+
+```json
+{
+  "mode": "qlib_provider_smoke",
+  "freq": "1min",
+  "calendar_count": 112,
+  "calendar_sample": [
+    "2022-12-12 09:00:00",
+    "2022-12-12 09:01:00"
+  ]
+}
+```
+
+주의: `dump_bin.py`는 `--freq 1s` 변환 자체는 수행하지만, pyqlib provider의 `Freq` parser는 `1s`를 공식 지원하지 않는다. `provider-smoke --freq 1s`는 의도적으로 명확한 오류를 반환하게 했다.
 
 ## 6. Kronos predictor 학습 연결
 
@@ -314,21 +334,21 @@ GET /api/stom/qlib-backtests?file=<artifact.json>
 
 ## 10. 아직 남은 중요한 과제
 
-1. pyqlib 설치 또는 microsoft/qlib clone 후 `dump_bin.py --execute` 실제 실행
-2. Qlib `.bin` provider init 검증
-3. 동일 asof timestamp의 cross-sectional prediction 생성기
-4. Qlib `TopkDropoutStrategy` 직접 연결
-5. 1초 데이터의 Qlib calendar/frequency 호환성 검증
-6. 비용/슬리피지 모델 정교화
-7. 최근 날짜 완전 holdout 기준 학습/평가
+1. 동일 asof timestamp의 cross-sectional prediction 생성기
+2. Qlib `TopkDropoutStrategy` 직접 연결
+3. 1초 데이터는 pyqlib provider 공식 freq 제약 때문에 Kronos pickle 경로와 분리 운영
+4. 비용/슬리피지 모델 정교화
+5. 최근 날짜 완전 holdout 기준 학습/평가
+6. 전체 DB 장시간 export/train의 재개/로그/대시보드 상태 표시
 
 ## 11. 최종 판단
 
-이번 구현은 Qlib 적용의 첫 단계를 완료한다.
+이번 구현은 Qlib 적용의 실제 실행 게이트까지 통과했다.
 
 ```text
-완료: STOM DB → Qlib dump-ready CSV/pickle split → Qlib-style score backtest → dashboard
-미완료: pyqlib .bin provider 직접 변환/로드, Qlib TopkDropoutStrategy 실연동, 전체 DB 장시간 학습
+완료: STOM DB → Qlib dump-ready CSV/pickle split → dump_bin 실제 변환 → 1분봉 pyqlib provider smoke → Qlib-style score backtest → dashboard
+제약: 1초봉 dump_bin 변환은 가능하지만 pyqlib provider freq는 1s를 지원하지 않아 Kronos pickle 학습 경로를 우선 사용
+미완료: Qlib TopkDropoutStrategy 실연동, cross-sectional prediction 생성, 전체 DB 장시간 학습
 ```
 
-따라서 이제는 “Qlib을 써야 하나?”를 논의하는 단계에서 벗어나, STOM 데이터를 Qlib 연구 체계로 넣어 검증할 수 있는 기반이 생겼다.
+따라서 이제는 “Qlib을 써야 하나?”를 논의하는 단계에서 벗어나, 1분봉 이상 STOM 데이터를 Qlib 연구 체계로 넣어 검증할 수 있는 기반이 생겼다.

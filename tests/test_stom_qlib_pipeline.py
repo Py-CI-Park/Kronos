@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,7 @@ from qlib_stom_pipeline import (  # noqa: E402
     export_stom_to_qlib,
     run_dump_bin_from_report,
     run_score_backtest,
+    smoke_qlib_provider,
 )
 import stom_dashboard  # noqa: E402
 
@@ -155,6 +157,11 @@ def test_qlib_env_check_and_dump_bin_dry_run(tmp_path):
 
     result = run_dump_bin_from_report(report_path, qlib_dir=tmp_path / "qlib_bin", execute=False, freq="1min")
     assert result["status"] == "dry_run"
-    assert "--csv_path" in result["command"]
+    assert "--data_path" in result["command"]
     assert "--freq" in result["command"]
     assert result["command"][-1] == "1min"
+
+
+def test_provider_smoke_rejects_second_freq_before_importing_qlib(tmp_path):
+    with pytest.raises(ValueError, match="1s"):
+        smoke_qlib_provider(tmp_path, freq="1s")

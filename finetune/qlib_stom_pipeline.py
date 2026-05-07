@@ -17,8 +17,9 @@ import argparse
 import importlib.util
 import json
 import math
-import subprocess
+import os
 import pickle
+import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -46,6 +47,7 @@ from stom_tick_dataset import (  # noqa: E402
 KRONOS_PICKLE_COLUMNS = ["open", "high", "low", "close", "vol", "amt"]
 QLIB_CSV_FIELDS = ["open", "high", "low", "close", "volume", "amount", "money", "factor"]
 SUPPORTED_FREQS = {"1s", "1min"}
+PYQLIB_PROVIDER_UNSUPPORTED_FREQS = {"1s"}
 
 
 @dataclass
@@ -185,10 +187,22 @@ def check_qlib_environment(dump_bin_script: Optional[Path] = None) -> Dict[str, 
     candidates: List[Path] = []
     if dump_bin_script is not None:
         candidates.append(Path(dump_bin_script))
+    env_dump_bin = os.environ.get("QLIB_DUMP_BIN_SCRIPT")
+    if env_dump_bin:
+        candidates.append(Path(env_dump_bin))
+    if qlib_spec is not None and qlib_spec.origin:
+        qlib_origin = Path(qlib_spec.origin).resolve()
+        candidates.extend(
+            [
+                qlib_origin.parent / "scripts" / "dump_bin.py",
+                qlib_origin.parent.parent / "scripts" / "dump_bin.py",
+            ]
+        )
     candidates.extend(
         [
             PROJECT_ROOT / "scripts" / "dump_bin.py",
             PROJECT_ROOT / "qlib" / "scripts" / "dump_bin.py",
+            PROJECT_ROOT / ".omx" / "external" / "qlib" / "scripts" / "dump_bin.py",
         ]
     )
     existing_script = next((path.resolve() for path in candidates if path.exists()), None)
@@ -219,7 +233,7 @@ def build_dump_bin_command(
         sys.executable,
         str(script),
         "dump_all",
-        "--csv_path",
+        "--data_path",
         str(csv_path),
         "--qlib_dir",
         str(qlib_dir),
@@ -266,27 +280,49 @@ def run_dump_bin_from_report(
         return result
 
     script = Path(command[1])
+    if not script.is_absolute():
+        script = PROJECT_ROOT / script
+        command[1] = str(script)
+        result["command"] = command
+        result["command_text"] = _format_command(command)
     if not script.exists():
         raise FileNotFoundError(
             f"dump_bin.py not found: {script}. "
             "Install/clone microsoft/qlib and pass --dump-bin-script, or run qlib-env-check first."
         )
-    completed = subprocess.run(command, cwd=PROJECT_ROOT, text=True, capture_output=True, check=False)
+    completed = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        encoding="utf-8",
+        errors="replace",
+    )
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
     result.update(
         {
             "returncode": completed.returncode,
-            "stdout": completed.stdout[-4000:],
-            "stderr": completed.stderr[-4000:],
+            "stdout": stdout[-4000:],
+            "stderr": stderr[-4000:],
             "status": "ok" if completed.returncode == 0 else "failed",
         }
     )
     if completed.returncode != 0:
-        raise RuntimeError(f"dump_bin failed with exit code {completed.returncode}: {completed.stderr[-1000:]}")
+        raise RuntimeError(f"dump_bin failed with exit code {completed.returncode}: {stderr[-1000:]}")
     return result
 
 
 def smoke_qlib_provider(provider_uri: Path, region: str = "cn", freq: str = "day") -> Dict[str, Any]:
     """Initialize pyqlib provider and load a small calendar sample."""
+
+    if freq.lower() in PYQLIB_PROVIDER_UNSUPPORTED_FREQS:
+        raise ValueError(
+            "pyqlib provider does not support second-level freq such as '1s'. "
+            "Use --freq 1min for Qlib provider smoke, or use the generated "
+            "processed_datasets pickles for Kronos 1-second fine-tuning."
+        )
 
     try:
         import qlib  # type: ignore
@@ -416,7 +452,7 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
 
     dump_command = (
         "python scripts/dump_bin.py dump_all "
-        f"--csv_path {qlib_csv_dir.as_posix()} "
+        f"--data_path {qlib_csv_dir.as_posix()} "
         f"--qlib_dir {(output_dir / 'qlib_bin').as_posix()} "
         "--date_field_name date --symbol_field_name symbol "
         f"--include_fields {','.join(QLIB_CSV_FIELDS)}"

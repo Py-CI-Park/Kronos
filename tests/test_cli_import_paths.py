@@ -12,6 +12,8 @@ def test_train_sequential_direct_script_help_imports_project_model():
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
     assert result.returncode == 0

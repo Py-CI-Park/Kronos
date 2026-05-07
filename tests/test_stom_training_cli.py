@@ -68,6 +68,8 @@ def test_prepare_stom_1tick_inspect_cli_outputs_json(tmp_path):
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
