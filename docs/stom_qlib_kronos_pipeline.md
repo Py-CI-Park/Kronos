@@ -147,6 +147,59 @@ python scripts/dump_bin.py dump_all `
 
 현재 repo에는 pyqlib을 강제 설치하지 않는다. pyqlib 설치/경로 확정 후 위 command를 실행한다.
 
+### 5.1 Qlib 환경 점검
+
+먼저 현재 Python 환경에 pyqlib과 `dump_bin.py`가 준비되어 있는지 확인한다.
+
+```powershell
+python finetune\qlib_stom_pipeline.py qlib-env-check
+```
+
+현재 워크스테이션 점검 결과:
+
+```text
+qlib_installed: false
+dump_bin_script_found: false
+recommended_install_command: python -m pip install pyqlib
+```
+
+즉 아직 실제 Qlib provider 변환 단계는 실행 전이며, 다음 단계에서 pyqlib 설치 또는 microsoft/qlib clone 경로를 확정해야 한다.
+
+### 5.2 dump_bin command dry-run
+
+export report에서 Qlib 변환 command를 재생성한다.
+
+```powershell
+python finetune\qlib_stom_pipeline.py dump-bin `
+  --export-report finetune\qlib_exports\stom_1s_pilot\stom_qlib_export_report.json `
+  --qlib-dir finetune\qlib_exports\stom_1s_pilot\qlib_bin `
+  --freq 1s
+```
+
+실제로 실행하려면 pyqlib source의 `scripts\dump_bin.py` 경로를 지정하고 `--execute`를 붙인다.
+
+```powershell
+python finetune\qlib_stom_pipeline.py dump-bin `
+  --export-report finetune\qlib_exports\stom_1s_pilot\stom_qlib_export_report.json `
+  --qlib-dir finetune\qlib_exports\stom_1s_pilot\qlib_bin `
+  --dump-bin-script D:\path\to\qlib\scripts\dump_bin.py `
+  --freq 1s `
+  --execute
+```
+
+### 5.3 Qlib provider smoke test
+
+`.bin` 변환이 완료되면 provider를 초기화하고 calendar를 읽어본다.
+
+```powershell
+python finetune\qlib_stom_pipeline.py provider-smoke `
+  --provider-uri finetune\qlib_exports\stom_1s_pilot\qlib_bin `
+  --region cn `
+  --freq 1s
+```
+
+이 단계가 성공해야 Qlib `D.calendar`, `D.features`, Qlib 전략 백테스트로 넘어갈 수 있다.
+
 ## 6. Kronos predictor 학습 연결
 
 export된 pickle을 기존 `finetune/dataset.py`가 읽게 하려면 환경변수를 지정한다.
@@ -261,12 +314,13 @@ GET /api/stom/qlib-backtests?file=<artifact.json>
 
 ## 10. 아직 남은 중요한 과제
 
-1. pyqlib 설치 후 실제 `.bin` provider init 검증
-2. 동일 asof timestamp의 cross-sectional prediction 생성기
-3. Qlib `TopkDropoutStrategy` 직접 연결
-4. 1초 데이터의 Qlib calendar/frequency 호환성 검증
-5. 비용/슬리피지 모델 정교화
-6. 최근 날짜 완전 holdout 기준 학습/평가
+1. pyqlib 설치 또는 microsoft/qlib clone 후 `dump_bin.py --execute` 실제 실행
+2. Qlib `.bin` provider init 검증
+3. 동일 asof timestamp의 cross-sectional prediction 생성기
+4. Qlib `TopkDropoutStrategy` 직접 연결
+5. 1초 데이터의 Qlib calendar/frequency 호환성 검증
+6. 비용/슬리피지 모델 정교화
+7. 최근 날짜 완전 holdout 기준 학습/평가
 
 ## 11. 최종 판단
 

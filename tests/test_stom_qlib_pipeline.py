@@ -14,7 +14,9 @@ sys.path.insert(0, str(REPO_ROOT / "webui"))
 
 from qlib_stom_pipeline import (  # noqa: E402
     StomQlibExportConfig,
+    check_qlib_environment,
     export_stom_to_qlib,
+    run_dump_bin_from_report,
     run_score_backtest,
 )
 import stom_dashboard  # noqa: E402
@@ -131,3 +133,28 @@ def test_score_backtest_and_dashboard_artifact_loader(tmp_path, monkeypatch):
     chart = json.loads(stom_dashboard.qlib_backtest_chart_json(artifact))
     assert artifact["metrics"]["mode"] == "qlib_style_topk"
     assert chart["data"][0]["name"] == "Qlib Top-K equity"
+
+
+def test_qlib_env_check_and_dump_bin_dry_run(tmp_path):
+    report_path = tmp_path / "stom_qlib_export_report.json"
+    csv_dir = tmp_path / "qlib_csv"
+    csv_dir.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "qlib_csv_dir": str(csv_dir),
+                "output_dir": str(tmp_path / "export"),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    env = check_qlib_environment()
+    assert "qlib_installed" in env
+    assert env["recommended_install_command"] == "python -m pip install pyqlib"
+
+    result = run_dump_bin_from_report(report_path, qlib_dir=tmp_path / "qlib_bin", execute=False, freq="1min")
+    assert result["status"] == "dry_run"
+    assert "--csv_path" in result["command"]
+    assert "--freq" in result["command"]
+    assert result["command"][-1] == "1min"

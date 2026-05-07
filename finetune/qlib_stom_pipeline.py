@@ -14,8 +14,10 @@ The produced data artifacts can be large and are not meant to be committed.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
+import subprocess
 import pickle
 import sys
 from dataclasses import asdict, dataclass
@@ -160,6 +162,151 @@ def _to_qlib_dump_csv_frame(instrument: str, group: pd.DataFrame) -> pd.DataFram
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _format_command(command: Sequence[str]) -> str:
+    return " ".join(f'"{part}"' if " " in str(part) else str(part) for part in command)
+
+
+def check_qlib_environment(dump_bin_script: Optional[Path] = None) -> Dict[str, Any]:
+    """Return pyqlib/dump_bin readiness without requiring pyqlib to be installed."""
+
+    qlib_spec = importlib.util.find_spec("qlib")
+    qlib_version = None
+    qlib_error = None
+    if qlib_spec is not None:
+        try:
+            import qlib  # type: ignore
+
+            qlib_version = getattr(qlib, "__version__", "unknown")
+        except Exception as exc:  # pragma: no cover - depends on local pyqlib install
+            qlib_error = repr(exc)
+
+    candidates: List[Path] = []
+    if dump_bin_script is not None:
+        candidates.append(Path(dump_bin_script))
+    candidates.extend(
+        [
+            PROJECT_ROOT / "scripts" / "dump_bin.py",
+            PROJECT_ROOT / "qlib" / "scripts" / "dump_bin.py",
+        ]
+    )
+    existing_script = next((path.resolve() for path in candidates if path.exists()), None)
+
+    return {
+        "qlib_installed": qlib_spec is not None and qlib_error is None,
+        "qlib_origin": None if qlib_spec is None else qlib_spec.origin,
+        "qlib_version": qlib_version,
+        "qlib_error": qlib_error,
+        "dump_bin_script_found": existing_script is not None,
+        "dump_bin_script": None if existing_script is None else str(existing_script),
+        "recommended_install_command": "python -m pip install pyqlib",
+        "recommended_dump_bin_source": "Clone microsoft/qlib or point --dump-bin-script to qlib/scripts/dump_bin.py",
+    }
+
+
+def build_dump_bin_command(
+    csv_path: Path,
+    qlib_dir: Path,
+    dump_bin_script: Optional[Path] = None,
+    include_fields: Optional[Sequence[str]] = None,
+    date_field_name: str = "date",
+    symbol_field_name: str = "symbol",
+    freq: Optional[str] = None,
+) -> List[str]:
+    script = Path(dump_bin_script) if dump_bin_script else Path("scripts") / "dump_bin.py"
+    command = [
+        sys.executable,
+        str(script),
+        "dump_all",
+        "--csv_path",
+        str(csv_path),
+        "--qlib_dir",
+        str(qlib_dir),
+        "--date_field_name",
+        date_field_name,
+        "--symbol_field_name",
+        symbol_field_name,
+        "--include_fields",
+        ",".join(include_fields or QLIB_CSV_FIELDS),
+    ]
+    if freq:
+        command.extend(["--freq", freq])
+    return command
+
+
+def run_dump_bin_from_report(
+    export_report_path: Path,
+    qlib_dir: Optional[Path] = None,
+    dump_bin_script: Optional[Path] = None,
+    execute: bool = False,
+    freq: Optional[str] = None,
+) -> Dict[str, Any]:
+    report = json.loads(Path(export_report_path).read_text(encoding="utf-8"))
+    csv_path = Path(report["qlib_csv_dir"])
+    target_dir = Path(qlib_dir) if qlib_dir else Path(report["output_dir"]) / "qlib_bin"
+    command = build_dump_bin_command(
+        csv_path=csv_path,
+        qlib_dir=target_dir,
+        dump_bin_script=dump_bin_script,
+        include_fields=QLIB_CSV_FIELDS,
+        freq=freq,
+    )
+    result: Dict[str, Any] = {
+        "mode": "qlib_dump_bin",
+        "export_report_path": str(export_report_path),
+        "csv_path": str(csv_path),
+        "qlib_dir": str(target_dir),
+        "command": command,
+        "command_text": _format_command(command),
+        "executed": execute,
+    }
+    if not execute:
+        result["status"] = "dry_run"
+        return result
+
+    script = Path(command[1])
+    if not script.exists():
+        raise FileNotFoundError(
+            f"dump_bin.py not found: {script}. "
+            "Install/clone microsoft/qlib and pass --dump-bin-script, or run qlib-env-check first."
+        )
+    completed = subprocess.run(command, cwd=PROJECT_ROOT, text=True, capture_output=True, check=False)
+    result.update(
+        {
+            "returncode": completed.returncode,
+            "stdout": completed.stdout[-4000:],
+            "stderr": completed.stderr[-4000:],
+            "status": "ok" if completed.returncode == 0 else "failed",
+        }
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"dump_bin failed with exit code {completed.returncode}: {completed.stderr[-1000:]}")
+    return result
+
+
+def smoke_qlib_provider(provider_uri: Path, region: str = "cn", freq: str = "day") -> Dict[str, Any]:
+    """Initialize pyqlib provider and load a small calendar sample."""
+
+    try:
+        import qlib  # type: ignore
+        from qlib.config import REG_CN, REG_US  # type: ignore
+        from qlib.data import D  # type: ignore
+    except Exception as exc:
+        raise RuntimeError("pyqlib is not installed or cannot be imported. Run: python -m pip install pyqlib") from exc
+
+    region_map = {"cn": REG_CN, "us": REG_US}
+    qlib.init(provider_uri=str(provider_uri), region=region_map.get(region.lower(), REG_CN))
+    calendar = D.calendar(freq=freq)
+    sample = [str(item) for item in calendar[: min(len(calendar), 5)]]
+    return {
+        "mode": "qlib_provider_smoke",
+        "provider_uri": str(provider_uri),
+        "region": region,
+        "freq": freq,
+        "calendar_count": int(len(calendar)),
+        "calendar_sample": sample,
+    }
 
 
 def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
@@ -489,6 +636,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--slippage-bps", type=float, default=0.0)
     backtest.add_argument("--score-column", default="pred_return_window")
 
+    env_check = sub.add_parser("qlib-env-check", help="Check optional pyqlib/dump_bin readiness")
+    env_check.add_argument("--dump-bin-script", default=None)
+
+    dump_bin = sub.add_parser("dump-bin", help="Build or execute Qlib dump_bin command from an export report")
+    dump_bin.add_argument("--export-report", required=True)
+    dump_bin.add_argument("--qlib-dir", default=None)
+    dump_bin.add_argument("--dump-bin-script", default=None)
+    dump_bin.add_argument("--freq", default=None)
+    dump_bin.add_argument("--execute", action="store_true")
+
+    provider = sub.add_parser("provider-smoke", help="Initialize pyqlib provider and read a calendar sample")
+    provider.add_argument("--provider-uri", required=True)
+    provider.add_argument("--region", choices=["cn", "us"], default="cn")
+    provider.add_argument("--freq", default="day")
+
     return parser
 
 
@@ -533,6 +695,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 indent=2,
             )
         )
+        return 0
+    if args.command == "qlib-env-check":
+        result = check_qlib_environment(Path(args.dump_bin_script) if args.dump_bin_script else None)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "dump-bin":
+        result = run_dump_bin_from_report(
+            export_report_path=Path(args.export_report),
+            qlib_dir=Path(args.qlib_dir) if args.qlib_dir else None,
+            dump_bin_script=Path(args.dump_bin_script) if args.dump_bin_script else None,
+            execute=args.execute,
+            freq=args.freq,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "provider-smoke":
+        result = smoke_qlib_provider(Path(args.provider_uri), region=args.region, freq=args.freq)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     raise ValueError(f"Unknown command: {args.command}")
 

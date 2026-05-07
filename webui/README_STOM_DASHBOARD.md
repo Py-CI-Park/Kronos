@@ -89,6 +89,23 @@ python finetune\qlib_stom_pipeline.py score-backtest `
 
 생성된 `webui/qlib_backtests/*.json`은 `/stom` 페이지의 **Qlib Top-K 백테스트** 영역에서 선택해 equity curve와 성과 metrics를 확인할 수 있습니다.
 
+## 6. Qlib 실행 환경 점검
+
+Qlib `.bin` 변환/provider 검증 단계로 넘어가기 전:
+
+```powershell
+python finetune\qlib_stom_pipeline.py qlib-env-check
+```
+
+export report가 있으면 dump command를 dry-run으로 확인합니다.
+
+```powershell
+python finetune\qlib_stom_pipeline.py dump-bin `
+  --export-report finetune\qlib_exports\stom_1s_pilot\stom_qlib_export_report.json `
+  --qlib-dir finetune\qlib_exports\stom_1s_pilot\qlib_bin `
+  --freq 1s
+```
+
 ## 주의
 
 - `webui/stom_predictions/*.csv`는 생성 결과이므로 기본 커밋 대상이 아닙니다.
