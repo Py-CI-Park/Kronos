@@ -26,6 +26,8 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     metrics = stom_dashboard.prediction_metrics(df)
     chart = json.loads(stom_dashboard.prediction_chart_json(df))
     topk = stom_dashboard.topk_rows(df)
+    recommendations = stom_dashboard.ranked_recommendations(df)
+    recommendation_summary = stom_dashboard.recommendation_summary(recommendations)
 
     assert files[0]["name"] == "sample.csv"
     assert df["symbol"].iloc[0] == "000001"
@@ -33,6 +35,51 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     assert metrics["windows"] == 1
     assert chart["data"][0]["name"] == "실제 close"
     assert topk[0]["symbol"] == "000001"
+    assert recommendations[0]["symbol"] == "000001"
+    assert 0 <= recommendations[0]["kronos_score"] <= 100
+    assert recommendation_summary["count"] == 1
+
+
+def test_ranked_recommendations_prefers_positive_consistent_prediction():
+    df = stom_dashboard.pd.DataFrame(
+        [
+            {
+                "window_id": 0,
+                "symbol": "000001",
+                "session": "20260102",
+                "asof_timestamp": "2026-01-02T09:00:03",
+                "target_timestamp": "2026-01-02T09:00:04",
+                "actual_close_t0": 100,
+                "pred_close": 102,
+                "actual_close": 101,
+                "abs_error": 1,
+                "pred_return_window": 2.0,
+                "actual_return_window": 1.0,
+                "direction_hit_window": 1,
+            },
+            {
+                "window_id": 1,
+                "symbol": "000002",
+                "session": "20260102",
+                "asof_timestamp": "2026-01-02T09:00:03",
+                "target_timestamp": "2026-01-02T09:00:04",
+                "actual_close_t0": 100,
+                "pred_close": 98,
+                "actual_close": 101,
+                "abs_error": 3,
+                "pred_return_window": -2.0,
+                "actual_return_window": 1.0,
+                "direction_hit_window": 0,
+            },
+        ]
+    )
+    df["target_timestamp"] = stom_dashboard.pd.to_datetime(df["target_timestamp"])
+
+    recommendations = stom_dashboard.ranked_recommendations(df, k=2)
+
+    assert [row["symbol"] for row in recommendations] == ["000001", "000002"]
+    assert recommendations[0]["signal"] == "BUY_CANDIDATE"
+    assert recommendations[0]["kronos_score"] > recommendations[1]["kronos_score"]
 
 
 def test_dashboard_rejects_path_traversal(tmp_path, monkeypatch):
@@ -66,11 +113,16 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "prediction_metrics", stom_dashboard.prediction_metrics)
     monkeypatch.setattr(app, "prediction_chart_json", stom_dashboard.prediction_chart_json)
     monkeypatch.setattr(app, "topk_rows", stom_dashboard.topk_rows)
+    monkeypatch.setattr(app, "ranked_recommendations", stom_dashboard.ranked_recommendations)
+    monkeypatch.setattr(app, "recommendation_summary", stom_dashboard.recommendation_summary)
 
     client = app.app.test_client()
     assert client.get("/stom").status_code == 200
     assert client.get("/api/stom/prediction-files").status_code == 200
     assert client.get("/api/stom/prediction?file=sample.csv").status_code == 200
+    rec = client.get("/api/stom/recommendations?file=sample.csv")
+    assert rec.status_code == 200
+    assert rec.get_json()["summary"]["count"] == 1
 
 
 def test_flask_stom_routes_work_when_imported_as_package():

@@ -7,15 +7,16 @@
 ## 전체 진행률
 
 ```text
-████████████████████  9C / 9 완료, 100%
+████████████████████  학습 인프라 9C / 9 완료, 100%
+████░░░░░░░░░░░░░░░░  실전 활용 확장 1 / 5 완료, 20%
 ```
 
 현재 단계:
 
 ```text
-현재 단계: 9C — 전체 테이블 bounded export/train/predict/dashboard/headless 검증 완료
+현재 단계: 활용 1단계 — Kronos 예측값 score/ranking 및 대시보드 Top-K 추천 완료
 직전 완료: 전체 2,427개 테이블 스캔, 73,582개 학습 group 포함 bounded 학습 완료
-다음 목표: Kronos 예측값을 점수화/조건식/종가추천 프로그램 연계 검증으로 확장한다.
+다음 목표: score/ranking을 종목별·시간대별 성능 분해와 조건식 필터 결합으로 검증한다.
 ```
 
 ## 단계별 현황
@@ -31,6 +32,7 @@
 | 7 | 학습 모델 예측 CSV 생성 | 완료 | `webui/stom_predictions/kronos_gpu_pilot_predictions.csv` 생성 |
 | 8 | 웹 대시보드 실제값/예측값 검증 | 완료 | `http://127.0.0.1:7071/stom` API/HTML/headless screenshot 검증 |
 | 9 | 전체 2,425개 학습 가능 테이블 학습으로 확대 | 완료 | 9A 300개 완료, 9B 1,000개 완료, 9C 전체 테이블 bounded 학습/예측/대시보드 검증 완료 |
+| 10 | Kronos 예측값 score/ranking 및 Top-K 추천 | 완료 | `/api/stom/recommendations`, 대시보드 Score Top-K 추천 표, 테스트 15개 통과 |
 
 ## 5단계 완료 상세: 파일럿 데이터 export
 
@@ -1090,6 +1092,207 @@ No broken requirements found
 
 ```text
 $autopilot Kronos 예측 CSV를 점수화하여 종목 추천 score/ranking을 만들고 웹 대시보드에 top-k 추천 화면까지 추가 후 commit
+```
+
+## 10단계 완료 상세: Kronos score/ranking 및 Top-K 추천
+
+이번 단계에서는 기존 `pred_return_window` 단순 정렬을 넘어서, 실제 매매 판단에 더 가까운 **Kronos score/ranking layer**를 추가했다.
+
+### 10-1. Score 산식 개요
+
+Score는 live 환경에서 사용할 수 있어야 하므로 실제값을 직접 넣지 않는다. 실제값은 백테스트 검증 표시용으로만 사용한다.
+
+```text
+사용 입력:
+1. pred_return_window: Kronos 예상 등락률
+2. prediction_consistency: 예측 경로가 기준가 위/아래 방향을 얼마나 일관되게 유지하는지
+3. pred_range_pct: 예측 경로 자체의 변동성/불안정성
+
+백테스트 표시 전용:
+1. actual_return_window
+2. direction_hit_window
+3. realized_mape
+```
+
+추천 signal:
+
+```text
+BUY_CANDIDATE: score >= 60 이고 예측 등락률이 양수
+WATCH: score >= 45
+AVOID: 그 외
+```
+
+### 10-2. 추가/수정 파일
+
+```text
+webui/stom_dashboard.py
+webui/app.py
+webui/templates/stom_dashboard.html
+tests/test_stom_dashboard_helpers.py
+docs/stom_training_progress.md
+```
+
+### 10-3. 추가 API
+
+기존 예측 API 응답에 score/ranking 결과를 포함했다.
+
+```text
+GET /api/stom/prediction?file=kronos_all_predictions.csv
+```
+
+추가 전용 API:
+
+```text
+GET /api/stom/recommendations?file=kronos_all_predictions.csv&k=10
+```
+
+응답 핵심:
+
+```text
+recommendations:
+  - window_id
+  - symbol
+  - session
+  - kronos_score
+  - signal
+  - pred_return_window
+  - actual_return_window
+  - direction_hit_window
+  - prediction_consistency
+  - pred_range_pct
+  - realized_mape
+
+summary:
+  - count
+  - avg_score
+  - top_score
+  - avg_pred_return
+  - avg_actual_return
+  - hit_rate
+  - buy_candidates
+```
+
+### 10-4. 실제 `kronos_all_predictions.csv` 기준 점검
+
+Top-10 score/ranking 결과:
+
+```text
+recommendation_count: 10
+avg_score: 67.68529410937185
+top_score: 79.72477997015723
+buy_candidates: 10
+avg_pred_return: 0.8389049188007235
+avg_actual_return: 0.1411525010482977
+hit_rate: 0.5
+```
+
+Top-20 score/ranking 결과:
+
+```text
+avg_score: 66.38696508097838
+top_score: 79.72477997015723
+buy_candidates: 20
+avg_pred_return: 0.4793409192456964
+avg_actual_return: 0.07572824490288654
+hit_rate: 0.4
+```
+
+해석:
+
+```text
+Score Top-10은 평균 실제 등락률이 양수였고 hit rate는 50%였다.
+Top-20은 평균 실제 등락률이 양수였지만 hit rate는 40%로 낮다.
+따라서 score 자체는 후보 압축에는 사용할 수 있으나, 아직 단독 매수 신호로 쓰기에는 부족하다.
+다음 단계에서는 조건식/거래대금/변동성/시간대 필터를 결합해야 한다.
+```
+
+### 10-5. 대시보드 변경
+
+대시보드에 다음 영역을 추가했다.
+
+```text
+Kronos Score Top-K 추천
+Score Summary
+추천 수 / 매수 후보
+평균 Score / Top Score
+Top-K 평균 예측/실제 등락률
+Top-K 방향 Hit
+```
+
+추천 표 column:
+
+```text
+Rank
+Symbol
+Score
+Signal
+Pred %
+Consistency
+Actual %
+Hit
+```
+
+### 10-6. 검증
+
+단위/route 검증:
+
+```powershell
+python -m pytest tests/test_stom_dashboard_helpers.py -q
+```
+
+결과:
+
+```text
+5 passed, 1 warning
+```
+
+실제 파일 API 검증:
+
+```text
+/api/stom/prediction?file=kronos_all_predictions.csv -> 200
+/api/stom/recommendations?file=kronos_all_predictions.csv&k=10 -> 200
+```
+
+실제 웹 화면 검증:
+
+```text
+검증 URL: http://127.0.0.1:7074/stom?file=kronos_all_predictions.csv
+screenshot: .omx/specs/stom-score-ranking-stage10/stom_score_ranking_stage10.png
+file size: 183,206 bytes
+검증 후 7074 포트 해제
+```
+
+전체 회귀 검증:
+
+```powershell
+python -m compileall -q finetune_csv webui tests docs
+python -m pytest tests/test_stom_tick_dataset.py tests/test_stom_training_cli.py tests/test_stom_prediction_eval.py tests/test_stom_dashboard_helpers.py tests/test_cli_import_paths.py -q
+python -m pip check
+```
+
+결과:
+
+```text
+15 passed, 1 warning
+No broken requirements found
+```
+
+## 다음 단계: score 성능 분해 및 조건식 결합
+
+남은 활용 단계:
+
+```text
+1. 종목별/가격대별/시간대별 score 성능 분해
+2. 거래대금/거래량/변동성 필터와 score 결합
+3. Top-K 추천의 hit rate, 평균 실제 등락률, 손익분포 리포트 생성
+4. STOM/Future_Trading 종가추천 프로그램 adapter 설계
+5. 대시보드에 score backtest 리포트 화면 추가
+```
+
+다음 OMX 명령 예시:
+
+```text
+$autopilot Kronos score/ranking을 종목별 시간대별로 성능 분해하고 조건식 필터 결합 백테스트 리포트를 웹 대시보드에 추가 후 commit
 ```
 
 ### 대시보드 실행

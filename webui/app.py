@@ -50,6 +50,8 @@ try:
             load_training_summary,
             prediction_chart_json,
             prediction_metrics,
+            ranked_recommendations,
+            recommendation_summary,
             topk_rows,
         )
     except ImportError:
@@ -59,6 +61,8 @@ try:
             load_training_summary,
             prediction_chart_json,
             prediction_metrics,
+            ranked_recommendations,
+            recommendation_summary,
             topk_rows,
         )
 except Exception as exc:
@@ -68,6 +72,8 @@ except Exception as exc:
     load_training_summary = None
     prediction_chart_json = None
     prediction_metrics = None
+    ranked_recommendations = None
+    recommendation_summary = None
     topk_rows = None
 
 app = Flask(__name__)
@@ -409,11 +415,36 @@ def stom_prediction_file():
         df = load_prediction_frame(file_name)
         window_id_arg = request.args.get('window_id')
         window_id = int(window_id_arg) if window_id_arg not in (None, '') else None
+        recommendations = ranked_recommendations(df) if ranked_recommendations else []
         return jsonify({
             'metrics': prediction_metrics(df),
             'chart': prediction_chart_json(df, window_id=window_id),
             'topk': topk_rows(df),
+            'recommendations': recommendations,
+            'recommendation_summary': recommendation_summary(recommendations) if recommendation_summary else {},
             'windows': sorted(int(v) for v in df['window_id'].dropna().unique().tolist())[:500],
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/recommendations')
+def stom_recommendations():
+    if load_prediction_frame is None or ranked_recommendations is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        k = int(request.args.get('k', 20))
+        min_score_arg = request.args.get('min_score')
+        min_score = float(min_score_arg) if min_score_arg not in (None, '') else None
+        long_only = request.args.get('long_only', '1').lower() not in {'0', 'false', 'no', 'off'}
+        df = load_prediction_frame(file_name)
+        recommendations = ranked_recommendations(df, k=k, long_only=long_only, min_score=min_score)
+        return jsonify({
+            'recommendations': recommendations,
+            'summary': recommendation_summary(recommendations) if recommendation_summary else {},
+            'metrics': prediction_metrics(df),
         })
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400

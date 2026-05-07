@@ -172,3 +172,113 @@ def topk_rows(df: pd.DataFrame, k: int = 20) -> List[Dict[str, Any]]:
         "direction_hit_window",
     ]
     return latest[[col for col in columns if col in latest.columns]].to_dict(orient="records")
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    if np.isnan(result) or np.isinf(result):
+        return default
+    return result
+
+
+def _pct(numerator: float, denominator: float) -> float:
+    if denominator == 0 or np.isnan(denominator):
+        return 0.0
+    return numerator / denominator * 100.0
+
+
+def ranked_recommendations(
+    df: pd.DataFrame,
+    k: int = 20,
+    long_only: bool = True,
+    min_score: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """Rank prediction windows by a live-usable Kronos score.
+
+    The score intentionally uses predicted fields only:
+    predicted window return, path consistency, and predicted path volatility.
+    Actual return / hit fields are included only as backtest diagnostics.
+    """
+
+    rows: List[Dict[str, Any]] = []
+    for window_id, group in df.sort_values(["window_id", "target_timestamp"]).groupby("window_id", sort=True):
+        latest = group.iloc[-1]
+        t0_close = _safe_float(latest.get("actual_close_t0"), _safe_float(group["actual_close"].iloc[0]))
+        pred_return = _safe_float(latest.get("pred_return_window"))
+        actual_return = _safe_float(latest.get("actual_return_window"))
+        pred_close = pd.to_numeric(group["pred_close"], errors="coerce").dropna()
+        actual_close = pd.to_numeric(group["actual_close"], errors="coerce").replace(0, np.nan)
+        abs_error = pd.to_numeric(group.get("abs_error", pd.Series(dtype=float)), errors="coerce")
+
+        if pred_close.empty:
+            continue
+
+        if pred_return >= 0:
+            consistency = float((pred_close >= t0_close).mean())
+        else:
+            consistency = float((pred_close <= t0_close).mean())
+
+        pred_range_pct = _pct(float(pred_close.max() - pred_close.min()), t0_close)
+        realized_mape = float((abs_error / actual_close).replace([np.inf, -np.inf], np.nan).mean() * 100.0)
+        if np.isnan(realized_mape):
+            realized_mape = 0.0
+
+        raw_score = 50.0 + pred_return * 5.0 + (consistency - 0.5) * 30.0 - min(pred_range_pct, 20.0) * 0.5
+        if long_only and pred_return <= 0:
+            raw_score -= 20.0 + min(abs(pred_return) * 3.0, 20.0)
+        score = float(np.clip(raw_score, 0.0, 100.0))
+
+        if score >= 60.0 and pred_return > 0:
+            signal = "BUY_CANDIDATE"
+        elif score >= 45.0:
+            signal = "WATCH"
+        else:
+            signal = "AVOID"
+
+        rows.append(
+            {
+                "window_id": int(window_id),
+                "symbol": str(latest.get("symbol", "")),
+                "session": str(latest.get("session", "")),
+                "asof_timestamp": str(latest.get("asof_timestamp", "")),
+                "kronos_score": score,
+                "signal": signal,
+                "pred_return_window": pred_return,
+                "actual_return_window": actual_return,
+                "direction_hit_window": int(_safe_float(latest.get("direction_hit_window"))),
+                "prediction_consistency": consistency,
+                "pred_range_pct": pred_range_pct,
+                "realized_mape": realized_mape,
+            }
+        )
+
+    if min_score is not None:
+        rows = [row for row in rows if row["kronos_score"] >= min_score]
+    rows = sorted(rows, key=lambda row: (row["kronos_score"], row["pred_return_window"]), reverse=True)
+    return rows[: max(0, int(k))]
+
+
+def recommendation_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not rows:
+        return {
+            "count": 0,
+            "avg_score": 0.0,
+            "top_score": 0.0,
+            "avg_pred_return": 0.0,
+            "avg_actual_return": 0.0,
+            "hit_rate": 0.0,
+            "buy_candidates": 0,
+        }
+
+    return {
+        "count": len(rows),
+        "avg_score": float(np.mean([row["kronos_score"] for row in rows])),
+        "top_score": float(max(row["kronos_score"] for row in rows)),
+        "avg_pred_return": float(np.mean([row["pred_return_window"] for row in rows])),
+        "avg_actual_return": float(np.mean([row["actual_return_window"] for row in rows])),
+        "hit_rate": float(np.mean([row["direction_hit_window"] for row in rows])),
+        "buy_candidates": int(sum(row["signal"] == "BUY_CANDIDATE" for row in rows)),
+    }
