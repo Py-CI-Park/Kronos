@@ -4,7 +4,7 @@ import numpy as np
 import json
 import plotly.graph_objects as go
 import plotly.utils
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, Response, render_template, request, jsonify
 from flask_cors import CORS
 import sys
 import warnings
@@ -50,6 +50,8 @@ try:
             load_training_summary,
             prediction_chart_json,
             prediction_metrics,
+            recommendation_export_csv,
+            recommendation_export_payload,
             ranked_recommendations,
             recommendation_summary,
             score_backtest_report,
@@ -62,6 +64,8 @@ try:
             load_training_summary,
             prediction_chart_json,
             prediction_metrics,
+            recommendation_export_csv,
+            recommendation_export_payload,
             ranked_recommendations,
             recommendation_summary,
             score_backtest_report,
@@ -74,6 +78,8 @@ except Exception as exc:
     load_training_summary = None
     prediction_chart_json = None
     prediction_metrics = None
+    recommendation_export_csv = None
+    recommendation_export_payload = None
     ranked_recommendations = None
     recommendation_summary = None
     score_backtest_report = None
@@ -464,6 +470,46 @@ def stom_backtest_report():
         top_k = int(top_k_arg) if top_k_arg not in (None, '') else None
         df = load_prediction_frame(file_name)
         return jsonify(score_backtest_report(df, top_k=top_k))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/recommendation-export')
+def stom_recommendation_export():
+    if load_prediction_frame is None or recommendation_export_payload is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        output_format = request.args.get('format', 'json').lower()
+        limit_arg = request.args.get('limit', request.args.get('k', '20'))
+        limit = int(limit_arg) if limit_arg not in (None, '') else None
+        min_score_arg = request.args.get('min_score')
+        min_score = float(min_score_arg) if min_score_arg not in (None, '') else None
+        selected_filter = request.args.get('filter', 'buy_candidate_score60')
+        long_only = request.args.get('long_only', '1').lower() not in {'0', 'false', 'no', 'off'}
+        df = load_prediction_frame(file_name)
+        payload = recommendation_export_payload(
+            df,
+            source_file=file_name,
+            limit=limit,
+            min_score=min_score,
+            selected_filter=selected_filter,
+            long_only=long_only,
+        )
+        if output_format == 'json':
+            return jsonify(payload)
+        if output_format == 'csv':
+            if recommendation_export_csv is None:
+                return jsonify({'error': 'CSV export helper is not available'}), 500
+            safe_name = ''.join(ch if ch.isalnum() or ch in ('-', '_', '.') else '_' for ch in file_name)
+            csv_text = recommendation_export_csv(payload['records'])
+            return Response(
+                csv_text,
+                mimetype='text/csv; charset=utf-8',
+                headers={'Content-Disposition': f'attachment; filename="{safe_name}.kronos_recommendations.csv"'},
+            )
+        return jsonify({'error': 'format must be json or csv'}), 400
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
 

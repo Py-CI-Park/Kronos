@@ -8,15 +8,15 @@
 
 ```text
 ████████████████████  학습 인프라 9C / 9 완료, 100%
-████████░░░░░░░░░░░░  실전 활용 확장 2 / 5 완료, 40%
+████████████░░░░░░░░  실전 활용 확장 3 / 5 완료, 60%
 ```
 
 현재 단계:
 
 ```text
-현재 단계: 활용 2단계 — score 성능 분해 및 조건식 필터 백테스트 리포트 완료
-직전 완료: Kronos 예측값 score/ranking 및 대시보드 Top-K 추천 완료
-다음 목표: 조건식 필터를 STOM/Future_Trading 추천 adapter와 연결한다.
+현재 단계: 활용 3단계 — STOM/Future_Trading용 CSV/JSON adapter export 완료
+직전 완료: score 성능 분해 및 조건식 필터 백테스트 리포트 완료
+다음 목표: export 결과를 외부 추천 프로그램 import/실전 조건식과 연결한다.
 ```
 
 ## 단계별 현황
@@ -34,6 +34,7 @@
 | 9 | 전체 2,425개 학습 가능 테이블 학습으로 확대 | 완료 | 9A 300개 완료, 9B 1,000개 완료, 9C 전체 테이블 bounded 학습/예측/대시보드 검증 완료 |
 | 10 | Kronos 예측값 score/ranking 및 Top-K 추천 | 완료 | `/api/stom/recommendations`, 대시보드 Score Top-K 추천 표, 테스트 15개 통과 |
 | 11 | score 성능 분해 및 조건식 필터 백테스트 | 완료 | `/api/stom/backtest-report`, 조건식/score band/종목/시간대 성능 리포트, 테스트 16개 통과 |
+| 12 | STOM/Future_Trading용 adapter export | 완료 | `/api/stom/recommendation-export`, CSV/JSON export, 대시보드 export preview/download, 테스트 17개 통과 |
 
 ## 5단계 완료 상세: 파일럿 데이터 export
 
@@ -1473,22 +1474,152 @@ file size: 212,694 bytes
 검증 후 7075 포트 해제
 ```
 
-## 다음 단계: STOM/Future_Trading adapter 연계
+## 12단계 완료 상세: STOM/Future_Trading용 CSV/JSON adapter export
+
+이번 단계에서는 Kronos score/ranking 결과를 다른 종목 추천 프로그램에서 바로 읽을 수 있도록 **adapter export**를 추가했다. 이 기능은 대시보드 표시용 내부 자료구조를 외부 연동용 CSV/JSON schema로 고정하는 단계이다.
+
+### 12-1. 추가/수정 파일
+
+```text
+webui/stom_dashboard.py
+webui/app.py
+webui/templates/stom_dashboard.html
+tests/test_stom_dashboard_helpers.py
+docs/stom_training_progress.md
+```
+
+### 12-2. 추가 API
+
+```text
+GET /api/stom/recommendation-export?file=kronos_all_predictions.csv&format=json&limit=20&filter=buy_candidate_score60
+GET /api/stom/recommendation-export?file=kronos_all_predictions.csv&format=csv&limit=20&filter=buy_candidate_score60
+```
+
+지원 query:
+
+```text
+file: prediction CSV 파일명
+format: json 또는 csv
+limit: export 개수, 기본 20
+filter: all_scored, buy_candidate_score60, score65_consistency80, score70_pred_return_0_5, stable_positive_filter, early_session_score60
+min_score: 선택 입력
+long_only: 1/0, 기본 1
+```
+
+### 12-3. Export schema
+
+CSV/JSON record는 다음 필드를 고정해서 제공한다.
+
+```text
+rank
+source_file
+window_id
+symbol
+session
+asof_timestamp
+adapter_action
+signal
+kronos_score
+score_band
+pred_return_pct
+prediction_consistency
+pred_range_pct
+asof_minute_bucket
+filter_labels
+diagnostic_actual_return_pct
+diagnostic_direction_hit
+diagnostic_realized_mape
+```
+
+중요 원칙:
+
+```text
+adapter_action, filter_labels, kronos_score, pred_return_pct, prediction_consistency, pred_range_pct는 live 사용 가능한 예측 기반 필드이다.
+diagnostic_* 필드는 실제값 기반 검증용이므로 live 조건식/실전 필터에는 사용하지 않는다.
+```
+
+### 12-4. 실제 파일 API 검증
+
+`kronos_all_predictions.csv` 기준:
+
+```text
+/api/stom/recommendation-export?file=kronos_all_predictions.csv&format=json&limit=5 -> 200
+record_count: 5
+first_symbol: 000040
+
+/api/stom/recommendation-export?file=kronos_all_predictions.csv&format=csv&limit=5 -> 200
+mimetype: text/csv
+header: rank,source_file,window_id,symbol,session,asof_timestamp,adapter_action,...
+```
+
+### 12-5. 대시보드 변경
+
+좌측 패널에 다음 export 영역을 추가했다.
+
+```text
+STOM/Future_Trading Adapter Export
+조건식 필터 선택
+Export limit 입력
+Min score 선택 입력
+CSV 다운로드
+JSON 새 창 열기
+JSON preview
+```
+
+사용 흐름:
+
+```text
+1. /stom 접속
+2. 예측 파일 선택
+3. 조건식 필터 선택
+4. CSV 다운로드 또는 JSON 열기
+5. 외부 추천 프로그램에서 symbol, score, action, asof_timestamp 기준으로 후보를 읽는다.
+```
+
+### 12-6. 검증
+
+단위/route 검증:
+
+```powershell
+python -m pytest tests/test_stom_dashboard_helpers.py -q
+```
+
+결과:
+
+```text
+7 passed, 1 warning
+```
+
+전체 회귀 검증:
+
+```powershell
+python -m compileall -q finetune_csv webui tests docs
+python -m pytest tests/test_stom_tick_dataset.py tests/test_stom_training_cli.py tests/test_stom_prediction_eval.py tests/test_stom_dashboard_helpers.py tests/test_cli_import_paths.py -q
+python -m pip check
+```
+
+결과:
+
+```text
+17 passed, 1 warning
+No broken requirements found.
+```
+
+## 다음 단계: 외부 추천 프로그램 import 및 실전 조건식 강화
 
 남은 활용 단계:
 
 ```text
-1. STOM/Future_Trading 추천 프로그램 입력/출력 adapter 설계
-2. score + 조건식 필터 결과를 외부 종목 추천 CSV/JSON으로 export
-3. 거래대금/거래량/변동성/가격대 조건식 추가
-4. 수수료/슬리피지 반영 백테스트 지표 추가
-5. 실제 장중/종가 후보 추천 워크플로우 연결
+1. Future_Trading 또는 다른 종가종목 추천 프로그램에서 adapter CSV/JSON을 읽는 import 예시 추가
+2. 거래대금/거래량/변동성/가격대 조건식 추가
+3. 수수료/슬리피지 반영 백테스트 지표 추가
+4. 실제 장중/종가 후보 추천 워크플로우 연결
 ```
 
 다음 OMX 명령 예시:
 
 ```text
-$autopilot Kronos score 조건식 백테스트 결과를 STOM/Future_Trading 추천 프로그램에서 사용할 수 있는 CSV/JSON adapter로 내보내고 대시보드에 export 기능까지 추가 후 commit
+$autopilot D:\Chanil_Park\Project\Programming\Future_trading 프로그램에서 Kronos adapter CSV/JSON을 읽어 종목 추천 점수에 반영하는 import 예시와 검증 코드를 추가하고 commit
 ```
 
 ### 대시보드 실행

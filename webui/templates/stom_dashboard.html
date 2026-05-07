@@ -18,9 +18,12 @@
     .metric { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; }
     .metric span:last-child { font-weight: 700; color: #1d4ed8; }
     .steps li { margin-bottom: 10px; line-height: 1.45; }
-    select, button { width: 100%; padding: 11px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; }
+    select, input, button { width: 100%; padding: 11px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; box-sizing: border-box; }
+    label { display: block; margin-top: 10px; margin-bottom: 4px; color: #475569; font-size: 13px; font-weight: 700; }
     button { background: #2563eb; color: white; border: none; font-weight: 700; cursor: pointer; margin-top: 10px; }
     button:hover { background: #1d4ed8; }
+    button.secondary { background: #0f766e; }
+    button.secondary:hover { background: #115e59; }
     code, pre { background: #0f172a; color: #dbeafe; border-radius: 8px; }
     pre { padding: 14px; overflow-x: auto; line-height: 1.5; }
     table { width: 100%; border-collapse: collapse; }
@@ -71,6 +74,26 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
         <select id="fileSelect"></select>
         <select id="windowSelect"></select>
         <button onclick="loadPrediction()">실제값/예측값 표시</button>
+      </div>
+      <div class="card">
+        <h2>STOM/Future_Trading Adapter Export</h2>
+        <p class="muted">선택한 예측 파일의 Kronos score 후보를 외부 추천 프로그램에서 읽기 쉬운 CSV/JSON으로 내보냅니다. diagnostic_* 값은 검증용이며 live 조건식에는 사용하지 않습니다.</p>
+        <label for="exportFilter">조건식 필터</label>
+        <select id="exportFilter" onchange="refreshExportPreview()">
+          <option value="buy_candidate_score60">buy_candidate_score60</option>
+          <option value="score65_consistency80">score65_consistency80</option>
+          <option value="score70_pred_return_0_5">score70_pred_return_0_5</option>
+          <option value="stable_positive_filter">stable_positive_filter</option>
+          <option value="early_session_score60">early_session_score60</option>
+          <option value="all_scored">all_scored</option>
+        </select>
+        <label for="exportLimit">Export limit</label>
+        <input id="exportLimit" type="number" min="1" value="20" onchange="refreshExportPreview()">
+        <label for="exportMinScore">Min score 선택 입력</label>
+        <input id="exportMinScore" type="number" min="0" max="100" step="0.1" placeholder="예: 60" onchange="refreshExportPreview()">
+        <button onclick="downloadExport('csv')">CSV 다운로드</button>
+        <button class="secondary" onclick="downloadExport('json')">JSON 새 창 열기</button>
+        <pre id="exportPreview">예측 파일을 선택하면 export preview가 표시됩니다.</pre>
       </div>
     </section>
     <section>
@@ -230,6 +253,7 @@ async function loadPrediction() {
     `;
   }).join('');
   await loadBacktestReport(fileSelect.value);
+  await refreshExportPreview();
   setStatus('예측 검증 데이터를 표시했습니다.');
 }
 
@@ -270,6 +294,44 @@ async function loadBacktestReport(fileName) {
       <td>${fmt(row.win_rate * 100, 2)}%</td>
     </tr>
   `).join('');
+}
+
+function exportParams(format) {
+  const params = new URLSearchParams();
+  params.set('file', fileSelect.value);
+  params.set('format', format);
+  params.set('filter', document.getElementById('exportFilter').value);
+  params.set('long_only', '1');
+  const limit = document.getElementById('exportLimit').value;
+  if (limit) params.set('limit', limit);
+  const minScore = document.getElementById('exportMinScore').value;
+  if (minScore) params.set('min_score', minScore);
+  return params;
+}
+
+async function refreshExportPreview() {
+  if (!fileSelect.value) return;
+  const params = exportParams('json');
+  const res = await axios.get('/api/stom/recommendation-export', { params: Object.fromEntries(params) });
+  const payload = res.data;
+  const preview = {
+    metadata: payload.metadata,
+    sample_records: (payload.records || []).slice(0, 3)
+  };
+  document.getElementById('exportPreview').textContent = JSON.stringify(preview, null, 2);
+}
+
+function downloadExport(format) {
+  if (!fileSelect.value) {
+    setStatus('예측 파일이 없어 export 할 수 없습니다.', 'error');
+    return;
+  }
+  const url = `/api/stom/recommendation-export?${exportParams(format).toString()}`;
+  if (format === 'csv') {
+    window.location.href = url;
+  } else {
+    window.open(url, '_blank');
+  }
 }
 
 async function init() {

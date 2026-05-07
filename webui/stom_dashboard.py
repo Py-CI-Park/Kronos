@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 from pathlib import Path
@@ -15,6 +17,34 @@ PREDICTION_DIRS = [
     PROJECT_ROOT / "finetune_csv" / "predictions",
 ]
 EVIDENCE_DIR = PROJECT_ROOT / ".omx" / "specs" / "stom-ohlcv-finetune-research"
+SCORE_FILTER_NAMES = [
+    "all_scored",
+    "buy_candidate_score60",
+    "score65_consistency80",
+    "score70_pred_return_0_5",
+    "stable_positive_filter",
+    "early_session_score60",
+]
+ADAPTER_EXPORT_FIELDS = [
+    "rank",
+    "source_file",
+    "window_id",
+    "symbol",
+    "session",
+    "asof_timestamp",
+    "adapter_action",
+    "signal",
+    "kronos_score",
+    "score_band",
+    "pred_return_pct",
+    "prediction_consistency",
+    "pred_range_pct",
+    "asof_minute_bucket",
+    "filter_labels",
+    "diagnostic_actual_return_pct",
+    "diagnostic_direction_hit",
+    "diagnostic_realized_mape",
+]
 
 
 def _safe_path_in_dirs(file_name: str, directories: Optional[List[Path]] = None) -> Path:
@@ -340,6 +370,35 @@ def _score_band(score: float) -> str:
     return "<45"
 
 
+def _filter_label_matches(row: Dict[str, Any], filter_name: str) -> bool:
+    if filter_name == "all_scored":
+        return True
+    if filter_name == "buy_candidate_score60":
+        return row["kronos_score"] >= 60 and row["pred_return_window"] > 0
+    if filter_name == "score65_consistency80":
+        return row["kronos_score"] >= 65 and row["prediction_consistency"] >= 0.80
+    if filter_name == "score70_pred_return_0_5":
+        return row["kronos_score"] >= 70 and row["pred_return_window"] >= 0.5
+    if filter_name == "stable_positive_filter":
+        return (
+            row["kronos_score"] >= 60
+            and row["pred_return_window"] >= 0.3
+            and row["prediction_consistency"] >= 0.80
+            and row["pred_range_pct"] <= 2.5
+        )
+    if filter_name == "early_session_score60":
+        return row["kronos_score"] >= 60 and _is_early_session(row["asof_timestamp"])
+    raise ValueError(f"Unknown score filter: {filter_name}")
+
+
+def _filter_labels(row: Dict[str, Any]) -> List[str]:
+    labels = ["all_scored"]
+    for filter_name in SCORE_FILTER_NAMES[1:]:
+        if _filter_label_matches(row, filter_name):
+            labels.append(filter_name)
+    return labels
+
+
 def _top_group_metrics(
     rows: List[Dict[str, Any]],
     key: str,
@@ -371,35 +430,8 @@ def score_backtest_report(df: pd.DataFrame, top_k: Optional[int] = None) -> Dict
         row["asof_minute_bucket"] = _asof_minute_bucket(row["asof_timestamp"])
 
     conditions = [
-        ("all_scored", rows),
-        ("buy_candidate_score60", [row for row in rows if row["kronos_score"] >= 60 and row["pred_return_window"] > 0]),
-        (
-            "score65_consistency80",
-            [row for row in rows if row["kronos_score"] >= 65 and row["prediction_consistency"] >= 0.80],
-        ),
-        (
-            "score70_pred_return_0_5",
-            [row for row in rows if row["kronos_score"] >= 70 and row["pred_return_window"] >= 0.5],
-        ),
-        (
-            "stable_positive_filter",
-            [
-                row
-                for row in rows
-                if row["kronos_score"] >= 60
-                and row["pred_return_window"] >= 0.3
-                and row["prediction_consistency"] >= 0.80
-                and row["pred_range_pct"] <= 2.5
-            ],
-        ),
-        (
-            "early_session_score60",
-            [
-                row
-                for row in rows
-                if row["kronos_score"] >= 60 and _is_early_session(row["asof_timestamp"])
-            ],
-        ),
+        (filter_name, [row for row in rows if _filter_label_matches(row, filter_name)])
+        for filter_name in SCORE_FILTER_NAMES
     ]
 
     return {
@@ -412,3 +444,93 @@ def score_backtest_report(df: pd.DataFrame, top_k: Optional[int] = None) -> Dict
             "asof_minute_bucket": _top_group_metrics(rows, "asof_minute_bucket", "asof_minute_bucket", limit=10),
         },
     }
+
+
+def recommendation_export_payload(
+    df: pd.DataFrame,
+    source_file: str = "",
+    limit: Optional[int] = 20,
+    min_score: Optional[float] = None,
+    selected_filter: str = "buy_candidate_score60",
+    long_only: bool = True,
+) -> Dict[str, Any]:
+    """Build a stable CSV/JSON adapter payload for external recommendation tools.
+
+    Selection filters use prediction-time fields only. Diagnostic actual-return
+    fields are exported for review/backtest display and must not be used as live
+    filter inputs.
+    """
+
+    if selected_filter not in SCORE_FILTER_NAMES:
+        raise ValueError(f"Unknown score filter: {selected_filter}")
+
+    normalized_limit = None if limit is None else max(0, int(limit))
+    all_rows = ranked_recommendations(df, k=int(df["window_id"].nunique()), long_only=long_only)
+    exported_rows: List[Dict[str, Any]] = []
+    for row in all_rows:
+        row["score_band"] = _score_band(row["kronos_score"])
+        row["asof_minute_bucket"] = _asof_minute_bucket(row["asof_timestamp"])
+        labels = _filter_labels(row)
+        if selected_filter and selected_filter not in labels:
+            continue
+        if min_score is not None and row["kronos_score"] < min_score:
+            continue
+        exported_rows.append(row)
+
+    if normalized_limit is not None:
+        exported_rows = exported_rows[:normalized_limit]
+
+    records = []
+    for rank, row in enumerate(exported_rows, start=1):
+        labels = _filter_labels(row)
+        adapter_action = "BUY" if "buy_candidate_score60" in labels else ("WATCH" if row["signal"] == "WATCH" else "AVOID")
+        records.append(
+            {
+                "rank": rank,
+                "source_file": source_file,
+                "window_id": row["window_id"],
+                "symbol": row["symbol"],
+                "session": row["session"],
+                "asof_timestamp": row["asof_timestamp"],
+                "adapter_action": adapter_action,
+                "signal": row["signal"],
+                "kronos_score": row["kronos_score"],
+                "score_band": row["score_band"],
+                "pred_return_pct": row["pred_return_window"],
+                "prediction_consistency": row["prediction_consistency"],
+                "pred_range_pct": row["pred_range_pct"],
+                "asof_minute_bucket": row["asof_minute_bucket"],
+                "filter_labels": labels,
+                "diagnostic_actual_return_pct": row["actual_return_window"],
+                "diagnostic_direction_hit": row["direction_hit_window"],
+                "diagnostic_realized_mape": row["realized_mape"],
+            }
+        )
+
+    return {
+        "metadata": {
+            "adapter_version": "stom-kronos-score-v1",
+            "source_file": source_file,
+            "created_at": pd.Timestamp.utcnow().isoformat(),
+            "window_count": int(df["window_id"].nunique()),
+            "selected_filter": selected_filter,
+            "min_score": min_score,
+            "limit": normalized_limit,
+            "long_only": long_only,
+            "record_count": len(records),
+            "fields": ADAPTER_EXPORT_FIELDS,
+            "live_selection_note": "Selection fields use Kronos prediction outputs only; diagnostic_* fields are for backtest review.",
+        },
+        "records": records,
+    }
+
+
+def recommendation_export_csv(records: List[Dict[str, Any]]) -> str:
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=ADAPTER_EXPORT_FIELDS, lineterminator="\n")
+    writer.writeheader()
+    for record in records:
+        row = {field: record.get(field, "") for field in ADAPTER_EXPORT_FIELDS}
+        row["filter_labels"] = ";".join(record.get("filter_labels", []))
+        writer.writerow(row)
+    return output.getvalue()
