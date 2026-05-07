@@ -1,0 +1,133 @@
+import json
+import pickle
+import sqlite3
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "finetune"))
+sys.path.insert(0, str(REPO_ROOT / "webui"))
+
+from qlib_stom_pipeline import (  # noqa: E402
+    StomQlibExportConfig,
+    export_stom_to_qlib,
+    run_score_backtest,
+)
+import stom_dashboard  # noqa: E402
+
+
+def _create_stom_db(path: Path, rows_per_session: int = 8):
+    conn = sqlite3.connect(path)
+    try:
+        for symbol, base_price in [("000001", 1000), ("000002", 2000)]:
+            conn.execute(
+                f'''
+                CREATE TABLE "{symbol}" (
+                    "index" INTEGER,
+                    "현재가" REAL,
+                    "시가" REAL,
+                    "고가" REAL,
+                    "저가" REAL,
+                    "초당매수수량" REAL,
+                    "초당매도수량" REAL,
+                    "초당거래대금" REAL
+                )
+                '''
+            )
+            for day in [
+                datetime(2026, 1, 2, 9, 0, 0),
+                datetime(2026, 1, 3, 9, 0, 0),
+                datetime(2026, 1, 4, 9, 0, 0),
+            ]:
+                for i in range(rows_per_session):
+                    ts = int((day + timedelta(seconds=i)).strftime("%Y%m%d%H%M%S"))
+                    close = base_price + i
+                    buy_qty = i + 1
+                    sell_qty = i + 2
+                    volume = buy_qty + sell_qty
+                    conn.execute(
+                        f'INSERT INTO "{symbol}" VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        (
+                            ts,
+                            close,
+                            close - 1,
+                            close + 1,
+                            close - 2,
+                            buy_qty,
+                            sell_qty,
+                            close * volume,
+                        ),
+                    )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_export_stom_to_qlib_pilot_outputs_dump_ready_csv_and_pickles(tmp_path):
+    db_path = tmp_path / "stock_tick_back.db"
+    out_dir = tmp_path / "qlib_export"
+    _create_stom_db(db_path)
+
+    report = export_stom_to_qlib(
+        StomQlibExportConfig(
+            db_path=str(db_path),
+            output_dir=str(out_dir),
+            lookback_window=3,
+            predict_window=2,
+            price_mode="close_only",
+            train_ratio=0.5,
+            val_ratio=0.25,
+            test_ratio=0.25,
+        )
+    )
+
+    assert report["exported_group_count"] == 6
+    assert report["split_counts"]["train"]["groups"] == 3
+    assert (out_dir / "stom_qlib_export_report.json").exists()
+    assert (out_dir / "meta" / "qlib_dump_bin_command.txt").read_text(encoding="utf-8").startswith(
+        "python scripts/dump_bin.py dump_all"
+    )
+    csv_files = sorted((out_dir / "qlib_csv").glob("*.csv"))
+    assert len(csv_files) == 6
+    sample_csv = pd.read_csv(csv_files[0])
+    assert {"symbol", "date", "open", "high", "low", "close", "volume", "amount", "money", "factor"}.issubset(
+        sample_csv.columns
+    )
+
+    with (out_dir / "processed_datasets" / "train_data.pkl").open("rb") as f:
+        train_data = pickle.load(f)
+    first_frame = next(iter(train_data.values()))
+    assert list(first_frame.columns) == ["open", "high", "low", "close", "vol", "amt"]
+    assert first_frame.index.name == "datetime"
+
+
+def test_score_backtest_and_dashboard_artifact_loader(tmp_path, monkeypatch):
+    pred_csv = tmp_path / "predictions.csv"
+    pred_csv.write_text(
+        "window_id,symbol,session,asof_timestamp,target_timestamp,horizon_step,actual_close_t0,pred_close,actual_close,error,abs_error,pred_return_window,actual_return_window,direction_hit_window,mode\n"
+        "0,000001,20260102,2026-01-02T09:05:00,2026-01-02T09:06:00,60,100,103,102,1,1,3.0,2.0,1,kronos\n"
+        "1,000002,20260102,2026-01-02T09:05:00,2026-01-02T09:06:00,60,100,101,99,2,2,1.0,-1.0,0,kronos\n"
+        "2,000003,20260102,2026-01-02T09:05:00,2026-01-02T09:06:00,60,100,104,103,1,1,4.0,3.0,1,kronos\n"
+        "3,000001,20260103,2026-01-03T09:05:00,2026-01-03T09:06:00,60,100,99,98,1,1,-1.0,-2.0,1,kronos\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "backtests"
+
+    result = run_score_backtest(pred_csv, out_dir, top_k=2, cost_bps=10, slippage_bps=5)
+
+    assert result["metrics"]["period_count"] == 2
+    assert result["metrics"]["trade_count"] == 3
+    assert result["metrics"]["cost_bps"] == 10
+    assert Path(result["artifact_paths"]["json"]).exists()
+
+    monkeypatch.setattr(stom_dashboard, "QLIB_BACKTEST_DIRS", [out_dir])
+    files = stom_dashboard.list_qlib_backtest_files()
+    assert files[0]["name"].endswith(".json")
+    artifact = stom_dashboard.load_qlib_backtest_artifact(files[0]["name"])
+    chart = json.loads(stom_dashboard.qlib_backtest_chart_json(artifact))
+    assert artifact["metrics"]["mode"] == "qlib_style_topk"
+    assert chart["data"][0]["name"] == "Qlib Top-K equity"

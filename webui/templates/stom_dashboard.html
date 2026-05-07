@@ -76,6 +76,12 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
         <button onclick="loadPrediction()">실제값/예측값 표시</button>
       </div>
       <div class="card">
+        <h2>Qlib Top-K 백테스트</h2>
+        <p class="muted">`finetune/qlib_stom_pipeline.py score-backtest`가 만든 JSON artifact를 표시합니다.</p>
+        <select id="qlibBacktestSelect"></select>
+        <button class="secondary" onclick="loadQlibBacktest()">Qlib 백테스트 표시</button>
+      </div>
+      <div class="card">
         <h2>STOM/Future_Trading Adapter Export</h2>
         <p class="muted">선택한 예측 파일의 Kronos score 후보를 외부 추천 프로그램에서 읽기 쉬운 CSV/JSON으로 내보냅니다. diagnostic_* 값은 검증용이며 live 조건식에는 사용하지 않습니다.</p>
         <label for="exportFilter">조건식 필터</label>
@@ -147,6 +153,18 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
           <tbody id="segmentBacktest"></tbody>
         </table>
       </div>
+      <div class="card">
+        <h2>Qlib-style Top-K 백테스트 결과</h2>
+        <p class="muted">예측 score를 리밸런싱 시각별 Top-K로 선택해 비용/슬리피지를 차감한 연구용 결과입니다.</p>
+        <div id="qlibBacktestMetrics">Qlib backtest artifact를 선택하면 표시됩니다.</div>
+        <div id="qlibBacktestChart"></div>
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Rank</th><th>Symbol</th><th>Score</th><th>Actual %</th><th>Net %</th></tr>
+          </thead>
+          <tbody id="qlibTopTrades"></tbody>
+        </table>
+      </div>
     </section>
   </div>
 </main>
@@ -154,6 +172,7 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
 const statusEl = document.getElementById('status');
 const fileSelect = document.getElementById('fileSelect');
 const windowSelect = document.getElementById('windowSelect');
+const qlibBacktestSelect = document.getElementById('qlibBacktestSelect');
 
 function fmt(value, digits = 4) {
   if (value === null || value === undefined || Number.isNaN(value)) return '-';
@@ -194,6 +213,54 @@ async function loadFiles() {
     opt.textContent = `${file.name} (${fmt(file.size_bytes, 0)} bytes)`;
     fileSelect.appendChild(opt);
   });
+}
+
+async function loadQlibBacktests() {
+  const res = await axios.get('/api/stom/qlib-backtests');
+  qlibBacktestSelect.innerHTML = '';
+  if (!res.data.files || res.data.files.length === 0) {
+    const opt = document.createElement('option');
+    opt.textContent = 'Qlib 백테스트 artifact 없음';
+    opt.value = '';
+    qlibBacktestSelect.appendChild(opt);
+    return;
+  }
+  res.data.files.forEach(file => {
+    const opt = document.createElement('option');
+    opt.value = file.name;
+    opt.textContent = `${file.name} (${fmt(file.size_bytes, 0)} bytes)`;
+    qlibBacktestSelect.appendChild(opt);
+  });
+}
+
+async function loadQlibBacktest() {
+  if (!qlibBacktestSelect.value) {
+    document.getElementById('qlibBacktestMetrics').textContent = 'Qlib 백테스트 artifact가 없습니다.';
+    return;
+  }
+  const res = await axios.get('/api/stom/qlib-backtests', { params: { file: qlibBacktestSelect.value } });
+  const payload = res.data.artifact || {};
+  const m = payload.metrics || {};
+  document.getElementById('qlibBacktestMetrics').innerHTML = `
+    <div class="metric"><span>Periods / Trades / Top-K</span><span>${fmt(m.period_count, 0)} / ${fmt(m.trade_count, 0)} / ${fmt(m.top_k, 0)}</span></div>
+    <div class="metric"><span>Avg trades / period</span><span>${fmt(m.avg_trades_per_period, 2)}</span></div>
+    <div class="metric"><span>Avg Gross / Net</span><span>${fmt(m.avg_gross_return_pct, 4)}% / ${fmt(m.avg_net_return_pct, 4)}%</span></div>
+    <div class="metric"><span>Cumulative / MDD</span><span>${fmt(m.cumulative_return_pct, 4)}% / ${fmt(m.max_drawdown_pct, 4)}%</span></div>
+    <div class="metric"><span>Hit / Direction / Sharpe</span><span>${fmt((m.hit_rate || 0) * 100, 2)}% / ${fmt((m.direction_hit_rate || 0) * 100, 2)}% / ${fmt(m.sharpe_per_period, 4)}</span></div>
+    ${(payload.warnings || []).map(w => `<div class="status error">${w}</div>`).join('')}
+  `;
+  const chart = JSON.parse(res.data.chart);
+  Plotly.newPlot('qlibBacktestChart', chart.data, chart.layout, {responsive: true});
+  document.getElementById('qlibTopTrades').innerHTML = (payload.top_trades || []).slice(0, 20).map(row => `
+    <tr>
+      <td>${row.asof_timestamp}</td>
+      <td>${row.rank}</td>
+      <td>${row.symbol}</td>
+      <td>${fmt(row.score, 4)}</td>
+      <td>${fmt(row.actual_return_pct, 4)}</td>
+      <td>${fmt(row.net_return_pct, 4)}</td>
+    </tr>
+  `).join('');
 }
 
 async function loadPrediction() {
@@ -338,8 +405,10 @@ async function init() {
   try {
     await loadSummary();
     await loadFiles();
+    await loadQlibBacktests();
     if (fileSelect.value) await loadPrediction();
     else setStatus('대시보드는 준비되었습니다. 예측 검증 CSV를 생성하면 차트가 표시됩니다.');
+    if (qlibBacktestSelect.value) await loadQlibBacktest();
   } catch (err) {
     setStatus(err.response?.data?.error || err.message, 'error');
   }

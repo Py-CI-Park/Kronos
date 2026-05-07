@@ -16,6 +16,10 @@ PREDICTION_DIRS = [
     PROJECT_ROOT / "webui" / "stom_predictions",
     PROJECT_ROOT / "finetune_csv" / "predictions",
 ]
+QLIB_BACKTEST_DIRS = [
+    PROJECT_ROOT / "webui" / "qlib_backtests",
+    PROJECT_ROOT / "finetune" / "qlib_backtests",
+]
 EVIDENCE_DIR = PROJECT_ROOT / ".omx" / "specs" / "stom-ohlcv-finetune-research"
 SCORE_FILTER_NAMES = [
     "all_scored",
@@ -113,6 +117,59 @@ def list_prediction_files() -> List[Dict[str, Any]]:
                 }
             )
     return files
+
+
+def list_qlib_backtest_files() -> List[Dict[str, Any]]:
+    files: List[Dict[str, Any]] = []
+    for directory in QLIB_BACKTEST_DIRS:
+        if not directory.exists():
+            continue
+        for path in sorted(directory.glob("*.json")):
+            stat = path.stat()
+            files.append(
+                {
+                    "name": path.name,
+                    "path": str(path),
+                    "directory": str(directory),
+                    "size_bytes": stat.st_size,
+                    "modified_at": stat.st_mtime,
+                }
+            )
+    return files
+
+
+def load_qlib_backtest_artifact(file_name: str) -> Dict[str, Any]:
+    path = _safe_path_in_dirs(file_name, QLIB_BACKTEST_DIRS)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if "metrics" not in payload:
+        raise ValueError("Qlib backtest artifact missing metrics")
+    payload["source_file"] = path.name
+    return payload
+
+
+def qlib_backtest_chart_json(payload: Dict[str, Any]) -> str:
+    curve = pd.DataFrame(payload.get("curve", []))
+    fig = go.Figure()
+    if not curve.empty:
+        curve["asof_timestamp"] = pd.to_datetime(curve["asof_timestamp"], errors="coerce")
+        fig.add_trace(
+            go.Scatter(
+                x=curve["asof_timestamp"],
+                y=curve["equity"],
+                mode="lines+markers",
+                name="Qlib Top-K equity",
+                line={"color": "#0f766e", "width": 2},
+            )
+        )
+    fig.update_layout(
+        title="Qlib-style Top-K 누적 수익 곡선",
+        xaxis_title="리밸런싱 시각",
+        yaxis_title="Equity",
+        template="plotly_white",
+        height=420,
+        legend={"orientation": "h"},
+    )
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
 
 def load_prediction_frame(file_name: str) -> pd.DataFrame:

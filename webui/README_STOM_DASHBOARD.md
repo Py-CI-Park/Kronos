@@ -11,6 +11,7 @@
 - 실제값 vs 예측값 차트
 - MAE/RMSE/MAPE/방향정확도
 - 예상등락률 Top-K 검증
+- Qlib-style Top-K backtest artifact/equity curve
 
 ## 1. 대시보드 의존성 설치
 
@@ -73,8 +74,24 @@ python webui/run.py
 http://localhost:7070/stom
 ```
 
+## 5. Qlib-style Top-K backtest 표시
+
+Kronos 예측 CSV가 있으면 Qlib-style score backtest artifact를 생성할 수 있습니다.
+
+```powershell
+python finetune\qlib_stom_pipeline.py score-backtest `
+  --prediction-csv webui\stom_predictions\kronos_all_predictions.csv `
+  --output-dir webui\qlib_backtests `
+  --top-k 10 `
+  --cost-bps 15 `
+  --slippage-bps 10
+```
+
+생성된 `webui/qlib_backtests/*.json`은 `/stom` 페이지의 **Qlib Top-K 백테스트** 영역에서 선택해 equity curve와 성과 metrics를 확인할 수 있습니다.
+
 ## 주의
 
 - `webui/stom_predictions/*.csv`는 생성 결과이므로 기본 커밋 대상이 아닙니다.
+- `webui/qlib_backtests/*`도 생성 결과이므로 기본 커밋 대상이 아닙니다.
 - baseline 결과는 모델 성능이 아니라 대시보드 smoke test용입니다.
 - 실제 학습 모델 검증은 `--mode kronos`로 생성한 prediction CSV를 사용해야 합니다.

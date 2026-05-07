@@ -45,11 +45,14 @@ def ensure_kronos_imported():
 try:
     try:
         from .stom_dashboard import (
+            list_qlib_backtest_files,
             list_prediction_files,
+            load_qlib_backtest_artifact,
             load_prediction_frame,
             load_training_summary,
             prediction_chart_json,
             prediction_metrics,
+            qlib_backtest_chart_json,
             recommendation_export_csv,
             recommendation_export_payload,
             ranked_recommendations,
@@ -59,11 +62,14 @@ try:
         )
     except ImportError:
         from stom_dashboard import (
+            list_qlib_backtest_files,
             list_prediction_files,
+            load_qlib_backtest_artifact,
             load_prediction_frame,
             load_training_summary,
             prediction_chart_json,
             prediction_metrics,
+            qlib_backtest_chart_json,
             recommendation_export_csv,
             recommendation_export_payload,
             ranked_recommendations,
@@ -73,11 +79,14 @@ try:
         )
 except Exception as exc:
     print(f"Warning: STOM dashboard helpers cannot be imported ({exc})")
+    list_qlib_backtest_files = None
     list_prediction_files = None
+    load_qlib_backtest_artifact = None
     load_prediction_frame = None
     load_training_summary = None
     prediction_chart_json = None
     prediction_metrics = None
+    qlib_backtest_chart_json = None
     recommendation_export_csv = None
     recommendation_export_payload = None
     ranked_recommendations = None
@@ -412,6 +421,24 @@ def stom_prediction_files():
     if list_prediction_files is None:
         return jsonify({'error': 'STOM dashboard helper is not available'}), 500
     return jsonify({'files': list_prediction_files()})
+
+@app.route('/api/stom/qlib-backtests')
+def stom_qlib_backtests():
+    if list_qlib_backtest_files is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    try:
+        if not file_name:
+            return jsonify({'files': list_qlib_backtest_files()})
+        if load_qlib_backtest_artifact is None or qlib_backtest_chart_json is None:
+            return jsonify({'error': 'Qlib backtest helper is not available'}), 500
+        payload = load_qlib_backtest_artifact(file_name)
+        return jsonify({
+            'artifact': payload,
+            'chart': qlib_backtest_chart_json(payload),
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
 
 @app.route('/api/stom/prediction')
 def stom_prediction_file():

@@ -216,6 +216,7 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     assert page.status_code == 200
     assert "STOM/Future_Trading Adapter Export" in page.get_data(as_text=True)
     assert client.get("/api/stom/prediction-files").status_code == 200
+    assert client.get("/api/stom/qlib-backtests").status_code == 200
     assert client.get("/api/stom/prediction?file=sample.csv").status_code == 200
     rec = client.get("/api/stom/recommendations?file=sample.csv")
     assert rec.status_code == 200
