@@ -282,3 +282,133 @@ def recommendation_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "hit_rate": float(np.mean([row["direction_hit_window"] for row in rows])),
         "buy_candidates": int(sum(row["signal"] == "BUY_CANDIDATE" for row in rows)),
     }
+
+
+def _backtest_metrics(rows: List[Dict[str, Any]], label: str) -> Dict[str, Any]:
+    if not rows:
+        return {
+            "label": label,
+            "count": 0,
+            "avg_score": 0.0,
+            "avg_pred_return": 0.0,
+            "avg_actual_return": 0.0,
+            "hit_rate": 0.0,
+            "win_rate": 0.0,
+            "avg_realized_mape": 0.0,
+            "profit_factor": 0.0,
+        }
+
+    actual_returns = [_safe_float(row.get("actual_return_window")) for row in rows]
+    gross_gain = sum(value for value in actual_returns if value > 0)
+    gross_loss = abs(sum(value for value in actual_returns if value < 0))
+    return {
+        "label": label,
+        "count": len(rows),
+        "avg_score": float(np.mean([row["kronos_score"] for row in rows])),
+        "avg_pred_return": float(np.mean([row["pred_return_window"] for row in rows])),
+        "avg_actual_return": float(np.mean(actual_returns)),
+        "hit_rate": float(np.mean([row["direction_hit_window"] for row in rows])),
+        "win_rate": float(np.mean([1 if value > 0 else 0 for value in actual_returns])),
+        "avg_realized_mape": float(np.mean([row["realized_mape"] for row in rows])),
+        "profit_factor": float(gross_gain / gross_loss) if gross_loss > 0 else float(gross_gain),
+    }
+
+
+def _asof_minute_bucket(asof_timestamp: str, minutes: int = 5) -> str:
+    ts = pd.to_datetime(asof_timestamp, errors="coerce")
+    if pd.isna(ts):
+        return "unknown"
+    bucket_minute = int(ts.minute // minutes * minutes)
+    end_minute = bucket_minute + minutes - 1
+    return f"{ts.hour:02d}:{bucket_minute:02d}-{ts.hour:02d}:{end_minute:02d}"
+
+
+def _is_early_session(asof_timestamp: str, max_minute: int = 10) -> bool:
+    ts = pd.to_datetime(asof_timestamp, errors="coerce")
+    if pd.isna(ts):
+        return False
+    return int(ts.minute) <= max_minute
+
+
+def _score_band(score: float) -> str:
+    if score >= 70:
+        return "70+"
+    if score >= 60:
+        return "60-70"
+    if score >= 45:
+        return "45-60"
+    return "<45"
+
+
+def _top_group_metrics(
+    rows: List[Dict[str, Any]],
+    key: str,
+    label: str,
+    limit: int = 10,
+    min_count: int = 1,
+) -> List[Dict[str, Any]]:
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row.get(key, "")), []).append(row)
+
+    result = []
+    for group_key, group_rows in grouped.items():
+        if len(group_rows) < min_count:
+            continue
+        metrics = _backtest_metrics(group_rows, group_key)
+        metrics["segment"] = label
+        result.append(metrics)
+    return sorted(result, key=lambda item: (item["avg_actual_return"], item["count"]), reverse=True)[:limit]
+
+
+def score_backtest_report(df: pd.DataFrame, top_k: Optional[int] = None) -> Dict[str, Any]:
+    """Build score-filter and segment backtest diagnostics for prediction windows."""
+
+    max_rows = int(df["window_id"].nunique()) if top_k is None else int(top_k)
+    rows = ranked_recommendations(df, k=max_rows, long_only=False)
+    for row in rows:
+        row["score_band"] = _score_band(row["kronos_score"])
+        row["asof_minute_bucket"] = _asof_minute_bucket(row["asof_timestamp"])
+
+    conditions = [
+        ("all_scored", rows),
+        ("buy_candidate_score60", [row for row in rows if row["kronos_score"] >= 60 and row["pred_return_window"] > 0]),
+        (
+            "score65_consistency80",
+            [row for row in rows if row["kronos_score"] >= 65 and row["prediction_consistency"] >= 0.80],
+        ),
+        (
+            "score70_pred_return_0_5",
+            [row for row in rows if row["kronos_score"] >= 70 and row["pred_return_window"] >= 0.5],
+        ),
+        (
+            "stable_positive_filter",
+            [
+                row
+                for row in rows
+                if row["kronos_score"] >= 60
+                and row["pred_return_window"] >= 0.3
+                and row["prediction_consistency"] >= 0.80
+                and row["pred_range_pct"] <= 2.5
+            ],
+        ),
+        (
+            "early_session_score60",
+            [
+                row
+                for row in rows
+                if row["kronos_score"] >= 60 and _is_early_session(row["asof_timestamp"])
+            ],
+        ),
+    ]
+
+    return {
+        "window_count": int(df["window_id"].nunique()),
+        "scored_count": len(rows),
+        "filters": [_backtest_metrics(condition_rows, label) for label, condition_rows in conditions],
+        "segments": {
+            "score_band": _top_group_metrics(rows, "score_band", "score_band", limit=10),
+            "symbol": _top_group_metrics(rows, "symbol", "symbol", limit=10),
+            "asof_minute_bucket": _top_group_metrics(rows, "asof_minute_bucket", "asof_minute_bucket", limit=10),
+        },
+    }

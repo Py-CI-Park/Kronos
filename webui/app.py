@@ -52,6 +52,7 @@ try:
             prediction_metrics,
             ranked_recommendations,
             recommendation_summary,
+            score_backtest_report,
             topk_rows,
         )
     except ImportError:
@@ -63,6 +64,7 @@ try:
             prediction_metrics,
             ranked_recommendations,
             recommendation_summary,
+            score_backtest_report,
             topk_rows,
         )
 except Exception as exc:
@@ -74,6 +76,7 @@ except Exception as exc:
     prediction_metrics = None
     ranked_recommendations = None
     recommendation_summary = None
+    score_backtest_report = None
     topk_rows = None
 
 app = Flask(__name__)
@@ -446,6 +449,21 @@ def stom_recommendations():
             'summary': recommendation_summary(recommendations) if recommendation_summary else {},
             'metrics': prediction_metrics(df),
         })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/backtest-report')
+def stom_backtest_report():
+    if load_prediction_frame is None or score_backtest_report is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        top_k_arg = request.args.get('top_k')
+        top_k = int(top_k_arg) if top_k_arg not in (None, '') else None
+        df = load_prediction_frame(file_name)
+        return jsonify(score_backtest_report(df, top_k=top_k))
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
 

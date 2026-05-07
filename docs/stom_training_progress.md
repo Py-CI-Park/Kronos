@@ -8,15 +8,15 @@
 
 ```text
 ████████████████████  학습 인프라 9C / 9 완료, 100%
-████░░░░░░░░░░░░░░░░  실전 활용 확장 1 / 5 완료, 20%
+████████░░░░░░░░░░░░  실전 활용 확장 2 / 5 완료, 40%
 ```
 
 현재 단계:
 
 ```text
-현재 단계: 활용 1단계 — Kronos 예측값 score/ranking 및 대시보드 Top-K 추천 완료
-직전 완료: 전체 2,427개 테이블 스캔, 73,582개 학습 group 포함 bounded 학습 완료
-다음 목표: score/ranking을 종목별·시간대별 성능 분해와 조건식 필터 결합으로 검증한다.
+현재 단계: 활용 2단계 — score 성능 분해 및 조건식 필터 백테스트 리포트 완료
+직전 완료: Kronos 예측값 score/ranking 및 대시보드 Top-K 추천 완료
+다음 목표: 조건식 필터를 STOM/Future_Trading 추천 adapter와 연결한다.
 ```
 
 ## 단계별 현황
@@ -33,6 +33,7 @@
 | 8 | 웹 대시보드 실제값/예측값 검증 | 완료 | `http://127.0.0.1:7071/stom` API/HTML/headless screenshot 검증 |
 | 9 | 전체 2,425개 학습 가능 테이블 학습으로 확대 | 완료 | 9A 300개 완료, 9B 1,000개 완료, 9C 전체 테이블 bounded 학습/예측/대시보드 검증 완료 |
 | 10 | Kronos 예측값 score/ranking 및 Top-K 추천 | 완료 | `/api/stom/recommendations`, 대시보드 Score Top-K 추천 표, 테스트 15개 통과 |
+| 11 | score 성능 분해 및 조건식 필터 백테스트 | 완료 | `/api/stom/backtest-report`, 조건식/score band/종목/시간대 성능 리포트, 테스트 16개 통과 |
 
 ## 5단계 완료 상세: 파일럿 데이터 export
 
@@ -1246,6 +1247,7 @@ python -m pytest tests/test_stom_dashboard_helpers.py -q
 5 passed, 1 warning
 ```
 
+추가 확인:
 실제 파일 API 검증:
 
 ```text
@@ -1277,22 +1279,216 @@ python -m pip check
 No broken requirements found
 ```
 
-## 다음 단계: score 성능 분해 및 조건식 결합
+## 11단계 완료 상세: score 성능 분해 및 조건식 필터 백테스트
+
+이번 단계에서는 score/ranking 결과를 실제 매매 후보 필터로 확장하기 전에, 조건식별·score 구간별·종목별·시간대별 성과를 분해하는 백테스트 리포트를 추가했다.
+
+### 11-1. 추가/수정 파일
+
+```text
+webui/stom_dashboard.py
+webui/app.py
+webui/templates/stom_dashboard.html
+tests/test_stom_dashboard_helpers.py
+docs/stom_training_progress.md
+```
+
+### 11-2. 추가 API
+
+```text
+GET /api/stom/backtest-report?file=kronos_all_predictions.csv
+```
+
+응답 핵심:
+
+```text
+filters:
+  - all_scored
+  - buy_candidate_score60
+  - score65_consistency80
+  - score70_pred_return_0_5
+  - stable_positive_filter
+  - early_session_score60
+
+segments:
+  - score_band
+  - symbol
+  - asof_minute_bucket
+```
+
+각 항목은 다음 지표를 포함한다.
+
+```text
+count
+avg_score
+avg_pred_return
+avg_actual_return
+hit_rate
+win_rate
+avg_realized_mape
+profit_factor
+```
+
+주의:
+
+```text
+profit_factor는 수수료/슬리피지를 반영하지 않은 actual_return 합산 기반 진단값이다.
+실전 수익률로 해석하지 말고 조건식 후보 비교용으로 사용한다.
+```
+
+### 11-3. 실제 `kronos_all_predictions.csv` 기준 조건식 리포트
+
+전체 score window:
+
+```text
+window_count: 300
+scored_count: 300
+avg_actual_return: 0.009420187285990119
+hit_rate: 0.4
+win_rate: 0.45666666666666667
+profit_factor: 1.0515874052804386
+```
+
+주요 조건식:
+
+```text
+buy_candidate_score60:
+  count: 61
+  avg_score: 63.95274509784309
+  avg_pred_return: 0.24310991685402727
+  avg_actual_return: 0.032525486174057365
+  hit_rate: 0.3770491803278688
+  win_rate: 0.3770491803278688
+  profit_factor: 1.263161159235278
+
+score65_consistency80:
+  count: 17
+  avg_score: 66.64469616447495
+  avg_pred_return: 0.5307497687798453
+  avg_actual_return: 0.06817071944519162
+  hit_rate: 0.4117647058823529
+  win_rate: 0.4117647058823529
+  profit_factor: 1.4871745581504239
+
+stable_positive_filter:
+  count: 7
+  avg_score: 65.45998227102734
+  avg_pred_return: 0.677440695032279
+  avg_actual_return: 0.004440193675991562
+  hit_rate: 0.5714285714285714
+  win_rate: 0.5714285714285714
+  profit_factor: 1.024478527562666
+```
+
+score band 성과:
+
+```text
+70+:
+  count: 1
+  avg_actual_return: 2.898550724637681
+  hit_rate: 1.0
+  win_rate: 1.0
+
+60-70:
+  count: 147
+  avg_actual_return: 0.06514489156519303
+  hit_rate: 0.36054421768707484
+  win_rate: 0.46938775510204084
+
+45-60:
+  count: 130
+  avg_actual_return: -0.01803253875671562
+  hit_rate: 0.4076923076923077
+  win_rate: 0.43846153846153846
+```
+
+해석:
+
+```text
+score 60 이상 구간은 평균 실제 등락률이 양수였지만 방향 hit는 아직 낮다.
+score65_consistency80 조건은 표본은 작지만 profit_factor와 평균 실제 등락률이 더 좋다.
+stable_positive_filter는 hit/win이 높아졌지만 평균 실제 등락률 개선은 약하다.
+따라서 다음 단계에서는 거래대금/거래량/변동성/가격대 조건을 추가해야 한다.
+```
+
+### 11-4. 대시보드 변경
+
+대시보드에 다음 영역을 추가했다.
+
+```text
+조건식 필터 백테스트 리포트
+조건식 필터별 성과
+Score 구간별 성과
+종목/시간대 상위 성과
+```
+
+### 11-5. 검증
+
+단위/route 검증:
+
+```powershell
+python -m pytest tests/test_stom_dashboard_helpers.py -q
+```
+
+결과:
+
+```text
+6 passed, 1 warning
+```
+
+추가 확인:
+
+```text
+알 수 없는 asof_timestamp는 unknown 시간대 bucket으로 분류하고 early_session_score60 조건에서 제외한다.
+```
+
+실제 파일 API 검증:
+
+```text
+/api/stom/backtest-report?file=kronos_all_predictions.csv -> 200
+/api/stom/prediction?file=kronos_all_predictions.csv -> 200
+```
+
+전체 회귀 검증:
+
+```powershell
+python -m compileall -q finetune_csv webui tests docs
+python -m pytest tests/test_stom_tick_dataset.py tests/test_stom_training_cli.py tests/test_stom_prediction_eval.py tests/test_stom_dashboard_helpers.py tests/test_cli_import_paths.py -q
+python -m pip check
+```
+
+결과:
+
+```text
+16 passed, 1 warning
+No broken requirements found.
+```
+
+웹 화면 검증:
+
+```text
+검증 URL: http://127.0.0.1:7075/stom?file=kronos_all_predictions.csv
+screenshot: .omx/specs/stom-score-backtest-stage11/stom_score_backtest_stage11.png
+file size: 212,694 bytes
+검증 후 7075 포트 해제
+```
+
+## 다음 단계: STOM/Future_Trading adapter 연계
 
 남은 활용 단계:
 
 ```text
-1. 종목별/가격대별/시간대별 score 성능 분해
-2. 거래대금/거래량/변동성 필터와 score 결합
-3. Top-K 추천의 hit rate, 평균 실제 등락률, 손익분포 리포트 생성
-4. STOM/Future_Trading 종가추천 프로그램 adapter 설계
-5. 대시보드에 score backtest 리포트 화면 추가
+1. STOM/Future_Trading 추천 프로그램 입력/출력 adapter 설계
+2. score + 조건식 필터 결과를 외부 종목 추천 CSV/JSON으로 export
+3. 거래대금/거래량/변동성/가격대 조건식 추가
+4. 수수료/슬리피지 반영 백테스트 지표 추가
+5. 실제 장중/종가 후보 추천 워크플로우 연결
 ```
 
 다음 OMX 명령 예시:
 
 ```text
-$autopilot Kronos score/ranking을 종목별 시간대별로 성능 분해하고 조건식 필터 결합 백테스트 리포트를 웹 대시보드에 추가 후 commit
+$autopilot Kronos score 조건식 백테스트 결과를 STOM/Future_Trading 추천 프로그램에서 사용할 수 있는 CSV/JSON adapter로 내보내고 대시보드에 export 기능까지 추가 후 commit
 ```
 
 ### 대시보드 실행

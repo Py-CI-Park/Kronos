@@ -99,6 +99,31 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
           <tbody id="recommendations"></tbody>
         </table>
       </div>
+      <div class="card">
+        <h2>조건식 필터 백테스트 리포트</h2>
+        <p class="muted">Score 조건식별 평균 실제 등락률, 방향 Hit, 승률을 비교합니다. 이 결과는 검증용이며 수수료/슬리피지는 아직 반영하지 않았습니다.</p>
+        <h3>조건식 필터별 성과</h3>
+        <table>
+          <thead>
+            <tr><th>Filter</th><th>Count</th><th>Avg Score</th><th>Pred %</th><th>Actual %</th><th>Hit</th><th>Win</th><th>PF</th></tr>
+          </thead>
+          <tbody id="filterBacktest"></tbody>
+        </table>
+        <h3>Score 구간별 성과</h3>
+        <table>
+          <thead>
+            <tr><th>Band</th><th>Count</th><th>Avg Score</th><th>Actual %</th><th>Hit</th><th>Win</th></tr>
+          </thead>
+          <tbody id="scoreBandBacktest"></tbody>
+        </table>
+        <h3>종목/시간대 상위 성과</h3>
+        <table>
+          <thead>
+            <tr><th>Segment</th><th>Count</th><th>Avg Score</th><th>Actual %</th><th>Hit</th><th>Win</th></tr>
+          </thead>
+          <tbody id="segmentBacktest"></tbody>
+        </table>
+      </div>
     </section>
   </div>
 </main>
@@ -204,7 +229,47 @@ async function loadPrediction() {
       </tr>
     `;
   }).join('');
+  await loadBacktestReport(fileSelect.value);
   setStatus('예측 검증 데이터를 표시했습니다.');
+}
+
+async function loadBacktestReport(fileName) {
+  const res = await axios.get('/api/stom/backtest-report', { params: { file: fileName } });
+  const report = res.data;
+  document.getElementById('filterBacktest').innerHTML = (report.filters || []).map(row => `
+    <tr>
+      <td>${row.label}</td>
+      <td>${fmt(row.count, 0)}</td>
+      <td>${fmt(row.avg_score, 2)}</td>
+      <td>${fmt(row.avg_pred_return, 4)}</td>
+      <td>${fmt(row.avg_actual_return, 4)}</td>
+      <td>${fmt(row.hit_rate * 100, 2)}%</td>
+      <td>${fmt(row.win_rate * 100, 2)}%</td>
+      <td>${fmt(row.profit_factor, 2)}</td>
+    </tr>
+  `).join('');
+  document.getElementById('scoreBandBacktest').innerHTML = ((report.segments || {}).score_band || []).map(row => `
+    <tr>
+      <td>${row.label}</td>
+      <td>${fmt(row.count, 0)}</td>
+      <td>${fmt(row.avg_score, 2)}</td>
+      <td>${fmt(row.avg_actual_return, 4)}</td>
+      <td>${fmt(row.hit_rate * 100, 2)}%</td>
+      <td>${fmt(row.win_rate * 100, 2)}%</td>
+    </tr>
+  `).join('');
+  const symbolRows = ((report.segments || {}).symbol || []).slice(0, 5).map(row => ({...row, label: `종목 ${row.label}`}));
+  const timeRows = ((report.segments || {}).asof_minute_bucket || []).slice(0, 5).map(row => ({...row, label: `시간 ${row.label}`}));
+  document.getElementById('segmentBacktest').innerHTML = symbolRows.concat(timeRows).map(row => `
+    <tr>
+      <td>${row.label}</td>
+      <td>${fmt(row.count, 0)}</td>
+      <td>${fmt(row.avg_score, 2)}</td>
+      <td>${fmt(row.avg_actual_return, 4)}</td>
+      <td>${fmt(row.hit_rate * 100, 2)}%</td>
+      <td>${fmt(row.win_rate * 100, 2)}%</td>
+    </tr>
+  `).join('');
 }
 
 async function init() {

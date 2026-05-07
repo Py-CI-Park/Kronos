@@ -28,6 +28,7 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     topk = stom_dashboard.topk_rows(df)
     recommendations = stom_dashboard.ranked_recommendations(df)
     recommendation_summary = stom_dashboard.recommendation_summary(recommendations)
+    backtest_report = stom_dashboard.score_backtest_report(df)
 
     assert files[0]["name"] == "sample.csv"
     assert df["symbol"].iloc[0] == "000001"
@@ -38,6 +39,8 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     assert recommendations[0]["symbol"] == "000001"
     assert 0 <= recommendations[0]["kronos_score"] <= 100
     assert recommendation_summary["count"] == 1
+    assert backtest_report["window_count"] == 1
+    assert backtest_report["filters"][0]["label"] == "all_scored"
 
 
 def test_ranked_recommendations_prefers_positive_consistent_prediction():
@@ -76,10 +79,41 @@ def test_ranked_recommendations_prefers_positive_consistent_prediction():
     df["target_timestamp"] = stom_dashboard.pd.to_datetime(df["target_timestamp"])
 
     recommendations = stom_dashboard.ranked_recommendations(df, k=2)
+    report = stom_dashboard.score_backtest_report(df)
 
     assert [row["symbol"] for row in recommendations] == ["000001", "000002"]
     assert recommendations[0]["signal"] == "BUY_CANDIDATE"
     assert recommendations[0]["kronos_score"] > recommendations[1]["kronos_score"]
+    assert report["filters"][1]["label"] == "buy_candidate_score60"
+    assert report["segments"]["score_band"][0]["count"] >= 1
+
+
+def test_score_backtest_report_tolerates_unknown_asof_timestamp():
+    df = stom_dashboard.pd.DataFrame(
+        [
+            {
+                "window_id": 0,
+                "symbol": "000001",
+                "session": "20260102",
+                "asof_timestamp": "not-a-time",
+                "target_timestamp": "2026-01-02T09:00:04",
+                "actual_close_t0": 100,
+                "pred_close": 102,
+                "actual_close": 101,
+                "abs_error": 1,
+                "pred_return_window": 2.0,
+                "actual_return_window": 1.0,
+                "direction_hit_window": 1,
+            }
+        ]
+    )
+    df["target_timestamp"] = stom_dashboard.pd.to_datetime(df["target_timestamp"])
+
+    report = stom_dashboard.score_backtest_report(df)
+
+    assert report["segments"]["asof_minute_bucket"][0]["label"] == "unknown"
+    early_filter = next(row for row in report["filters"] if row["label"] == "early_session_score60")
+    assert early_filter["count"] == 0
 
 
 def test_dashboard_rejects_path_traversal(tmp_path, monkeypatch):
@@ -115,6 +149,7 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "topk_rows", stom_dashboard.topk_rows)
     monkeypatch.setattr(app, "ranked_recommendations", stom_dashboard.ranked_recommendations)
     monkeypatch.setattr(app, "recommendation_summary", stom_dashboard.recommendation_summary)
+    monkeypatch.setattr(app, "score_backtest_report", stom_dashboard.score_backtest_report)
 
     client = app.app.test_client()
     assert client.get("/stom").status_code == 200
@@ -123,6 +158,9 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     rec = client.get("/api/stom/recommendations?file=sample.csv")
     assert rec.status_code == 200
     assert rec.get_json()["summary"]["count"] == 1
+    report = client.get("/api/stom/backtest-report?file=sample.csv")
+    assert report.status_code == 200
+    assert report.get_json()["filters"][0]["count"] == 1
 
 
 def test_flask_stom_routes_work_when_imported_as_package():
