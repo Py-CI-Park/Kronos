@@ -595,3 +595,43 @@ Page 9 expand/full-window 실제 확대 학습   [░░░░░] 0%
 ```
 
 주의: 여기서 전체 진행률은 “파이프라인 구축과 검증 체계” 기준이다. STOM tick의 모든 possible window를 실제로 끝까지 학습한 것은 아니며, 확대 학습은 게이트 미충족으로 보류한다.
+
+## 19. 2026-05-09 cost sensitivity gate 자동화
+
+상세 보고서: `docs/stom_1s_cost_gate_analysis_report.md`
+
+`finetune/search_stom_1s_filters.py`에 `--gate-analysis` 모드를 추가했다. 이 모드는 기존 filter-search와 rolling-validation JSON을 재사용해 비용 민감도와 확대 학습 승인 여부를 계산한다.
+
+생성 artifact:
+
+```text
+*.cost_gate.json
+*.cost_gate_rolling_sensitivity.csv
+```
+
+대시보드 artifact 유형도 다음처럼 확장했다.
+
+```text
+filter_search
+rolling_filter_validation
+cost_sensitivity_gate
+```
+
+현재 대형 pred60 결과에서는 5bp 비용 가정만 통과하고, target 25bp 기준은 실패했다.
+
+| total cost | rolling avg test net | positive fold rate | gate |
+| ---: | ---: | ---: | --- |
+| 5bp | +0.0234% | 0.500 | PASS |
+| 10bp | -0.0266% | 0.375 | FAIL |
+| 15bp | -0.0766% | 0.375 | FAIL |
+| 25bp | -0.1766% | 0.250 | FAIL |
+
+따라서 pipeline의 안전 순서는 다음과 같다.
+
+```text
+prediction CSV
+-> Qlib Top-K/filter-search
+-> rolling validation
+-> cost_sensitivity_gate
+-> target 25bp gate 통과 시에만 expand_200k fine-tuning
+```

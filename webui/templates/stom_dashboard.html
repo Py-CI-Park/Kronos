@@ -276,6 +276,29 @@ async function loadFilterReport() {
   }
   const res = await axios.get('/api/stom/filter-reports', { params: { file: filterReportSelect.value } });
   const payload = res.data.artifact || {};
+  if (payload.artifact_type === 'cost_sensitivity_gate') {
+    const s = payload.target_cost_summary || {};
+    const allowed = payload.expand_training_allowed ? 'ALLOW' : 'HOLD';
+    document.getElementById('filterReportMetrics').innerHTML = `
+      <div class="metric"><span>Artifact</span><span>${payload.source_file}</span></div>
+      <div class="metric"><span>Decision / Target cost</span><span>${allowed} / ${fmt(payload.target_total_cost_bps, 0)}bp</span></div>
+      <div class="metric"><span>Target Avg Test Net</span><span>${fmt(s.avg_test_net_return_pct, 4)}%</span></div>
+      <div class="metric"><span>Positive Fold / Trades</span><span>${fmt((s.positive_test_fold_rate || 0) * 100, 2)}% / ${fmt(s.total_test_trade_count, 0)}</span></div>
+      <div class="metric"><span>Reason</span><span>${payload.decision_reason || '-'}</span></div>
+    `;
+    document.getElementById('filterReportRows').innerHTML = (payload.rolling_cost_sensitivity || []).map(row => `
+      <tr>
+        <td>${fmt(row.total_cost_bps, 0)}bp</td>
+        <td>${row.passes_gate ? 'PASS' : 'FAIL'}</td>
+        <td>${fmt(row.avg_train_net_return_pct, 4)}</td>
+        <td>${fmt(row.avg_test_net_return_pct, 4)}</td>
+        <td>${fmt(row.avg_test_baseline_net_return_pct, 4)}</td>
+        <td>${fmt(row.avg_test_improvement_net_pct, 4)}</td>
+        <td>${fmt(row.total_test_trade_count, 0)}</td>
+      </tr>
+    `).join('');
+    return;
+  }
   if (payload.artifact_type === 'rolling_filter_validation') {
     const s = payload.summary || {};
     document.getElementById('filterReportMetrics').innerHTML = `

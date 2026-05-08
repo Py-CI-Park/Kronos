@@ -131,10 +131,14 @@ def _is_qlib_backtest_artifact(path: Path) -> bool:
 
 
 def _filter_report_type(payload: Dict[str, Any]) -> Optional[str]:
+    if payload.get("artifact_type") == "cost_sensitivity_gate":
+        return "cost_sensitivity_gate"
     if isinstance(payload.get("summary"), dict) and isinstance(payload.get("folds"), list):
         return "rolling_filter_validation"
     if isinstance(payload.get("best_filter"), dict) and isinstance(payload.get("baseline_topk"), dict):
         return "filter_search"
+    if isinstance(payload.get("rolling_cost_sensitivity"), list) and isinstance(payload.get("target_cost_summary"), dict):
+        return "cost_sensitivity_gate"
     return None
 
 

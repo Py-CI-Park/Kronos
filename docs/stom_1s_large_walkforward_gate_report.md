@@ -163,3 +163,27 @@ full_window 전량 학습: 보류
 | Page 9 | expand_200k/1M/5M/full-window 실제 확대 학습 | 0% | 게이트 미충족으로 보류 |
 
 전체 진행률은 **91%**로 본다. 단, 이 91%는 “전체 데이터 학습 파이프라인 구축과 검증 체계” 기준이며, “모든 window를 실제로 끝까지 학습한 비율”은 아니다.
+
+## 10. 2026-05-09 cost sensitivity gate 자동화 후속 결과
+
+후속 보고서: `docs/stom_1s_cost_gate_analysis_report.md`
+
+이번 후속 단계에서는 기존 filter-search/rolling-validation artifact를 입력으로 받아 `5bp`, `10bp`, `15bp`, `25bp` 비용 민감도를 자동 계산하는 `--gate-analysis` 모드를 추가했다.
+
+실제 대형 artifact 적용 결과:
+
+| total cost | rolling avg test net | positive fold rate | gate |
+| ---: | ---: | ---: | --- |
+| 5bp | +0.0234% | 0.500 | PASS |
+| 10bp | -0.0266% | 0.375 | FAIL |
+| 15bp | -0.0766% | 0.375 | FAIL |
+| 25bp | -0.1766% | 0.250 | FAIL |
+
+최종 판단은 변하지 않는다.
+
+```text
+target cost 25bp 기준 gate: FAIL
+expand_200k 실제 학습: 보류
+```
+
+5bp에서는 통과되지만, 실제 판단 비용인 25bp에서 실패하므로 학습량 확대보다 score/filter 리디자인 또는 pred30/pred60 ensemble 후보 검증이 먼저다.

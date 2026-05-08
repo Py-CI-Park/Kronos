@@ -182,3 +182,38 @@ Page 9 expand/full-window 실제 확대 학습   [░░░░░] 0%
 ```
 
 주의: 여기서 전체 진행률은 “파이프라인 구축과 검증 체계” 기준이다. STOM tick의 모든 possible window를 실제로 끝까지 학습한 것은 아니며, 확대 학습은 게이트 미충족으로 보류한다.
+
+## 9. 2026-05-09 cost sensitivity gate 자동화
+
+상세 보고서: `docs/stom_1s_cost_gate_analysis_report.md`
+
+`expand_200k`를 실행하기 전 확인해야 하는 gate를 코드로 고정했다.
+
+```powershell
+python finetune\search_stom_1s_filters.py `
+  --gate-analysis `
+  --filter-report webui\qlib_backtests\stom_1s_pred60_walkforward100x5x50_eval_kronos.filter_search.json `
+  --rolling-report webui\qlib_backtests\stom_1s_pred60_walkforward100x5x50_eval_kronos_rolling100x50.rolling_filter_validation.json `
+  --total-cost-bps-grid 5,10,15,25 `
+  --target-total-cost-bps 25
+```
+
+현재 target 25bp 기준 결과:
+
+```text
+rolling avg test net     -0.1766%
+positive fold rate        0.25
+total test trades         150
+gate result               FAIL
+decision                  hold_expand_200k
+```
+
+따라서 staged training 순서는 다음처럼 갱신한다.
+
+```text
+1. score/filter 리디자인
+2. cost gate 재검증
+3. target 25bp gate 통과 시 expand_200k 실행
+4. expand_200k checkpoint 재평가
+5. 이후 1M/5M/full-window 확대 검토
+```

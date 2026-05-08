@@ -241,6 +241,222 @@ def _weighted_mean(frame: pd.DataFrame, value_column: str, weight_column: str) -
     return float((values * weights).sum() / weight_sum)
 
 
+def _parse_bps_grid(raw: str) -> List[float]:
+    values = []
+    for part in str(raw).split(","):
+        text = part.strip()
+        if not text:
+            continue
+        value = float(text)
+        if value < 0:
+            raise ValueError("Cost bps values must be non-negative")
+        values.append(value)
+    if not values:
+        raise ValueError("At least one cost bps value is required")
+    return sorted(dict.fromkeys(values))
+
+
+def _cost_pct_from_total_bps(total_bps: float) -> float:
+    return float(total_bps) * 0.01
+
+
+def _shift_net_to_total_cost(
+    net_return_pct: Any,
+    original_total_cost_bps: float,
+    target_total_cost_bps: float,
+) -> float:
+    return _safe_float(net_return_pct) + _cost_pct_from_total_bps(original_total_cost_bps) - _cost_pct_from_total_bps(
+        target_total_cost_bps
+    )
+
+
+def _scenario_passes(summary: Mapping[str, Any], thresholds: Mapping[str, float]) -> bool:
+    return bool(
+        _safe_float(summary.get("avg_test_net_return_pct")) >= _safe_float(thresholds.get("min_avg_test_net_pct"))
+        and _safe_float(summary.get("positive_test_fold_rate")) >= _safe_float(
+            thresholds.get("min_positive_test_fold_rate")
+        )
+        and _safe_float(summary.get("avg_test_improvement_net_pct")) >= _safe_float(
+            thresholds.get("min_improvement_net_pct")
+        )
+        and _safe_float(summary.get("total_test_trade_count")) >= _safe_float(thresholds.get("min_total_test_trades"))
+    )
+
+
+def _filter_cost_sensitivity(
+    filter_report: Mapping[str, Any],
+    total_cost_bps_grid: Sequence[float],
+) -> List[Dict[str, Any]]:
+    rows = []
+    original_total_cost_bps = _safe_float(filter_report.get("cost_bps")) + _safe_float(filter_report.get("slippage_bps"))
+    candidates = []
+    baseline = dict(filter_report.get("baseline_topk") or {})
+    baseline["candidate_type"] = "baseline_topk"
+    candidates.append(baseline)
+    best = dict(filter_report.get("best_filter") or {})
+    if best:
+        best["candidate_type"] = "filter"
+        candidates.append(best)
+    for row in filter_report.get("top_filters") or []:
+        candidate = dict(row)
+        candidate["candidate_type"] = "filter"
+        candidates.append(candidate)
+
+    for total_cost_bps in total_cost_bps_grid:
+        ranked = []
+        for candidate in candidates:
+            gross = _safe_float(candidate.get("avg_gross_return_pct"))
+            ranked.append(
+                {
+                    "total_cost_bps": float(total_cost_bps),
+                    "candidate_type": candidate.get("candidate_type", "filter"),
+                    "filter_name": candidate.get("filter_name", ""),
+                    "period_count": int(_safe_float(candidate.get("period_count"))),
+                    "trade_count": int(_safe_float(candidate.get("trade_count"))),
+                    "coverage": _safe_float(candidate.get("coverage")),
+                    "avg_gross_return_pct": gross,
+                    "avg_net_return_pct": _shift_net_to_total_cost(
+                        candidate.get("avg_net_return_pct"), original_total_cost_bps, total_cost_bps
+                    ),
+                    "direction_hit_rate": _safe_float(candidate.get("direction_hit_rate")),
+                }
+            )
+        ranked.sort(
+            key=lambda row: (
+                row["avg_net_return_pct"],
+                row["avg_gross_return_pct"],
+                row["direction_hit_rate"],
+                row["trade_count"],
+            ),
+            reverse=True,
+        )
+        if ranked:
+            rows.append(ranked[0])
+    return rows
+
+
+def _rolling_cost_sensitivity(
+    rolling_report: Mapping[str, Any],
+    total_cost_bps_grid: Sequence[float],
+    thresholds: Mapping[str, float],
+) -> List[Dict[str, Any]]:
+    original_total_cost_bps = _safe_float(rolling_report.get("cost_bps")) + _safe_float(
+        rolling_report.get("slippage_bps")
+    )
+    folds = list(rolling_report.get("folds") or [])
+    rows = []
+    for total_cost_bps in total_cost_bps_grid:
+        adjusted_folds = []
+        for fold in folds:
+            test_net = _shift_net_to_total_cost(
+                fold.get("test_avg_net_return_pct"), original_total_cost_bps, total_cost_bps
+            )
+            train_net = _shift_net_to_total_cost(
+                fold.get("train_avg_net_return_pct"), original_total_cost_bps, total_cost_bps
+            )
+            baseline_test_net = _shift_net_to_total_cost(
+                fold.get("baseline_test_avg_net_return_pct"), original_total_cost_bps, total_cost_bps
+            )
+            adjusted_folds.append(
+                {
+                    "fold": fold.get("fold"),
+                    "selected_filter": fold.get("selected_filter"),
+                    "train_avg_net_return_pct": train_net,
+                    "test_avg_net_return_pct": test_net,
+                    "baseline_test_avg_net_return_pct": baseline_test_net,
+                    "test_vs_baseline_net_pct": test_net - baseline_test_net,
+                    "test_trade_count": int(_safe_float(fold.get("test_trade_count"))),
+                    "test_direction_hit_rate": _safe_float(fold.get("test_direction_hit_rate")),
+                }
+            )
+
+        fold_frame = pd.DataFrame(adjusted_folds)
+        if fold_frame.empty:
+            summary = {
+                "total_cost_bps": float(total_cost_bps),
+                "fold_count": 0,
+                "total_test_trade_count": 0,
+                "avg_train_net_return_pct": 0.0,
+                "avg_test_net_return_pct": 0.0,
+                "avg_test_baseline_net_return_pct": 0.0,
+                "avg_test_improvement_net_pct": 0.0,
+                "test_direction_hit_rate_weighted": 0.0,
+                "positive_test_fold_rate": 0.0,
+                "overfit_gap_pct": 0.0,
+            }
+        else:
+            avg_train = _mean_float(fold_frame["train_avg_net_return_pct"])
+            avg_test = _mean_float(fold_frame["test_avg_net_return_pct"])
+            summary = {
+                "total_cost_bps": float(total_cost_bps),
+                "fold_count": int(len(adjusted_folds)),
+                "total_test_trade_count": int(fold_frame["test_trade_count"].sum()),
+                "avg_train_net_return_pct": avg_train,
+                "avg_test_net_return_pct": avg_test,
+                "avg_test_baseline_net_return_pct": _mean_float(fold_frame["baseline_test_avg_net_return_pct"]),
+                "avg_test_improvement_net_pct": _mean_float(fold_frame["test_vs_baseline_net_pct"]),
+                "test_direction_hit_rate_weighted": _weighted_mean(
+                    fold_frame, "test_direction_hit_rate", "test_trade_count"
+                ),
+                "positive_test_fold_rate": float((fold_frame["test_avg_net_return_pct"] > 0).mean()),
+                "overfit_gap_pct": avg_train - avg_test,
+            }
+        summary["passes_gate"] = _scenario_passes(summary, thresholds)
+        rows.append(summary)
+    return rows
+
+
+def build_cost_gate_report(
+    filter_report_path: Path,
+    rolling_report_path: Path,
+    total_cost_bps_grid: Sequence[float],
+    target_total_cost_bps: Optional[float] = None,
+    min_avg_test_net_pct: float = 0.0,
+    min_positive_test_fold_rate: float = 0.5,
+    min_improvement_net_pct: float = 0.0,
+    min_total_test_trades: int = 100,
+) -> Dict[str, Any]:
+    """Build a cost-sensitivity gate from existing filter-search and rolling artifacts.
+
+    This reuses already generated validation artifacts, so it is safe to run
+    before launching expensive staged GPU fine-tuning.
+    """
+
+    filter_report = json.loads(filter_report_path.read_text(encoding="utf-8"))
+    rolling_report = json.loads(rolling_report_path.read_text(encoding="utf-8"))
+    cost_grid = list(total_cost_bps_grid)
+    target_cost = float(target_total_cost_bps if target_total_cost_bps is not None else max(cost_grid))
+    thresholds = {
+        "min_avg_test_net_pct": float(min_avg_test_net_pct),
+        "min_positive_test_fold_rate": float(min_positive_test_fold_rate),
+        "min_improvement_net_pct": float(min_improvement_net_pct),
+        "min_total_test_trades": float(min_total_test_trades),
+    }
+    filter_sensitivity = _filter_cost_sensitivity(filter_report, cost_grid)
+    rolling_sensitivity = _rolling_cost_sensitivity(rolling_report, cost_grid, thresholds)
+    target = min(rolling_sensitivity, key=lambda row: abs(row["total_cost_bps"] - target_cost))
+    expand_allowed = bool(target.get("passes_gate"))
+    return {
+        "created_at": _utc_now(),
+        "artifact_type": "cost_sensitivity_gate",
+        "filter_report": str(filter_report_path),
+        "rolling_report": str(rolling_report_path),
+        "total_cost_bps_grid": [float(value) for value in cost_grid],
+        "target_total_cost_bps": target["total_cost_bps"],
+        "gate_thresholds": thresholds,
+        "filter_cost_sensitivity": filter_sensitivity,
+        "rolling_cost_sensitivity": rolling_sensitivity,
+        "target_cost_summary": target,
+        "expand_training_allowed": expand_allowed,
+        "decision": "allow_expand_200k" if expand_allowed else "hold_expand_200k",
+        "decision_reason": (
+            "target cost scenario passed rolling net, fold-rate, improvement, and trade-count gates"
+            if expand_allowed
+            else "target cost scenario failed at least one rolling profitability/stability gate"
+        ),
+    }
+
+
 def search_filters(
     prediction_csv: Path,
     top_k: int = 5,
@@ -415,9 +631,20 @@ def write_rolling_filter_report(result: Dict[str, Any], output_dir: Path, prefix
     return result
 
 
+def write_cost_gate_report(result: Dict[str, Any], output_dir: Path, prefix: str) -> Dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    result = _json_safe(result)
+    json_path = output_dir / f"{prefix}.cost_gate.json"
+    csv_path = output_dir / f"{prefix}.cost_gate_rolling_sensitivity.csv"
+    pd.DataFrame(result["rolling_cost_sensitivity"]).to_csv(csv_path, index=False, encoding="utf-8-sig")
+    result["artifact_paths"] = {"json": str(json_path), "csv": str(csv_path)}
+    json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    return result
+
+
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Search STOM 1s prediction-time score filters.")
-    parser.add_argument("--prediction-csv", required=True)
+    parser.add_argument("--prediction-csv", default=None)
     parser.add_argument("--output-dir", default="webui/qlib_backtests")
     parser.add_argument("--prefix", default=None)
     parser.add_argument("--top-k", type=int, default=5)
@@ -430,11 +657,39 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--rolling-train-periods", type=int, default=30)
     parser.add_argument("--rolling-test-periods", type=int, default=10)
     parser.add_argument("--rolling-step-periods", type=int, default=10)
+    parser.add_argument("--gate-analysis", action="store_true")
+    parser.add_argument("--filter-report", default=None)
+    parser.add_argument("--rolling-report", default=None)
+    parser.add_argument("--total-cost-bps-grid", default="5,10,15,25")
+    parser.add_argument("--target-total-cost-bps", type=float, default=None)
+    parser.add_argument("--min-avg-test-net-pct", type=float, default=0.0)
+    parser.add_argument("--min-positive-test-fold-rate", type=float, default=0.5)
+    parser.add_argument("--min-improvement-net-pct", type=float, default=0.0)
+    parser.add_argument("--min-total-test-trades", type=int, default=100)
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
+    if args.gate_analysis:
+        if not args.filter_report or not args.rolling_report:
+            raise ValueError("--gate-analysis requires --filter-report and --rolling-report")
+        result = build_cost_gate_report(
+            filter_report_path=Path(args.filter_report),
+            rolling_report_path=Path(args.rolling_report),
+            total_cost_bps_grid=_parse_bps_grid(args.total_cost_bps_grid),
+            target_total_cost_bps=args.target_total_cost_bps,
+            min_avg_test_net_pct=args.min_avg_test_net_pct,
+            min_positive_test_fold_rate=args.min_positive_test_fold_rate,
+            min_improvement_net_pct=args.min_improvement_net_pct,
+            min_total_test_trades=args.min_total_test_trades,
+        )
+        prefix = args.prefix or Path(args.rolling_report).stem
+        result = write_cost_gate_report(result, Path(args.output_dir), prefix)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if not args.prediction_csv:
+        raise ValueError("--prediction-csv is required unless --gate-analysis is used")
     prediction_csv = Path(args.prediction_csv)
     prefix = args.prefix or prediction_csv.stem
     if args.rolling_validate:

@@ -374,3 +374,33 @@ Page 9 expand/full-window 실제 확대 학습   [░░░░░] 0%
 ```
 
 주의: 여기서 전체 진행률은 “파이프라인 구축과 검증 체계” 기준이다. STOM tick의 모든 possible window를 실제로 끝까지 학습한 것은 아니며, 확대 학습은 게이트 미충족으로 보류한다.
+
+## 2026-05-09 cost sensitivity gate 자동화
+
+상세 보고서: `docs/stom_1s_cost_gate_analysis_report.md`
+
+대형 walk-forward 후속으로 `--gate-analysis` 모드를 추가해 비용 민감도와 expand 학습 승인 여부를 자동 계산하게 했다.
+
+결과:
+
+| total cost | rolling avg test net | positive fold rate | gate |
+| ---: | ---: | ---: | --- |
+| 5bp | +0.0234% | 0.500 | PASS |
+| 10bp | -0.0266% | 0.375 | FAIL |
+| 15bp | -0.0766% | 0.375 | FAIL |
+| 25bp | -0.1766% | 0.250 | FAIL |
+
+현재 실제 판단 기준인 25bp에서는 gate가 실패하므로 `expand_200k`는 계속 보류한다. 다음 단계는 score/filter 리디자인 또는 pred30/pred60 ensemble 후보를 만든 뒤 같은 gate를 재실행하는 것이다.
+
+```text
+Page 1 DB 구조 분석                       [█████] 100%
+Page 2 STOM tick OHLCV/QlibDataset 구축    [█████] 100%
+Page 3 bounded/pilot 학습 검증             [████░] 75%
+Page 4 1초봉 전체 학습 루프 연결           [█████] 100%
+Page 5 30초/60초 20k 파인튜닝              [█████] 100%
+Page 6 대형 walk-forward/rolling/gate 검증 [█████] 96%
+Page 7 웹 대시보드/검증 산출물 확인        [████░] 88%
+Page 8 staged full-training 계획           [█████] 90%
+Page 9 expand/full-window 실제 확대 학습   [░░░░░] 0%
+전체 진행률                                [█████░] 93%
+```

@@ -1718,3 +1718,49 @@ webui/stom_predictions/*.json
 200k 확대 학습 실행                     [░░░░░] 0%  게이트 미충족으로 보류
 전체 진행률                              [█████░] 91%
 ```
+
+## 2026-05-09 cost sensitivity gate 자동화
+
+상세 보고서: `docs/stom_1s_cost_gate_analysis_report.md`
+
+이번 단계에서 기존 filter-search와 rolling-validation 결과를 재사용해 비용 민감도와 확대 학습 승인 여부를 자동 계산하는 gate를 추가했다.
+
+실행 명령:
+
+```powershell
+python finetune\search_stom_1s_filters.py `
+  --gate-analysis `
+  --filter-report webui\qlib_backtests\stom_1s_pred60_walkforward100x5x50_eval_kronos.filter_search.json `
+  --rolling-report webui\qlib_backtests\stom_1s_pred60_walkforward100x5x50_eval_kronos_rolling100x50.rolling_filter_validation.json `
+  --total-cost-bps-grid 5,10,15,25 `
+  --target-total-cost-bps 25
+```
+
+결과:
+
+| total cost | rolling avg test net | positive fold rate | gate |
+| ---: | ---: | ---: | --- |
+| 5bp | +0.0234% | 0.500 | PASS |
+| 10bp | -0.0266% | 0.375 | FAIL |
+| 15bp | -0.0766% | 0.375 | FAIL |
+| 25bp | -0.1766% | 0.250 | FAIL |
+
+핵심 판단:
+
+```text
+target 25bp gate: FAIL
+expand_200k: 보류
+다음 단계: score/filter 리디자인 또는 pred30/pred60 ensemble 후보 검증
+```
+
+진행률:
+
+```text
+전체 데이터셋 구축                      [█████] 100%
+학습 루프 연결                          [█████] 100%
+20k budgeted 학습                       [█████] 100%
+대형 walk-forward/rolling/gate 검증      [█████] 96%
+웹 대시보드 gate artifact 표시           [████░] 88%
+200k 확대 학습 실행                     [░░░░░] 0%  target gate 미충족
+전체 진행률                              [█████░] 93%
+```
