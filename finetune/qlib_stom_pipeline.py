@@ -47,7 +47,9 @@ from stom_tick_dataset import (  # noqa: E402
 KRONOS_PICKLE_COLUMNS = ["open", "high", "low", "close", "vol", "amt"]
 QLIB_CSV_FIELDS = ["open", "high", "low", "close", "volume", "amount", "money", "factor"]
 SUPPORTED_FREQS = {"1s", "1min"}
+SUPPORTED_SPLIT_STRATEGIES = {"session", "group"}
 PYQLIB_PROVIDER_UNSUPPORTED_FREQS = {"1s"}
+ExportItem = Tuple[str, str, pd.Timestamp, pd.Timestamp, pd.DataFrame]
 
 
 @dataclass
@@ -64,6 +66,9 @@ class StomQlibExportConfig:
     max_rows_per_group: int = 0
     max_groups: int = 0
     freq: str = "1s"
+    regularize_1s: bool = False
+    split_by: str = "session"
+    horizon_seconds: Optional[int] = None
     train_ratio: float = 0.70
     val_ratio: float = 0.15
     test_ratio: float = 0.15
@@ -115,15 +120,7 @@ def _resample_group(group: pd.DataFrame, freq: str) -> pd.DataFrame:
     return out
 
 
-def _split_items(
-    items: Sequence[Tuple[str, pd.Timestamp, pd.Timestamp, pd.DataFrame]],
-    train_ratio: float,
-    val_ratio: float,
-    test_ratio: float,
-) -> Dict[str, List[Tuple[str, pd.Timestamp, pd.Timestamp, pd.DataFrame]]]:
-    _validate_ratios(train_ratio, val_ratio, test_ratio)
-    ordered = sorted(items, key=lambda item: (item[1], item[0]))
-    total = len(ordered)
+def _split_count(total: int, train_ratio: float, val_ratio: float, test_ratio: float) -> Tuple[int, int]:
     train_end = int(total * train_ratio)
     val_end = int(total * (train_ratio + val_ratio))
 
@@ -133,11 +130,99 @@ def _split_items(
         val_end = train_end + 1
     if test_ratio > 0 and val_end >= total and total > train_end:
         val_end = max(train_end, total - 1)
+    return train_end, val_end
+
+
+def _split_items(
+    items: Sequence[ExportItem],
+    train_ratio: float,
+    val_ratio: float,
+    test_ratio: float,
+    split_by: str = "session",
+) -> Dict[str, List[ExportItem]]:
+    _validate_ratios(train_ratio, val_ratio, test_ratio)
+    if split_by not in SUPPORTED_SPLIT_STRATEGIES:
+        raise ValueError(f"split_by must be one of {sorted(SUPPORTED_SPLIT_STRATEGIES)}")
+
+    ordered = sorted(items, key=lambda item: (item[2], item[0]))
+    if split_by == "group":
+        train_end, val_end = _split_count(len(ordered), train_ratio, val_ratio, test_ratio)
+        return {
+            "train": ordered[:train_end],
+            "val": ordered[train_end:val_end],
+            "test": ordered[val_end:],
+        }
+
+    sessions = sorted({session for _, session, _, _, _ in ordered})
+    train_end, val_end = _split_count(len(sessions), train_ratio, val_ratio, test_ratio)
+    split_sessions = {
+        "train": set(sessions[:train_end]),
+        "val": set(sessions[train_end:val_end]),
+        "test": set(sessions[val_end:]),
+    }
 
     return {
-        "train": ordered[:train_end],
-        "val": ordered[train_end:val_end],
-        "test": ordered[val_end:],
+        split_name: [item for item in ordered if item[1] in session_set]
+        for split_name, session_set in split_sessions.items()
+    }
+
+
+def _split_session_summary(split_items: Dict[str, List[ExportItem]]) -> Dict[str, List[str]]:
+    return {
+        split_name: sorted({session for _, session, _, _, _ in split_rows})
+        for split_name, split_rows in split_items.items()
+    }
+
+
+def _session_time(session: Any, hhmmss: Optional[str]) -> Optional[pd.Timestamp]:
+    if not hhmmss:
+        return None
+    text = str(hhmmss)
+    if len(text) != 6 or not text.isdigit():
+        raise ValueError(f"Expected HHMMSS time, got: {hhmmss}")
+    return pd.to_datetime(f"{session}{text}", format="%Y%m%d%H%M%S", errors="raise")
+
+
+def _regularize_group_to_1s(
+    group: pd.DataFrame,
+    time_start: Optional[str] = None,
+    time_end: Optional[str] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Reindex a symbol/session group to a true one-second grid without leading look-ahead fill."""
+
+    if group.empty:
+        return group.copy(), {"input_rows": 0, "output_rows": 0, "inserted_rows": 0}
+
+    ordered = group.sort_values("timestamps").drop_duplicates("timestamps", keep="last").copy()
+    session = str(ordered["session"].iloc[0])
+    start_ts = _session_time(session, time_start) or ordered["timestamps"].min()
+    end_ts = _session_time(session, time_end) or ordered["timestamps"].max()
+    start_ts = max(pd.Timestamp(start_ts), pd.Timestamp(ordered["timestamps"].min()))
+    end_ts = min(pd.Timestamp(end_ts), pd.Timestamp(ordered["timestamps"].max()) if not time_end else pd.Timestamp(end_ts))
+    if end_ts < start_ts:
+        return ordered, {
+            "input_rows": int(len(group)),
+            "output_rows": int(len(ordered)),
+            "inserted_rows": 0,
+            "warning": "regularize_1s skipped because computed end is before start",
+        }
+
+    full_index = pd.date_range(start=start_ts, end=end_ts, freq="1s")
+    indexed = ordered.set_index("timestamps").reindex(full_index)
+    indexed.index.name = "timestamps"
+    indexed["symbol"] = indexed["symbol"].ffill()
+    indexed["session"] = indexed["session"].ffill()
+    price_columns = ["open", "high", "low", "close"]
+    indexed[price_columns] = indexed[price_columns].ffill()
+    indexed[["volume", "amount"]] = indexed[["volume", "amount"]].fillna(0.0)
+    indexed = indexed.dropna(subset=["symbol", "session", *price_columns])
+    out = indexed.reset_index()
+    return out[DEFAULT_GROUP_COLUMNS + ["timestamps"] + ["open", "high", "low", "close", "volume", "amount"]], {
+        "input_rows": int(len(ordered)),
+        "output_rows": int(len(out)),
+        "inserted_rows": int(max(len(out) - len(ordered), 0)),
+        "start_timestamp": None if out.empty else str(out["timestamps"].iloc[0]),
+        "end_timestamp": None if out.empty else str(out["timestamps"].iloc[-1]),
     }
 
 
@@ -259,12 +344,13 @@ def run_dump_bin_from_report(
     report = json.loads(Path(export_report_path).read_text(encoding="utf-8"))
     csv_path = Path(report["qlib_csv_dir"])
     target_dir = Path(qlib_dir) if qlib_dir else Path(report["output_dir"]) / "qlib_bin"
+    effective_freq = freq or report.get("config", {}).get("freq")
     command = build_dump_bin_command(
         csv_path=csv_path,
         qlib_dir=target_dir,
         dump_bin_script=dump_bin_script,
         include_fields=QLIB_CSV_FIELDS,
-        freq=freq,
+        freq=effective_freq,
     )
     result: Dict[str, Any] = {
         "mode": "qlib_dump_bin",
@@ -348,7 +434,12 @@ def smoke_qlib_provider(provider_uri: Path, region: str = "cn", freq: str = "day
 def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
     """Export STOM DB rows to Qlib dump-ready CSV and Kronos QlibDataset pickles."""
 
-    min_rows = config.lookback_window + config.predict_window + 1
+    predict_window = config.horizon_seconds if config.horizon_seconds is not None else config.predict_window
+    if config.horizon_seconds is not None and config.freq != "1s":
+        raise ValueError("--horizon-seconds is only valid for --freq 1s exports.")
+    if config.regularize_1s and config.freq != "1s":
+        raise ValueError("--regularize-1s is only valid with --freq 1s.")
+    min_rows = config.lookback_window + predict_window + 1
     output_dir = Path(config.output_dir)
     qlib_csv_dir = output_dir / "qlib_csv"
     processed_dir = output_dir / "processed_datasets"
@@ -357,9 +448,10 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
         directory.mkdir(parents=True, exist_ok=True)
 
     conn = connect_readonly(config.db_path)
-    items: List[Tuple[str, pd.Timestamp, pd.Timestamp, pd.DataFrame]] = []
+    items: List[ExportItem] = []
     table_reports: List[Dict[str, Any]] = []
     warnings: List[str] = []
+    grid_summary = {"regularized_groups": 0, "inserted_rows": 0}
     try:
         selected_tables = list(config.tables) if config.tables else list_stock_tables(conn, max_tables=None)
         if config.max_tables and config.max_tables > 0:
@@ -381,10 +473,20 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
                 written_groups = 0
                 written_rows = 0
                 skipped_groups = 0
+                table_grid_inserted_rows = 0
                 for (symbol, session), group in frame.groupby(DEFAULT_GROUP_COLUMNS, sort=True):
                     if config.max_groups and len(items) >= config.max_groups:
                         break
                     group = _resample_group(group, config.freq)
+                    if config.regularize_1s:
+                        group, group_grid = _regularize_group_to_1s(
+                            group,
+                            time_start=config.time_start,
+                            time_end=config.time_end,
+                        )
+                        grid_summary["regularized_groups"] += 1
+                        grid_summary["inserted_rows"] += int(group_grid.get("inserted_rows", 0))
+                        table_grid_inserted_rows += int(group_grid.get("inserted_rows", 0))
                     if config.max_rows_per_group and config.max_rows_per_group > 0:
                         group = group.head(config.max_rows_per_group)
                     if len(group) < min_rows:
@@ -401,7 +503,15 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
                         skipped_groups += 1
                         continue
 
-                    items.append((instrument, pickle_frame.index.min(), pickle_frame.index.max(), pickle_frame))
+                    items.append(
+                        (
+                            instrument,
+                            str(session),
+                            pickle_frame.index.min(),
+                            pickle_frame.index.max(),
+                            pickle_frame,
+                        )
+                    )
                     written_groups += 1
                     written_rows += len(pickle_frame)
 
@@ -411,6 +521,7 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
                         "written_groups": written_groups,
                         "written_rows": written_rows,
                         "skipped_groups": skipped_groups,
+                        "regularized_inserted_rows": table_grid_inserted_rows,
                         "mapping": {k: v for k, v in mapping.items() if k != "warnings"},
                     }
                 )
@@ -425,18 +536,20 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
             "Lower lookback/predict windows or export more rows."
         )
 
-    split_items = _split_items(items, config.train_ratio, config.val_ratio, config.test_ratio)
+    split_items = _split_items(items, config.train_ratio, config.val_ratio, config.test_ratio, split_by=config.split_by)
+    split_sessions = _split_session_summary(split_items)
     split_counts: Dict[str, Dict[str, int]] = {}
     for split_name, split_rows in split_items.items():
-        split_payload = {instrument: frame for instrument, _, _, frame in split_rows}
+        split_payload = {instrument: frame for instrument, _, _, _, frame in split_rows}
         with (processed_dir / f"{split_name}_data.pkl").open("wb") as f:
             pickle.dump(split_payload, f)
         split_counts[split_name] = {
             "groups": len(split_rows),
-            "rows": int(sum(len(frame) for _, _, _, frame in split_rows)),
+            "rows": int(sum(len(frame) for _, _, _, _, frame in split_rows)),
+            "sessions": len(split_sessions.get(split_name, [])),
         }
 
-    calendar = sorted({ts for _, _, _, frame in items for ts in frame.index})
+    calendar = sorted({ts for _, _, _, _, frame in items for ts in frame.index})
     calendar_path = meta_dir / f"calendar_{config.freq}.txt"
     calendar_path.write_text("\n".join(ts.strftime("%Y-%m-%d %H:%M:%S") for ts in calendar) + "\n", encoding="utf-8")
 
@@ -444,7 +557,7 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
     instruments_path.write_text(
         "\n".join(
             f"{instrument}\t{start.strftime('%Y-%m-%d %H:%M:%S')}\t{end.strftime('%Y-%m-%d %H:%M:%S')}"
-            for instrument, start, end, _ in sorted(items, key=lambda item: item[0])
+            for instrument, _, start, end, _ in sorted(items, key=lambda item: item[0])
         )
         + "\n",
         encoding="utf-8",
@@ -455,14 +568,16 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
         f"--data_path {qlib_csv_dir.as_posix()} "
         f"--qlib_dir {(output_dir / 'qlib_bin').as_posix()} "
         "--date_field_name date --symbol_field_name symbol "
-        f"--include_fields {','.join(QLIB_CSV_FIELDS)}"
+        f"--include_fields {','.join(QLIB_CSV_FIELDS)} "
+        f"--freq {config.freq}"
     )
     (meta_dir / "qlib_dump_bin_command.txt").write_text(dump_command + "\n", encoding="utf-8")
 
     report = {
         "mode": "stom_to_qlib_export",
-        "config": asdict(config),
+        "config": {**asdict(config), "effective_predict_window": predict_window},
         "min_rows_per_group": min_rows,
+        "split_strategy": config.split_by,
         "output_dir": str(output_dir),
         "qlib_csv_dir": str(qlib_csv_dir),
         "processed_dataset_dir": str(processed_dir),
@@ -471,8 +586,10 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
         "qlib_dump_bin_command": dump_command,
         "selected_table_count": len(config.tables) if config.tables else (config.max_tables or "all"),
         "exported_group_count": len(items),
-        "exported_row_count": int(sum(len(frame) for _, _, _, frame in items)),
+        "exported_row_count": int(sum(len(frame) for _, _, _, _, frame in items)),
         "split_counts": split_counts,
+        "split_sessions": split_sessions,
+        "grid_summary": grid_summary,
         "warnings": sorted(set(warnings)),
         "tables": table_reports,
     }
@@ -660,6 +777,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     export.add_argument("--max-rows-per-group", type=int, default=0)
     export.add_argument("--max-groups", type=int, default=0)
     export.add_argument("--freq", choices=sorted(SUPPORTED_FREQS), default="1s")
+    export.add_argument(
+        "--regularize-1s",
+        action="store_true",
+        help="Reindex 1-second exports to a strict 1-second grid. Prices forward-fill; missing volume/amount become 0.",
+    )
+    export.add_argument(
+        "--split-by",
+        choices=sorted(SUPPORTED_SPLIT_STRATEGIES),
+        default="session",
+        help="Split train/val/test by chronological session dates by default to reduce time-series leakage.",
+    )
+    export.add_argument(
+        "--horizon-seconds",
+        type=int,
+        default=None,
+        help="For 1-second exports, use this exact second horizon as the effective predict window.",
+    )
     export.add_argument("--train-ratio", type=float, default=0.70)
     export.add_argument("--val-ratio", type=float, default=0.15)
     export.add_argument("--test-ratio", type=float, default=0.15)
@@ -707,6 +841,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 max_rows_per_group=args.max_rows_per_group,
                 max_groups=args.max_groups,
                 freq=args.freq,
+                regularize_1s=args.regularize_1s,
+                split_by=args.split_by,
+                horizon_seconds=args.horizon_seconds,
                 train_ratio=args.train_ratio,
                 val_ratio=args.val_ratio,
                 test_ratio=args.test_ratio,

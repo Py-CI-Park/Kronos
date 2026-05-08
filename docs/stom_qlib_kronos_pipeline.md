@@ -56,6 +56,34 @@ python finetune\qlib_stom_pipeline.py export `
   --test-ratio 0.15
 ```
 
+### 3.1.1 1초 grid + 실제 초 단위 horizon
+
+30초 후/60초 후 예측은 단순히 `30 row 후`, `60 row 후`가 아니라 실제 시간 기준이어야 한다. STOM tick row가 중간에 비어 있을 수 있으므로 1초봉 전체 파인튜닝용 export는 다음 옵션을 사용한다.
+
+```powershell
+python finetune\qlib_stom_pipeline.py export `
+  --db _database\stock_tick_back.db `
+  --output-dir finetune\qlib_exports\stom_1s_grid_pred30_full `
+  --max-tables 0 `
+  --lookback-window 300 `
+  --horizon-seconds 30 `
+  --price-mode close_only `
+  --time-start 090000 `
+  --time-end 093000 `
+  --freq 1s `
+  --regularize-1s `
+  --split-by session `
+  --train-ratio 0.70 `
+  --val-ratio 0.15 `
+  --test-ratio 0.15
+```
+
+핵심 옵션:
+
+- `--regularize-1s`: 누락된 초를 1초 grid로 보정한다. 가격은 직전가 forward-fill, 거래량/거래대금은 0으로 채운다.
+- `--horizon-seconds`: 1초 grid 기준 실제 N초 후 target을 명시한다.
+- `--split-by session`: 같은 거래일이 train/val/test에 섞이지 않도록 날짜/session 기준으로 분리한다.
+
 ### 3.2 1분 pilot
 
 1분봉은 Qlib daily/minute 연구 흐름에 더 자연스럽다. 단, `lookback + predict + 1` row를 만족해야 하므로 window를 1분 단위에 맞게 줄여야 한다.

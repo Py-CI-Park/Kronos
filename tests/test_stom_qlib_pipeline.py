@@ -90,11 +90,14 @@ def test_export_stom_to_qlib_pilot_outputs_dump_ready_csv_and_pickles(tmp_path):
     )
 
     assert report["exported_group_count"] == 6
-    assert report["split_counts"]["train"]["groups"] == 3
+    assert report["split_strategy"] == "session"
+    assert report["split_counts"]["train"]["groups"] == 2
+    assert set(report["split_sessions"]["train"]).isdisjoint(report["split_sessions"]["val"])
+    assert set(report["split_sessions"]["train"]).isdisjoint(report["split_sessions"]["test"])
     assert (out_dir / "stom_qlib_export_report.json").exists()
-    assert (out_dir / "meta" / "qlib_dump_bin_command.txt").read_text(encoding="utf-8").startswith(
-        "python scripts/dump_bin.py dump_all"
-    )
+    dump_command = (out_dir / "meta" / "qlib_dump_bin_command.txt").read_text(encoding="utf-8")
+    assert dump_command.startswith("python scripts/dump_bin.py dump_all")
+    assert "--freq 1s" in dump_command
     csv_files = sorted((out_dir / "qlib_csv").glob("*.csv"))
     assert len(csv_files) == 6
     sample_csv = pd.read_csv(csv_files[0])
@@ -107,6 +110,71 @@ def test_export_stom_to_qlib_pilot_outputs_dump_ready_csv_and_pickles(tmp_path):
     first_frame = next(iter(train_data.values()))
     assert list(first_frame.columns) == ["open", "high", "low", "close", "vol", "amt"]
     assert first_frame.index.name == "datetime"
+
+
+def test_export_regularizes_1s_grid_and_keeps_sessions_out_of_multiple_splits(tmp_path):
+    db_path = tmp_path / "stock_tick_back.db"
+    out_dir = tmp_path / "qlib_export_grid"
+    conn = sqlite3.connect(db_path)
+    try:
+        for symbol, base_price in [("000001", 1000), ("000002", 2000)]:
+            conn.execute(
+                f'''
+                CREATE TABLE "{symbol}" (
+                    "index" INTEGER,
+                    "현재가" REAL,
+                    "초당매수수량" REAL,
+                    "초당매도수량" REAL,
+                    "초당거래대금" REAL
+                )
+                '''
+            )
+            for day in [
+                datetime(2026, 1, 2, 9, 0, 0),
+                datetime(2026, 1, 3, 9, 0, 0),
+                datetime(2026, 1, 4, 9, 0, 0),
+            ]:
+                for offset in [0, 2, 5, 6]:
+                    ts = int((day + timedelta(seconds=offset)).strftime("%Y%m%d%H%M%S"))
+                    close = base_price + offset
+                    conn.execute(
+                        f'INSERT INTO "{symbol}" VALUES (?, ?, ?, ?, ?)',
+                        (ts, close, 1, 2, close * 3),
+                    )
+        conn.commit()
+    finally:
+        conn.close()
+
+    report = export_stom_to_qlib(
+        StomQlibExportConfig(
+            db_path=str(db_path),
+            output_dir=str(out_dir),
+            lookback_window=2,
+            predict_window=2,
+            horizon_seconds=2,
+            price_mode="close_only",
+            time_start="090000",
+            time_end="090006",
+            regularize_1s=True,
+            train_ratio=0.34,
+            val_ratio=0.33,
+            test_ratio=0.33,
+        )
+    )
+
+    assert report["config"]["effective_predict_window"] == 2
+    assert report["grid_summary"]["regularized_groups"] == 6
+    assert report["grid_summary"]["inserted_rows"] == 18
+    assert set(report["split_sessions"]["train"]).isdisjoint(report["split_sessions"]["val"])
+    assert set(report["split_sessions"]["val"]).isdisjoint(report["split_sessions"]["test"])
+
+    sample_csv = pd.read_csv(sorted((out_dir / "qlib_csv").glob("*.csv"))[0])
+    timestamps = pd.to_datetime(sample_csv["date"])
+    assert timestamps.diff().dropna().dt.total_seconds().eq(1).all()
+    filled_row = sample_csv.loc[sample_csv["date"].str.endswith("09:00:01")].iloc[0]
+    assert filled_row["close"] == 1000
+    assert filled_row["volume"] == 0
+    assert filled_row["amount"] == 0
 
 
 def test_score_backtest_and_dashboard_artifact_loader(tmp_path, monkeypatch):
@@ -146,6 +214,7 @@ def test_qlib_env_check_and_dump_bin_dry_run(tmp_path):
             {
                 "qlib_csv_dir": str(csv_dir),
                 "output_dir": str(tmp_path / "export"),
+                "config": {"freq": "1s"},
             }
         ),
         encoding="utf-8",
@@ -160,6 +229,9 @@ def test_qlib_env_check_and_dump_bin_dry_run(tmp_path):
     assert "--data_path" in result["command"]
     assert "--freq" in result["command"]
     assert result["command"][-1] == "1min"
+
+    inferred = run_dump_bin_from_report(report_path, qlib_dir=tmp_path / "qlib_bin", execute=False)
+    assert inferred["command"][-2:] == ["--freq", "1s"]
 
 
 def test_provider_smoke_rejects_second_freq_before_importing_qlib(tmp_path):
