@@ -1688,3 +1688,33 @@ webui/stom_predictions/*.csv
 webui/stom_predictions/*.json
 모델 checkpoint
 ```
+
+## 2026-05-09 pred60 대형 walk-forward 게이트 중간 점검
+
+상세 보고서: `docs/stom_1s_large_walkforward_gate_report.md`
+
+이번 단계에서 `expand_200k` 학습을 바로 실행하지 않고, 먼저 pred60 `budget_20k` checkpoint를 대형 walk-forward와 rolling validation으로 검증했다.
+
+결과 요약:
+
+| 항목 | 값 |
+| --- | ---: |
+| selected windows | 3,080 |
+| periods | 500 |
+| Kronos direction accuracy | 0.4312 |
+| random direction accuracy | 0.4084 |
+| Qlib Top-K avg net return | -0.1953% |
+| robust filter avg net return | -0.1266% |
+| rolling avg test net return | -0.1766% |
+| rolling positive fold rate | 0.25 |
+
+결론은 `expand_200k` 실제 학습 보류다. 현재 모델은 random보다 방향성 신호가 조금 높지만, 비용 후 수익성과 rolling 안정성이 부족하다. 따라서 다음 단계는 학습량 확대가 아니라 score/filter 리디자인과 비용 민감도 분석이다.
+
+```text
+전체 데이터셋 구축                      [█████] 100%
+학습 루프 연결                          [█████] 100%
+20k budgeted 학습                       [█████] 100%
+대형 walk-forward 게이트 검증            [█████] 95%
+200k 확대 학습 실행                     [░░░░░] 0%  게이트 미충족으로 보류
+전체 진행률                              [█████░] 91%
+```

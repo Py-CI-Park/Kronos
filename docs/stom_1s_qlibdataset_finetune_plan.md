@@ -327,3 +327,50 @@ Page 8 staged full-training 확대 계획      [████░] 80%
 ```
 
 다음 실행 단계는 `expand_200k` 학습이 아니라, 먼저 pred60 대형 walk-forward 평가를 실행해 학습량 확대가 가치 있는지 확인하는 것이다.
+
+## 2026-05-09 pred60 대형 walk-forward 게이트 결과
+
+상세 보고서: `docs/stom_1s_large_walkforward_gate_report.md`
+
+이번 단계에서는 `expand_200k` 실제 학습으로 넘어가기 전에, 기존 pred60 `budget_20k` checkpoint를 더 큰 holdout walk-forward 표본으로 검증했다.
+
+핵심 수치:
+
+| 항목 | 값 |
+| --- | ---: |
+| selected windows | 3,080 |
+| rebalance periods | 500 |
+| rows per mode | 184,800 |
+| Kronos direction accuracy | 0.4312 |
+| random direction accuracy | 0.4084 |
+| persistence direction accuracy | 0.1487 |
+| Qlib Top-K avg net return | -0.1953% |
+| best robust filter avg net return | -0.1266% |
+| rolling avg test net return | -0.1766% |
+| rolling positive test fold rate | 0.25 |
+
+판단:
+
+```text
+expand_200k 실제 학습은 이번 단계에서 실행하지 않는다.
+방향성 신호는 random보다 높지만, 비용 후 수익성과 rolling 안정성이 아직 기준 미달이다.
+```
+
+따라서 다음 단계는 학습량 확대가 아니라 score/filter 구조 개선, 비용 민감도 분석, pred30/pred60 ensemble 후보 검증이다. rolling 평균 test net이 0 이상으로 올라오고 여러 fold에서 반복 개선이 확인될 때만 `--sample-stage expand_200k` 학습으로 넘어간다.
+
+현재 판단:
+
+```text
+Page 1 DB 구조 분석                       [█████] 100%
+Page 2 STOM tick OHLCV/QlibDataset 구축    [█████] 100%
+Page 3 bounded/pilot 학습 검증             [████░] 70%
+Page 4 1초봉 전체 학습 루프 연결           [█████] 100%
+Page 5 30초/60초 20k 파인튜닝              [█████] 100%
+Page 6 대형 walk-forward/rolling 검증      [█████] 95%
+Page 7 웹 대시보드/검증 산출물 확인        [████░] 82%
+Page 8 staged full-training 계획           [████░] 88%
+Page 9 expand/full-window 실제 확대 학습   [░░░░░] 0%
+전체 진행률                                [█████░] 91%
+```
+
+주의: 여기서 전체 진행률은 “파이프라인 구축과 검증 체계” 기준이다. STOM tick의 모든 possible window를 실제로 끝까지 학습한 것은 아니며, 확대 학습은 게이트 미충족으로 보류한다.
