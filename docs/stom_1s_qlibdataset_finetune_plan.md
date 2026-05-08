@@ -194,11 +194,11 @@ Page 2 STOM tick OHLCV 변환            [██████████] 100%
 Page 3 bounded/pilot 학습 검증          [██████░░░░] 60%
 Page 4 1초봉 전체 QlibDataset 구축      [██████████] 100%
 Page 5 30초/60초 Kronos 파인튜닝        [██████░░░░] 60%
-Page 6 baseline/walk-forward 검증       [█░░░░░░░░░] 10%
-Page 7 웹 대시보드/Future 연동          [█████░░░░░] 50%
+Page 6 baseline/walk-forward 검증       [████░░░░░░] 40%
+Page 7 웹 대시보드/Future 연동          [██████░░░░] 60%
 ```
 
-전체 진행률은 약 **78%**로 본다. 다음 commit 단위는 budgeted checkpoint를 사용해 prediction CSV를 생성하고, 기존 `direction_accuracy=0.40` 결과와 동일 holdout 기준으로 비교하는 것이다.
+전체 진행률은 약 **82%**로 본다. 다음 commit 단위는 평가 표본을 더 넓히고, 60초 모델의 direction accuracy 개선 신호가 반복되는지 walk-forward로 확인하는 것이다.
 
 ## 2026-05-08 budgeted 파인튜닝 실행 결과
 
@@ -216,3 +216,14 @@ Windows + RTX 4080 SUPER 환경에서 전체 STOM 1초봉 pred30/pred60 `process
 | duration | 550.89s | 549.04s |
 
 주의: 위 `best val loss`는 매매 방향 정확도가 아니라 Kronos predictor token loss다. 따라서 기존 `direction_accuracy=0.40`과 직접 비교하지 않는다. 다음 단계에서 checkpoint 기반 prediction CSV를 만들고 실제 등락 방향과 비교해야 한다.
+
+## 2026-05-08 checkpoint 예측/평가 결과
+
+budgeted checkpoint로 test split holdout 예측 CSV를 생성하고 baseline과 비교했다. 상세 근거는 `docs/stom_1s_checkpoint_eval_report.md`에 고정했다.
+
+| horizon | Kronos direction accuracy | persistence | random | 판단 |
+| --- | ---: | ---: | ---: | --- |
+| 30초 | 0.3704 | 0.2222 | 0.1111 | 0.40 미달 |
+| 60초 | 0.4444 | 0.1111 | 0.2963 | 제한 샘플에서 0.40 초과 |
+
+단, Top-K net return은 30초/60초 모두 음수다. 따라서 현재 모델은 실전 매수 추천으로 바로 사용하지 않고, 평가 표본 확대와 조건식 보완 후 다시 판단한다.

@@ -410,3 +410,24 @@ GET /api/stom/qlib-backtests?file=<artifact.json>
   - `finetune/outputs/stom_1s_grid_pred60_full_budget/finetune_predictor/checkpoints/best_model`
 
 이 결과는 “STOM 1초봉 전체 데이터로 Kronos 파인튜닝 실행이 가능한가?”에 대한 실행 증거다. 단, 아직 “매매 정확도 개선” 증거는 아니므로 다음 단계에서 checkpoint prediction CSV와 holdout actual을 비교해야 한다.
+
+## 14. 2026-05-08 checkpoint 예측 CSV와 baseline 비교
+
+`finetune/evaluate_stom_1s_checkpoint.py`로 budgeted checkpoint의 holdout prediction CSV를 생성했다. CSV는 `webui/stom_predictions`에 저장되며 기존 `/stom` 대시보드에서 실제값/예측값 차트로 확인할 수 있다.
+
+생성된 주요 파일:
+
+- `stom_1s_pred30_budget_holdout_eval_kronos.csv`
+- `stom_1s_pred30_budget_holdout_eval_persistence.csv`
+- `stom_1s_pred30_budget_holdout_eval_random.csv`
+- `stom_1s_pred60_budget_holdout_eval_kronos.csv`
+- `stom_1s_pred60_budget_holdout_eval_persistence.csv`
+- `stom_1s_pred60_budget_holdout_eval_random.csv`
+
+제한 샘플 평가 결과:
+
+- 30초 Kronos direction accuracy: 0.3704
+- 60초 Kronos direction accuracy: 0.4444
+- 60초는 0.40을 넘었지만, Qlib-style Top-K net return은 음수다.
+
+따라서 다음 단계는 단순 정확도 확인이 아니라 walk-forward 표본 확대, 필터 조건식 보완, Top-K net return 개선 여부 검증이다.
