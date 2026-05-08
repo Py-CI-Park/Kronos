@@ -380,3 +380,16 @@ GET /api/stom/qlib-backtests?file=<artifact.json>
 ```
 
 따라서 이제는 “Qlib을 써야 하나?”를 논의하는 단계에서 벗어나, 1분봉 이상 STOM 데이터를 Qlib 연구 체계로 넣어 검증할 수 있는 기반이 생겼다.
+
+## 12. 2026-05-08 1초봉 전체 export 완료
+
+1초봉은 pyqlib provider의 `1s` freq 제약 때문에 `.bin` provider 학습 경로가 아니라 Kronos `QlibDataset` pickle 경로를 우선한다. 이번 단계에서 전체 `stock_tick_back.db`를 대상으로 30초/60초 horizon 학습용 pickle을 생성했다.
+
+- 30초 output: `finetune/qlib_exports/stom_1s_grid_pred30_full/processed_datasets`
+- 60초 output: `finetune/qlib_exports/stom_1s_grid_pred60_full/processed_datasets`
+- 각 horizon: 73,900 groups, 131,470,857 rows
+- 성공 stock table: 2,425
+- 제외 table: `moneytop`, `stockinfo` (OHLCV stock table 아님)
+- split: session 기준, train/val/test 거래일 overlap 0
+
+따라서 이후 단계는 `dump_bin/provider-smoke`가 아니라 `KRONOS_DATASET_PATH`를 위 `processed_datasets`로 지정한 `finetune/train_predictor.py` 실행이다.

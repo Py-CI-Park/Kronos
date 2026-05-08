@@ -170,3 +170,32 @@ python finetune\train_predictor.py
 3. persistence baseline과 같은 holdout 날짜에서 비교한다.
 4. `direction_accuracy=0.40` 기존 모델보다 개선되는지 확인한다.
 5. 개선되지 않으면 실전 추천에는 계속 사용하지 않는다.
+
+## 2026-05-08 전체 export 완료 결과
+
+`--regularize-1s`, `--split-by session`, `--horizon-seconds`를 적용한 STOM 1초봉 전체 export를 30초/60초 horizon 모두 완료했다. 상세 근거는 `docs/stom_1s_full_export_report.md`에 고정했다.
+
+| 항목 | 30초 horizon | 60초 horizon |
+| --- | ---: | ---: |
+| 성공 stock table | 2,425 | 2,425 |
+| 제외 non-stock table | 2 | 2 |
+| export group | 73,900 | 73,900 |
+| export row | 131,470,857 | 131,470,857 |
+| train sessions | 665 | 665 |
+| val sessions | 143 | 143 |
+| test sessions | 143 | 143 |
+| session overlap | 0 | 0 |
+
+현재 페이지 판단:
+
+```text
+Page 1 DB 구조 분석                    [██████████] 100%
+Page 2 STOM tick OHLCV 변환            [██████████] 100%
+Page 3 bounded/pilot 학습 검증          [██████░░░░] 60%
+Page 4 1초봉 전체 QlibDataset 구축      [██████████] 100%
+Page 5 30초/60초 Kronos 파인튜닝        [░░░░░░░░░░] 0%
+Page 6 baseline/walk-forward 검증       [█░░░░░░░░░] 10%
+Page 7 웹 대시보드/Future 연동          [█████░░░░░] 50%
+```
+
+전체 진행률은 약 **70%**로 본다. 다음 commit 단위는 실제 파인튜닝을 실행하고, 기존 `direction_accuracy=0.40` 결과와 동일 holdout 기준으로 비교하는 것이다.
