@@ -77,6 +77,7 @@ class Config:
         self.epochs = _env_int("KRONOS_EPOCHS", 30)
         self.log_interval = _env_int("KRONOS_LOG_INTERVAL", 100)  # Log training status every N batches.
         self.batch_size = _env_int("KRONOS_BATCH_SIZE", 50)  # Batch size per GPU.
+        self.num_workers = _env_int("KRONOS_NUM_WORKERS", 2)
 
         # Number of samples to draw for one "epoch" of training/validation.
         # This is useful for large datasets where a true epoch is too long.
@@ -132,8 +133,14 @@ class Config:
 
         # Paths to the fine-tuned models, derived from the save_path.
         # These will be generated automatically during training.
-        self.finetuned_tokenizer_path = f"{self.save_path}/{self.tokenizer_save_folder_name}/checkpoints/best_model"
-        self.finetuned_predictor_path = f"{self.save_path}/{self.predictor_save_folder_name}/checkpoints/best_model"
+        self.finetuned_tokenizer_path = os.getenv(
+            "KRONOS_FINETUNED_TOKENIZER_PATH",
+            f"{self.save_path}/{self.tokenizer_save_folder_name}/checkpoints/best_model",
+        )
+        self.finetuned_predictor_path = os.getenv(
+            "KRONOS_FINETUNED_PREDICTOR_PATH",
+            f"{self.save_path}/{self.predictor_save_folder_name}/checkpoints/best_model",
+        )
 
         # =================================================================
         # Backtesting Parameters

@@ -57,6 +57,7 @@ webui/qlib_backtests/*.json
 webui/qlib_backtests/*.csv
 finetune/qlib_exports/
 finetune/qlib_backtests/
+finetune/outputs/
 finetune/data/processed_datasets/
 finetune/data/stom_qlib*/
 qlib_data/

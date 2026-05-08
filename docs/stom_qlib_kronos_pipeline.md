@@ -393,3 +393,20 @@ GET /api/stom/qlib-backtests?file=<artifact.json>
 - split: session 기준, train/val/test 거래일 overlap 0
 
 따라서 이후 단계는 `dump_bin/provider-smoke`가 아니라 `KRONOS_DATASET_PATH`를 위 `processed_datasets`로 지정한 `finetune/train_predictor.py` 실행이다.
+
+## 13. 2026-05-08 1초봉 budgeted 파인튜닝 완료
+
+`finetune/run_stom_1s_finetune.py` launcher로 pred30/pred60 전체 QlibDataset pickle을 실제 Kronos predictor 학습 루프에 연결했다.
+
+핵심 실행 결과:
+
+- pred30 possible train window: 75,277,195
+- pred60 possible train window: 73,718,875
+- 각 horizon budgeted run: train 20,000 sample, val 4,000 sample, batch 4, 5,000 train step
+- pred30 best val loss: 2.1549
+- pred60 best val loss: 2.1302
+- checkpoint 저장 완료:
+  - `finetune/outputs/stom_1s_grid_pred30_full_budget/finetune_predictor/checkpoints/best_model`
+  - `finetune/outputs/stom_1s_grid_pred60_full_budget/finetune_predictor/checkpoints/best_model`
+
+이 결과는 “STOM 1초봉 전체 데이터로 Kronos 파인튜닝 실행이 가능한가?”에 대한 실행 증거다. 단, 아직 “매매 정확도 개선” 증거는 아니므로 다음 단계에서 checkpoint prediction CSV와 holdout actual을 비교해야 한다.

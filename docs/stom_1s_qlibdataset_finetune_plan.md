@@ -193,9 +193,26 @@ Page 1 DB 구조 분석                    [██████████] 100%
 Page 2 STOM tick OHLCV 변환            [██████████] 100%
 Page 3 bounded/pilot 학습 검증          [██████░░░░] 60%
 Page 4 1초봉 전체 QlibDataset 구축      [██████████] 100%
-Page 5 30초/60초 Kronos 파인튜닝        [░░░░░░░░░░] 0%
+Page 5 30초/60초 Kronos 파인튜닝        [██████░░░░] 60%
 Page 6 baseline/walk-forward 검증       [█░░░░░░░░░] 10%
 Page 7 웹 대시보드/Future 연동          [█████░░░░░] 50%
 ```
 
-전체 진행률은 약 **70%**로 본다. 다음 commit 단위는 실제 파인튜닝을 실행하고, 기존 `direction_accuracy=0.40` 결과와 동일 holdout 기준으로 비교하는 것이다.
+전체 진행률은 약 **78%**로 본다. 다음 commit 단위는 budgeted checkpoint를 사용해 prediction CSV를 생성하고, 기존 `direction_accuracy=0.40` 결과와 동일 holdout 기준으로 비교하는 것이다.
+
+## 2026-05-08 budgeted 파인튜닝 실행 결과
+
+Windows + RTX 4080 SUPER 환경에서 전체 STOM 1초봉 pred30/pred60 `processed_datasets`를 실제 Kronos predictor 학습 루프에 넣는 데 성공했다. 상세 근거는 `docs/stom_1s_finetune_execution_report.md`에 고정했다.
+
+| 항목 | 30초 | 60초 |
+| --- | ---: | ---: |
+| train possible samples | 75,277,195 | 73,718,875 |
+| val possible samples | 16,275,307 | 15,938,107 |
+| budgeted train samples | 20,000 | 20,000 |
+| budgeted val samples | 4,000 | 4,000 |
+| batch size | 4 | 4 |
+| train steps | 5,000 | 5,000 |
+| best val loss | 2.1549 | 2.1302 |
+| duration | 550.89s | 549.04s |
+
+주의: 위 `best val loss`는 매매 방향 정확도가 아니라 Kronos predictor token loss다. 따라서 기존 `direction_accuracy=0.40`과 직접 비교하지 않는다. 다음 단계에서 checkpoint 기반 prediction CSV를 만들고 실제 등락 방향과 비교해야 한다.
