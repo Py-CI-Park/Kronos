@@ -578,11 +578,11 @@ def recommendation_export_payload(
     selected_filter: str = "buy_candidate_score60",
     long_only: bool = True,
 ) -> Dict[str, Any]:
-    """Build a stable CSV/JSON adapter payload for external recommendation tools.
+    """Build a stable CSV/JSON score export payload for internal review.
 
-    Selection filters use prediction-time fields only. Diagnostic actual-return
-    fields are exported for review/backtest display and must not be used as live
-    filter inputs.
+    external trading-program integration is intentionally de-scoped. Selection filters use
+    prediction-time fields only. Diagnostic actual-return fields are exported for
+    review/backtest display and must not be used as live filter inputs.
     """
 
     if selected_filter not in SCORE_FILTER_NAMES:
@@ -643,7 +643,7 @@ def recommendation_export_payload(
             "long_only": long_only,
             "record_count": len(records),
             "fields": ADAPTER_EXPORT_FIELDS,
-            "live_selection_note": "Selection fields use Kronos prediction outputs only; diagnostic_* fields are for backtest review.",
+            "live_selection_note": "external trading-program integration is de-scoped. Selection fields use Kronos prediction outputs only; diagnostic_* fields are for backtest review.",
         },
         "records": records,
     }

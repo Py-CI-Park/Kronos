@@ -122,4 +122,4 @@ python finetune\qlib_stom_pipeline.py export `
 1. `processed_datasets`를 `KRONOS_DATASET_PATH`로 지정하여 30초/60초 모델을 각각 파인튜닝한다.
 2. 기존 `direction_accuracy=0.40` 모델, persistence baseline, 단순 상승/하락 랜덤 baseline과 동일 holdout에서 비교한다.
 3. 학습 후 prediction CSV를 생성하고, 웹 대시보드에서 실제값/예측값·direction hit·Top-K 성과를 시각화한다.
-4. 30초/60초 중 실전 적용 가능성이 높은 horizon을 선택해 STOM/Future_Trading 연동 설계를 진행한다.
+4. 30초/60초 중 실전 적용 가능성이 높은 horizon을 선택해 STOM ?? ?? 연동 설계를 진행한다.

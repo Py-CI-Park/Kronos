@@ -88,9 +88,9 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
         <button class="secondary" onclick="loadFilterReport()">Show filter validation</button>
       </div>
       <div class="card">
-        <h2>STOM/Future_Trading Adapter Export</h2>
-        <p class="muted">선택한 예측 파일의 Kronos score 후보를 외부 추천 프로그램에서 읽기 쉬운 CSV/JSON으로 내보냅니다. diagnostic_* 값은 검증용이며 live 조건식에는 사용하지 않습니다.</p>
-        <label for="exportFilter">조건식 필터</label>
+        <h2>Kronos Score Export</h2>
+        <p class="muted">Exports the selected prediction file to CSV/JSON for internal review only. external trading-program integration is intentionally de-scoped; diagnostic_* fields are backtest-only and must not be used as live filters.</p>
+        <label for="exportFilter">Score filter</label>
         <select id="exportFilter" onchange="refreshExportPreview()">
           <option value="buy_candidate_score60">buy_candidate_score60</option>
           <option value="score65_consistency80">score65_consistency80</option>
@@ -101,11 +101,11 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
         </select>
         <label for="exportLimit">Export limit</label>
         <input id="exportLimit" type="number" min="1" value="20" onchange="refreshExportPreview()">
-        <label for="exportMinScore">Min score 선택 입력</label>
-        <input id="exportMinScore" type="number" min="0" max="100" step="0.1" placeholder="예: 60" onchange="refreshExportPreview()">
-        <button onclick="downloadExport('csv')">CSV 다운로드</button>
-        <button class="secondary" onclick="downloadExport('json')">JSON 새 창 열기</button>
-        <pre id="exportPreview">예측 파일을 선택하면 export preview가 표시됩니다.</pre>
+        <label for="exportMinScore">Min score optional</label>
+        <input id="exportMinScore" type="number" min="0" max="100" step="0.1" placeholder="e.g. 60" onchange="refreshExportPreview()">
+        <button onclick="downloadExport('csv')">Download CSV</button>
+        <button class="secondary" onclick="downloadExport('json')">Open JSON</button>
+        <pre id="exportPreview">Select a prediction file to show an export preview.</pre>
       </div>
     </section>
     <section>

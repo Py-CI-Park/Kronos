@@ -24,7 +24,7 @@
 | 4 | 1초봉 QlibDataset 전체 학습 데이터 구축 | 진행 중 | 65% |
 | 5 | 30초/60초 모델 파인튜닝 | 남음 | 0% |
 | 6 | baseline/walk-forward/Top-K 검증 | 남음 | 0% |
-| 7 | 대시보드/추천/Future_Trading 적용 | 부분 완료 | 45% |
+| 7 | 대시보드/추천/?? ?? ?? 적용 | 부분 완료 | 45% |
 
 현재 전체 진행률: 약 **60~65%**.
 
@@ -195,7 +195,7 @@ Page 3 bounded/pilot 학습 검증          [██████░░░░] 60%
 Page 4 1초봉 전체 QlibDataset 구축      [██████████] 100%
 Page 5 30초/60초 Kronos 파인튜닝        [██████░░░░] 60%
 Page 6 baseline/walk-forward 검증       [████░░░░░░] 40%
-Page 7 웹 대시보드/Future 연동          [██████░░░░] 60%
+Page 7 웹 대시보드/?? ?? Export 연동          [██████░░░░] 60%
 ```
 
 전체 진행률은 약 **82%**로 본다. 다음 commit 단위는 평가 표본을 더 넓히고, 60초 모델의 direction accuracy 개선 신호가 반복되는지 walk-forward로 확인하는 것이다.
@@ -251,7 +251,7 @@ Page 3 bounded/pilot 학습 검증          [███░░] 60%
 Page 4 1초봉 전체 QlibDataset 구축      [█████] 100%
 Page 5 30초/60초 Kronos 파인튜닝        [████░] 80%
 Page 6 baseline/walk-forward 검증       [████░] 80%
-Page 7 웹 대시보드/Future 연동          [████░] 70%
+Page 7 웹 대시보드/?? ?? Export 연동          [████░] 70%
 전체 진행률                             [████░] 85%
 ```
 
@@ -284,7 +284,7 @@ Page 3 bounded/pilot 학습 검증          [███░░] 60%
 Page 4 1초봉 전체 QlibDataset 구축      [█████] 100%
 Page 5 30초/60초 Kronos 파인튜닝        [████░] 80%
 Page 6 walk-forward/rolling 검증        [████░] 88%
-Page 7 웹 대시보드/Future 연동          [████░] 78%
+Page 7 웹 대시보드/?? ?? Export 연동          [████░] 78%
 전체 진행률                             [████░] 88%
 ```
 

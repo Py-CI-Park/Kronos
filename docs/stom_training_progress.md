@@ -14,7 +14,7 @@
 현재 단계:
 
 ```text
-현재 단계: 활용 3단계 — STOM/Future_Trading용 CSV/JSON adapter export 완료
+현재 단계: 활용 3단계 — STOM ?? ??용 CSV/JSON score export 완료
 직전 완료: score 성능 분해 및 조건식 필터 백테스트 리포트 완료
 다음 목표: export 결과를 외부 추천 프로그램 import/실전 조건식과 연결한다.
 ```
@@ -34,7 +34,7 @@
 | 9 | 전체 2,425개 학습 가능 테이블 학습으로 확대 | 완료 | 9A 300개 완료, 9B 1,000개 완료, 9C 전체 테이블 bounded 학습/예측/대시보드 검증 완료 |
 | 10 | Kronos 예측값 score/ranking 및 Top-K 추천 | 완료 | `/api/stom/recommendations`, 대시보드 Score Top-K 추천 표, 테스트 15개 통과 |
 | 11 | score 성능 분해 및 조건식 필터 백테스트 | 완료 | `/api/stom/backtest-report`, 조건식/score band/종목/시간대 성능 리포트, 테스트 16개 통과 |
-| 12 | STOM/Future_Trading용 adapter export | 완료 | `/api/stom/recommendation-export`, CSV/JSON export, 대시보드 export preview/download, 테스트 17개 통과 |
+| 12 | STOM ?? ??용 score export | 완료 | `/api/stom/recommendation-export`, CSV/JSON export, 대시보드 export preview/download, 테스트 17개 통과 |
 
 ## 5단계 완료 상세: 파일럿 데이터 export
 
@@ -1086,7 +1086,7 @@ No broken requirements found
 1. 예측 등락률, 방향 hit, 오차, 변동성 기준으로 Kronos score 산식 설계
 2. 종목별/가격대별/시간대별 성능 분해 리포트 생성
 3. 조건식 필터와 Kronos score 결합 방식 실험
-4. STOM 또는 Future_Trading 종가추천 프로그램 입력/출력 adapter 설계
+4. STOM 또는 ?? ?? ?? 종가추천 프로그램 입력/출력 score export 설계
 5. 웹 대시보드에 score ranking, top-k 추천, 실제/예측 비교표 추가
 ```
 
@@ -1474,9 +1474,9 @@ file size: 212,694 bytes
 검증 후 7075 포트 해제
 ```
 
-## 12단계 완료 상세: STOM/Future_Trading용 CSV/JSON adapter export
+## 12단계 완료 상세: STOM ?? ??용 CSV/JSON score export
 
-이번 단계에서는 Kronos score/ranking 결과를 다른 종목 추천 프로그램에서 바로 읽을 수 있도록 **adapter export**를 추가했다. 이 기능은 대시보드 표시용 내부 자료구조를 외부 연동용 CSV/JSON schema로 고정하는 단계이다.
+이번 단계에서는 Kronos score/ranking 결과를 다른 종목 추천 프로그램에서 바로 읽을 수 있도록 **score export**를 추가했다. 이 기능은 대시보드 표시용 내부 자료구조를 외부 연동용 CSV/JSON schema로 고정하는 단계이다.
 
 ### 12-1. 추가/수정 파일
 
@@ -1517,7 +1517,7 @@ window_id
 symbol
 session
 asof_timestamp
-adapter_action
+score export_action
 signal
 kronos_score
 score_band
@@ -1534,7 +1534,7 @@ diagnostic_realized_mape
 중요 원칙:
 
 ```text
-adapter_action, filter_labels, kronos_score, pred_return_pct, prediction_consistency, pred_range_pct는 live 사용 가능한 예측 기반 필드이다.
+score export_action, filter_labels, kronos_score, pred_return_pct, prediction_consistency, pred_range_pct는 live 사용 가능한 예측 기반 필드이다.
 diagnostic_* 필드는 실제값 기반 검증용이므로 live 조건식/실전 필터에는 사용하지 않는다.
 ```
 
@@ -1549,7 +1549,7 @@ first_symbol: 000040
 
 /api/stom/recommendation-export?file=kronos_all_predictions.csv&format=csv&limit=5 -> 200
 mimetype: text/csv
-header: rank,source_file,window_id,symbol,session,asof_timestamp,adapter_action,...
+header: rank,source_file,window_id,symbol,session,asof_timestamp,score export_action,...
 ```
 
 ### 12-5. 대시보드 변경
@@ -1557,7 +1557,7 @@ header: rank,source_file,window_id,symbol,session,asof_timestamp,adapter_action,
 좌측 패널에 다음 export 영역을 추가했다.
 
 ```text
-STOM/Future_Trading Adapter Export
+Kronos Score Export
 조건식 필터 선택
 Export limit 입력
 Min score 선택 입력
@@ -1610,7 +1610,7 @@ No broken requirements found.
 남은 활용 단계:
 
 ```text
-1. Future_Trading 또는 다른 종가종목 추천 프로그램에서 adapter CSV/JSON을 읽는 import 예시 추가
+1. ?? ?? ?? 또는 다른 종가종목 추천 프로그램에서 score export CSV/JSON을 읽는 import 예시 추가
 2. 거래대금/거래량/변동성/가격대 조건식 추가
 3. 수수료/슬리피지 반영 백테스트 지표 추가
 4. 실제 장중/종가 후보 추천 워크플로우 연결
@@ -1619,7 +1619,7 @@ No broken requirements found.
 다음 OMX 명령 예시:
 
 ```text
-$autopilot D:\Chanil_Park\Project\Programming\Future_trading 프로그램에서 Kronos adapter CSV/JSON을 읽어 종목 추천 점수에 반영하는 import 예시와 검증 코드를 추가하고 commit
+$autopilot D:\Chanil_Park\Project\Programming\?? ?? ?? 프로그램에서 Kronos score export CSV/JSON을 읽어 종목 추천 점수에 반영하는 import 예시와 검증 코드를 추가하고 commit
 ```
 
 ### 대시보드 실행
