@@ -82,6 +82,12 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
         <button class="secondary" onclick="loadQlibBacktest()">Qlib 백테스트 표시</button>
       </div>
       <div class="card">
+        <h2>Rolling Filter Validation</h2>
+        <p class="muted">Displays filter-search and rolling train/test validation JSON artifacts for overfit checks before live approval.</p>
+        <select id="filterReportSelect"></select>
+        <button class="secondary" onclick="loadFilterReport()">Show filter validation</button>
+      </div>
+      <div class="card">
         <h2>STOM/Future_Trading Adapter Export</h2>
         <p class="muted">선택한 예측 파일의 Kronos score 후보를 외부 추천 프로그램에서 읽기 쉬운 CSV/JSON으로 내보냅니다. diagnostic_* 값은 검증용이며 live 조건식에는 사용하지 않습니다.</p>
         <label for="exportFilter">조건식 필터</label>
@@ -165,6 +171,17 @@ python finetune_csv/stom_prediction_eval.py --data finetune_csv/data/stom_1tick_
           <tbody id="qlibTopTrades"></tbody>
         </table>
       </div>
+      <div class="card">
+        <h2>Filter Overfit Validation Result</h2>
+        <p class="muted">Rolling validation chooses the best filter on earlier periods, applies it to later periods, and compares test net versus baseline.</p>
+        <div id="filterReportMetrics">Select a filter validation artifact to display the result.</div>
+        <table>
+          <thead>
+            <tr><th>Fold/Rank</th><th>Filter</th><th>Train Net %</th><th>Test Net %</th><th>Baseline %</th><th>Improve %p</th><th>Trades</th></tr>
+          </thead>
+          <tbody id="filterReportRows"></tbody>
+        </table>
+      </div>
     </section>
   </div>
 </main>
@@ -173,6 +190,7 @@ const statusEl = document.getElementById('status');
 const fileSelect = document.getElementById('fileSelect');
 const windowSelect = document.getElementById('windowSelect');
 const qlibBacktestSelect = document.getElementById('qlibBacktestSelect');
+const filterReportSelect = document.getElementById('filterReportSelect');
 
 function fmt(value, digits = 4) {
   if (value === null || value === undefined || Number.isNaN(value)) return '-';
@@ -231,6 +249,74 @@ async function loadQlibBacktests() {
     opt.textContent = `${file.name} (${fmt(file.size_bytes, 0)} bytes)`;
     qlibBacktestSelect.appendChild(opt);
   });
+}
+
+async function loadFilterReports() {
+  const res = await axios.get('/api/stom/filter-reports');
+  filterReportSelect.innerHTML = '';
+  if (!res.data.files || res.data.files.length === 0) {
+    const opt = document.createElement('option');
+    opt.textContent = 'No filter validation artifact';
+    opt.value = '';
+    filterReportSelect.appendChild(opt);
+    return;
+  }
+  res.data.files.forEach(file => {
+    const opt = document.createElement('option');
+    opt.value = file.name;
+    opt.textContent = `${file.name} [${file.artifact_type}]`;
+    filterReportSelect.appendChild(opt);
+  });
+}
+
+async function loadFilterReport() {
+  if (!filterReportSelect.value) {
+    document.getElementById('filterReportMetrics').textContent = 'No filter validation artifact.';
+    return;
+  }
+  const res = await axios.get('/api/stom/filter-reports', { params: { file: filterReportSelect.value } });
+  const payload = res.data.artifact || {};
+  if (payload.artifact_type === 'rolling_filter_validation') {
+    const s = payload.summary || {};
+    document.getElementById('filterReportMetrics').innerHTML = `
+      <div class="metric"><span>Artifact</span><span>${payload.source_file}</span></div>
+      <div class="metric"><span>Folds / Periods / Trades</span><span>${fmt(s.fold_count, 0)} / ${fmt(s.total_period_count, 0)} / ${fmt(s.total_test_trade_count, 0)}</span></div>
+      <div class="metric"><span>Avg Train / Test Net</span><span>${fmt(s.avg_train_net_return_pct, 4)}% / ${fmt(s.avg_test_net_return_pct, 4)}%</span></div>
+      <div class="metric"><span>Baseline / Improvement</span><span>${fmt(s.avg_test_baseline_net_return_pct, 4)}% / ${fmt(s.avg_test_improvement_net_pct, 4)}%p</span></div>
+      <div class="metric"><span>Overfit Gap / Profitable</span><span>${fmt(s.overfit_gap_pct, 4)}%p / ${s.is_profitable_after_cost ? 'YES' : 'NO'}</span></div>
+    `;
+    document.getElementById('filterReportRows').innerHTML = (payload.folds || []).map(row => `
+      <tr>
+        <td>${row.fold}</td>
+        <td>${row.selected_filter}</td>
+        <td>${fmt(row.train_avg_net_return_pct, 4)}</td>
+        <td>${fmt(row.test_avg_net_return_pct, 4)}</td>
+        <td>${fmt(row.baseline_test_avg_net_return_pct, 4)}</td>
+        <td>${fmt(row.test_vs_baseline_net_pct, 4)}</td>
+        <td>${fmt(row.test_trade_count, 0)}</td>
+      </tr>
+    `).join('');
+    return;
+  }
+  const b = payload.best_filter || {};
+  const base = payload.baseline_topk || {};
+  document.getElementById('filterReportMetrics').innerHTML = `
+    <div class="metric"><span>Artifact</span><span>${payload.source_file}</span></div>
+    <div class="metric"><span>Best Filter</span><span>${b.filter_name || '-'}</span></div>
+    <div class="metric"><span>Best Net / Baseline Net</span><span>${fmt(b.avg_net_return_pct, 4)}% / ${fmt(base.avg_net_return_pct, 4)}%</span></div>
+    <div class="metric"><span>Improvement / Coverage</span><span>${fmt(payload.improvement_vs_baseline_net_pct, 4)}%p / ${fmt((b.coverage || 0) * 100, 2)}%</span></div>
+  `;
+  document.getElementById('filterReportRows').innerHTML = (payload.top_filters || []).slice(0, 20).map((row, idx) => `
+    <tr>
+      <td>${idx + 1}</td>
+      <td>${row.filter_name}</td>
+      <td>-</td>
+      <td>${fmt(row.avg_net_return_pct, 4)}</td>
+      <td>${fmt(base.avg_net_return_pct, 4)}</td>
+      <td>${fmt(row.avg_net_return_pct - base.avg_net_return_pct, 4)}</td>
+      <td>${fmt(row.trade_count, 0)}</td>
+    </tr>
+  `).join('');
 }
 
 async function loadQlibBacktest() {
@@ -406,9 +492,11 @@ async function init() {
     await loadSummary();
     await loadFiles();
     await loadQlibBacktests();
+    await loadFilterReports();
     if (fileSelect.value) await loadPrediction();
     else setStatus('대시보드는 준비되었습니다. 예측 검증 CSV를 생성하면 차트가 표시됩니다.');
     if (qlibBacktestSelect.value) await loadQlibBacktest();
+    if (filterReportSelect.value) await loadFilterReport();
   } catch (err) {
     setStatus(err.response?.data?.error || err.message, 'error');
   }

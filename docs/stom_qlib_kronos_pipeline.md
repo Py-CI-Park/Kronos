@@ -475,3 +475,49 @@ history_volatility_pct <= 0.2
 하지만 25bp 비용 가정에서는 opportunistic 조건도 평균 net -0.0089%로 아직 양수 전환하지 못했다. 그러므로 이 조건식은 실전 매수 승인 규칙이 아니라 다음 확대 검증의 후보 규칙으로만 취급한다.
 
 대시보드는 Qlib Top-K JSON과 filter-search JSON을 같은 폴더에서 보게 되므로, `metrics`가 있는 Qlib Top-K artifact만 backtest 목록에 노출하도록 안전 처리했다. filter-search JSON은 현재 문서와 파일 artifact로 확인하며, 다음 단계에서 별도 패널로 승격할 수 있다.
+
+## 16. 2026-05-08 rolling filter validation과 대시보드 패널
+
+조건식 과최적화를 확인하기 위해 `finetune/search_stom_1s_filters.py`에 rolling validation 모드를 추가했다.
+
+```powershell
+python finetune\search_stom_1s_filters.py `
+  --prediction-csv webui\stom_predictions\stom_1s_pred60_walkforward30x3_eval_kronos.csv `
+  --output-dir webui\qlib_backtests `
+  --prefix stom_1s_pred60_walkforward30x3_eval_kronos_rolling30x30 `
+  --top-k 5 `
+  --cost-bps 15 `
+  --slippage-bps 10 `
+  --min-trades 10 `
+  --min-periods 10 `
+  --min-coverage 0.25 `
+  --rolling-validate `
+  --rolling-train-periods 30 `
+  --rolling-test-periods 30 `
+  --rolling-step-periods 30
+```
+
+이번 결과:
+
+- avg train net: +0.0519%
+- avg test net: -0.0351%
+- avg test baseline net: -0.2438%
+- baseline 대비 test 개선폭: +0.2087%p
+- weighted test direction hit: 0.4615
+- positive test fold rate: 0.5
+
+해석:
+
+```text
+조건식은 baseline 대비 손실을 줄이는 효과가 rolling test에서도 유지된다.
+그러나 25bp 비용 후 평균 test net이 아직 음수이므로 실전 승인 조건은 아니다.
+```
+
+대시보드 추가:
+
+- `GET /api/stom/filter-reports`
+- filter-search JSON 목록/상세 표시
+- rolling validation JSON 목록/상세 표시
+- fold별 train net, test net, baseline net, 개선폭 표시
+
+다음 대형 평가 규모는 `max_sessions 100`, `max_asofs 5`, `max_symbols 50`이며 예상 최대 window는 25,000개, horizon 60초 기준 mode당 row는 1,500,000개다. GPU 추론 시간이 길 수 있어 별도 장시간 실행 단계로 진행한다.

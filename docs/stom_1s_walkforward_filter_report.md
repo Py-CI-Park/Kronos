@@ -201,3 +201,18 @@ coverage 10% 이상으로 더 공격적으로 좁힌 탐색 결과다.
 3. 비용을 25bp, 15bp, 5bp로 나누어 민감도 분석한다.
 4. pred30/pred60 ensemble, 1초봉/1분봉 혼합 feature, 거래대금 상위 rank feature를 추가한다.
 5. 대시보드에 filter-search 결과 표와 best-filter 적용 equity curve를 별도 패널로 추가한다.
+
+## 10. 후속 rolling 검증 링크
+
+이 보고서 이후 같은 pred60 walk-forward CSV에 대해 rolling train/test 조건식 검증을 추가로 수행했다.
+
+상세 결과는 `docs/stom_1s_rolling_filter_validation_report.md`를 참조한다.
+
+핵심 결론:
+
+- rolling avg_test_net_return_pct: -0.0351%
+- rolling avg_test_baseline_net_return_pct: -0.2438%
+- baseline 대비 개선폭: +0.2087%p
+- 비용 후 양수 전환: 실패
+
+따라서 조건식은 baseline 대비 손실을 줄이지만, 아직 실전 자동 매수 승인 조건은 아니다.

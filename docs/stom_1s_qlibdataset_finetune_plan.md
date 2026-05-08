@@ -258,3 +258,34 @@ Page 7 웹 대시보드/Future 연동          [████░] 70%
 중요 결론은 `조건식이 손실을 크게 줄였지만 아직 비용 후 양수 전환은 아니다`이다. 따라서 현재 모델은 연구/검증/대시보드 확인용으로 유지하고, 실제 자동 매수 추천에는 바로 연결하지 않는다.
 
 다음 단계는 더 큰 walk-forward 표본과 rolling train/test 방식의 조건식 검증이다.
+
+## 2026-05-08 rolling 조건식 검증 결과
+
+상세 보고서는 `docs/stom_1s_rolling_filter_validation_report.md`에 고정했다. 이번 단계에서는 같은 표본에서 고른 조건식을 같은 표본에서 평가하는 한계를 줄이기 위해, 앞쪽 30 periods에서 best filter를 고르고 뒤쪽 30 periods에 그대로 적용하는 rolling validation을 추가했다.
+
+핵심 결과:
+
+- rolling fold: 2
+- train/test period: 30 / 30
+- total test trades: 26
+- avg train net: +0.0519%
+- avg test net: -0.0351%
+- avg test baseline net: -0.2438%
+- baseline 대비 test 개선폭: +0.2087%p
+- weighted test direction hit: 0.4615
+- positive test fold rate: 0.5
+
+현재 판단:
+
+```text
+Page 1 DB 구조 분석                    [█████] 100%
+Page 2 STOM tick OHLCV 변환            [█████] 100%
+Page 3 bounded/pilot 학습 검증          [███░░] 60%
+Page 4 1초봉 전체 QlibDataset 구축      [█████] 100%
+Page 5 30초/60초 Kronos 파인튜닝        [████░] 80%
+Page 6 walk-forward/rolling 검증        [████░] 88%
+Page 7 웹 대시보드/Future 연동          [████░] 78%
+전체 진행률                             [████░] 88%
+```
+
+rolling 결과는 조건식이 baseline 대비 손실을 줄인다는 근거를 보강했지만, 비용 후 평균 test net이 아직 음수라서 실전 자동 매수 승인에는 부족하다. 다음 단계는 `max_sessions 100`, `max_asofs 5`, `max_symbols 50` 이상 대형 walk-forward를 장시간 실행하고 같은 rolling 검증을 반복하는 것이다.

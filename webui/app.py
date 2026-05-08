@@ -45,8 +45,10 @@ def ensure_kronos_imported():
 try:
     try:
         from .stom_dashboard import (
+            list_filter_report_files,
             list_qlib_backtest_files,
             list_prediction_files,
+            load_filter_report_artifact,
             load_qlib_backtest_artifact,
             load_prediction_frame,
             load_training_summary,
@@ -62,8 +64,10 @@ try:
         )
     except ImportError:
         from stom_dashboard import (
+            list_filter_report_files,
             list_qlib_backtest_files,
             list_prediction_files,
+            load_filter_report_artifact,
             load_qlib_backtest_artifact,
             load_prediction_frame,
             load_training_summary,
@@ -79,8 +83,10 @@ try:
         )
 except Exception as exc:
     print(f"Warning: STOM dashboard helpers cannot be imported ({exc})")
+    list_filter_report_files = None
     list_qlib_backtest_files = None
     list_prediction_files = None
+    load_filter_report_artifact = None
     load_qlib_backtest_artifact = None
     load_prediction_frame = None
     load_training_summary = None
@@ -437,6 +443,20 @@ def stom_qlib_backtests():
             'artifact': payload,
             'chart': qlib_backtest_chart_json(payload),
         })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/filter-reports')
+def stom_filter_reports():
+    if list_filter_report_files is None:
+        return jsonify({'error': 'STOM filter report helper is not available'}), 500
+    file_name = request.args.get('file')
+    try:
+        if not file_name:
+            return jsonify({'files': list_filter_report_files()})
+        if load_filter_report_artifact is None:
+            return jsonify({'error': 'STOM filter report loader is not available'}), 500
+        return jsonify({'artifact': load_filter_report_artifact(file_name)})
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
 

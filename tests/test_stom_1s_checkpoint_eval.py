@@ -20,7 +20,12 @@ from evaluate_stom_1s_checkpoint import (  # noqa: E402
     summarize_prediction_frame,
     write_prediction_artifacts,
 )
-from search_stom_1s_filters import search_filters, write_filter_report  # noqa: E402
+from search_stom_1s_filters import (  # noqa: E402
+    rolling_validate_filters,
+    search_filters,
+    write_filter_report,
+    write_rolling_filter_report,
+)
 
 
 def _frame(rows: int = 12) -> pd.DataFrame:
@@ -107,3 +112,57 @@ def test_filter_search_reports_best_filter_from_prediction_csv(tmp_path):
     assert result["best_filter"]["trade_count"] >= 1
     assert "filter_search.json" in result["artifact_paths"]["json"]
     assert Path(result["artifact_paths"]["csv"]).exists()
+
+
+def test_rolling_filter_validation_uses_train_periods_then_tests_forward(tmp_path):
+    rows = []
+    window_id = 0
+    for period in range(8):
+        asof = datetime(2026, 1, 2, 9, 5, 0) + timedelta(minutes=period)
+        for symbol_idx in range(4):
+            pred_return = 0.2 if symbol_idx < 2 else -0.1
+            actual_return = 0.3 if (period + symbol_idx) % 3 != 0 else -0.2
+            for step in range(1, 4):
+                rows.append(
+                    {
+                        "window_id": window_id,
+                        "symbol": f"KR{symbol_idx:06d}",
+                        "session": "20260102",
+                        "asof_timestamp": asof.isoformat(),
+                        "target_timestamp": (asof + timedelta(seconds=step)).isoformat(),
+                        "horizon_step": step,
+                        "actual_close_t0": 100,
+                        "pred_close": 100 + pred_return,
+                        "actual_close": 100 + actual_return,
+                        "error": 0,
+                        "abs_error": 0,
+                        "pred_return_window": pred_return,
+                        "actual_return_window": actual_return,
+                        "direction_hit_window": int(pred_return * actual_return > 0),
+                        "pred_path_consistency": 1.0 if pred_return > 0 else 0.4,
+                        "pred_range_pct": 0.05,
+                        "history_mean_amount": 1000 + symbol_idx * 100,
+                        "history_volatility_pct": 0.05,
+                        "mode": "kronos",
+                    }
+                )
+            window_id += 1
+    csv_path = tmp_path / "rolling_pred.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+    result = rolling_validate_filters(
+        csv_path,
+        top_k=2,
+        min_trades=1,
+        min_periods=1,
+        min_coverage=0.1,
+        train_periods=4,
+        test_periods=2,
+        step_periods=2,
+    )
+    result = write_rolling_filter_report(result, tmp_path, "rolling_unit")
+
+    assert result["summary"]["fold_count"] == 2
+    assert "overfit_gap_pct" in result["summary"]
+    assert result["folds"][0]["test_trade_count"] >= 1
+    assert "rolling_filter_validation.json" in result["artifact_paths"]["json"]

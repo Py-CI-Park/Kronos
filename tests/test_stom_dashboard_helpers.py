@@ -193,6 +193,28 @@ def test_qlib_backtest_listing_ignores_filter_search_json(tmp_path, monkeypatch)
     assert [file["name"] for file in files] == ["supported.qlib_topk5.json"]
 
 
+def test_filter_report_listing_loads_search_and_rolling_artifacts(tmp_path, monkeypatch):
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    search_path = report_dir / "sample.filter_search.json"
+    search_path.write_text(
+        json.dumps({"baseline_topk": {}, "best_filter": {}, "top_filters": []}),
+        encoding="utf-8",
+    )
+    rolling_path = report_dir / "sample.rolling_filter_validation.json"
+    rolling_path.write_text(
+        json.dumps({"summary": {"avg_test_net_return_pct": -0.1}, "folds": []}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(stom_dashboard, "FILTER_REPORT_DIRS", [report_dir])
+
+    files = stom_dashboard.list_filter_report_files()
+    loaded = stom_dashboard.load_filter_report_artifact("sample.rolling_filter_validation.json")
+
+    assert [file["artifact_type"] for file in files] == ["filter_search", "rolling_filter_validation"]
+    assert loaded["artifact_type"] == "rolling_filter_validation"
+
+
 def test_dashboard_rejects_path_traversal(tmp_path, monkeypatch):
     pred_dir = tmp_path / "preds"
     pred_dir.mkdir()
@@ -229,6 +251,8 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "score_backtest_report", stom_dashboard.score_backtest_report)
     monkeypatch.setattr(app, "recommendation_export_payload", stom_dashboard.recommendation_export_payload)
     monkeypatch.setattr(app, "recommendation_export_csv", stom_dashboard.recommendation_export_csv)
+    monkeypatch.setattr(app, "list_filter_report_files", stom_dashboard.list_filter_report_files)
+    monkeypatch.setattr(app, "load_filter_report_artifact", stom_dashboard.load_filter_report_artifact)
 
     client = app.app.test_client()
     page = client.get("/stom")
@@ -236,6 +260,7 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     assert "STOM/Future_Trading Adapter Export" in page.get_data(as_text=True)
     assert client.get("/api/stom/prediction-files").status_code == 200
     assert client.get("/api/stom/qlib-backtests").status_code == 200
+    assert client.get("/api/stom/filter-reports").status_code == 200
     assert client.get("/api/stom/prediction?file=sample.csv").status_code == 200
     rec = client.get("/api/stom/recommendations?file=sample.csv")
     assert rec.status_code == 200

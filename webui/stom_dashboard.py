@@ -20,6 +20,7 @@ QLIB_BACKTEST_DIRS = [
     PROJECT_ROOT / "webui" / "qlib_backtests",
     PROJECT_ROOT / "finetune" / "qlib_backtests",
 ]
+FILTER_REPORT_DIRS = QLIB_BACKTEST_DIRS
 EVIDENCE_DIR = PROJECT_ROOT / ".omx" / "specs" / "stom-ohlcv-finetune-research"
 SCORE_FILTER_NAMES = [
     "all_scored",
@@ -129,6 +130,28 @@ def _is_qlib_backtest_artifact(path: Path) -> bool:
     return isinstance(payload, dict) and isinstance(payload.get("metrics"), dict)
 
 
+def _filter_report_type(payload: Dict[str, Any]) -> Optional[str]:
+    if isinstance(payload.get("summary"), dict) and isinstance(payload.get("folds"), list):
+        return "rolling_filter_validation"
+    if isinstance(payload.get("best_filter"), dict) and isinstance(payload.get("baseline_topk"), dict):
+        return "filter_search"
+    return None
+
+
+def _read_filter_report(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    artifact_type = _filter_report_type(payload)
+    if artifact_type is None:
+        return None
+    payload["artifact_type"] = artifact_type
+    return payload
+
+
 def list_qlib_backtest_files() -> List[Dict[str, Any]]:
     files: List[Dict[str, Any]] = []
     for directory in QLIB_BACKTEST_DIRS:
@@ -150,11 +173,43 @@ def list_qlib_backtest_files() -> List[Dict[str, Any]]:
     return files
 
 
+def list_filter_report_files() -> List[Dict[str, Any]]:
+    files: List[Dict[str, Any]] = []
+    for directory in FILTER_REPORT_DIRS:
+        if not directory.exists():
+            continue
+        for path in sorted(directory.glob("*.json")):
+            payload = _read_filter_report(path)
+            if payload is None:
+                continue
+            stat = path.stat()
+            files.append(
+                {
+                    "name": path.name,
+                    "path": str(path),
+                    "directory": str(directory),
+                    "size_bytes": stat.st_size,
+                    "modified_at": stat.st_mtime,
+                    "artifact_type": payload["artifact_type"],
+                }
+            )
+    return files
+
+
 def load_qlib_backtest_artifact(file_name: str) -> Dict[str, Any]:
     path = _safe_path_in_dirs(file_name, QLIB_BACKTEST_DIRS)
     payload = json.loads(path.read_text(encoding="utf-8"))
     if "metrics" not in payload:
         raise ValueError("Qlib backtest artifact missing metrics")
+    payload["source_file"] = path.name
+    return payload
+
+
+def load_filter_report_artifact(file_name: str) -> Dict[str, Any]:
+    path = _safe_path_in_dirs(file_name, FILTER_REPORT_DIRS)
+    payload = _read_filter_report(path)
+    if payload is None:
+        raise ValueError("Filter report artifact missing filter-search or rolling-validation payload")
     payload["source_file"] = path.name
     return payload
 
