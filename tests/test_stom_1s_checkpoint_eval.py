@@ -20,6 +20,7 @@ from evaluate_stom_1s_checkpoint import (  # noqa: E402
     summarize_prediction_frame,
     write_prediction_artifacts,
 )
+from search_stom_1s_filters import search_filters, write_filter_report  # noqa: E402
 
 
 def _frame(rows: int = 12) -> pd.DataFrame:
@@ -66,3 +67,43 @@ def test_checkpoint_eval_baselines_write_dashboard_compatible_artifacts(tmp_path
     assert Path(result["files"]["persistence"]).exists()
     assert Path(result["comparison_path"]).exists()
     assert result["metrics"]["random"]["topk"]["k"] == 1
+    assert "history_mean_amount" in persistence_df.columns
+    assert "pred_path_consistency" in persistence_df.columns
+
+
+def test_filter_search_reports_best_filter_from_prediction_csv(tmp_path):
+    rows = []
+    for idx in range(6):
+        for step in range(1, 4):
+            rows.append(
+                {
+                    "window_id": idx,
+                    "symbol": f"KR{idx:06d}",
+                    "session": "20260102",
+                    "asof_timestamp": "2026-01-02T09:05:00" if idx < 3 else "2026-01-03T09:05:00",
+                    "target_timestamp": f"2026-01-02T09:05:{step:02d}",
+                    "horizon_step": step,
+                    "actual_close_t0": 100,
+                    "pred_close": 101 + idx,
+                    "actual_close": 100 + idx,
+                    "error": 1,
+                    "abs_error": 1,
+                    "pred_return_window": 0.2 if idx % 2 == 0 else -0.1,
+                    "actual_return_window": 0.4 if idx % 2 == 0 else -0.2,
+                    "direction_hit_window": 1,
+                    "pred_path_consistency": 1.0 if idx % 2 == 0 else 0.4,
+                    "pred_range_pct": 0.05,
+                    "history_mean_amount": 1000 + idx * 100,
+                    "history_volatility_pct": 0.05,
+                    "mode": "kronos",
+                }
+            )
+    csv_path = tmp_path / "pred.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+    result = search_filters(csv_path, top_k=2, min_trades=1, min_periods=1, min_coverage=0.1)
+    result = write_filter_report(result, tmp_path, "unit")
+
+    assert result["best_filter"]["trade_count"] >= 1
+    assert "filter_search.json" in result["artifact_paths"]["json"]
+    assert Path(result["artifact_paths"]["csv"]).exists()

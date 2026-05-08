@@ -431,3 +431,47 @@ GET /api/stom/qlib-backtests?file=<artifact.json>
 - 60초는 0.40을 넘었지만, Qlib-style Top-K net return은 음수다.
 
 따라서 다음 단계는 단순 정확도 확인이 아니라 walk-forward 표본 확대, 필터 조건식 보완, Top-K net return 개선 여부 검증이다.
+
+## 15. 2026-05-08 pred60 walk-forward와 조건식 필터 검증
+
+`finetune/evaluate_stom_1s_checkpoint.py`는 checkpoint 예측 CSV에 예측 시점 feature를 추가로 기록한다. 이 feature는 미래 실제값을 쓰지 않으므로 조건식 또는 종가/단기 추천 점수화에 사용할 수 있다.
+
+추가된 주요 feature:
+
+- `pred_path_consistency`: 예측 경로가 기준가 대비 상승/하락 방향을 얼마나 일관되게 유지했는지
+- `pred_range_pct`: 예측 경로의 가격 폭
+- `history_volatility_pct`: lookback 구간 변동성
+- `history_mean_amount`: lookback 구간 평균 거래대금
+
+조건식 탐색은 `finetune/search_stom_1s_filters.py`로 수행한다.
+
+```powershell
+python finetune\search_stom_1s_filters.py `
+  --prediction-csv webui\stom_predictions\stom_1s_pred60_walkforward30x3_eval_kronos.csv `
+  --output-dir webui\qlib_backtests `
+  --top-k 5 `
+  --cost-bps 15 `
+  --slippage-bps 10 `
+  --min-trades 30 `
+  --min-periods 30 `
+  --min-coverage 0.5
+```
+
+현재 best robust 조건은 다음과 같다.
+
+```text
+pred_return_window >= 0.05
+history_volatility_pct <= 0.2
+```
+
+더 좁힌 opportunistic 조건은 다음과 같다.
+
+```text
+pred_return_window >= 0.05
+pred_range_pct <= 0.1
+history_volatility_pct <= 0.2
+```
+
+하지만 25bp 비용 가정에서는 opportunistic 조건도 평균 net -0.0089%로 아직 양수 전환하지 못했다. 그러므로 이 조건식은 실전 매수 승인 규칙이 아니라 다음 확대 검증의 후보 규칙으로만 취급한다.
+
+대시보드는 Qlib Top-K JSON과 filter-search JSON을 같은 폴더에서 보게 되므로, `metrics`가 있는 Qlib Top-K artifact만 backtest 목록에 노출하도록 안전 처리했다. filter-search JSON은 현재 문서와 파일 artifact로 확인하며, 다음 단계에서 별도 패널로 승격할 수 있다.

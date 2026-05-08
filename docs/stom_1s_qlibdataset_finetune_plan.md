@@ -227,3 +227,34 @@ budgeted checkpoint로 test split holdout 예측 CSV를 생성하고 baseline과
 | 60초 | 0.4444 | 0.1111 | 0.2963 | 제한 샘플에서 0.40 초과 |
 
 단, Top-K net return은 30초/60초 모두 음수다. 따라서 현재 모델은 실전 매수 추천으로 바로 사용하지 않고, 평가 표본 확대와 조건식 보완 후 다시 판단한다.
+
+## 2026-05-08 pred60 walk-forward 조건식 필터 검증 결과
+
+상세 보고서는 `docs/stom_1s_walkforward_filter_report.md`에 고정했다. 이번 단계에서는 pred60 budget checkpoint를 더 넓은 holdout 표본으로 평가하고, 예측 시점 feature만 사용하는 조건식 필터를 탐색했다.
+
+핵심 결과:
+
+- 평가 범위: 30개 session × session당 3개 as-of, 546 windows, 146 symbols, 90 rebalance periods
+- Kronos direction accuracy: 0.4084
+- Persistence direction accuracy: 0.1832
+- Random(seed 고정) direction accuracy: 0.4084
+- 조건식 없는 Qlib-style Top-K net: -0.2377%
+- robust filter net: -0.1008%, coverage 62.22%, direction hit 0.4634
+- opportunistic filter net: -0.0089%, coverage 36.67%, direction hit 0.4762
+
+현재 판단:
+
+```text
+Page 1 DB 구조 분석                    [█████] 100%
+Page 2 STOM tick OHLCV 변환            [█████] 100%
+Page 3 bounded/pilot 학습 검증          [███░░] 60%
+Page 4 1초봉 전체 QlibDataset 구축      [█████] 100%
+Page 5 30초/60초 Kronos 파인튜닝        [████░] 80%
+Page 6 baseline/walk-forward 검증       [████░] 80%
+Page 7 웹 대시보드/Future 연동          [████░] 70%
+전체 진행률                             [████░] 85%
+```
+
+중요 결론은 `조건식이 손실을 크게 줄였지만 아직 비용 후 양수 전환은 아니다`이다. 따라서 현재 모델은 연구/검증/대시보드 확인용으로 유지하고, 실제 자동 매수 추천에는 바로 연결하지 않는다.
+
+다음 단계는 더 큰 walk-forward 표본과 rolling train/test 방식의 조건식 검증이다.

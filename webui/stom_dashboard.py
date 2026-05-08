@@ -119,12 +119,24 @@ def list_prediction_files() -> List[Dict[str, Any]]:
     return files
 
 
+def _is_qlib_backtest_artifact(path: Path) -> bool:
+    """Return true only for dashboard-loadable Qlib Top-K metric artifacts."""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return isinstance(payload, dict) and isinstance(payload.get("metrics"), dict)
+
+
 def list_qlib_backtest_files() -> List[Dict[str, Any]]:
     files: List[Dict[str, Any]] = []
     for directory in QLIB_BACKTEST_DIRS:
         if not directory.exists():
             continue
         for path in sorted(directory.glob("*.json")):
+            if not _is_qlib_backtest_artifact(path):
+                continue
             stat = path.stat()
             files.append(
                 {

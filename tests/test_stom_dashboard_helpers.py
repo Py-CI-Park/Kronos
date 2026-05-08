@@ -174,6 +174,25 @@ def test_score_backtest_report_tolerates_unknown_asof_timestamp():
     assert early_filter["count"] == 0
 
 
+def test_qlib_backtest_listing_ignores_filter_search_json(tmp_path, monkeypatch):
+    qlib_dir = tmp_path / "qlib"
+    qlib_dir.mkdir()
+    (qlib_dir / "supported.qlib_topk5.json").write_text(
+        json.dumps({"metrics": {"avg_net_return_pct": -0.1}, "curve": [], "trades": []}),
+        encoding="utf-8",
+    )
+    (qlib_dir / "unsupported.filter_search.json").write_text(
+        json.dumps({"baseline_topk": {}, "best_filter": {}}),
+        encoding="utf-8",
+    )
+    (qlib_dir / "bad.json").write_text("{", encoding="utf-8")
+    monkeypatch.setattr(stom_dashboard, "QLIB_BACKTEST_DIRS", [qlib_dir])
+
+    files = stom_dashboard.list_qlib_backtest_files()
+
+    assert [file["name"] for file in files] == ["supported.qlib_topk5.json"]
+
+
 def test_dashboard_rejects_path_traversal(tmp_path, monkeypatch):
     pred_dir = tmp_path / "preds"
     pred_dir.mkdir()

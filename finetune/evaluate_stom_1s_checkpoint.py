@@ -239,6 +239,20 @@ def rows_from_predictions(windows: Sequence[EvalWindow], predictions: Sequence[p
         pred_return = _safe_pct(pred_close_final - t0_close, t0_close)
         actual_return = _safe_pct(actual_close_final - t0_close, t0_close)
         direction_hit = int(np.sign(pred_return) == np.sign(actual_return))
+        pred_close_series = pd.to_numeric(pred["close"], errors="coerce")
+        if pred_return >= 0:
+            pred_path_consistency = float((pred_close_series >= t0_close).mean())
+        else:
+            pred_path_consistency = float((pred_close_series <= t0_close).mean())
+        pred_range_pct = _safe_pct(float(pred_close_series.max() - pred_close_series.min()), t0_close)
+        history_close = pd.to_numeric(window.history["close"], errors="coerce")
+        history_returns = history_close.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+        history_volatility_pct = float(history_returns.std(ddof=0) * 100.0) if len(history_returns) else 0.0
+        history_return_pct = _safe_pct(float(history_close.iloc[-1] - history_close.iloc[0]), float(history_close.iloc[0]))
+        history_mean_amount = float(pd.to_numeric(window.history["amount"], errors="coerce").fillna(0.0).mean())
+        history_last_amount = float(pd.to_numeric(window.history["amount"], errors="coerce").fillna(0.0).iloc[-1])
+        history_mean_volume = float(pd.to_numeric(window.history["volume"], errors="coerce").fillna(0.0).mean())
+        history_last_volume = float(pd.to_numeric(window.history["volume"], errors="coerce").fillna(0.0).iloc[-1])
         for idx in range(min(len(actual), len(pred))):
             pred_close = float(pred["close"].iloc[idx])
             actual_close = float(actual["close"].iloc[idx])
@@ -259,6 +273,14 @@ def rows_from_predictions(windows: Sequence[EvalWindow], predictions: Sequence[p
                     "pred_return_window": pred_return,
                     "actual_return_window": actual_return,
                     "direction_hit_window": direction_hit,
+                    "pred_path_consistency": pred_path_consistency,
+                    "pred_range_pct": pred_range_pct,
+                    "history_volatility_pct": history_volatility_pct,
+                    "history_return_pct": history_return_pct,
+                    "history_mean_amount": history_mean_amount,
+                    "history_last_amount": history_last_amount,
+                    "history_mean_volume": history_mean_volume,
+                    "history_last_volume": history_last_volume,
                     "mode": mode,
                 }
             )
