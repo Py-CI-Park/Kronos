@@ -89,3 +89,31 @@ rolling filter validation 재실행
 ```
 
 이 결과가 좋아야 train sample을 20,000에서 200,000, 1,000,000 이상으로 확대하는 것이 합리적이다.
+
+## 7. 2026-05-09 staged full-training 계획 반영
+
+전체 window 전량 학습은 `docs/stom_1s_staged_full_training_plan.md`에 단계형 로드맵으로 반영했다.
+
+현재 실행 순서는 다음과 같다.
+
+```text
+budget_20k 완료
+→ expand_200k
+→ expand_1m
+→ expand_5m
+→ full_window 후보
+```
+
+`finetune/run_stom_1s_finetune.py`에는 `--sample-stage` 옵션을 추가해 각 단계의 train/val sample budget이 실행 manifest에 명확히 남도록 한다.
+
+예시:
+
+```powershell
+python finetune\run_stom_1s_finetune.py `
+  --horizon 60 `
+  --mode full `
+  --sample-stage expand_200k `
+  --output-root finetune\outputs
+```
+
+단, 아직 바로 전량 학습으로 가지 않는다. 먼저 pred60 대형 walk-forward와 rolling validation에서 baseline 대비 개선이 유지되는지 확인한 뒤 `expand_200k`부터 실행한다.

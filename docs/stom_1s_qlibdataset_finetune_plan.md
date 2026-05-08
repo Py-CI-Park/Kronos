@@ -289,3 +289,41 @@ Page 7 웹 대시보드/?? ?? Export 연동          [████░] 78%
 ```
 
 rolling 결과는 조건식이 baseline 대비 손실을 줄인다는 근거를 보강했지만, 비용 후 평균 test net이 아직 음수라서 실전 자동 매수 승인에는 부족하다. 다음 단계는 `max_sessions 100`, `max_asofs 5`, `max_symbols 50` 이상 대형 walk-forward를 장시간 실행하고 같은 rolling 검증을 반복하는 것이다.
+
+## 2026-05-09 staged full-training 계획 반영
+
+전체 데이터 학습은 `docs/stom_1s_staged_full_training_plan.md`에 실행 가능한 staged roadmap으로 반영했다. 핵심은 현재 완료된 `20k budgeted` 학습을 전량 학습으로 과장하지 않고, 아래 순서로 확장하는 것이다.
+
+```text
+budget_20k 완료
+expand_200k 준비
+expand_1m 준비
+expand_5m 준비
+full_window 후보
+```
+
+`finetune/run_stom_1s_finetune.py`에는 `--sample-stage` 옵션을 추가했다.
+
+```powershell
+python finetune\run_stom_1s_finetune.py `
+  --horizon 60 `
+  --mode full `
+  --sample-stage expand_200k `
+  --output-root finetune\outputs
+```
+
+현재 판단:
+
+```text
+Page 1 DB 구조 분석                       [█████] 100%
+Page 2 STOM tick OHLCV 변환               [█████] 100%
+Page 3 bounded/pilot 학습 검증             [███░░] 60%
+Page 4 1초봉 전체 QlibDataset 구축         [█████] 100%
+Page 5 30초/60초 20k 파인튜닝              [█████] 100%
+Page 6 walk-forward/rolling 검증           [████░] 88%
+Page 7 웹 대시보드/내부 검증 Export        [████░] 78%
+Page 8 staged full-training 확대 계획      [████░] 80%
+전체 진행률                                [████░] 89%
+```
+
+다음 실행 단계는 `expand_200k` 학습이 아니라, 먼저 pred60 대형 walk-forward 평가를 실행해 학습량 확대가 가치 있는지 확인하는 것이다.

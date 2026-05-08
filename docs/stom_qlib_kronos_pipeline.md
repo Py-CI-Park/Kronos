@@ -521,3 +521,30 @@ python finetune\search_stom_1s_filters.py `
 - fold별 train net, test net, baseline net, 개선폭 표시
 
 다음 대형 평가 규모는 `max_sessions 100`, `max_asofs 5`, `max_symbols 50`이며 예상 최대 window는 25,000개, horizon 60초 기준 mode당 row는 1,500,000개다. GPU 추론 시간이 길 수 있어 별도 장시간 실행 단계로 진행한다.
+
+## 17. 2026-05-09 staged full-training launcher
+
+전체 STOM tick dataset은 이미 학습 루프에 연결되어 있지만, 현재 실제 fine-tuning은 20,000 train sample budget으로 수행되었다. 전량 학습을 단계적으로 확대하기 위해 `finetune/run_stom_1s_finetune.py`에 `--sample-stage` 옵션을 추가했다.
+
+지원 stage:
+
+| stage | train samples | val samples |
+| --- | ---: | ---: |
+| `budget_20k` | 20,000 | 4,000 |
+| `expand_200k` | 200,000 | 40,000 |
+| `expand_1m` | 1,000,000 | 100,000 |
+| `expand_5m` | 5,000,000 | 250,000 |
+| `full_window` | horizon별 전체 possible train | horizon별 전체 possible val |
+
+예시:
+
+```powershell
+python finetune\run_stom_1s_finetune.py `
+  --horizon 60 `
+  --mode full `
+  --sample-stage expand_200k `
+  --output-root finetune\outputs `
+  --dry-run
+```
+
+주의: `full_window`는 pred60 기준 73,718,875 train samples이므로 즉시 실행 대상이 아니다. 먼저 대형 walk-forward와 rolling validation에서 비용 후 성과가 개선되는지 확인한 뒤 `expand_200k`부터 실행한다.

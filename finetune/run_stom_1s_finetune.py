@@ -17,6 +17,17 @@ DEFAULT_EXPORT_ROOT = PROJECT_ROOT / "finetune" / "qlib_exports"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "finetune" / "outputs"
 DEFAULT_TOKENIZER = "NeoQuasar/Kronos-Tokenizer-base"
 DEFAULT_PREDICTOR = "NeoQuasar/Kronos-small"
+STOM_1S_FULL_SAMPLE_POOLS = {
+    30: {"train": 75_277_195, "val": 16_275_307},
+    60: {"train": 73_718_875, "val": 15_938_107},
+}
+SAMPLE_STAGE_PRESETS = {
+    "budget_20k": {"train": 20_000, "val": 4_000},
+    "expand_200k": {"train": 200_000, "val": 40_000},
+    "expand_1m": {"train": 1_000_000, "val": 100_000},
+    "expand_5m": {"train": 5_000_000, "val": 250_000},
+    "full_window": None,
+}
 
 
 def _utc_now() -> str:
@@ -37,6 +48,17 @@ def _tail(text: str, limit: int = 8000) -> str:
     return text[-limit:] if len(text) > limit else text
 
 
+def sample_stage_budget(stage: Optional[str], horizon: int) -> Optional[Dict[str, int]]:
+    if not stage:
+        return None
+    if stage == "full_window":
+        return dict(STOM_1S_FULL_SAMPLE_POOLS[horizon])
+    preset = SAMPLE_STAGE_PRESETS.get(stage)
+    if preset is None:
+        raise ValueError(f"Unknown sample stage: {stage}")
+    return dict(preset)
+
+
 def build_run(
     horizon: int,
     args: argparse.Namespace,
@@ -52,15 +74,19 @@ def build_run(
         if not (dataset_dir / required).exists():
             raise FileNotFoundError(f"required dataset file missing: {dataset_dir / required}")
 
-    run_name = args.run_name or f"stom_1s_grid_pred{horizon}_{mode}"
+    sample_budget = sample_stage_budget(args.sample_stage, horizon)
+    run_suffix = args.sample_stage or mode
+    run_name = args.run_name or f"stom_1s_grid_pred{horizon}_{run_suffix}"
     save_path = (Path(args.output_root).resolve() if args.output_root else DEFAULT_OUTPUT_ROOT) / run_name
     log_dir = save_path / "logs"
     manifest_path = save_path / "run_manifest.json"
 
     epochs = _mode_default(args.epochs, mode, smoke=1, stage=1, full=1)
     batch_size = _mode_default(args.batch_size, mode, smoke=1, stage=4, full=4)
-    n_train_iter = _mode_default(args.n_train_iter, mode, smoke=2, stage=512, full=20_000)
-    n_val_iter = _mode_default(args.n_val_iter, mode, smoke=2, stage=128, full=4_000)
+    default_train = sample_budget["train"] if sample_budget else _mode_default(None, mode, smoke=2, stage=512, full=20_000)
+    default_val = sample_budget["val"] if sample_budget else _mode_default(None, mode, smoke=2, stage=128, full=4_000)
+    n_train_iter = args.n_train_iter if args.n_train_iter is not None else default_train
+    n_val_iter = args.n_val_iter if args.n_val_iter is not None else default_val
     log_interval = _mode_default(args.log_interval, mode, smoke=1, stage=25, full=100)
 
     env = {
@@ -114,6 +140,10 @@ def build_run(
     return {
         "horizon": horizon,
         "mode": mode,
+        "sample_stage": args.sample_stage,
+        "target_train_samples": n_train_iter,
+        "target_val_samples": n_val_iter,
+        "known_full_sample_pool": STOM_1S_FULL_SAMPLE_POOLS.get(horizon),
         "run_name": run_name,
         "dataset_dir": str(dataset_dir),
         "save_path": str(save_path),
@@ -185,6 +215,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run STOM 1-second Kronos fine-tuning from QlibDataset pickles.")
     parser.add_argument("--horizon", choices=["30", "60", "all"], default="all")
     parser.add_argument("--mode", choices=["smoke", "stage", "full"], default="stage")
+    parser.add_argument(
+        "--sample-stage",
+        choices=sorted(SAMPLE_STAGE_PRESETS),
+        default=None,
+        help=(
+            "Optional staged full-data training budget. "
+            "Use budget_20k -> expand_200k -> expand_1m -> expand_5m -> full_window."
+        ),
+    )
     parser.add_argument("--dataset-dir", default=None, help="Override processed_datasets directory; only valid for one horizon.")
     parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT))
     parser.add_argument("--run-name", default=None, help="Override run name; only valid for one horizon.")
