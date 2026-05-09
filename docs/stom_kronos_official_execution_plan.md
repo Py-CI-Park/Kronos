@@ -136,3 +136,39 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
 | pred60 train full-window 73,718,875 | 약 581.5시간, 약 24.2일 |
 
 주의: full-window 환산은 train sample 기준의 보수적 단순 환산이며, 전체 validation을 같이 full로 돌리면 더 길어진다. 따라서 8단계 대형 확대는 반드시 목적을 분리해야 한다.
+
+## 9. 3단계 pred60 tokenizer 200k 실행 결과
+
+실행 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
+  --horizon 60 `
+  --mode full `
+  --train-stage tokenizer `
+  --sample-stage expand_200k `
+  --dataset-dir finetune\qlib_exports\stom_1s_grid_pred60_full\processed_datasets `
+  --output-root finetune\outputs `
+  --run-name stom_1s_grid_pred60_official_200k `
+  --dataset-sample-mode full_sequential `
+  --batch-size 4 `
+  --num-workers 0 `
+  --log-interval 1000
+```
+
+실측 결과:
+
+| 항목 | 값 |
+| --- | ---: |
+| train possible windows | 73,718,875 |
+| val possible windows | 15,938,107 |
+| 실제 train samples | 200,000 |
+| 실제 val samples | 40,000 |
+| train steps | 50,000 |
+| val steps | 10,000 |
+| duration_seconds | 3,211.134006초 |
+| 총 경과 | 약 53분 31초 |
+| best tokenizer val_loss | 0.002904271284851711 |
+| checkpoint | `finetune/outputs/stom_1s_grid_pred60_official_200k/finetune_tokenizer/checkpoints/best_model` |
+
+20k 대비 val_loss는 0.004013 → 0.002904로 개선되었다. 다음 단계는 이 tokenizer checkpoint를 `KRONOS_FINETUNED_TOKENIZER_PATH`로 predictor 200k 학습에 전달하는 것이다.
