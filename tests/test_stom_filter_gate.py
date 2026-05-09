@@ -12,13 +12,25 @@ import stom_dashboard  # noqa: E402
 import pandas as pd
 
 
+def _latest_row(window_id, asof_timestamp, pred_return):
+    return {
+        "window_id": window_id,
+        "asof_timestamp": asof_timestamp,
+        "pred_return_window": pred_return,
+        "pred_path_consistency": 1.0,
+        "history_mean_amount": 10,
+        "pred_range_pct": 0.1,
+        "history_volatility_pct": 0.1,
+    }
+
+
 def test_selected_rows_keeps_top_k_per_asof_after_vectorized_filtering():
     latest = pd.DataFrame(
         [
-            {"window_id": 1, "asof_timestamp": "2026-01-02 09:05:00", "pred_return_window": 0.2, "pred_path_consistency": 1.0, "history_mean_amount": 10, "pred_range_pct": 0.1, "history_volatility_pct": 0.1},
-            {"window_id": 2, "asof_timestamp": "2026-01-02 09:05:00", "pred_return_window": 0.5, "pred_path_consistency": 1.0, "history_mean_amount": 10, "pred_range_pct": 0.1, "history_volatility_pct": 0.1},
-            {"window_id": 3, "asof_timestamp": "2026-01-02 09:10:00", "pred_return_window": 0.1, "pred_path_consistency": 1.0, "history_mean_amount": 10, "pred_range_pct": 0.1, "history_volatility_pct": 0.1},
-            {"window_id": 4, "asof_timestamp": "2026-01-02 09:10:00", "pred_return_window": 0.4, "pred_path_consistency": 1.0, "history_mean_amount": 10, "pred_range_pct": 0.1, "history_volatility_pct": 0.1},
+            _latest_row(1, "2026-01-02 09:05:00", 0.2),
+            _latest_row(2, "2026-01-02 09:05:00", 0.5),
+            _latest_row(3, "2026-01-02 09:10:00", 0.1),
+            _latest_row(4, "2026-01-02 09:10:00", 0.4),
         ]
     )
     latest["asof_timestamp"] = pd.to_datetime(latest["asof_timestamp"])

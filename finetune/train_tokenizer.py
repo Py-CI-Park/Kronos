@@ -3,8 +3,6 @@ import sys
 import json
 import time
 from time import gmtime, strftime
-import argparse
-import datetime
 import torch.distributed as dist
 import torch
 import torch.nn.functional as F
