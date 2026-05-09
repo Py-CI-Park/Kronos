@@ -207,3 +207,63 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
 | predictor checkpoint | `finetune/outputs/stom_1s_grid_pred60_official_200k/finetune_predictor/checkpoints/best_model` |
 
 이 단계로 공식 순서의 핵심인 `STOM tokenizer fine-tuning -> STOM predictor fine-tuning` 흐름은 실제 checkpoint 기준으로 완료되었다. 다음 단계는 이 모델을 holdout/walk-forward 데이터에 적용하여 실제값과 예측값을 그래프 및 성과 지표로 비교하는 것이다.
+
+## 11. 5단계 holdout 실제값 vs 예측값 시각화 산출물
+
+실행 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe finetune\evaluate_stom_1s_checkpoint.py `
+  --dataset-path finetune\qlib_exports\stom_1s_grid_pred60_full\processed_datasets `
+  --model-path finetune\outputs\stom_1s_grid_pred60_official_200k\finetune_predictor\checkpoints\best_model `
+  --tokenizer-path finetune\outputs\stom_1s_grid_pred60_official_200k\finetune_tokenizer\checkpoints\best_model `
+  --output-dir webui\stom_predictions `
+  --prefix stom_1s_pred60_official200k_walkforward100x5x50_eval `
+  --lookback-window 300 `
+  --predict-window 60 `
+  --max-symbols 50 `
+  --max-asofs 5 `
+  --max-sessions 100 `
+  --stride 300 `
+  --batch-size 4 `
+  --top-k 5 `
+  --device cuda:0
+```
+
+산출물:
+
+| 파일 | 목적 |
+| --- | --- |
+| `webui/stom_predictions/stom_1s_pred60_official200k_walkforward100x5x50_eval_kronos.csv` | Kronos 실제값/예측값 행 단위 비교 |
+| `webui/stom_predictions/stom_1s_pred60_official200k_walkforward100x5x50_eval_persistence.csv` | persistence baseline 비교 |
+| `webui/stom_predictions/stom_1s_pred60_official200k_walkforward100x5x50_eval_random.csv` | random baseline 비교 |
+| `webui/stom_predictions/stom_1s_pred60_official200k_walkforward100x5x50_eval_comparison.json` | 모델별 요약 metric |
+
+평가 결과:
+
+| 항목 | Kronos official 200k |
+| --- | ---: |
+| rows | 184,800 |
+| windows | 3,080 |
+| symbols | 334 |
+| periods/asof | 500 |
+| MAE | 173.0052 |
+| RMSE | 441.4880 |
+| MAPE | 0.3382% |
+| 방향 정확도 | 0.4188 |
+| Top-K hit rate | 0.4146 |
+| avg pred return | -0.0073% |
+| avg actual return | 0.0504% |
+
+웹 대시보드 검증:
+
+```text
+GET /api/stom/prediction?file=stom_1s_pred60_official200k_walkforward100x5x50_eval_kronos.csv&window_id=0
+status=200
+metrics.windows=3080
+chart JSON length=12391
+```
+
+즉, `/stom` 대시보드에서 위 CSV를 선택하면 실제 close와 예측 close 그래프를 확인할 수 있다.
+
+추가로 filter search가 반복 groupby 때문에 10분 이상 지연되어, 동일 의미를 유지하면서 `sort_values(...).groupby(...).head(top_k)` 방식으로 최적화했다. 최적화 후 filter search는 약 109초, rolling validation은 약 255초에 완료됐다.

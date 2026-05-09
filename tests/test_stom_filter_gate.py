@@ -7,8 +7,25 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "finetune"))
 sys.path.insert(0, str(REPO_ROOT / "webui"))
 
-from search_stom_1s_filters import build_cost_gate_report, write_cost_gate_report  # noqa: E402
+from search_stom_1s_filters import FilterSpec, _selected_rows, build_cost_gate_report, write_cost_gate_report  # noqa: E402
 import stom_dashboard  # noqa: E402
+import pandas as pd
+
+
+def test_selected_rows_keeps_top_k_per_asof_after_vectorized_filtering():
+    latest = pd.DataFrame(
+        [
+            {"window_id": 1, "asof_timestamp": "2026-01-02 09:05:00", "pred_return_window": 0.2, "pred_path_consistency": 1.0, "history_mean_amount": 10, "pred_range_pct": 0.1, "history_volatility_pct": 0.1},
+            {"window_id": 2, "asof_timestamp": "2026-01-02 09:05:00", "pred_return_window": 0.5, "pred_path_consistency": 1.0, "history_mean_amount": 10, "pred_range_pct": 0.1, "history_volatility_pct": 0.1},
+            {"window_id": 3, "asof_timestamp": "2026-01-02 09:10:00", "pred_return_window": 0.1, "pred_path_consistency": 1.0, "history_mean_amount": 10, "pred_range_pct": 0.1, "history_volatility_pct": 0.1},
+            {"window_id": 4, "asof_timestamp": "2026-01-02 09:10:00", "pred_return_window": 0.4, "pred_path_consistency": 1.0, "history_mean_amount": 10, "pred_range_pct": 0.1, "history_volatility_pct": 0.1},
+        ]
+    )
+    latest["asof_timestamp"] = pd.to_datetime(latest["asof_timestamp"])
+
+    selected = _selected_rows(latest, FilterSpec(0.0, 0.0, None, 0.0, None), top_k=1)
+
+    assert selected["window_id"].tolist() == [2, 4]
 
 
 def test_cost_gate_report_blocks_target_cost_but_keeps_low_cost_scenario_visible(tmp_path, monkeypatch):

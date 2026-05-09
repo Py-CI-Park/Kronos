@@ -134,10 +134,12 @@ def _selected_rows(latest: pd.DataFrame, spec: FilterSpec, top_k: int) -> pd.Dat
     candidates = latest[mask]
     if candidates.empty:
         return candidates
-    selected = []
-    for _, group in candidates.groupby("asof_timestamp", sort=True):
-        selected.append(group.sort_values("pred_return_window", ascending=False).head(top_k))
-    return pd.concat(selected, ignore_index=True) if selected else candidates.iloc[0:0]
+    return (
+        candidates.sort_values(["asof_timestamp", "pred_return_window"], ascending=[True, False])
+        .groupby("asof_timestamp", sort=True)
+        .head(top_k)
+        .reset_index(drop=True)
+    )
 
 
 def _metrics(selected: pd.DataFrame, latest: pd.DataFrame, spec: FilterSpec, top_k: int, cost_pct: float) -> Dict[str, Any]:
