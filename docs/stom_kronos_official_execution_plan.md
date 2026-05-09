@@ -267,3 +267,19 @@ chart JSON length=12391
 즉, `/stom` 대시보드에서 위 CSV를 선택하면 실제 close와 예측 close 그래프를 확인할 수 있다.
 
 추가로 filter search가 반복 groupby 때문에 10분 이상 지연되어, 동일 의미를 유지하면서 `sort_values(...).groupby(...).head(top_k)` 방식으로 최적화했다. 최적화 후 filter search는 약 109초, rolling validation은 약 255초에 완료됐다.
+
+## 12. 6단계 성과 보고서
+
+상세 보고서는 다음 파일에 작성했다.
+
+```text
+docs/stom_kronos_official_200k_result_report.md
+```
+
+핵심 결론:
+
+- 공식 학습 절차와 대시보드 시각화는 성공.
+- 방향 정확도 0.4188로 random 0.4084보다 약간 높지만 실전 edge로 보기 어렵다.
+- 25bp 비용 반영 Top-K net return은 -0.1989%로 음수.
+- 조건식/필터 최적화 후에도 best filter net return은 -0.1739%로 음수.
+- rolling cost gate 결과는 `hold_expand_200k`, `expand_training_allowed=false`.
