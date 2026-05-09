@@ -172,3 +172,38 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
 | checkpoint | `finetune/outputs/stom_1s_grid_pred60_official_200k/finetune_tokenizer/checkpoints/best_model` |
 
 20k 대비 val_loss는 0.004013 → 0.002904로 개선되었다. 다음 단계는 이 tokenizer checkpoint를 `KRONOS_FINETUNED_TOKENIZER_PATH`로 predictor 200k 학습에 전달하는 것이다.
+
+## 10. 4단계 pred60 predictor 200k 실행 결과
+
+실행 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
+  --horizon 60 `
+  --mode full `
+  --train-stage predictor `
+  --sample-stage expand_200k `
+  --dataset-dir finetune\qlib_exports\stom_1s_grid_pred60_full\processed_datasets `
+  --output-root finetune\outputs `
+  --run-name stom_1s_grid_pred60_official_200k `
+  --dataset-sample-mode full_sequential `
+  --finetuned-tokenizer-path finetune\outputs\stom_1s_grid_pred60_official_200k\finetune_tokenizer\checkpoints\best_model `
+  --batch-size 4 `
+  --num-workers 0 `
+  --log-interval 1000
+```
+
+실측 결과:
+
+| 항목 | 값 |
+| --- | ---: |
+| train samples | 200,000 |
+| val samples | 40,000 |
+| train steps | 50,000 |
+| duration_seconds | 4,129.433555초 |
+| 총 경과 | 약 1시간 8분 49초 |
+| best predictor val_loss | 2.131037336307764 |
+| tokenizer source | `finetune/outputs/stom_1s_grid_pred60_official_200k/finetune_tokenizer/checkpoints/best_model` |
+| predictor checkpoint | `finetune/outputs/stom_1s_grid_pred60_official_200k/finetune_predictor/checkpoints/best_model` |
+
+이 단계로 공식 순서의 핵심인 `STOM tokenizer fine-tuning -> STOM predictor fine-tuning` 흐름은 실제 checkpoint 기준으로 완료되었다. 다음 단계는 이 모델을 holdout/walk-forward 데이터에 적용하여 실제값과 예측값을 그래프 및 성과 지표로 비교하는 것이다.
