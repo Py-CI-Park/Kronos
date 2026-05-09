@@ -28,6 +28,7 @@ SAMPLE_STAGE_PRESETS = {
     "expand_5m": {"train": 5_000_000, "val": 250_000},
     "full_window": None,
 }
+TRAIN_STAGES = {"tokenizer", "predictor", "both"}
 
 
 def _utc_now() -> str:
@@ -63,6 +64,7 @@ def build_run(
     horizon: int,
     args: argparse.Namespace,
     mode: str,
+    train_stage: Optional[str] = None,
 ) -> Dict[str, Any]:
     dataset_dir = Path(args.dataset_dir) if args.dataset_dir else (
         DEFAULT_EXPORT_ROOT / f"stom_1s_grid_pred{horizon}_full" / "processed_datasets"
@@ -79,7 +81,11 @@ def build_run(
     run_name = args.run_name or f"stom_1s_grid_pred{horizon}_{run_suffix}"
     save_path = (Path(args.output_root).resolve() if args.output_root else DEFAULT_OUTPUT_ROOT) / run_name
     log_dir = save_path / "logs"
-    manifest_path = save_path / "run_manifest.json"
+    normalized_stage = train_stage or getattr(args, "train_stage", "predictor")
+    if normalized_stage == "both":
+        normalized_stage = "predictor"
+    manifest_name = "run_manifest.json" if normalized_stage == "predictor" else f"{normalized_stage}_run_manifest.json"
+    manifest_path = save_path / manifest_name
 
     epochs = _mode_default(args.epochs, mode, smoke=1, stage=1, full=1)
     batch_size = _mode_default(args.batch_size, mode, smoke=1, stage=4, full=4)
@@ -106,6 +112,7 @@ def build_run(
         "KRONOS_PRETRAINED_TOKENIZER_PATH": args.pretrained_tokenizer_path,
         "KRONOS_PRETRAINED_PREDICTOR_PATH": args.pretrained_predictor_path,
         "KRONOS_DDP_BACKEND": args.ddp_backend,
+        "KRONOS_DATASET_SAMPLE_MODE": args.dataset_sample_mode,
         "USE_LIBUV": "0",
     }
     if args.nproc_per_node == 1:
@@ -121,12 +128,17 @@ def build_run(
         )
     if args.finetuned_tokenizer_path:
         env["KRONOS_FINETUNED_TOKENIZER_PATH"] = str(Path(args.finetuned_tokenizer_path).resolve())
+    elif normalized_stage == "predictor" and getattr(args, "train_stage", "predictor") == "both":
+        tokenizer_checkpoint = save_path / args.tokenizer_save_folder / "checkpoints" / "best_model"
+        env["KRONOS_FINETUNED_TOKENIZER_PATH"] = str(tokenizer_checkpoint)
     if args.finetuned_predictor_path:
         env["KRONOS_FINETUNED_PREDICTOR_PATH"] = str(Path(args.finetuned_predictor_path).resolve())
 
     if args.nproc_per_node == 1:
-        command = [sys.executable, str(PROJECT_ROOT / "finetune" / "train_predictor.py")]
+        script_name = "train_tokenizer.py" if normalized_stage == "tokenizer" else "train_predictor.py"
+        command = [sys.executable, str(PROJECT_ROOT / "finetune" / script_name)]
     else:
+        script_name = "train_tokenizer.py" if normalized_stage == "tokenizer" else "train_predictor.py"
         command = [
             sys.executable,
             "-m",
@@ -134,12 +146,13 @@ def build_run(
             "--standalone",
             "--nproc_per_node",
             str(args.nproc_per_node),
-            str(PROJECT_ROOT / "finetune" / "train_predictor.py"),
+            str(PROJECT_ROOT / "finetune" / script_name),
         ]
 
     return {
         "horizon": horizon,
         "mode": mode,
+        "train_stage": normalized_stage,
         "sample_stage": args.sample_stage,
         "target_train_samples": n_train_iter,
         "target_val_samples": n_val_iter,
@@ -201,13 +214,16 @@ def execute_run(spec: Mapping[str, Any], dry_run: bool = False) -> Dict[str, Any
             "stderr_tail": _tail(completed.stderr or ""),
         }
     )
-    summary_path = save_path / str(spec["env"]["KRONOS_PREDICTOR_SAVE_FOLDER"]) / "summary.json"
+    summary_folder_key = (
+        "KRONOS_TOKENIZER_SAVE_FOLDER" if spec.get("train_stage") == "tokenizer" else "KRONOS_PREDICTOR_SAVE_FOLDER"
+    )
+    summary_path = save_path / str(spec["env"][summary_folder_key]) / "summary.json"
     if summary_path.exists():
         payload["summary_path"] = str(summary_path)
         payload["summary"] = json.loads(summary_path.read_text(encoding="utf-8"))
     manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if completed.returncode != 0:
-        raise RuntimeError(f"fine-tuning failed for pred{spec['horizon']}; see {stderr_path}")
+        raise RuntimeError(f"{spec.get('train_stage', 'predictor')} fine-tuning failed for pred{spec['horizon']}; see {stderr_path}")
     return payload
 
 
@@ -215,6 +231,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run STOM 1-second Kronos fine-tuning from QlibDataset pickles.")
     parser.add_argument("--horizon", choices=["30", "60", "all"], default="all")
     parser.add_argument("--mode", choices=["smoke", "stage", "full"], default="stage")
+    parser.add_argument(
+        "--train-stage",
+        choices=sorted(TRAIN_STAGES),
+        default="predictor",
+        help="Run tokenizer, predictor, or tokenizer then predictor. Official Kronos fine-tuning uses both.",
+    )
     parser.add_argument(
         "--sample-stage",
         choices=sorted(SAMPLE_STAGE_PRESETS),
@@ -234,6 +256,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--n-val-iter", type=int, default=None)
     parser.add_argument("--log-interval", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument(
+        "--dataset-sample-mode",
+        choices=["sample_random", "full_sequential"],
+        default="sample_random",
+        help="sample_random keeps the original Kronos demo behavior; full_sequential makes dataset idx authoritative.",
+    )
     parser.add_argument("--nproc-per-node", type=int, default=1)
     parser.add_argument("--ddp-backend", default="gloo")
     parser.add_argument("--master-addr", default="127.0.0.1")
@@ -258,10 +286,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     horizons: List[int] = [30, 60] if args.horizon == "all" else [int(args.horizon)]
     results = []
     for horizon in horizons:
-        spec = build_run(horizon, args, args.mode)
-        result = execute_run(spec, dry_run=args.dry_run)
-        results.append(result)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        stages = ["tokenizer", "predictor"] if args.train_stage == "both" else [args.train_stage]
+        for stage in stages:
+            spec = build_run(horizon, args, args.mode, train_stage=stage)
+            result = execute_run(spec, dry_run=args.dry_run)
+            results.append(result)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 

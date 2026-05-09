@@ -2,6 +2,9 @@ import json
 import sys
 from pathlib import Path
 
+import pandas as pd
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FINETUNE_DIR = PROJECT_ROOT / "finetune"
@@ -91,6 +94,81 @@ def test_sample_stage_sets_staged_full_training_budget(tmp_path):
     assert spec["env"]["KRONOS_N_VAL_ITER"] == "40000"
 
 
+def test_runner_can_build_tokenizer_stage_and_both_stage_handoff(tmp_path):
+    dataset_dir = tmp_path / "processed_datasets"
+    dataset_dir.mkdir()
+    (dataset_dir / "train_data.pkl").write_bytes(b"not loaded in dry-run")
+    (dataset_dir / "val_data.pkl").write_bytes(b"not loaded in dry-run")
+
+    args = parse_args(
+        [
+            "--horizon",
+            "60",
+            "--mode",
+            "smoke",
+            "--train-stage",
+            "both",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--output-root",
+            str(tmp_path / "outputs"),
+            "--run-name",
+            "official_smoke",
+            "--dataset-sample-mode",
+            "full_sequential",
+            "--dry-run",
+        ]
+    )
+
+    tokenizer_spec = build_run(60, args, "smoke", train_stage="tokenizer")
+    predictor_spec = build_run(60, args, "smoke", train_stage="predictor")
+
+    assert tokenizer_spec["train_stage"] == "tokenizer"
+    assert tokenizer_spec["manifest_path"].endswith("tokenizer_run_manifest.json")
+    assert tokenizer_spec["command"][-1].endswith("train_tokenizer.py")
+    assert tokenizer_spec["env"]["KRONOS_DATASET_SAMPLE_MODE"] == "full_sequential"
+    assert predictor_spec["command"][-1].endswith("train_predictor.py")
+    assert predictor_spec["env"]["KRONOS_FINETUNED_TOKENIZER_PATH"].endswith(
+        "official_smoke\\finetune_tokenizer\\checkpoints\\best_model"
+    )
+
+
 def test_full_window_sample_stage_uses_known_full_sample_pool():
     assert sample_stage_budget("full_window", 30) == {"train": 75_277_195, "val": 16_275_307}
     assert sample_stage_budget("full_window", 60) == {"train": 73_718_875, "val": 15_938_107}
+
+
+def test_full_sequential_dataset_uses_requested_index_order(tmp_path, monkeypatch):
+    pytest.importorskip("torch")
+    from dataset import QlibDataset  # noqa: E402
+
+    dataset_dir = tmp_path / "processed_datasets"
+    dataset_dir.mkdir()
+    frame = pd.DataFrame(
+        {
+            "open": [1, 2, 3, 4, 5, 6],
+            "high": [1, 2, 3, 4, 5, 6],
+            "low": [1, 2, 3, 4, 5, 6],
+            "close": [1, 2, 3, 4, 5, 6],
+            "vol": [10, 20, 30, 40, 50, 60],
+            "amt": [100, 200, 300, 400, 500, 600],
+        },
+        index=pd.date_range("2026-01-02 09:00:00", periods=6, freq="s"),
+    )
+    frame.index.name = "datetime"
+    payload = {"KR000001_20260102": frame}
+    pd.to_pickle(payload, dataset_dir / "train_data.pkl")
+    pd.to_pickle(payload, dataset_dir / "val_data.pkl")
+
+    monkeypatch.setenv("KRONOS_DATASET_PATH", str(dataset_dir))
+    monkeypatch.setenv("KRONOS_LOOKBACK_WINDOW", "2")
+    monkeypatch.setenv("KRONOS_PREDICT_WINDOW", "1")
+    monkeypatch.setenv("KRONOS_N_TRAIN_ITER", "3")
+    monkeypatch.setenv("KRONOS_DATASET_SAMPLE_MODE", "full_sequential")
+
+    dataset = QlibDataset("train")
+    dataset.py_rng.randint = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("random sampler used"))
+    first, _ = dataset[0]
+
+    assert len(dataset) == 3
+    assert first.shape[0] == 4

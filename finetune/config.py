@@ -78,6 +78,7 @@ class Config:
         self.log_interval = _env_int("KRONOS_LOG_INTERVAL", 100)  # Log training status every N batches.
         self.batch_size = _env_int("KRONOS_BATCH_SIZE", 50)  # Batch size per GPU.
         self.num_workers = _env_int("KRONOS_NUM_WORKERS", 2)
+        self.dataset_sample_mode = os.getenv("KRONOS_DATASET_SAMPLE_MODE", "sample_random")
 
         # Number of samples to draw for one "epoch" of training/validation.
         # This is useful for large datasets where a true epoch is too long.

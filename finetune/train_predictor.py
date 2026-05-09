@@ -62,9 +62,10 @@ def create_dataloaders(config: dict, rank: int, world_size: int):
         else None
     )
 
+    drop_last = config.get("dataset_sample_mode") != "full_sequential"
     train_loader = DataLoader(
         train_dataset, batch_size=config['batch_size'], sampler=train_sampler, shuffle=train_sampler is None,
-        num_workers=config.get('num_workers', 2), pin_memory=True, drop_last=True
+        num_workers=config.get('num_workers', 2), pin_memory=True, drop_last=drop_last
     )
     val_loader = DataLoader(
         valid_dataset, batch_size=config['batch_size'], sampler=val_sampler, shuffle=False,
