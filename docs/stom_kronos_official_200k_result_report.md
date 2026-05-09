@@ -168,3 +168,20 @@ passes_gate = false
 - 현재 모델로 실전 매매 사용: **비권장**
 - 1M/5M/full-window 성과 목적 확대: **보류**
 - 단, 사용자가 “수익성 gate와 무관하게 전체 데이터 공식 학습 자체가 목적”이라고 명시하면 8단계에서 장시간 실행 계획으로 전환 가능하다.
+
+## 9. pred30 진행 판단
+
+현재는 pred30 200k/full-window를 즉시 실행하지 않는다.
+
+판단 근거:
+
+- pred60 official 200k도 cost gate를 통과하지 못했다.
+- pred30은 더 짧은 예측 horizon이므로 25bp 비용을 이기려면 더 강한 순간 방향 edge가 필요하다.
+- 새 tokenizer/predictor 세트를 다시 학습해야 하므로, 성과 근거 없이 바로 200k 이상으로 확대하는 것은 시간 대비 효율이 낮다.
+
+권장 대안:
+
+1. 대시보드에서 official 200k pred60 그래프를 먼저 확인한다.
+2. 실전 목적이면 비용 구조와 조건식/score 개선을 먼저 한다.
+3. 연구 비교 목적이면 pred30은 20k tokenizer/predictor quick pilot부터 시작한다.
+4. 사용자가 “수익성 gate와 관계없이 pred30 공식 비교도 진행”이라고 명시하면 동일 pipeline으로 pred30을 수행한다.

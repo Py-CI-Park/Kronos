@@ -283,3 +283,33 @@ docs/stom_kronos_official_200k_result_report.md
 - 25bp 비용 반영 Top-K net return은 -0.1989%로 음수.
 - 조건식/필터 최적화 후에도 best filter net return은 -0.1739%로 음수.
 - rolling cost gate 결과는 `hold_expand_200k`, `expand_training_allowed=false`.
+
+## 13. 7단계 pred30 진행 여부 판단
+
+결론: **지금 즉시 pred30 200k/full-window 학습으로 확대하지 않는다.**
+
+이유:
+
+1. pred60 official 200k가 25bp cost gate를 통과하지 못했다.
+2. 공식 200k pred60의 방향 정확도 0.4188은 random 0.4084 대비 약한 개선에 그쳤다.
+3. Top-K net return은 25bp 비용 반영 후 -0.1989%로 음수다.
+4. pred30은 별도 tokenizer/predictor 모델이 필요하므로 최소 2~3시간 이상의 추가 학습/평가 시간이 든다.
+5. pred30이 더 짧은 horizon이라 비용 대비 기대수익폭이 더 작아질 가능성이 있다.
+
+단, pred30을 완전히 버리는 것은 아니다. 다음 조건 중 하나가 있으면 pred30으로 진행한다.
+
+| 조건 | 권장 실행 |
+| --- | --- |
+| 사용자가 연구 목적으로 pred30도 비교하겠다고 명시 | pred30 tokenizer 20k → predictor 20k → quick holdout |
+| pred60에서 비용을 낮춘 환경, 예: 5bp 이하, 에서 gate 통과 | pred30 200k 비교 가능 |
+| 종가/분봉/더 긴 horizon에서 edge가 확인됨 | pred30은 후순위 실험으로 유지 |
+| 전체 데이터 공식 학습 자체가 목적이며 수익성 gate를 무시한다고 명시 | pred30도 full-window 장시간 계획에 포함 가능 |
+
+현재 권장 순서:
+
+```text
+1. pred60 official 200k 결과를 대시보드에서 눈으로 확인
+2. 8단계에서 1M/5M/full-window 확대 여부를 목적별로 결정
+3. 수익성 목적이면 pred30보다 먼저 비용 구조, 거래 horizon, score filter 개선
+4. 연구 목적이면 pred30은 20k benchmark부터 작게 비교
+```
