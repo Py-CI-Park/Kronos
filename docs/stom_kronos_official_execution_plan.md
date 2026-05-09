@@ -91,3 +91,48 @@ missing_count == 0
 - dry-run: pred60 `--train-stage both --sample-stage budget_20k --dataset-sample-mode full_sequential` → tokenizer/predictor manifest 생성 및 handoff 확인.
 
 주의: 기본 pytest 플러그인 자동 로딩 상태에서는 Windows PyTorch DLL 초기화 오류가 발생했다. 실제 Python 프로세스의 `import torch`와 플러그인 비활성화 테스트는 정상이다.
+
+## 8. 2단계 tokenizer 20k benchmark 실측 결과
+
+실행 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
+  --horizon 60 `
+  --mode full `
+  --train-stage tokenizer `
+  --sample-stage budget_20k `
+  --dataset-dir finetune\qlib_exports\stom_1s_grid_pred60_full\processed_datasets `
+  --output-root finetune\outputs `
+  --run-name stom_1s_grid_pred60_official_tokenizer_20k `
+  --dataset-sample-mode full_sequential `
+  --batch-size 4 `
+  --num-workers 0 `
+  --log-interval 100
+```
+
+실측 결과:
+
+| 항목 | 값 |
+| --- | ---: |
+| train possible windows | 73,718,875 |
+| val possible windows | 15,938,107 |
+| 실제 train samples | 20,000 |
+| 실제 val samples | 4,000 |
+| train steps | 5,000 |
+| val steps | 1,000 |
+| duration_seconds | 567.944628초 |
+| 총 경과 | 약 9분 28초 |
+| best tokenizer val_loss | 0.004013419676455669 |
+| checkpoint | `finetune/outputs/stom_1s_grid_pred60_official_tokenizer_20k/finetune_tokenizer/checkpoints/best_model` |
+
+이 실측을 단순 선형 환산하면 tokenizer 학습 예상 시간은 다음이다.
+
+| tokenizer 범위 | 단순 환산 시간 |
+| --- | ---: |
+| 200k | 약 1.58시간 |
+| 1M | 약 7.89시간 |
+| 5M | 약 39.44시간 |
+| pred60 train full-window 73,718,875 | 약 581.5시간, 약 24.2일 |
+
+주의: full-window 환산은 train sample 기준의 보수적 단순 환산이며, 전체 validation을 같이 full로 돌리면 더 길어진다. 따라서 8단계 대형 확대는 반드시 목적을 분리해야 한다.
