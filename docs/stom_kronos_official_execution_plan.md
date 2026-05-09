@@ -313,3 +313,17 @@ docs/stom_kronos_official_200k_result_report.md
 3. 수익성 목적이면 pred30보다 먼저 비용 구조, 거래 horizon, score filter 개선
 4. 연구 목적이면 pred30은 20k benchmark부터 작게 비교
 ```
+
+## 14. 8단계 안내 문서
+
+8단계 확대 안내는 다음 파일에 작성했다.
+
+```text
+docs/stom_kronos_stage8_expansion_guide.md
+```
+
+핵심:
+
+- 수익성 목적이면 현재는 확대 보류.
+- 연구 목적이면 1M부터 `sample_random`으로 대표성 있게 재시작 권장.
+- 전체 window exact 목적이면 `full_sequential + full_window`가 필요하지만 pred60 기준 약 31일 이상 예상.
