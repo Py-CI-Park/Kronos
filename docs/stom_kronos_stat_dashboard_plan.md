@@ -69,3 +69,12 @@
   - symbol_metric_count = 334
   - max_symbols=20 결과 20개 row 반환
   - chart keys = error_distribution, return_scatter, symbol_heatmap
+
+## 최종 검증 기록
+
+- `git diff --check` 통과.
+- 관련 테스트 16개 통과, Plotly FutureWarning 2개만 존재.
+- compileall 통과.
+- `/stom` page status=200, `Model Diagnostics` 포함 확인.
+- official 200k diagnostics API status=200.
+- official 200k 기준 symbols=334, symbol_metric_count=334, max_symbols=20 반환 확인.
