@@ -3,8 +3,6 @@ import sys
 import json
 import time
 from time import gmtime, strftime
-import argparse
-import datetime
 import torch.distributed as dist
 import torch
 import torch.nn.functional as F
@@ -12,10 +10,17 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-import comet_ml
+try:
+    import comet_ml
+except ImportError:  # pragma: no cover - optional dependency
+    comet_ml = None
 
-# Ensure project root is in path
-sys.path.append("../")
+# Ensure project root is in path regardless of the current working directory.
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 from config import Config
 from dataset import QlibDataset
 from model.kronos import KronosTokenizer
@@ -46,17 +51,27 @@ def create_dataloaders(config: dict, rank: int, world_size: int):
     valid_dataset = QlibDataset('val')
     print(f"[Rank {rank}] Train dataset size: {len(train_dataset)}, Validation dataset size: {len(valid_dataset)}")
 
-    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
-    val_sampler = DistributedSampler(valid_dataset, num_replicas=world_size, rank=rank, shuffle=False)
+    use_distributed_sampler = world_size > 1 and dist.is_available() and dist.is_initialized()
+    train_sampler = (
+        DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
+        if use_distributed_sampler
+        else None
+    )
+    val_sampler = (
+        DistributedSampler(valid_dataset, num_replicas=world_size, rank=rank, shuffle=False)
+        if use_distributed_sampler
+        else None
+    )
+    drop_last = config.get("dataset_sample_mode") != "full_sequential"
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['batch_size'],
         sampler=train_sampler,
-        shuffle=False,  # Shuffle is handled by the sampler
+        shuffle=train_sampler is None and config.get("dataset_sample_mode") != "full_sequential",
         num_workers=config.get('num_workers', 2),
         pin_memory=True,
-        drop_last=True
+        drop_last=drop_last
     )
     val_loader = DataLoader(
         valid_dataset,
@@ -117,7 +132,8 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
     for epoch_idx in range(config['epochs']):
         epoch_start_time = time.time()
         model.train()
-        train_loader.sampler.set_epoch(epoch_idx)
+        if hasattr(train_loader.sampler, "set_epoch"):
+            train_loader.sampler.set_epoch(epoch_idx)
 
         # Set dataset seeds for reproducible sampling
         train_dataset.set_epoch_seed(epoch_idx * 10000 + rank)
@@ -184,13 +200,18 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
                 tot_val_loss_sum_rank += val_loss_item.item() * ori_batch_x.size(0)
                 val_sample_count_rank += ori_batch_x.size(0)
 
-        # Reduce validation losses from all processes
-        val_loss_sum_tensor = torch.tensor(tot_val_loss_sum_rank, device=device)
-        val_count_tensor = torch.tensor(val_sample_count_rank, device=device)
-        dist.all_reduce(val_loss_sum_tensor, op=dist.ReduceOp.SUM)
-        dist.all_reduce(val_count_tensor, op=dist.ReduceOp.SUM)
+        if dist.is_available() and dist.is_initialized():
+            val_loss_sum_tensor = torch.tensor(tot_val_loss_sum_rank, device=device)
+            val_count_tensor = torch.tensor(val_sample_count_rank, device=device)
+            dist.all_reduce(val_loss_sum_tensor, op=dist.ReduceOp.SUM)
+            dist.all_reduce(val_count_tensor, op=dist.ReduceOp.SUM)
+            val_loss_sum = val_loss_sum_tensor.item()
+            val_count = val_count_tensor.item()
+        else:
+            val_loss_sum = tot_val_loss_sum_rank
+            val_count = val_sample_count_rank
 
-        avg_val_loss = val_loss_sum_tensor.item() / val_count_tensor.item() if val_count_tensor.item() > 0 else 0
+        avg_val_loss = val_loss_sum / val_count if val_count > 0 else 0
 
         # --- End of Epoch Summary & Checkpointing (Master Process Only) ---
         if rank == 0:
@@ -204,12 +225,14 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
             if avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
                 save_path = f"{save_dir}/checkpoints/best_model"
-                model.module.save_pretrained(save_path)
+                save_model = model.module if hasattr(model, "module") else model
+                save_model.save_pretrained(save_path)
                 print(f"Best model saved to {save_path} (Val Loss: {best_val_loss:.4f})")
                 if logger:
                     logger.log_model("best_model", save_path)
 
-        dist.barrier()  # Ensure all processes finish the epoch before starting the next one.
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
 
     dt_result['best_val_loss'] = best_val_loss
     return model, dt_result
@@ -220,7 +243,7 @@ def main(config: dict):
     Main function to orchestrate the DDP training process.
     """
     rank, world_size, local_rank = setup_ddp()
-    device = torch.device(f"cuda:{local_rank}")
+    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
     set_seed(config['seed'], rank)
 
     save_dir = os.path.join(config['save_path'], config['tokenizer_save_folder_name'])
@@ -235,6 +258,8 @@ def main(config: dict):
             'world_size': world_size,
         }
         if config['use_comet']:
+            if comet_ml is None:
+                raise RuntimeError("KRONOS_USE_COMET is enabled but comet_ml is not installed.")
             comet_logger = comet_ml.Experiment(
                 api_key=config['comet_config']['api_key'],
                 project_name=config['comet_config']['project_name'],
@@ -245,15 +270,19 @@ def main(config: dict):
             comet_logger.log_parameters(config)
             print("Comet Logger Initialized.")
 
-    dist.barrier()  # Ensure save directory is created before proceeding
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
 
     # Model Initialization
     model = KronosTokenizer.from_pretrained(config['pretrained_tokenizer_path'])
     model.to(device)
-    model = DDP(model, device_ids=[local_rank], find_unused_parameters=False)
+    if dist.is_available() and dist.is_initialized() and world_size > 1:
+        ddp_kwargs = {"device_ids": [local_rank]} if torch.cuda.is_available() else {}
+        model = DDP(model, find_unused_parameters=False, **ddp_kwargs)
 
     if rank == 0:
-        print(f"Model Size: {get_model_size(model.module)}")
+        size_model = model.module if hasattr(model, "module") else model
+        print(f"Model Size: {get_model_size(size_model)}")
 
     # Start Training
     _, dt_result = train_model(
@@ -274,7 +303,8 @@ def main(config: dict):
 
 if __name__ == '__main__':
     # Usage: torchrun --standalone --nproc_per_node=NUM_GPUS train_tokenizer.py
-    if "WORLD_SIZE" not in os.environ:
+    disable_ddp = os.getenv("KRONOS_DISABLE_DDP", "").lower() in {"1", "true", "yes", "on"}
+    if "WORLD_SIZE" not in os.environ and not disable_ddp:
         raise RuntimeError("This script must be launched with `torchrun`.")
 
     config_instance = Config()

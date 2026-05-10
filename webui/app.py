@@ -4,7 +4,7 @@ import numpy as np
 import json
 import plotly.graph_objects as go
 import plotly.utils
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, Response, render_template, request, jsonify
 from flask_cors import CORS
 import sys
 import warnings
@@ -14,12 +14,94 @@ warnings.filterwarnings('ignore')
 # Add project root directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+Kronos = None
+KronosTokenizer = None
+KronosPredictor = None
+MODEL_AVAILABLE = True
+MODEL_IMPORT_ERROR = None
+
+def ensure_kronos_imported():
+    """Import Kronos lazily so dashboard routes work even when torch/model deps are broken."""
+    global Kronos, KronosTokenizer, KronosPredictor, MODEL_AVAILABLE, MODEL_IMPORT_ERROR
+    if Kronos is not None and KronosTokenizer is not None and KronosPredictor is not None:
+        return True
+    try:
+        from model import Kronos as _Kronos
+        from model import KronosPredictor as _KronosPredictor
+        from model import KronosTokenizer as _KronosTokenizer
+
+        Kronos = _Kronos
+        KronosTokenizer = _KronosTokenizer
+        KronosPredictor = _KronosPredictor
+        MODEL_AVAILABLE = True
+        MODEL_IMPORT_ERROR = None
+        return True
+    except Exception as exc:
+        MODEL_AVAILABLE = False
+        MODEL_IMPORT_ERROR = str(exc)
+        print(f"Warning: Kronos model cannot be imported ({exc}), prediction model loading is disabled")
+        return False
+
 try:
-    from model import Kronos, KronosTokenizer, KronosPredictor
-    MODEL_AVAILABLE = True
-except ImportError:
-    MODEL_AVAILABLE = False
-    print("Warning: Kronos model cannot be imported, will use simulated data for demonstration")
+    try:
+        from .stom_dashboard import (
+            list_filter_report_files,
+            list_qlib_backtest_files,
+            list_prediction_files,
+            load_filter_report_artifact,
+            load_qlib_backtest_artifact,
+            load_prediction_frame,
+            load_training_summary,
+            prediction_chart_json,
+            prediction_diagnostics,
+            prediction_metrics,
+            qlib_backtest_chart_json,
+            recommendation_export_csv,
+            recommendation_export_payload,
+            ranked_recommendations,
+            recommendation_summary,
+            score_backtest_report,
+            topk_rows,
+        )
+    except ImportError:
+        from stom_dashboard import (
+            list_filter_report_files,
+            list_qlib_backtest_files,
+            list_prediction_files,
+            load_filter_report_artifact,
+            load_qlib_backtest_artifact,
+            load_prediction_frame,
+            load_training_summary,
+            prediction_chart_json,
+            prediction_diagnostics,
+            prediction_metrics,
+            qlib_backtest_chart_json,
+            recommendation_export_csv,
+            recommendation_export_payload,
+            ranked_recommendations,
+            recommendation_summary,
+            score_backtest_report,
+            topk_rows,
+        )
+except Exception as exc:
+    print(f"Warning: STOM dashboard helpers cannot be imported ({exc})")
+    list_filter_report_files = None
+    list_qlib_backtest_files = None
+    list_prediction_files = None
+    load_filter_report_artifact = None
+    load_qlib_backtest_artifact = None
+    load_prediction_frame = None
+    load_training_summary = None
+    prediction_chart_json = None
+    prediction_diagnostics = None
+    prediction_metrics = None
+    qlib_backtest_chart_json = None
+    recommendation_export_csv = None
+    recommendation_export_payload = None
+    ranked_recommendations = None
+    recommendation_summary = None
+    score_backtest_report = None
+    topk_rows = None
 
 app = Flask(__name__)
 CORS(app)
@@ -332,6 +414,171 @@ def index():
     """Home page"""
     return render_template('index.html')
 
+@app.route('/stom')
+def stom_dashboard_page():
+    """STOM OHLCV actual-vs-predicted dashboard."""
+    return render_template('stom_dashboard.html')
+
+@app.route('/api/stom/summary')
+def stom_summary():
+    if load_training_summary is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    return jsonify(load_training_summary())
+
+@app.route('/api/stom/prediction-files')
+def stom_prediction_files():
+    if list_prediction_files is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    return jsonify({'files': list_prediction_files()})
+
+@app.route('/api/stom/qlib-backtests')
+def stom_qlib_backtests():
+    if list_qlib_backtest_files is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    try:
+        if not file_name:
+            return jsonify({'files': list_qlib_backtest_files()})
+        if load_qlib_backtest_artifact is None or qlib_backtest_chart_json is None:
+            return jsonify({'error': 'Qlib backtest helper is not available'}), 500
+        payload = load_qlib_backtest_artifact(file_name)
+        return jsonify({
+            'artifact': payload,
+            'chart': qlib_backtest_chart_json(payload),
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/filter-reports')
+def stom_filter_reports():
+    if list_filter_report_files is None:
+        return jsonify({'error': 'STOM filter report helper is not available'}), 500
+    file_name = request.args.get('file')
+    try:
+        if not file_name:
+            return jsonify({'files': list_filter_report_files()})
+        if load_filter_report_artifact is None:
+            return jsonify({'error': 'STOM filter report loader is not available'}), 500
+        return jsonify({'artifact': load_filter_report_artifact(file_name)})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/prediction')
+def stom_prediction_file():
+    if load_prediction_frame is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        df = load_prediction_frame(file_name)
+        window_id_arg = request.args.get('window_id')
+        window_id = int(window_id_arg) if window_id_arg not in (None, '') else None
+        recommendations = ranked_recommendations(df) if ranked_recommendations else []
+        return jsonify({
+            'metrics': prediction_metrics(df),
+            'chart': prediction_chart_json(df, window_id=window_id),
+            'topk': topk_rows(df),
+            'recommendations': recommendations,
+            'recommendation_summary': recommendation_summary(recommendations) if recommendation_summary else {},
+            'windows': sorted(int(v) for v in df['window_id'].dropna().unique().tolist())[:500],
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/stom/diagnostics')
+def stom_prediction_diagnostics():
+    if load_prediction_frame is None or prediction_diagnostics is None:
+        return jsonify({'error': 'STOM diagnostics helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        max_symbols = int(request.args.get('max_symbols', 50))
+        min_windows = int(request.args.get('min_windows', 1))
+        df = load_prediction_frame(file_name)
+        return jsonify(prediction_diagnostics(df, max_symbols=max_symbols, min_windows=min_windows))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/recommendations')
+def stom_recommendations():
+    if load_prediction_frame is None or ranked_recommendations is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        k = int(request.args.get('k', 20))
+        min_score_arg = request.args.get('min_score')
+        min_score = float(min_score_arg) if min_score_arg not in (None, '') else None
+        long_only = request.args.get('long_only', '1').lower() not in {'0', 'false', 'no', 'off'}
+        df = load_prediction_frame(file_name)
+        recommendations = ranked_recommendations(df, k=k, long_only=long_only, min_score=min_score)
+        return jsonify({
+            'recommendations': recommendations,
+            'summary': recommendation_summary(recommendations) if recommendation_summary else {},
+            'metrics': prediction_metrics(df),
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/backtest-report')
+def stom_backtest_report():
+    if load_prediction_frame is None or score_backtest_report is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        top_k_arg = request.args.get('top_k')
+        top_k = int(top_k_arg) if top_k_arg not in (None, '') else None
+        df = load_prediction_frame(file_name)
+        return jsonify(score_backtest_report(df, top_k=top_k))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+@app.route('/api/stom/recommendation-export')
+def stom_recommendation_export():
+    if load_prediction_frame is None or recommendation_export_payload is None:
+        return jsonify({'error': 'STOM dashboard helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        output_format = request.args.get('format', 'json').lower()
+        limit_arg = request.args.get('limit', request.args.get('k', '20'))
+        limit = int(limit_arg) if limit_arg not in (None, '') else None
+        min_score_arg = request.args.get('min_score')
+        min_score = float(min_score_arg) if min_score_arg not in (None, '') else None
+        selected_filter = request.args.get('filter', 'buy_candidate_score60')
+        long_only = request.args.get('long_only', '1').lower() not in {'0', 'false', 'no', 'off'}
+        df = load_prediction_frame(file_name)
+        payload = recommendation_export_payload(
+            df,
+            source_file=file_name,
+            limit=limit,
+            min_score=min_score,
+            selected_filter=selected_filter,
+            long_only=long_only,
+        )
+        if output_format == 'json':
+            return jsonify(payload)
+        if output_format == 'csv':
+            if recommendation_export_csv is None:
+                return jsonify({'error': 'CSV export helper is not available'}), 500
+            safe_name = ''.join(ch if ch.isalnum() or ch in ('-', '_', '.') else '_' for ch in file_name)
+            csv_text = recommendation_export_csv(payload['records'])
+            return Response(
+                csv_text,
+                mimetype='text/csv; charset=utf-8',
+                headers={'Content-Disposition': f'attachment; filename="{safe_name}.kronos_recommendations.csv"'},
+            )
+        return jsonify({'error': 'format must be json or csv'}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
 @app.route('/api/data-files')
 def get_data_files():
     """Get available data file list"""
@@ -629,8 +876,8 @@ def load_model():
     global tokenizer, model, predictor
     
     try:
-        if not MODEL_AVAILABLE:
-            return jsonify({'error': 'Kronos model library not available'}), 400
+        if not ensure_kronos_imported():
+            return jsonify({'error': f'Kronos model library not available: {MODEL_IMPORT_ERROR}'}), 400
         
         data = request.get_json()
         model_key = data.get('model_key', 'kronos-small')
@@ -667,7 +914,8 @@ def get_available_models():
     """Get available model list"""
     return jsonify({
         'models': AVAILABLE_MODELS,
-        'model_available': MODEL_AVAILABLE
+        'model_available': MODEL_AVAILABLE,
+        'model_import_error': MODEL_IMPORT_ERROR
     })
 
 @app.route('/api/model-status')
@@ -694,15 +942,11 @@ def get_model_status():
         return jsonify({
             'available': False,
             'loaded': False,
-            'message': 'Kronos model library not available, please install related dependencies'
+            'message': f'Kronos model library not available: {MODEL_IMPORT_ERROR}'
         })
 
 if __name__ == '__main__':
     print("Starting Kronos Web UI...")
-    print(f"Model availability: {MODEL_AVAILABLE}")
-    if MODEL_AVAILABLE:
-        print("Tip: You can load Kronos model through /api/load-model endpoint")
-    else:
-        print("Tip: Will use simulated data for demonstration")
+    print("Tip: Kronos model is imported lazily when /api/load-model is called")
     
     app.run(debug=True, host='0.0.0.0', port=7070)

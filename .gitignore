@@ -48,12 +48,26 @@ Desktop.ini
 *.parquet
 *.h5
 *.hdf5
+_database/
+finetune_csv/data/stom_*.csv
+finetune_csv/data/stom_*.json
+webui/stom_predictions/*.csv
+webui/stom_predictions/*.json
+webui/qlib_backtests/*.json
+webui/qlib_backtests/*.csv
+finetune/qlib_exports/
+finetune/qlib_backtests/
+finetune/outputs/
+finetune/data/processed_datasets/
+finetune/data/stom_qlib*/
+qlib_data/
 
 # Model files (large files)
 *.pth
 *.pt
 *.ckpt
 *.bin
+finetune_csv/finetuned/
 
 # Logs
 *.log
