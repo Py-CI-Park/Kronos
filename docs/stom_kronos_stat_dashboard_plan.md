@@ -51,3 +51,21 @@
 - dashboard에서 버튼 클릭으로 전체 통계, 표, histogram/scatter/heatmap이 표시된다.
 - 테스트가 통과한다.
 - 공식 200k CSV 기준 API smoke가 성공한다.
+
+## 진행 기록 - frontend/API 연결 완료
+
+- `/api/stom/diagnostics` backend API 추가 완료.
+- `/stom` 화면에 `Model Diagnostics: 전체/종목별 통계` 섹션 추가 완료.
+- 표시 항목:
+  - 전체 rows/windows/symbols/sessions/periods
+  - MAE/RMSE/MAPE/direction accuracy
+  - 종목별 summary table
+  - best/worst symbol table
+  - 전체 오차 histogram
+  - pred_return vs actual_return scatter
+  - symbol metric heatmap
+- official 200k CSV smoke:
+  - symbols = 334
+  - symbol_metric_count = 334
+  - max_symbols=20 결과 20개 row 반환
+  - chart keys = error_distribution, return_scatter, symbol_heatmap

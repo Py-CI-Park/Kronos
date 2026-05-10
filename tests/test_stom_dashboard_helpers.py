@@ -264,6 +264,7 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     page = client.get("/stom")
     assert page.status_code == 200
     assert "Kronos Score Export" in page.get_data(as_text=True)
+    assert "Model Diagnostics" in page.get_data(as_text=True)
     assert client.get("/api/stom/prediction-files").status_code == 200
     assert client.get("/api/stom/qlib-backtests").status_code == 200
     assert client.get("/api/stom/filter-reports").status_code == 200
