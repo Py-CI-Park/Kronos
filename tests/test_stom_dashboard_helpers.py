@@ -31,6 +31,8 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     backtest_report = stom_dashboard.score_backtest_report(df)
     export_payload = stom_dashboard.recommendation_export_payload(df, source_file="sample.csv")
     export_csv = stom_dashboard.recommendation_export_csv(export_payload["records"])
+    diagnostics = stom_dashboard.prediction_diagnostics(df)
+    scatter = json.loads(diagnostics["charts"]["return_scatter"])
 
     assert files[0]["name"] == "sample.csv"
     assert df["symbol"].iloc[0] == "000001"
@@ -46,6 +48,9 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     assert export_payload["metadata"]["adapter_version"] == "stom-kronos-score-v1"
     assert export_payload["records"][0]["adapter_action"] == "BUY"
     assert export_csv.splitlines()[0].startswith("rank,source_file,window_id,symbol")
+    assert diagnostics["overall"]["symbol_metric_count"] == 1
+    assert diagnostics["symbol_summary"][0]["symbol"] == "000001"
+    assert scatter["data"][0]["name"] == "window"
 
 
 def test_ranked_recommendations_prefers_positive_consistent_prediction():
@@ -253,6 +258,7 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "recommendation_export_csv", stom_dashboard.recommendation_export_csv)
     monkeypatch.setattr(app, "list_filter_report_files", stom_dashboard.list_filter_report_files)
     monkeypatch.setattr(app, "load_filter_report_artifact", stom_dashboard.load_filter_report_artifact)
+    monkeypatch.setattr(app, "prediction_diagnostics", stom_dashboard.prediction_diagnostics)
 
     client = app.app.test_client()
     page = client.get("/stom")
@@ -268,6 +274,9 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     report = client.get("/api/stom/backtest-report?file=sample.csv")
     assert report.status_code == 200
     assert report.get_json()["filters"][0]["count"] == 1
+    diagnostics = client.get("/api/stom/diagnostics?file=sample.csv")
+    assert diagnostics.status_code == 200
+    assert diagnostics.get_json()["overall"]["symbol_metric_count"] == 1
     export_json = client.get("/api/stom/recommendation-export?file=sample.csv&format=json")
     assert export_json.status_code == 200
     assert export_json.get_json()["metadata"]["record_count"] == 1

@@ -279,6 +279,183 @@ def prediction_metrics(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
+def _latest_prediction_rows(df: pd.DataFrame) -> pd.DataFrame:
+    latest = df.sort_values(["window_id", "target_timestamp"]).groupby("window_id", sort=False).tail(1).copy()
+    for column in [
+        "pred_return_window",
+        "actual_return_window",
+        "direction_hit_window",
+        "pred_path_consistency",
+        "pred_range_pct",
+    ]:
+        if column not in latest.columns:
+            latest[column] = 0.0
+        latest[column] = pd.to_numeric(latest[column], errors="coerce").fillna(0.0)
+    return latest
+
+
+def _prediction_error_series(df: pd.DataFrame) -> pd.DataFrame:
+    frame = df.copy()
+    frame["error"] = pd.to_numeric(frame.get("error", frame["pred_close"] - frame["actual_close"]), errors="coerce")
+    frame["abs_error"] = frame["error"].abs()
+    actual = pd.to_numeric(frame["actual_close"], errors="coerce").replace(0, np.nan)
+    frame["abs_pct_error"] = (frame["abs_error"] / actual).replace([np.inf, -np.inf], np.nan) * 100.0
+    return frame
+
+
+def _symbol_metric_frame(df: pd.DataFrame) -> pd.DataFrame:
+    error_frame = _prediction_error_series(df)
+    latest = _latest_prediction_rows(df)
+    rows: List[Dict[str, Any]] = []
+    for symbol, group in error_frame.groupby("symbol", sort=True):
+        latest_group = latest[latest["symbol"] == symbol]
+        error = pd.to_numeric(group["error"], errors="coerce")
+        abs_error = error.abs()
+        abs_pct_error = pd.to_numeric(group["abs_pct_error"], errors="coerce")
+        pred_return = pd.to_numeric(latest_group["pred_return_window"], errors="coerce")
+        actual_return = pd.to_numeric(latest_group["actual_return_window"], errors="coerce")
+        direction = pd.to_numeric(latest_group["direction_hit_window"], errors="coerce")
+        return_gap = (pred_return - actual_return).abs()
+        rows.append(
+            {
+                "symbol": str(symbol),
+                "rows": int(len(group)),
+                "windows": int(latest_group["window_id"].nunique()),
+                "sessions": int(group["session"].nunique()),
+                "mae": _safe_float(abs_error.mean()),
+                "rmse": _safe_float(np.sqrt((error**2).mean())),
+                "mape": _safe_float(abs_pct_error.mean()),
+                "direction_accuracy": _safe_float(direction.mean()),
+                "avg_pred_return": _safe_float(pred_return.mean()),
+                "avg_actual_return": _safe_float(actual_return.mean()),
+                "avg_abs_return_gap": _safe_float(return_gap.mean()),
+                "win_rate": _safe_float((actual_return > 0).mean()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _records(frame: pd.DataFrame, limit: int) -> List[Dict[str, Any]]:
+    if frame.empty:
+        return []
+    clean = frame.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    return clean.head(max(0, int(limit))).to_dict(orient="records")
+
+
+def error_distribution_chart_json(df: pd.DataFrame) -> str:
+    error_frame = _prediction_error_series(df)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Histogram(
+            x=error_frame["abs_pct_error"].dropna(),
+            nbinsx=60,
+            name="Absolute percentage error",
+            marker={"color": "#2563eb"},
+        )
+    )
+    fig.update_layout(
+        title="전체 예측 오차 분포",
+        xaxis_title="Absolute percentage error (%)",
+        yaxis_title="Count",
+        template="plotly_white",
+        height=360,
+    )
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+
+def return_scatter_chart_json(df: pd.DataFrame, max_points: int = 5000) -> str:
+    latest = _latest_prediction_rows(df).sort_values("window_id").head(max(1, int(max_points)))
+    color = latest["direction_hit_window"].map({1: "#16a34a", 0: "#dc2626"}).fillna("#64748b")
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scattergl(
+            x=latest["pred_return_window"],
+            y=latest["actual_return_window"],
+            mode="markers",
+            marker={"color": color, "size": 7, "opacity": 0.75},
+            text=latest["symbol"].astype(str),
+            customdata=np.stack([latest["window_id"], latest["session"].astype(str)], axis=-1),
+            hovertemplate="symbol=%{text}<br>window=%{customdata[0]}<br>session=%{customdata[1]}<br>pred=%{x:.4f}%<br>actual=%{y:.4f}%<extra></extra>",
+            name="window",
+        )
+    )
+    fig.add_hline(y=0, line={"color": "#94a3b8", "dash": "dot"})
+    fig.add_vline(x=0, line={"color": "#94a3b8", "dash": "dot"})
+    fig.update_layout(
+        title="예측 등락률 vs 실제 등락률",
+        xaxis_title="Predicted return (%)",
+        yaxis_title="Actual return (%)",
+        template="plotly_white",
+        height=420,
+    )
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+
+def symbol_heatmap_chart_json(symbol_metrics: pd.DataFrame, max_symbols: int = 50) -> str:
+    if symbol_metrics.empty:
+        fig = go.Figure()
+        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+    display = symbol_metrics.sort_values(["windows", "mape"], ascending=[False, True]).head(max(1, int(max_symbols)))
+    z = np.array(
+        [
+            display["mape"].astype(float).to_numpy(),
+            (display["direction_accuracy"].astype(float) * 100.0).to_numpy(),
+            display["avg_abs_return_gap"].astype(float).to_numpy(),
+        ]
+    )
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z,
+            x=display["symbol"].astype(str),
+            y=["MAPE %", "Direction hit %", "Abs return gap %p"],
+            colorscale="Viridis",
+            colorbar={"title": "Value"},
+        )
+    )
+    fig.update_layout(
+        title="종목별 핵심 지표 heatmap",
+        xaxis_title="Symbol",
+        yaxis_title="Metric",
+        template="plotly_white",
+        height=420,
+    )
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+
+def prediction_diagnostics(df: pd.DataFrame, max_symbols: int = 50, min_windows: int = 1) -> Dict[str, Any]:
+    symbol_metrics = _symbol_metric_frame(df)
+    if min_windows > 1 and not symbol_metrics.empty:
+        symbol_metrics = symbol_metrics[symbol_metrics["windows"] >= int(min_windows)].copy()
+    symbol_metrics = symbol_metrics.sort_values(["windows", "mape"], ascending=[False, True])
+    latest = _latest_prediction_rows(df)
+    overall = prediction_metrics(df)
+    overall.update(
+        {
+            "periods": int(latest["asof_timestamp"].nunique()) if "asof_timestamp" in latest.columns else 0,
+            "sessions": int(df["session"].nunique()),
+            "symbol_metric_count": int(len(symbol_metrics)),
+        }
+    )
+    best_symbols = symbol_metrics.sort_values(
+        ["direction_accuracy", "mape", "windows"], ascending=[False, True, False]
+    )
+    worst_symbols = symbol_metrics.sort_values(
+        ["mape", "direction_accuracy", "windows"], ascending=[False, True, False]
+    )
+    limit = max(1, int(max_symbols))
+    return {
+        "overall": overall,
+        "symbol_summary": _records(symbol_metrics, limit),
+        "best_symbols": _records(best_symbols, limit),
+        "worst_symbols": _records(worst_symbols, limit),
+        "charts": {
+            "error_distribution": error_distribution_chart_json(df),
+            "return_scatter": return_scatter_chart_json(df),
+            "symbol_heatmap": symbol_heatmap_chart_json(symbol_metrics, max_symbols=limit),
+        },
+    }
+
+
 def prediction_chart_json(df: pd.DataFrame, window_id: Optional[int] = None) -> str:
     if window_id is None:
         window_id = int(df["window_id"].iloc[0])

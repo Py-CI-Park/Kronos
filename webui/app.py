@@ -53,6 +53,7 @@ try:
             load_prediction_frame,
             load_training_summary,
             prediction_chart_json,
+            prediction_diagnostics,
             prediction_metrics,
             qlib_backtest_chart_json,
             recommendation_export_csv,
@@ -72,6 +73,7 @@ try:
             load_prediction_frame,
             load_training_summary,
             prediction_chart_json,
+            prediction_diagnostics,
             prediction_metrics,
             qlib_backtest_chart_json,
             recommendation_export_csv,
@@ -91,6 +93,7 @@ except Exception as exc:
     load_prediction_frame = None
     load_training_summary = None
     prediction_chart_json = None
+    prediction_diagnostics = None
     prediction_metrics = None
     qlib_backtest_chart_json = None
     recommendation_export_csv = None
@@ -480,6 +483,22 @@ def stom_prediction_file():
             'recommendation_summary': recommendation_summary(recommendations) if recommendation_summary else {},
             'windows': sorted(int(v) for v in df['window_id'].dropna().unique().tolist())[:500],
         })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/stom/diagnostics')
+def stom_prediction_diagnostics():
+    if load_prediction_frame is None or prediction_diagnostics is None:
+        return jsonify({'error': 'STOM diagnostics helper is not available'}), 500
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'file query parameter is required'}), 400
+    try:
+        max_symbols = int(request.args.get('max_symbols', 50))
+        min_windows = int(request.args.get('min_windows', 1))
+        df = load_prediction_frame(file_name)
+        return jsonify(prediction_diagnostics(df, max_symbols=max_symbols, min_windows=min_windows))
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
 
