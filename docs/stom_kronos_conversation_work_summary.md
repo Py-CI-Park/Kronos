@@ -790,3 +790,32 @@ Autopilot `ralplan` 단계로 다음 개발 목표를 확정했다.
 Autopilot 계획 단계: ████████████████████ 100%
 구현/검증/리뷰:      ░░░░░░░░░░░░░░░░░░░░ 0%
 ~~~
+---
+
+## 25. 2026-05-12 업데이트: 학습 대시보드 자동 새로고침/전체 웹 통합 구현
+
+Autopilot `ralph` 단계로 웹 통합 구현을 완료했다.
+
+구현 완료:
+
+- `/training`: 자동 새로고침 ON/OFF, 설정 가능한 초 단위 interval, localStorage 저장
+- `/`: 실시간 학습 상태 요약 카드와 `/training` 링크
+- `/stom`: 예측/성과 대시보드 상단 학습 상태 strip과 `/training` 링크
+- Flask: `refresh_interval` query parameter와 min/max clamp
+- 테스트: `tests/test_training_monitor.py`, `tests/test_training_progress.py` 통과
+
+검증:
+
+~~~text
+python -m pytest tests/test_training_monitor.py tests/test_training_progress.py -q
+8 passed
+~~~
+
+현재 단계 판단:
+
+~~~text
+전체 프로젝트 진행률: ███████████████████░ 97%
+Autopilot 구현 단계: ████████████████████ 100%
+검증 단계:           ████████████████████ 100%
+code-review 단계:    ░░░░░░░░░░░░░░░░░░░░ 0%
+~~~

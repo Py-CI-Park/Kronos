@@ -43,6 +43,93 @@
             opacity: 0.9;
         }
 
+        .top-links {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .top-links a {
+            color: white;
+            text-decoration: none;
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 999px;
+            padding: 8px 14px;
+            background: rgba(255,255,255,0.12);
+            font-weight: 700;
+        }
+
+        .training-summary-card {
+            background: rgba(255,255,255,0.96);
+            border-radius: 15px;
+            padding: 18px 22px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+            border-left: 5px solid #38a169;
+        }
+
+        .training-summary-card h2 {
+            margin-bottom: 10px;
+            color: #2d3748;
+            font-size: 1.25rem;
+        }
+
+        .training-summary-row {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 10px;
+            margin: 12px 0;
+        }
+
+        .training-summary-row div {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .training-summary-row strong {
+            display: block;
+            color: #4a5568;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .training-summary-row span {
+            color: #1a202c;
+            font-weight: 800;
+        }
+
+        .training-summary-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .training-summary-actions a,
+        .training-summary-actions button {
+            width: auto;
+            margin: 0;
+            text-decoration: none;
+            border-radius: 8px;
+            padding: 9px 12px;
+            color: white;
+            background: #2563eb;
+            border: none;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .training-summary-actions input {
+            width: 90px;
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+        }
+
         .main-content {
             display: grid;
             grid-template-columns: 1fr 2fr;
@@ -435,6 +522,10 @@
             .header h1 {
                 font-size: 2rem;
             }
+
+            .training-summary-row {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -443,6 +534,33 @@
         <div class="header">
             <h1>🚀 Kronos Financial Prediction Web UI</h1>
             <p>AI-based financial K-line data prediction analysis platform</p>
+            <div class="top-links">
+                <a href="/">Kronos 예측 UI</a>
+                <a href="/stom">STOM 실제값/예측값 대시보드</a>
+                <a href="/training">실시간 학습 모니터</a>
+            </div>
+        </div>
+
+        <div
+            id="trainingInlinePanel"
+            class="training-summary-card"
+            data-default-refresh-seconds="{{ default_training_refresh_seconds }}"
+        >
+            <h2>실시간 학습 상태</h2>
+            <div class="training-summary-row">
+                <div><strong>Status</strong><span id="trainingInlineStatus">불러오는 중</span></div>
+                <div><strong>Stage</strong><span id="trainingInlineStage">-</span></div>
+                <div><strong>Step</strong><span id="trainingInlineStep">-</span></div>
+                <div><strong>Progress</strong><span id="trainingInlineProgress">-</span></div>
+                <div><strong>Updated</strong><span id="trainingInlineUpdated">-</span></div>
+            </div>
+            <div class="training-summary-actions">
+                <a href="/training">학습 대시보드 열기</a>
+                <button type="button" onclick="refreshTrainingInlineStatus()">학습 상태 새로고침</button>
+                <label for="trainingInlineRefreshSeconds">자동 갱신(초)</label>
+                <input id="trainingInlineRefreshSeconds" type="number" min="2" max="3600" value="{{ default_training_refresh_seconds }}" onchange="restartTrainingInlineAutoRefresh()">
+                <span id="trainingInlineAutoStatus">running 중 자동 갱신 대기</span>
+            </div>
         </div>
 
         <div class="main-content">
@@ -639,11 +757,57 @@
         let currentDataInfo = null;
         let availableModels = [];
         let modelLoaded = false;
+        let trainingInlineTimer = null;
 
         // Initialize after page loads
         document.addEventListener('DOMContentLoaded', function() {
             initializeApp();
+            initTrainingInlineStatus();
         });
+
+        function trainingInlineSeconds() {
+            const input = document.getElementById('trainingInlineRefreshSeconds');
+            const value = Math.floor(Number(input.value || document.getElementById('trainingInlinePanel').dataset.defaultRefreshSeconds || 5));
+            const seconds = Math.max(2, Math.min(3600, Number.isFinite(value) ? value : 5));
+            input.value = seconds;
+            return seconds;
+        }
+
+        async function refreshTrainingInlineStatus() {
+            const statusEl = document.getElementById('trainingInlineStatus');
+            try {
+                const response = await axios.get('/api/training/status');
+                const data = response.data;
+                const stage = data.latest_stage || {};
+                statusEl.textContent = data.status || 'unknown';
+                document.getElementById('trainingInlineStage').textContent = stage.train_stage || '-';
+                document.getElementById('trainingInlineStep').textContent = `${stage.step || 0}/${stage.total_steps || '-'}`;
+                document.getElementById('trainingInlineProgress').textContent = `${Number(data.overall_percent || 0).toFixed(2)}%`;
+                document.getElementById('trainingInlineUpdated').textContent = stage.updated_at || data.updated_at || data.generated_at || '-';
+                document.getElementById('trainingInlineAutoStatus').textContent =
+                    data.status === 'running'
+                        ? `running · ${trainingInlineSeconds()}초마다 자동 갱신`
+                        : `대기 · 현재 ${data.status || 'unknown'}`;
+                return data.status;
+            } catch (error) {
+                statusEl.textContent = 'error';
+                document.getElementById('trainingInlineAutoStatus').textContent = error.response?.data?.error || error.message;
+                return 'unknown';
+            }
+        }
+
+        async function restartTrainingInlineAutoRefresh() {
+            if (trainingInlineTimer) clearTimeout(trainingInlineTimer);
+            const status = await refreshTrainingInlineStatus();
+            if (status === 'running' || status === 'unknown') {
+                trainingInlineTimer = setTimeout(restartTrainingInlineAutoRefresh, trainingInlineSeconds() * 1000);
+            }
+        }
+
+        function initTrainingInlineStatus() {
+            document.getElementById('trainingInlineRefreshSeconds').value = trainingInlineSeconds();
+            restartTrainingInlineAutoRefresh();
+        }
 
         // Initialize application
         async function initializeApp() {

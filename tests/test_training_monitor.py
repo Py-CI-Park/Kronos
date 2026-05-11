@@ -92,8 +92,38 @@ def test_training_dashboard_routes_register(monkeypatch):
 
     client = webapp.app.test_client()
 
-    assert client.get("/training").status_code == 200
+    training_html = client.get("/training").get_data(as_text=True)
+    index_html = client.get("/").get_data(as_text=True)
+    stom_html = client.get("/stom").get_data(as_text=True)
+
+    assert "autoRefreshEnabled" in training_html
+    assert "refreshIntervalSeconds" in training_html
+    assert "trainingInlinePanel" in index_html
+    assert "stomTrainingStrip" in stom_html
     assert client.get("/api/training/runs").get_json() == {"runs": []}
     assert client.get("/api/training/status").get_json()["run_name"] == "unit"
     assert client.get("/api/training/logs").get_json()["text"] == ""
     assert client.get("/api/training/gpu").get_json()["available"] is False
+
+
+def test_training_dashboard_refresh_interval_is_configurable_and_clamped(monkeypatch):
+    import app as webapp  # noqa: E402
+
+    monkeypatch.setattr(webapp, "list_training_runs", lambda limit=50: [])
+    monkeypatch.setattr(webapp, "load_training_status", lambda run_name=None: {"run_name": "unit", "stages": []})
+    monkeypatch.setattr(webapp, "tail_training_log", lambda run_name=None, stage=None, lines=200: {"lines": [], "text": ""})
+    monkeypatch.setattr(webapp, "query_gpu_status", lambda: {"available": False, "gpus": []})
+
+    client = webapp.app.test_client()
+
+    too_fast = client.get("/training?refresh_interval=1").get_data(as_text=True)
+    custom = client.get("/training?refresh_interval=17").get_data(as_text=True)
+    too_slow = client.get("/training?refresh_interval=99999").get_data(as_text=True)
+    index_custom = client.get("/?refresh_interval=11").get_data(as_text=True)
+    stom_custom = client.get("/stom?refresh_interval=13").get_data(as_text=True)
+
+    assert 'data-default-refresh-seconds="2"' in too_fast
+    assert 'value="17"' in custom
+    assert 'data-default-refresh-seconds="3600"' in too_slow
+    assert 'data-default-refresh-seconds="11"' in index_custom
+    assert 'data-default-refresh-seconds="13"' in stom_custom

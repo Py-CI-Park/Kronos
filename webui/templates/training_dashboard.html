@@ -36,13 +36,28 @@
     .muted { color: #94a3b8; font-size: 13px; line-height: 1.45; }
     .warn { color: #fde68a; }
     .error { color: #fecaca; }
+    .nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .nav a { border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 7px 12px; text-decoration: none; background: rgba(15, 23, 42, .35); color: #dbeafe; font-weight: 800; }
+    .inline { display: flex; gap: 8px; align-items: center; }
+    .inline input[type="checkbox"] { width: auto; }
+    input { width: 100%; padding: 11px; border-radius: 9px; border: 1px solid #334155; background: #0b1120; color: #e2e8f0; box-sizing: border-box; }
+    .refresh-pill { display: inline-block; border: 1px solid #334155; border-radius: 999px; padding: 5px 9px; color: #bfdbfe; background: #0b1120; font-size: 12px; font-weight: 800; }
     @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
-<body>
+<body
+  data-default-refresh-seconds="{{ default_training_refresh_seconds }}"
+  data-min-refresh-seconds="{{ min_training_refresh_seconds }}"
+  data-max-refresh-seconds="{{ max_training_refresh_seconds }}"
+>
 <header>
   <h1>STOM Kronos 실시간 학습 모니터</h1>
   <p>2025년 STOM tick 전체 학습처럼 며칠 걸리는 작업을 CMD만 보지 않고 웹에서 진행률, ETA, 로그, GPU 사용량으로 확인합니다.</p>
+  <div class="nav">
+    <a href="/">Kronos 예측 UI</a>
+    <a href="/stom">STOM 예측/성과 대시보드</a>
+    <a href="/training">실시간 학습 모니터</a>
+  </div>
 </header>
 <main>
   <div class="grid">
@@ -53,6 +68,28 @@
         <select id="runSelect" onchange="selectRun()"></select>
         <button onclick="refreshAll()">새로고침</button>
         <p class="muted">실제 학습 시작 명령은 터미널에서 실행하고, 이 페이지는 `finetune/outputs/*/logs/*.progress.json`과 로그 파일을 읽어 표시합니다.</p>
+      </div>
+      <div class="card">
+        <h2>자동 새로고침</h2>
+        <label class="inline" for="autoRefreshEnabled">
+          <input id="autoRefreshEnabled" type="checkbox" checked onchange="applyAutoRefreshSettings()">
+          학습 running 중 자동 새로고침
+        </label>
+        <label for="refreshIntervalSeconds">새로고침 간격(초)</label>
+        <input
+          id="refreshIntervalSeconds"
+          type="number"
+          min="{{ min_training_refresh_seconds }}"
+          max="{{ max_training_refresh_seconds }}"
+          value="{{ default_training_refresh_seconds }}"
+          onchange="applyAutoRefreshSettings()"
+        >
+        <button onclick="applyAutoRefreshSettings()">설정 적용</button>
+        <p class="muted">
+          현재 설정: <span id="refreshIntervalLabel" class="refresh-pill">-</span>
+          · 상태: <span id="autoRefreshStatus" class="refresh-pill">초기화 중</span>
+        </p>
+        <p class="muted">마지막 갱신: <span id="lastRefreshAt">-</span> · 다음 갱신: <span id="nextRefreshAt">-</span></p>
       </div>
       <div class="card">
         <h2>전체 진행</h2>
@@ -92,6 +129,16 @@
 <script>
 let currentRun = null;
 let currentStage = null;
+let latestRunStatus = 'unknown';
+let autoRefreshTimer = null;
+let countdownTimer = null;
+let nextRefreshEpochMs = null;
+let refreshInFlight = false;
+
+const DEFAULT_REFRESH_SECONDS = Number(document.body.dataset.defaultRefreshSeconds || 5);
+const MIN_REFRESH_SECONDS = Number(document.body.dataset.minRefreshSeconds || 2);
+const MAX_REFRESH_SECONDS = Number(document.body.dataset.maxRefreshSeconds || 3600);
+const RUNNING_STATUSES = new Set(['running']);
 
 function pct(value) {
   const n = Number(value || 0);
@@ -121,6 +168,83 @@ function metric(label, value) {
   return `<div class="metric"><span>${label}</span><span>${value ?? '-'}</span></div>`;
 }
 
+function clampRefreshSeconds(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_REFRESH_SECONDS;
+  return Math.max(MIN_REFRESH_SECONDS, Math.min(MAX_REFRESH_SECONDS, Math.floor(parsed)));
+}
+
+function getRefreshSeconds() {
+  const input = document.getElementById('refreshIntervalSeconds');
+  const seconds = clampRefreshSeconds(input.value);
+  input.value = seconds;
+  return seconds;
+}
+
+function isAutoRefreshEnabled() {
+  return document.getElementById('autoRefreshEnabled').checked;
+}
+
+function shouldAutoRefresh() {
+  return isAutoRefreshEnabled() && (RUNNING_STATUSES.has(latestRunStatus) || latestRunStatus === 'unknown');
+}
+
+function setAutoRefreshStatus(text) {
+  document.getElementById('autoRefreshStatus').textContent = text;
+}
+
+function clearAutoRefreshTimers() {
+  if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+  if (countdownTimer) clearInterval(countdownTimer);
+  autoRefreshTimer = null;
+  countdownTimer = null;
+  nextRefreshEpochMs = null;
+}
+
+function updateCountdown() {
+  const target = document.getElementById('nextRefreshAt');
+  if (!nextRefreshEpochMs) {
+    target.textContent = '-';
+    return;
+  }
+  const remaining = Math.max(0, Math.ceil((nextRefreshEpochMs - Date.now()) / 1000));
+  target.textContent = `${new Date(nextRefreshEpochMs).toLocaleTimeString()} (${remaining}초 후)`;
+}
+
+function scheduleNextRefresh() {
+  clearAutoRefreshTimers();
+  const seconds = getRefreshSeconds();
+  document.getElementById('refreshIntervalLabel').textContent = `${seconds}초`;
+  localStorage.setItem('stomTrainingAutoRefreshSeconds', String(seconds));
+  localStorage.setItem('stomTrainingAutoRefreshEnabled', isAutoRefreshEnabled() ? '1' : '0');
+
+  if (!shouldAutoRefresh()) {
+    const reason = isAutoRefreshEnabled()
+      ? `대기 중: 현재 상태 ${latestRunStatus}`
+      : '꺼짐';
+    setAutoRefreshStatus(reason);
+    document.getElementById('nextRefreshAt').textContent = '-';
+    return;
+  }
+
+  nextRefreshEpochMs = Date.now() + seconds * 1000;
+  setAutoRefreshStatus(`켜짐 · ${latestRunStatus}`);
+  updateCountdown();
+  countdownTimer = setInterval(updateCountdown, 1000);
+  autoRefreshTimer = setTimeout(() => refreshAll({ reason: 'auto' }), seconds * 1000);
+}
+
+function applyAutoRefreshSettings() {
+  scheduleNextRefresh();
+}
+
+function restoreAutoRefreshSettings() {
+  const savedSeconds = localStorage.getItem('stomTrainingAutoRefreshSeconds');
+  const savedEnabled = localStorage.getItem('stomTrainingAutoRefreshEnabled');
+  document.getElementById('refreshIntervalSeconds').value = clampRefreshSeconds(savedSeconds || DEFAULT_REFRESH_SECONDS);
+  document.getElementById('autoRefreshEnabled').checked = savedEnabled === null ? true : savedEnabled === '1';
+}
+
 async function refreshRuns() {
   const res = await fetch('/api/training/runs');
   const data = await res.json();
@@ -145,8 +269,7 @@ async function refreshRuns() {
 function selectRun() {
   currentRun = document.getElementById('runSelect').value || null;
   currentStage = null;
-  refreshStatus();
-  refreshLogs();
+  refreshAll({ reason: 'select-run' });
 }
 
 async function refreshStatus() {
@@ -159,8 +282,10 @@ async function refreshStatus() {
   const data = await res.json();
   if (data.error) {
     document.getElementById('stageList').innerHTML = `<span class="error">${data.error}</span>`;
+    latestRunStatus = 'unknown';
     return;
   }
+  latestRunStatus = data.status || 'unknown';
   const overall = pct(data.overall_percent);
   document.getElementById('overallFill').style.width = `${overall}%`;
   document.getElementById('overallMetrics').innerHTML = [
@@ -230,18 +355,26 @@ async function refreshGpu() {
 }
 
 async function refreshAll() {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
+  clearAutoRefreshTimers();
   try {
     await refreshRuns();
     await refreshStatus();
     await refreshLogs();
     await refreshGpu();
+    document.getElementById('lastRefreshAt').textContent = new Date().toLocaleTimeString();
   } catch (err) {
     document.getElementById('stageList').innerHTML = `<span class="error">${err}</span>`;
+    latestRunStatus = 'unknown';
+  } finally {
+    refreshInFlight = false;
+    scheduleNextRefresh();
   }
 }
 
+restoreAutoRefreshSettings();
 refreshAll();
-setInterval(refreshAll, 5000);
 </script>
 </body>
 </html>

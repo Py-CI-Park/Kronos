@@ -161,6 +161,30 @@ AVAILABLE_MODELS = {
     }
 }
 
+MIN_TRAINING_REFRESH_SECONDS = 2
+MAX_TRAINING_REFRESH_SECONDS = 3600
+
+
+def _default_training_refresh_seconds():
+    try:
+        return int(float(os.environ.get("STOM_TRAINING_REFRESH_SECONDS", "5") or 5))
+    except (TypeError, ValueError):
+        return 5
+
+
+DEFAULT_TRAINING_REFRESH_SECONDS = _default_training_refresh_seconds()
+
+
+def resolve_training_refresh_seconds(raw_value=None):
+    """Return a safe UI auto-refresh interval in seconds."""
+    if raw_value in (None, ""):
+        raw_value = DEFAULT_TRAINING_REFRESH_SECONDS
+    try:
+        seconds = int(float(raw_value))
+    except (TypeError, ValueError):
+        seconds = DEFAULT_TRAINING_REFRESH_SECONDS
+    return max(MIN_TRAINING_REFRESH_SECONDS, min(seconds, MAX_TRAINING_REFRESH_SECONDS))
+
 def load_data_files():
     """Scan data directory and return available data files"""
     data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
@@ -434,17 +458,28 @@ def create_prediction_chart(df, pred_df, lookback, pred_len, actual_df=None, his
 @app.route('/')
 def index():
     """Home page"""
-    return render_template('index.html')
+    return render_template(
+        'index.html',
+        default_training_refresh_seconds=resolve_training_refresh_seconds(request.args.get('refresh_interval')),
+    )
 
 @app.route('/stom')
 def stom_dashboard_page():
     """STOM OHLCV actual-vs-predicted dashboard."""
-    return render_template('stom_dashboard.html')
+    return render_template(
+        'stom_dashboard.html',
+        default_training_refresh_seconds=resolve_training_refresh_seconds(request.args.get('refresh_interval')),
+    )
 
 @app.route('/training')
 def training_dashboard_page():
     """Live STOM Kronos fine-tuning monitor."""
-    return render_template('training_dashboard.html')
+    return render_template(
+        'training_dashboard.html',
+        default_training_refresh_seconds=resolve_training_refresh_seconds(request.args.get('refresh_interval')),
+        min_training_refresh_seconds=MIN_TRAINING_REFRESH_SECONDS,
+        max_training_refresh_seconds=MAX_TRAINING_REFRESH_SECONDS,
+    )
 
 @app.route('/api/training/runs')
 def training_runs():
