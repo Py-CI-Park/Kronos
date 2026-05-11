@@ -152,10 +152,19 @@ C:\Python\64\Python3119\python.exe -m pytest `
 결과:
 
 ```text
-32 passed, 3 warnings
+33 passed, 3 warnings
 ```
 
-## 9. 주의사항
+## 9. 브라우저 검증 상태
+
+2026-05-11 KST에 /training 실제 서버/API/브라우저 검증을 완료했다.
+
+- 상세 보고서: docs/stom_training_dashboard_browser_verification.md
+- 검증 URL: http://127.0.0.1:5070/training
+- 검증 결과: run 목록, 전체 진행률, tokenizer/predictor 단계, GPU, log tail 표시 통과
+- 추가 수정: dry-run progress는 0%로 표시하고 dry-run log placeholder를 생성한다.
+
+## 10. 주의사항
 
 - 이 기능은 학습 진행률을 관측하는 기능이지 정확도 개선 기능은 아니다.
 - checkpoint resume 자동화는 아직 별도 단계다. 현재는 로그/진행률/상태 확인이 목적이다.

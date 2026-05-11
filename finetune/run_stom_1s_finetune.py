@@ -204,6 +204,11 @@ def execute_run(spec: Mapping[str, Any], dry_run: bool = False) -> Dict[str, Any
     }
     manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if dry_run:
+        stdout_path.write_text(
+            f"dry-run only; {spec.get('train_stage', 'training')} command was not executed.\n",
+            encoding="utf-8",
+        )
+        stderr_path.write_text("dry-run only; no stderr was produced.\n", encoding="utf-8")
         build_dry_run_progress(spec, progress_path, stdout_path, stderr_path, manifest_path)
         return payload
 

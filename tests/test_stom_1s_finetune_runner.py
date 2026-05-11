@@ -54,6 +54,8 @@ def test_runner_dry_run_records_reproducible_env(tmp_path):
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["status"] == "dry_run"
     assert Path(payload["progress_path"]).exists()
+    assert Path(payload["stdout_log"]).exists()
+    assert "dry-run only" in Path(payload["stdout_log"]).read_text(encoding="utf-8")
     progress_payload = json.loads(Path(payload["progress_path"]).read_text(encoding="utf-8"))
     assert progress_payload["status"] == "dry_run"
     assert progress_payload["train_stage"] == "predictor"

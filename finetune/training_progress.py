@@ -190,7 +190,10 @@ class TrainingProgressTracker:
             completed_steps = 0
             stage_fraction = 0.0
         stage_fraction = max(0.0, min(1.0, stage_fraction))
-        overall_fraction = ((stage_index - 1) + stage_fraction) / float(stage_count)
+        if self.status == "dry_run":
+            overall_fraction = 0.0
+        else:
+            overall_fraction = ((stage_index - 1) + stage_fraction) / float(stage_count)
         overall_fraction = max(0.0, min(1.0, overall_fraction))
         steps_per_second = completed_steps / elapsed_seconds if elapsed_seconds > 0 and completed_steps > 0 else 0.0
         samples_per_second = steps_per_second * batch_size * world_size
