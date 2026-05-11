@@ -1,4 +1,4 @@
-﻿# STOM tick Kronos 작업/대화/조사 통합 기록
+# STOM tick Kronos 작업/대화/조사 통합 기록
 
 작성일: 2026-05-10 KST
 대상 저장소: `D:\Chanil_Park\Project\Programming\Kronos`
@@ -598,6 +598,39 @@ $ralph 2025년 STOM tick pred60 Kronos-small 전체 학습 tokenizer 단계의 p
 전체 프로젝트 진행률: ███████████████████░ 97%
 현재 점검 완료율:     ████████████████████ 100%  두 번째 중간 progress/log/GPU 확인 완료
 실제 학습 진행률:     ░░░░░░░░░░░░░░░░░░░░ 1.4888%
+~~~
+
+다음 권장 OMX 명령:
+
+~~~text
+$ralph 2025년 STOM tick pred60 Kronos-small 전체 학습 tokenizer 단계의 다음 중간 진행률을 다시 점검하고, checkpoint 생성 여부와 predictor 전환 여부를 확인한 뒤 문서와 commit으로 남기세요.
+~~~
+---
+
+## 19. 2026-05-11 업데이트: full training tokenizer 세 번째 중간 진행 확인
+
+실행 중인 2025년 STOM tick pred60 Kronos-small 전체 학습을 세 번째로 중간 점검했다.
+
+확인 결과:
+
+- stage: tokenizer running
+- 이전 commit 후 최종 관측: step 142,000 / 4,701,721, overall 1.5101%
+- 이번 1차 샘플: step 164,000 / 4,701,721, loss -0.0329
+- 이번 2차 샘플: step 165,000 / 4,701,721, loss -0.0339
+- 문서 작성 직전: step 167,000 / 4,701,721, loss -0.0269
+- tokenizer stage progress: 3.5519%
+- overall progress: 1.7759%
+- samples/sec: 약 76.5
+- checkpoint/model file count: 0
+- predictor 전환: 아직 전
+- GPU: NVIDIA GeForce RTX 4080 SUPER, 39, 2995, 16376, [N/A], 44
+
+현재 단계 판단:
+
+~~~text
+전체 프로젝트 진행률: ███████████████████░ 97%
+현재 점검 완료율:     ████████████████████ 100%  세 번째 progress/log/GPU/checkpoint 확인 완료
+실제 학습 진행률:     ░░░░░░░░░░░░░░░░░░░░ 1.7759%
 ~~~
 
 다음 권장 OMX 명령:
