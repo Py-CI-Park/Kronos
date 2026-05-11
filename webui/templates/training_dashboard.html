@@ -160,12 +160,22 @@ function formatSeconds(value) {
 }
 
 function badge(status) {
-  const s = status || 'unknown';
-  return `<span class="badge ${s}">${s}</span>`;
+  const s = String(status || 'unknown');
+  const cssClass = s.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `<span class="badge ${cssClass}">${escapeHtml(s)}</span>`;
 }
 
 function metric(label, value) {
-  return `<div class="metric"><span>${label}</span><span>${value ?? '-'}</span></div>`;
+  return `<div class="metric"><span>${escapeHtml(label)}</span><span>${escapeHtml(value ?? '-')}</span></div>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function clampRefreshSeconds(value) {
@@ -281,7 +291,7 @@ async function refreshStatus() {
   const res = await fetch(`/api/training/status?run=${encodeURIComponent(currentRun)}`);
   const data = await res.json();
   if (data.error) {
-    document.getElementById('stageList').innerHTML = `<span class="error">${data.error}</span>`;
+    document.getElementById('stageList').innerHTML = `<span class="error">${escapeHtml(data.error)}</span>`;
     latestRunStatus = 'unknown';
     return;
   }
@@ -301,9 +311,10 @@ async function refreshStatus() {
   document.getElementById('stageList').innerHTML = stages.map(stage => {
     const stagePct = pct(stage.stage_percent);
     const overallPct = pct(stage.overall_percent);
-    const stageName = stage.train_stage || '';
-    return `<div class="stage" onclick="currentStage='${stageName}'; refreshLogs();">
-      <h3><span>${stage.stage_index || '-'} / ${stage.stage_count || '-'} · ${stageName || 'stage'}</span>${badge(stage.status)}</h3>
+    const stageName = String(stage.train_stage || '');
+    const encodedStageName = encodeURIComponent(stageName);
+    return `<div class="stage" onclick="currentStage=decodeURIComponent('${encodedStageName}'); refreshLogs();">
+      <h3><span>${escapeHtml(stage.stage_index || '-')} / ${escapeHtml(stage.stage_count || '-')} · ${escapeHtml(stageName || 'stage')}</span>${badge(stage.status)}</h3>
       <div class="bar"><div class="fill" style="width:${stagePct}%"></div></div>
       ${metric('단계 진행률', `${stagePct}%`)}
       ${metric('전체 반영 진행률', `${overallPct}%`)}
@@ -315,7 +326,7 @@ async function refreshStatus() {
       ${metric('경과 시간', formatSeconds(stage.elapsed_seconds))}
       ${metric('예상 남은 시간', formatSeconds(stage.eta_seconds))}
       ${metric('samples/sec', stage.samples_per_second ? Number(stage.samples_per_second).toFixed(2) : '-')}
-      <p class="muted">${stage.last_line || ''}</p>
+      <p class="muted">${escapeHtml(stage.last_line || '')}</p>
     </div>`;
   }).join('') || '단계 진행 파일이 없습니다.';
 }
@@ -337,7 +348,7 @@ async function refreshGpu() {
   const status = document.getElementById('gpuStatus');
   const rows = document.getElementById('gpuRows');
   if (!data.available) {
-    status.innerHTML = `<span class="warn">GPU 정보를 사용할 수 없습니다: ${data.error || 'nvidia-smi 결과 없음'}</span>`;
+    status.innerHTML = `<span class="warn">GPU 정보를 사용할 수 없습니다: ${escapeHtml(data.error || 'nvidia-smi 결과 없음')}</span>`;
     rows.innerHTML = '';
     return;
   }
@@ -346,11 +357,11 @@ async function refreshGpu() {
     : `${Number(data.total_power_draw_watts).toFixed(1)} W`;
   status.textContent = `총 GPU 전력: ${totalPower} · ${data.generated_at}`;
   rows.innerHTML = (data.gpus || []).map(gpu => `<tr>
-    <td>${gpu.index}: ${gpu.name}</td>
-    <td>${gpu.utilization_gpu_percent ?? '-'}</td>
-    <td>${gpu.memory_used_mib ?? '-'} / ${gpu.memory_total_mib ?? '-'} MiB</td>
-    <td>${gpu.power_draw_watts ?? '-'}</td>
-    <td>${gpu.temperature_c ?? '-'}</td>
+    <td>${escapeHtml(gpu.index)}: ${escapeHtml(gpu.name)}</td>
+    <td>${escapeHtml(gpu.utilization_gpu_percent ?? '-')}</td>
+    <td>${escapeHtml(gpu.memory_used_mib ?? '-')} / ${escapeHtml(gpu.memory_total_mib ?? '-')} MiB</td>
+    <td>${escapeHtml(gpu.power_draw_watts ?? '-')}</td>
+    <td>${escapeHtml(gpu.temperature_c ?? '-')}</td>
   </tr>`).join('');
 }
 
@@ -365,7 +376,7 @@ async function refreshAll() {
     await refreshGpu();
     document.getElementById('lastRefreshAt').textContent = new Date().toLocaleTimeString();
   } catch (err) {
-    document.getElementById('stageList').innerHTML = `<span class="error">${err}</span>`;
+    document.getElementById('stageList').innerHTML = `<span class="error">${escapeHtml(err)}</span>`;
     latestRunStatus = 'unknown';
   } finally {
     refreshInFlight = false;
