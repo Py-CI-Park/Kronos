@@ -375,3 +375,43 @@
 따라서 다음 방향은 명확하다.
 
 > **2025년 전체 STOM tick 데이터로 Kronos-small을 공식 방식으로 학습하고, 대시보드에서 실제값/예측값/종목별 통계/Top-K 성과를 확인한다. 그 결과가 개선될 때만 Kronos-base 또는 전체 연도 학습으로 확대한다.**
+
+---
+
+## 12. 2026-05-11 업데이트: 2025년 전체 학습 preflight 완료
+
+다음 단계로 2025년 STOM tick 전체 학습 전 preflight를 완료했다.
+
+추가된 핵심 기능:
+
+- `finetune_csv/stom_tick_dataset.py`: `session_start`, `session_end` 기반 날짜/session 필터 추가
+- `finetune/qlib_stom_pipeline.py`: 2025년 전용 Qlib/Kronos export를 위한 `--session-start`, `--session-end` 인자 추가
+- `finetune/preflight_stom_2025_full.py`: DB read-only, CUDA, 디스크, 샘플 수, export/training 명령을 자동 점검
+- `docs/stom_2025_full_training_preflight.md`: preflight 결과와 다음 실행 명령 기록
+
+실제 preflight 결과:
+
+- 상태: `ready_with_actions`
+- blocker: 0개
+- DB: `_database/stock_tick_back.db`, 27.69GB, 2,427 tables, read-only/query_only 통과
+- CUDA: RTX 4080 SUPER, PyTorch 2.9.0+cu128, VRAM 15.99GB
+- D: 여유 공간: 약 538.64GB
+- 2025년 train samples: 18,771,531
+- 2025년 validation samples: 3,922,758
+- train+validation: 22,694,289
+- 4080S 예상 학습 시간: 약 192.81시간, 약 8.03일
+
+현재 단계 판단:
+
+```text
+전체 진행률: ████████████████░░░░ 80%
+현재 단계: 2025년 전체 학습 preflight 완료
+다음 단계: 2025년 processed dataset export
+남은 단계: 2025년 full training → 예측 CSV → 대시보드/통계 검증 → base 확대 여부 판단
+```
+
+다음 권장 OMX 명령:
+
+```text
+$ralph 2025년 STOM tick pred60 processed dataset export를 실행하고 export report, train/val/test pkl 생성 여부, session split, row/sample 수를 검증한 뒤 문서와 commit으로 남기세요.
+```

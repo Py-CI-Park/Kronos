@@ -173,3 +173,22 @@ def test_read_stom_table_as_kline_uses_query_only_connection(tmp_path):
     assert mapping["close"] == "현재가"
     assert frame["symbol"].unique().tolist() == ["000001"]
     assert frame[["open", "high", "low", "close"]].nunique(axis=1).eq(1).all()
+
+
+def test_read_stom_table_as_kline_can_filter_session_range(tmp_path):
+    db_path = tmp_path / "stock_tick_back.db"
+    _create_stom_db(db_path)
+    conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+    conn.execute("PRAGMA query_only=ON")
+    try:
+        frame, _ = read_stom_table_as_kline(
+            conn,
+            "000001",
+            price_mode="close_only",
+            session_start="20260103",
+            session_end="20260103",
+        )
+    finally:
+        conn.close()
+
+    assert frame["session"].unique().tolist() == ["20260103"]

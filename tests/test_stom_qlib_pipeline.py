@@ -177,6 +177,36 @@ def test_export_regularizes_1s_grid_and_keeps_sessions_out_of_multiple_splits(tm
     assert filled_row["amount"] == 0
 
 
+def test_export_stom_to_qlib_can_limit_session_range(tmp_path):
+    db_path = tmp_path / "stock_tick_back.db"
+    out_dir = tmp_path / "qlib_export_2026_session"
+    _create_stom_db(db_path)
+
+    report = export_stom_to_qlib(
+        StomQlibExportConfig(
+            db_path=str(db_path),
+            output_dir=str(out_dir),
+            lookback_window=3,
+            predict_window=2,
+            price_mode="close_only",
+            session_start="20260103",
+            session_end="20260104",
+            train_ratio=0.5,
+            val_ratio=0.25,
+            test_ratio=0.25,
+        )
+    )
+
+    exported_sessions = {
+        session
+        for sessions in report["split_sessions"].values()
+        for session in sessions
+    }
+    assert exported_sessions == {"20260103", "20260104"}
+    assert report["config"]["session_start"] == "20260103"
+    assert report["config"]["session_end"] == "20260104"
+
+
 def test_score_backtest_and_dashboard_artifact_loader(tmp_path, monkeypatch):
     pred_csv = tmp_path / "predictions.csv"
     pred_csv.write_text(

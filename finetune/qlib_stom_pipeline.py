@@ -63,6 +63,8 @@ class StomQlibExportConfig:
     price_mode: str = "close_only"
     time_start: str = "090000"
     time_end: str = "093000"
+    session_start: Optional[str] = None
+    session_end: Optional[str] = None
     max_rows_per_group: int = 0
     max_groups: int = 0
     freq: str = "1s"
@@ -467,6 +469,8 @@ def export_stom_to_qlib(config: StomQlibExportConfig) -> Dict[str, Any]:
                     price_mode=config.price_mode,
                     time_start=config.time_start,
                     time_end=config.time_end,
+                    session_start=config.session_start,
+                    session_end=config.session_end,
                 )
                 mapping_warnings = mapping.get("warnings", [])
                 warnings.extend(str(w) for w in mapping_warnings)
@@ -774,6 +778,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     export.add_argument("--price-mode", choices=["db_ohlc", "close_only"], default="close_only")
     export.add_argument("--time-start", default="090000")
     export.add_argument("--time-end", default="093000")
+    export.add_argument("--session-start", default=None, help="Optional inclusive YYYYMMDD session lower bound.")
+    export.add_argument("--session-end", default=None, help="Optional inclusive YYYYMMDD session upper bound.")
     export.add_argument("--max-rows-per-group", type=int, default=0)
     export.add_argument("--max-groups", type=int, default=0)
     export.add_argument("--freq", choices=sorted(SUPPORTED_FREQS), default="1s")
@@ -838,6 +844,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 price_mode=args.price_mode,
                 time_start=args.time_start,
                 time_end=args.time_end,
+                session_start=args.session_start,
+                session_end=args.session_end,
                 max_rows_per_group=args.max_rows_per_group,
                 max_groups=args.max_groups,
                 freq=args.freq,

@@ -15,6 +15,15 @@ TIME_FEATURE_COLUMNS = ["minute", "hour", "weekday", "day", "month"]
 DEFAULT_GROUP_COLUMNS = ["symbol", "session"]
 
 
+def _normalize_session_bound(value: Optional[str], label: str) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    text = str(value).replace("-", "").strip()
+    if len(text) != 8 or not text.isdigit():
+        raise ValueError(f"{label} must be YYYYMMDD or YYYY-MM-DD, got: {value}")
+    return text
+
+
 def _quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
@@ -145,17 +154,37 @@ def read_stom_table_as_kline(
     price_mode: str = "db_ohlc",
     time_start: str = "090000",
     time_end: str = "093000",
+    session_start: Optional[str] = None,
+    session_end: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """Read one STOM symbol table and convert it to Kronos OHLCV rows."""
+
+    session_start = _normalize_session_bound(session_start, "session_start")
+    session_end = _normalize_session_bound(session_end, "session_end")
+    if session_start and session_end and session_start > session_end:
+        raise ValueError("session_start must be <= session_end")
 
     columns = get_table_columns(conn, table_name)
     mapping = infer_stom_column_mapping(columns, price_mode=price_mode)
     sql_columns = _required_sql_columns(mapping)
     select_clause = ", ".join(_quote_ident(col) for col in sql_columns)
     order_col = _quote_ident(mapping["timestamp"])
+    timestamp_session_expr = (
+        f"substr(replace(replace(replace(CAST({order_col} AS TEXT), '-', ''), ':', ''), ' ', ''), 1, 8)"
+    )
+    where_clauses = []
+    params: List[str] = []
+    if session_start:
+        where_clauses.append(f"{timestamp_session_expr} >= ?")
+        params.append(session_start)
+    if session_end:
+        where_clauses.append(f"{timestamp_session_expr} <= ?")
+        params.append(session_end)
+    where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     source = pd.read_sql_query(
-        f"SELECT {select_clause} FROM {_quote_ident(table_name)} ORDER BY {order_col}",
+        f"SELECT {select_clause} FROM {_quote_ident(table_name)}{where_sql} ORDER BY {order_col}",
         conn,
+        params=params,
     )
 
     timestamps = _timestamp_series(source[mapping["timestamp"]])
@@ -204,6 +233,10 @@ def read_stom_table_as_kline(
             frame = frame[hhmmss <= time_end]
 
     frame["session"] = frame["timestamps"].dt.strftime("%Y%m%d")
+    if session_start:
+        frame = frame[frame["session"] >= session_start]
+    if session_end:
+        frame = frame[frame["session"] <= session_end]
     frame = frame.sort_values(["session", "timestamps"]).drop_duplicates(
         subset=["symbol", "session", "timestamps"], keep="last"
     )
@@ -289,9 +322,16 @@ def export_stom_tick_db_to_csv(
     price_mode: str = "db_ohlc",
     time_start: str = "090000",
     time_end: str = "093000",
+    session_start: Optional[str] = None,
+    session_end: Optional[str] = None,
     max_rows_per_group: int = 0,
 ) -> Dict[str, Any]:
     """Convert STOM per-symbol SQLite tables to a grouped Kronos training CSV."""
+
+    session_start = _normalize_session_bound(session_start, "session_start")
+    session_end = _normalize_session_bound(session_end, "session_end")
+    if session_start and session_end and session_start > session_end:
+        raise ValueError("session_start must be <= session_end")
 
     min_rows = lookback_window + predict_window + 1
     if max_rows_per_group and max_rows_per_group > 0 and max_rows_per_group < min_rows:
@@ -325,6 +365,8 @@ def export_stom_tick_db_to_csv(
                     price_mode=price_mode,
                     time_start=time_start,
                     time_end=time_end,
+                    session_start=session_start,
+                    session_end=session_end,
                 )
                 kept_parts = []
                 for (_, _), group in frame.groupby(DEFAULT_GROUP_COLUMNS, sort=True):
@@ -381,6 +423,8 @@ def export_stom_tick_db_to_csv(
             "max_rows_per_group": max_rows_per_group,
             "min_rows_per_group": min_rows,
             "price_mode": price_mode,
+            "session_start": session_start,
+            "session_end": session_end,
             "trainable_csv_created": written_rows > 0 and written_groups > 0,
             "tables": table_reports,
         }
@@ -608,6 +652,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     export_parser.add_argument("--price-mode", choices=["db_ohlc", "close_only"], default="db_ohlc")
     export_parser.add_argument("--time-start", default="090000")
     export_parser.add_argument("--time-end", default="093000")
+    export_parser.add_argument("--session-start", default=None, help="Optional inclusive YYYYMMDD session lower bound.")
+    export_parser.add_argument("--session-end", default=None, help="Optional inclusive YYYYMMDD session upper bound.")
     export_parser.add_argument(
         "--max-rows-per-group",
         type=int,
@@ -637,6 +683,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             price_mode=args.price_mode,
             time_start=args.time_start,
             time_end=args.time_end,
+            session_start=args.session_start,
+            session_end=args.session_end,
             max_rows_per_group=args.max_rows_per_group,
         )
 
