@@ -1764,3 +1764,32 @@ expand_200k: 보류
 200k 확대 학습 실행                     [░░░░░] 0%  target gate 미충족
 전체 진행률                              [█████░] 93%
 ```
+
+
+## 2026-05-12 STOM 2025 full training live checkpoint 08
+
+상세 보고서: `docs/stom_2025_full_training_progress_checkpoint_08.md`
+
+이번 단계는 자동 새로고침 대시보드 구현 이후, 실제 long-running full training이 계속 살아 있는지 검증하는 중간 점검이다.
+
+핵심 결과:
+
+- `tokenizer` 단계 running
+- step `920000 / 4701721`
+- tokenizer 진행률 `19.5673%`
+- 전체 both-stage 진행률 `9.7837%`
+- 70초 간격으로 `918000 -> 919000` step 증가 확인
+- checkpoint/model weight는 아직 없음
+- predictor 전환 전
+- `/training?refresh_interval=10`, `/?refresh_interval=10`, `/stom?refresh_interval=10` HTTP 응답 및 자동 갱신 UI 확인
+
+진행률:
+
+```text
+데이터/실행 준비                          [████████████████████] 100%
+웹 대시보드 자동 갱신 통합                [████████████████████] 100%
+tokenizer 학습                            [████░░░░░░░░░░░░░░░░] 19.57%
+전체 both-stage 학습                       [██░░░░░░░░░░░░░░░░░░] 9.78%
+predictor 학습                             [░░░░░░░░░░░░░░░░░░░░] 0.00%
+예측 CSV/실제값 비교 대시보드 성과 검증    [░░░░░░░░░░░░░░░░░░░░] 0.00%
+```
