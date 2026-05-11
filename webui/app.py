@@ -103,6 +103,28 @@ except Exception as exc:
     score_backtest_report = None
     topk_rows = None
 
+try:
+    try:
+        from .training_monitor import (
+            list_training_runs,
+            load_training_status,
+            query_gpu_status,
+            tail_training_log,
+        )
+    except ImportError:
+        from training_monitor import (
+            list_training_runs,
+            load_training_status,
+            query_gpu_status,
+            tail_training_log,
+        )
+except Exception as exc:
+    print(f"Warning: STOM training monitor helpers cannot be imported ({exc})")
+    list_training_runs = None
+    load_training_status = None
+    query_gpu_status = None
+    tail_training_log = None
+
 app = Flask(__name__)
 CORS(app)
 
@@ -418,6 +440,57 @@ def index():
 def stom_dashboard_page():
     """STOM OHLCV actual-vs-predicted dashboard."""
     return render_template('stom_dashboard.html')
+
+@app.route('/training')
+def training_dashboard_page():
+    """Live STOM Kronos fine-tuning monitor."""
+    return render_template('training_dashboard.html')
+
+@app.route('/api/training/runs')
+def training_runs():
+    if list_training_runs is None:
+        return jsonify({'error': 'STOM training monitor helper is not available'}), 500
+    try:
+        limit = int(request.args.get('limit', 50))
+        return jsonify({'runs': list_training_runs(limit=limit)})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/training/status')
+def training_status():
+    if load_training_status is None:
+        return jsonify({'error': 'STOM training monitor helper is not available'}), 500
+    run_name = request.args.get('run') or None
+    try:
+        return jsonify(load_training_status(run_name))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/training/logs')
+def training_logs():
+    if tail_training_log is None:
+        return jsonify({'error': 'STOM training monitor helper is not available'}), 500
+    run_name = request.args.get('run') or None
+    stage = request.args.get('stage') or None
+    try:
+        lines = int(request.args.get('lines', 200))
+        return jsonify(tail_training_log(run_name=run_name, stage=stage, lines=lines))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/training/gpu')
+def training_gpu():
+    if query_gpu_status is None:
+        return jsonify({'error': 'STOM training monitor helper is not available'}), 500
+    return jsonify(query_gpu_status())
 
 @app.route('/api/stom/summary')
 def stom_summary():

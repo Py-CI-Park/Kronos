@@ -53,6 +53,10 @@ def test_runner_dry_run_records_reproducible_env(tmp_path):
     assert manifest.exists()
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["status"] == "dry_run"
+    assert Path(payload["progress_path"]).exists()
+    progress_payload = json.loads(Path(payload["progress_path"]).read_text(encoding="utf-8"))
+    assert progress_payload["status"] == "dry_run"
+    assert progress_payload["train_stage"] == "predictor"
     assert payload["env_overrides"]["KRONOS_DATASET_PATH"] == str(dataset_dir.resolve())
     assert payload["env_overrides"]["KRONOS_PREDICT_WINDOW"] == "30"
     assert payload["env_overrides"]["KRONOS_USE_COMET"] == "0"

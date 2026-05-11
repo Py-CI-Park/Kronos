@@ -1,4 +1,4 @@
-# STOM tick Kronos 작업/대화/조사 통합 기록
+﻿# STOM tick Kronos 작업/대화/조사 통합 기록
 
 작성일: 2026-05-10 KST
 대상 저장소: `D:\Chanil_Park\Project\Programming\Kronos`
@@ -451,4 +451,33 @@ $ralph 2025년 STOM tick pred60 processed dataset export를 실행하고 export 
 
 ```text
 $ralph 2025년 STOM tick pred60 Kronos-small 전체 학습을 checkpoint/resume와 절전 방지 조건을 확인한 뒤 실행하고, tokenizer/predictor 로그와 checkpoint 생성 여부를 주기적으로 점검하며 완료 후 문서와 commit으로 남기세요.
+```
+
+---
+
+## 14. 2026-05-11 업데이트: 실시간 학습 모니터링 선행 구현
+
+2025년 STOM tick pred60 Kronos-small 전체 학습은 RTX 4080 SUPER 기준 약 8~9일이 예상되므로, 본 학습을 바로 시작하기 전에 실시간 관측 기능을 먼저 추가했다.
+
+추가/변경 내용:
+
+- `finetune/run_stom_1s_finetune.py`: child process stdout을 실시간으로 로그 파일에 기록하고 progress JSON을 갱신하도록 변경
+- `finetune/training_progress.py`: Kronos 학습 로그 parser와 progress sidecar writer 추가
+- `webui/training_monitor.py`: `finetune/outputs` run 목록, status, log tail, GPU 상태 helper 추가
+- `webui/app.py`: `/training` 및 `/api/training/*` route 추가
+- `webui/templates/training_dashboard.html`: 학습 단계, 진행률, ETA, loss, GPU/전력, 로그 tail 표시
+- `docs/stom_training_monitor_dashboard.md`: 사용법과 본 학습 전 체크포인트 문서화
+
+현재 단계 판단:
+
+```text
+전체 진행률: ███████████████████░ 95%
+현재 단계:   ████████████████████ 100%  실시간 학습 모니터링 구현 완료
+남은 단계:   █░░░░░░░░░░░░░░░░░░░ 5%   2025 full training → 평가/대시보드 검증
+```
+
+다음 권장 OMX 명령:
+
+```text
+$ralph 2025년 STOM tick pred60 Kronos-small 전체 학습을 실행하기 전에 /training 대시보드가 실시간 progress/log/GPU 상태를 표시하는지 브라우저로 확인하고, 확인되면 2025 full training을 시작한 뒤 checkpoint와 progress를 주기적으로 점검하세요.
 ```

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import json
 import os
 import subprocess
@@ -17,6 +18,11 @@ DEFAULT_EXPORT_ROOT = PROJECT_ROOT / "finetune" / "qlib_exports"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "finetune" / "outputs"
 DEFAULT_TOKENIZER = "NeoQuasar/Kronos-Tokenizer-base"
 DEFAULT_PREDICTOR = "NeoQuasar/Kronos-small"
+try:
+    from .training_progress import TrainingProgressTracker, build_dry_run_progress
+except ImportError:  # pragma: no cover - direct script execution path
+    from training_progress import TrainingProgressTracker, build_dry_run_progress
+
 STOM_1S_FULL_SAMPLE_POOLS = {
     30: {"train": 75_277_195, "val": 16_275_307},
     60: {"train": 73_718_875, "val": 15_938_107},
@@ -84,6 +90,12 @@ def build_run(
     normalized_stage = train_stage or getattr(args, "train_stage", "predictor")
     if normalized_stage == "both":
         normalized_stage = "predictor"
+    requested_train_stage = getattr(args, "train_stage", normalized_stage)
+    stage_count = 2 if requested_train_stage == "both" else 1
+    if stage_count == 2:
+        stage_index = 1 if normalized_stage == "tokenizer" else 2
+    else:
+        stage_index = 1
     manifest_name = "run_manifest.json" if normalized_stage == "predictor" else f"{normalized_stage}_run_manifest.json"
     manifest_path = save_path / manifest_name
 
@@ -153,6 +165,9 @@ def build_run(
         "horizon": horizon,
         "mode": mode,
         "train_stage": normalized_stage,
+        "requested_train_stage": requested_train_stage,
+        "stage_index": stage_index,
+        "stage_count": stage_count,
         "sample_stage": args.sample_stage,
         "target_train_samples": n_train_iter,
         "target_val_samples": n_val_iter,
@@ -173,45 +188,89 @@ def execute_run(spec: Mapping[str, Any], dry_run: bool = False) -> Dict[str, Any
     manifest_path = Path(str(spec["manifest_path"]))
     log_dir.mkdir(parents=True, exist_ok=True)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    stage_name = str(spec.get("train_stage", "train"))
+    stdout_path = log_dir / f"{stage_name}.stdout.log"
+    stderr_path = log_dir / f"{stage_name}.stderr.log"
+    progress_path = log_dir / f"{stage_name}.progress.json"
 
     payload: Dict[str, Any] = {
         "created_at": _utc_now(),
         "status": "dry_run" if dry_run else "running",
         **{k: v for k, v in spec.items() if k not in {"env"}},
         "env_overrides": dict(spec["env"]),
+        "progress_path": str(progress_path),
+        "stdout_log": str(stdout_path),
+        "stderr_log": str(stderr_path),
     }
     manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if dry_run:
+        build_dry_run_progress(spec, progress_path, stdout_path, stderr_path, manifest_path)
         return payload
 
     env = os.environ.copy()
     env.update({str(k): str(v) for k, v in spec["env"].items()})
     started = datetime.now(timezone.utc)
-    completed = subprocess.run(
-        list(spec["command"]),
-        cwd=PROJECT_ROOT,
-        env=env,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        check=False,
+    tracker = TrainingProgressTracker(
+        spec=spec,
+        progress_path=progress_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        manifest_path=manifest_path,
     )
-    stdout_path = log_dir / "train.stdout.log"
-    stderr_path = log_dir / "train.stderr.log"
-    stdout_path.write_text(completed.stdout or "", encoding="utf-8")
-    stderr_path.write_text(completed.stderr or "", encoding="utf-8")
+    stdout_tail: deque[str] = deque(maxlen=400)
+    stderr_note = "stderr is merged into stdout so the live dashboard can stream one ordered log.\n"
+    stderr_path.write_text(stderr_note, encoding="utf-8")
+
+    try:
+        process = subprocess.Popen(
+            list(spec["command"]),
+            cwd=PROJECT_ROOT,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+    except Exception as exc:
+        tracker.fail_before_start(str(exc))
+        payload.update(
+            {
+                "completed_at": _utc_now(),
+                "duration_seconds": (datetime.now(timezone.utc) - started).total_seconds(),
+                "returncode": -1,
+                "status": "failed",
+                "stdout_tail": "",
+                "stderr_tail": str(exc),
+            }
+        )
+        manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        raise
+
+    tracker.start(process.pid)
+    with stdout_path.open("w", encoding="utf-8", buffering=1) as stdout_file:
+        if process.stdout is not None:
+            for line in process.stdout:
+                stdout_file.write(line)
+                stdout_file.flush()
+                stdout_tail.append(line)
+                tracker.observe_line(line)
+                print(line, end="", flush=True)
+    returncode = process.wait()
+    tracker.finish(returncode)
 
     payload.update(
         {
             "completed_at": _utc_now(),
             "duration_seconds": (datetime.now(timezone.utc) - started).total_seconds(),
-            "returncode": completed.returncode,
-            "status": "ok" if completed.returncode == 0 else "failed",
+            "returncode": returncode,
+            "status": "ok" if returncode == 0 else "failed",
             "stdout_log": str(stdout_path),
             "stderr_log": str(stderr_path),
-            "stdout_tail": _tail(completed.stdout or ""),
-            "stderr_tail": _tail(completed.stderr or ""),
+            "progress_path": str(progress_path),
+            "stdout_tail": _tail("".join(stdout_tail)),
+            "stderr_tail": stderr_note,
         }
     )
     summary_folder_key = (
@@ -222,8 +281,10 @@ def execute_run(spec: Mapping[str, Any], dry_run: bool = False) -> Dict[str, Any
         payload["summary_path"] = str(summary_path)
         payload["summary"] = json.loads(summary_path.read_text(encoding="utf-8"))
     manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    if completed.returncode != 0:
-        raise RuntimeError(f"{spec.get('train_stage', 'predictor')} fine-tuning failed for pred{spec['horizon']}; see {stderr_path}")
+    if returncode != 0:
+        raise RuntimeError(
+            f"{spec.get('train_stage', 'predictor')} fine-tuning failed for pred{spec['horizon']}; see {stdout_path}"
+        )
     return payload
 
 
