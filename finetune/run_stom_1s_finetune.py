@@ -126,6 +126,7 @@ def build_run(
         "KRONOS_DDP_BACKEND": args.ddp_backend,
         "KRONOS_DATASET_SAMPLE_MODE": args.dataset_sample_mode,
         "USE_LIBUV": "0",
+        "PYTHONUNBUFFERED": "1",
     }
     if args.nproc_per_node == 1:
         env.update(

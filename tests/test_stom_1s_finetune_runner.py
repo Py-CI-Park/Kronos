@@ -64,6 +64,7 @@ def test_runner_dry_run_records_reproducible_env(tmp_path):
     assert payload["env_overrides"]["KRONOS_USE_COMET"] == "0"
     assert payload["env_overrides"]["KRONOS_DDP_BACKEND"] == "gloo"
     assert payload["env_overrides"]["USE_LIBUV"] == "0"
+    assert payload["env_overrides"]["PYTHONUNBUFFERED"] == "1"
     assert payload["env_overrides"]["WORLD_SIZE"] == "1"
     assert payload["env_overrides"]["KRONOS_DISABLE_DDP"] == "1"
     assert payload["command"][-1].endswith("train_predictor.py")
