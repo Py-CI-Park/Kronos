@@ -541,3 +541,34 @@ $ralph 2025년 STOM tick pred60 Kronos-small 전체 학습을 시작하고, /tra
 ```text
 $ralph 2025년 STOM tick pred60 Kronos-small 전체 학습의 tokenizer 단계가 계속 정상 진행 중인지 progress/log/GPU를 재점검하고, checkpoint 생성 전까지 중간 상태를 문서와 commit으로 주기적으로 남기세요.
 ```
+---
+
+## 17. 2026-05-11 업데이트: full training tokenizer 중간 진행 확인
+
+실행 중인 2025년 STOM tick pred60 Kronos-small 전체 학습을 중간 점검했다.
+
+확인 결과:
+
+- runner PID: 3944 실행 중
+- tokenizer PID: 70448 실행 중
+- stage: tokenizer running
+- 1차 샘플: step 28,000 / 4,701,721, loss -0.0274
+- 2차 샘플: step 30,000 / 4,701,721, loss -0.0316`r`n- 문서 검증 직전 추가 확인: step 31,000 / 4,701,721, loss -0.0306
+- tokenizer stage progress: 0.6381%
+- overall progress: 0.3190%
+- samples/sec: 약 72.63
+- GPU: RTX 4080 SUPER, utilization 약 35~37%, VRAM 약 3.1GB, 온도 약 44~46°C
+
+현재 단계 판단:
+
+```text
+전체 프로젝트 진행률: ███████████████████░ 97%
+현재 점검 완료율:     ████████████████████ 100%  중간 progress/log/GPU 확인 완료
+실제 학습 진행률:     ░░░░░░░░░░░░░░░░░░░░ 0.3190%
+```
+
+다음 권장 OMX 명령:
+
+```text
+$ralph 2025년 STOM tick pred60 Kronos-small 전체 학습 tokenizer 단계의 progress/log/GPU를 다시 점검하고, step 증가와 이상 여부를 문서화한 뒤 checkpoint 생성 전까지 중간 commit으로 남기세요.
+```
