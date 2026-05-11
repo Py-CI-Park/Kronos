@@ -415,3 +415,40 @@
 ```text
 $ralph 2025년 STOM tick pred60 processed dataset export를 실행하고 export report, train/val/test pkl 생성 여부, session split, row/sample 수를 검증한 뒤 문서와 commit으로 남기세요.
 ```
+
+---
+
+## 13. 2026-05-11 업데이트: 2025년 processed dataset export 완료
+
+2025년 STOM tick pred60 전체 학습을 위한 processed dataset export를 완료했다.
+
+핵심 결과:
+
+- export duration: 1,433.24초, 약 23분 53초
+- output: `finetune/qlib_exports/stom_1s_grid_pred60_2025/processed_datasets`
+- `train_data.pkl`: 약 1.234GB
+- `val_data.pkl`: 약 0.258GB
+- `test_data.pkl`: 약 0.254GB
+- export report: `finetune/qlib_exports/stom_1s_grid_pred60_2025/stom_qlib_export_report.json`
+- split 기준: session chronological split
+- train sessions: 168, 20250103~20250910
+- val sessions: 36, 20250911~20251106
+- test sessions: 36, 20251107~20251230
+- train samples: 18,806,883
+- val samples: 3,925,397
+- train+val samples: 22,732,280
+
+현재 단계 판단:
+
+```text
+전체 진행률: ██████████████████░░ 90%
+현재 단계: 2025년 processed dataset export 완료
+다음 단계: 2025년 Kronos-small tokenizer→predictor full training
+남은 단계: checkpoint 검증 → 예측 CSV 생성 → 대시보드 실제/예측 비교 → 성과 판단
+```
+
+다음 권장 OMX 명령:
+
+```text
+$ralph 2025년 STOM tick pred60 Kronos-small 전체 학습을 checkpoint/resume와 절전 방지 조건을 확인한 뒤 실행하고, tokenizer/predictor 로그와 checkpoint 생성 여부를 주기적으로 점검하며 완료 후 문서와 commit으로 남기세요.
+```

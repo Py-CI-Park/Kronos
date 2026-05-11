@@ -81,3 +81,53 @@ def test_preflight_builds_2025_export_and_training_commands(tmp_path, monkeypatc
     assert "--session-end 20251231" in report["commands"]["export_2025_dataset"]
     assert "--n-train-iter 123" in report["commands"]["train_2025_full_small"]
     assert "--n-val-iter 45" in report["commands"]["train_2025_full_small"]
+
+
+def test_preflight_prefers_export_report_samples_after_dataset_exists(tmp_path, monkeypatch):
+    db_path = tmp_path / "stock_tick_back.db"
+    _create_minimal_stom_db(db_path)
+    export_dir = tmp_path / "export_2025"
+    processed = export_dir / "processed_datasets"
+    processed.mkdir(parents=True)
+    (processed / "train_data.pkl").write_bytes(b"placeholder")
+    (processed / "val_data.pkl").write_bytes(b"placeholder")
+    (export_dir / "stom_qlib_export_report.json").write_text(
+        json.dumps(
+            {
+                "split_counts": {
+                    "train": {"rows": 1000, "groups": 2},
+                    "val": {"rows": 500, "groups": 1},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_cuda_report",
+        lambda python_exe: {"python": python_exe, "cuda_available": True, "memory_total_gb": 16},
+    )
+
+    args = preflight.parse_args(
+        [
+            "--db",
+            str(db_path),
+            "--export-dir",
+            str(export_dir),
+            "--output-root",
+            str(tmp_path / "outputs"),
+            "--python-exe",
+            "python",
+            "--lookback-window",
+            "3",
+            "--horizon",
+            "2",
+        ]
+    )
+
+    report = preflight.build_preflight(args)
+
+    assert report["target_samples"]["source"] == "export_report"
+    assert report["target_samples"]["train"] == 990
+    assert report["target_samples"]["val"] == 495
+    assert report["next_action"] == "run_training_2025_full_small"

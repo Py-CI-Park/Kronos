@@ -238,3 +238,20 @@ $ralph 2025년 STOM tick pred60 processed dataset export를 실행하고 export 
 - 이 단계는 학습이 아니라 dataset export다.
 - export 성공 후에야 8일 이상 걸리는 본 학습 명령을 실행할 수 있다.
 - Windows 절전 방지와 장기 실행 로그/백업 정책은 본 학습 직전에 다시 확인해야 한다.
+
+---
+
+## 10. 2026-05-11 추가 확인: 2025 processed dataset export 완료
+
+preflight 이후 실제 2025년 dataset export를 완료했다.
+
+- export output: `finetune\qlib_exports\stom_1s_grid_pred60_2025\processed_datasets`
+- export duration: 1,433.24초
+- `train_data.pkl`: 1,325,464,369 bytes
+- `val_data.pkl`: 276,595,451 bytes
+- `test_data.pkl`: 273,245,379 bytes
+- export report 기준 train samples: 18,806,883
+- export report 기준 validation samples: 3,925,397
+- preflight 재실행 결과: `next_action=run_training_2025_full_small`, blocker 0개, warning 0개
+
+따라서 이 문서의 다음 단계는 이제 export가 아니라 **2025년 Kronos-small full training 실행**이다. 상세 export 보고서는 `docs/stom_2025_dataset_export_report.md`를 기준으로 한다.

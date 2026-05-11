@@ -148,6 +148,26 @@ def _sample_counts_from_scan(scan_report: Optional[Dict[str, Any]], train_defaul
     return train, val, "scan_report"
 
 
+def _sample_counts_from_export_report(
+    export_report: Optional[Dict[str, Any]],
+    lookback_window: int,
+    horizon: int,
+) -> Optional[tuple[int, int]]:
+    if export_report is None:
+        return None
+    split_counts = export_report.get("split_counts", {})
+    train = split_counts.get("train", {})
+    val = split_counts.get("val", {})
+    window_offset = lookback_window + horizon
+    if not train or not val:
+        return None
+    train_samples = int(train.get("rows", 0)) - int(train.get("groups", 0)) * window_offset
+    val_samples = int(val.get("rows", 0)) - int(val.get("groups", 0)) * window_offset
+    if train_samples <= 0 or val_samples <= 0:
+        return None
+    return train_samples, val_samples
+
+
 def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
     db_path = Path(args.db).resolve()
     export_dir = Path(args.export_dir).resolve()
@@ -156,10 +176,16 @@ def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
     run_dir = output_root / args.run_name
     scan_report_path = Path(args.scan_report).resolve()
     scan_report = _load_json(scan_report_path)
+    export_report_path = export_dir / "stom_qlib_export_report.json"
+    export_report = _load_json(export_report_path)
 
     train_default = int(args.train_samples or DEFAULT_TRAIN_SAMPLES)
     val_default = int(args.val_samples or DEFAULT_VAL_SAMPLES)
     train_samples, val_samples, sample_source = _sample_counts_from_scan(scan_report, train_default, val_default)
+    export_samples = _sample_counts_from_export_report(export_report, args.lookback_window, args.horizon)
+    if export_samples:
+        train_samples, val_samples = export_samples
+        sample_source = "export_report"
     total_samples = train_samples + val_samples
     estimated_seconds = MEASURED_4080S_SECONDS_PER_240K * (total_samples / 240_000)
 
@@ -288,6 +314,8 @@ def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
         "disk": {"export_root": export_disk, "output_root": output_disk},
         "scan_report_loaded": scan_report is not None,
         "scan_report_path": str(scan_report_path),
+        "export_report_loaded": export_report is not None,
+        "export_report_path": str(export_report_path),
         "expected_artifacts": expected_paths,
         "commands": {
             "export_2025_dataset": " ".join(_powershell_quote(part) for part in export_command),
@@ -296,7 +324,13 @@ def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
         },
         "warnings": warnings,
         "blockers": blockers,
-        "next_action": "run_export_2025_dataset" if not blockers else "resolve_blockers",
+        "next_action": (
+            "run_training_2025_full_small"
+            if not blockers and (dataset_dir / "train_data.pkl").exists() and (dataset_dir / "val_data.pkl").exists()
+            else "run_export_2025_dataset"
+            if not blockers
+            else "resolve_blockers"
+        ),
     }
 
 
