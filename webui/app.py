@@ -147,7 +147,7 @@ AVAILABLE_MODELS = {
         'tokenizer_id': 'NeoQuasar/Kronos-Tokenizer-2k',
         'context_length': 2048,
         'params': '4.1M',
-        'description': 'Lightweight model, suitable for fast prediction'
+        'description': '가벼운 모델로 빠른 예측에 적합합니다'
     },
     'kronos-small': {
         'name': 'Kronos-small',
@@ -155,7 +155,7 @@ AVAILABLE_MODELS = {
         'tokenizer_id': 'NeoQuasar/Kronos-Tokenizer-base',
         'context_length': 512,
         'params': '24.7M',
-        'description': 'Small model, balanced performance and speed'
+        'description': '성능과 속도의 균형이 좋은 small 모델입니다'
     },
     'kronos-base': {
         'name': 'Kronos-base',
@@ -163,7 +163,7 @@ AVAILABLE_MODELS = {
         'tokenizer_id': 'NeoQuasar/Kronos-Tokenizer-base',
         'context_length': 512,
         'params': '102.3M',
-        'description': 'Base model, provides better prediction quality'
+        'description': '더 높은 예측 품질을 목표로 하는 base 모델입니다'
     }
 }
 
@@ -238,22 +238,22 @@ def build_training_readiness(status_payload):
     if predictor_complete:
         level = "ready"
         label = "예측 성과 확인 가능"
-        message = "predictor 학습이 완료된 상태입니다. 이제 실제값/예측값 검증과 성과 지표 확인이 가능합니다."
+        message = "예측기 학습이 완료된 상태입니다. 이제 실제값/예측값 검증과 성과 지표 확인이 가능합니다."
         performance_ready = True
     elif predictor_started:
         level = "training"
         label = "predictor 학습 중"
-        message = "predictor 단계가 진행 중입니다. checkpoint가 저장되기 전까지 성과 수치를 확정하지 않습니다."
+        message = "예측기 단계가 진행 중입니다. 체크포인트가 저장되기 전까지 성과 수치를 확정하지 않습니다."
         performance_ready = False
     elif latest_stage_name == "tokenizer" or run_status == "running":
         level = "waiting"
         label = "성과 대기: tokenizer 학습 중"
-        message = "현재 tokenizer 단계입니다. checkpoint와 predictor가 아직 준비되지 않아 예측 정확도/수익률을 판단하지 않습니다."
+        message = "현재 토크나이저 단계입니다. 체크포인트와 예측기가 아직 준비되지 않아 예측 정확도/수익률을 판단하지 않습니다."
         performance_ready = False
     else:
         level = "waiting"
         label = "성과 대기"
-        message = "학습 산출물 또는 predictor 완료 상태가 확인되기 전까지 예측 성과는 대기 상태로 표시합니다."
+        message = "학습 산출물 또는 예측기 완료 상태가 확인되기 전까지 예측 성과는 대기 상태로 표시합니다."
         performance_ready = False
 
     return {
@@ -293,12 +293,12 @@ def load_data_file(file_path):
         elif file_path.endswith('.feather'):
             df = pd.read_feather(file_path)
         else:
-            return None, "Unsupported file format"
+            return None, "지원하지 않는 파일 형식입니다"
         
         # Check required columns
         required_cols = ['open', 'high', 'low', 'close']
         if not all(col in df.columns for col in required_cols):
-            return None, f"Missing required columns: {required_cols}"
+            return None, f"필수 컬럼이 없습니다: {required_cols}"
         
         # Process timestamp column
         if 'timestamps' in df.columns:
@@ -330,7 +330,7 @@ def load_data_file(file_path):
         return df, None
         
     except Exception as e:
-        return None, f"Failed to load file: {str(e)}"
+        return None, f"파일을 불러오지 못했습니다: {str(e)}"
 
 def save_prediction_results(file_path, prediction_type, prediction_results, actual_data, input_data, prediction_params):
     """Save prediction results to file"""
@@ -413,7 +413,7 @@ def save_prediction_results(file_path, prediction_type, prediction_results, actu
         return filepath
         
     except Exception as e:
-        print(f"Failed to save prediction results: {e}")
+        print(f"예측 결과 저장 실패: {e}")
         return None
 
 def create_prediction_chart(df, pred_df, lookback, pred_len, actual_df=None, historical_start_idx=0):
@@ -440,7 +440,7 @@ def create_prediction_chart(df, pred_df, lookback, pred_len, actual_df=None, his
         high=historical_df['high'],
         low=historical_df['low'],
         close=historical_df['close'],
-        name='Historical Data (400 data points)',
+        name='과거 데이터(400개 데이터 포인트)',
         increasing_line_color='#26A69A',
         decreasing_line_color='#EF5350'
     ))
@@ -468,7 +468,7 @@ def create_prediction_chart(df, pred_df, lookback, pred_len, actual_df=None, his
             high=pred_df['high'],
             low=pred_df['low'],
             close=pred_df['close'],
-            name='Prediction Data (120 data points)',
+            name='예측 데이터(120개 데이터 포인트)',
             increasing_line_color='#66BB6A',
             decreasing_line_color='#FF7043'
         ))
@@ -501,16 +501,16 @@ def create_prediction_chart(df, pred_df, lookback, pred_len, actual_df=None, his
             high=actual_df['high'],
             low=actual_df['low'],
             close=actual_df['close'],
-            name='Actual Data (120 data points)',
+            name='실제 데이터(120개 데이터 포인트)',
             increasing_line_color='#FF9800',
             decreasing_line_color='#F44336'
         ))
     
     # Update layout
     fig.update_layout(
-        title='Kronos Financial Prediction Results - 400 Historical Points + 120 Prediction Points vs 120 Actual Points',
-        xaxis_title='Time',
-        yaxis_title='Price',
+        title='Kronos 금융 예측 결과 - 과거 400포인트 + 예측 120포인트 vs 실제 120포인트',
+        xaxis_title='시간',
+        yaxis_title='가격',
         template='plotly_white',
         height=600,
         showlegend=True
@@ -816,7 +816,7 @@ def load_data():
         file_path = data.get('file_path')
         
         if not file_path:
-            return jsonify({'error': 'File path cannot be empty'}), 400
+            return jsonify({'error': '파일 경로가 비어 있습니다'}), 400
         
         df, error = load_data_file(file_path)
         if error:
@@ -825,7 +825,7 @@ def load_data():
         # Detect data time frequency
         def detect_timeframe(df):
             if len(df) < 2:
-                return "Unknown"
+                return "알 수 없음"
             
             time_diffs = []
             for i in range(1, min(10, len(df))):  # Check first 10 time differences
@@ -833,20 +833,20 @@ def load_data():
                 time_diffs.append(diff)
             
             if not time_diffs:
-                return "Unknown"
+                return "알 수 없음"
             
             # Calculate average time difference
             avg_diff = sum(time_diffs, pd.Timedelta(0)) / len(time_diffs)
             
             # Convert to readable format
             if avg_diff < pd.Timedelta(minutes=1):
-                return f"{avg_diff.total_seconds():.0f} seconds"
+                return f"{avg_diff.total_seconds():.0f}초"
             elif avg_diff < pd.Timedelta(hours=1):
-                return f"{avg_diff.total_seconds() / 60:.0f} minutes"
+                return f"{avg_diff.total_seconds() / 60:.0f}분"
             elif avg_diff < pd.Timedelta(days=1):
-                return f"{avg_diff.total_seconds() / 3600:.0f} hours"
+                return f"{avg_diff.total_seconds() / 3600:.0f}시간"
             else:
-                return f"{avg_diff.days} days"
+                return f"{avg_diff.days}일"
         
         # Return data information
         data_info = {
@@ -865,11 +865,11 @@ def load_data():
         return jsonify({
             'success': True,
             'data_info': data_info,
-            'message': f'Successfully loaded data, total {len(df)} rows'
+            'message': f'데이터를 성공적으로 불러왔습니다. 총 {len(df)}행'
         })
         
     except Exception as e:
-        return jsonify({'error': f'Failed to load data: {str(e)}'}), 500
+        return jsonify({'error': f'데이터 로드 실패: {str(e)}'}), 500
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
@@ -886,7 +886,7 @@ def predict():
         sample_count = int(data.get('sample_count', 1))
         
         if not file_path:
-            return jsonify({'error': 'File path cannot be empty'}), 400
+            return jsonify({'error': '파일 경로가 비어 있습니다'}), 400
         
         # Load data
         df, error = load_data_file(file_path)
@@ -894,7 +894,7 @@ def predict():
             return jsonify({'error': error}), 400
         
         if len(df) < lookback:
-            return jsonify({'error': f'Insufficient data length, need at least {lookback} rows'}), 400
+            return jsonify({'error': f'데이터 길이가 부족합니다. 최소 {lookback}행이 필요합니다'}), 400
         
         # Perform prediction
         if MODEL_AVAILABLE and predictor is not None:
@@ -918,7 +918,7 @@ def predict():
                     
                     # Ensure sufficient data: lookback + pred_len
                     if len(time_range_df) < lookback + pred_len:
-                        return jsonify({'error': f'Insufficient data from start time {start_dt.strftime("%Y-%m-%d %H:%M")}, need at least {lookback + pred_len} data points, currently only {len(time_range_df)} available'}), 400
+                        return jsonify({'error': f'시작 시각 {start_dt.strftime("%Y-%m-%d %H:%M")} 이후 데이터가 부족합니다. 최소 {lookback + pred_len}개 데이터 포인트가 필요하지만 현재 {len(time_range_df)}개만 있습니다'}), 400
                     
                     # Use first lookback data points within selected window for prediction
                     x_df = time_range_df.iloc[:lookback][required_cols]
@@ -932,13 +932,13 @@ def predict():
                     end_timestamp = time_range_df['timestamps'].iloc[lookback+pred_len-1]
                     time_span = end_timestamp - start_timestamp
                     
-                    prediction_type = f"Kronos model prediction (within selected window: first {lookback} data points for prediction, last {pred_len} data points for comparison, time span: {time_span})"
+                    prediction_type = f"Kronos 모델 예측(선택 구간: 앞 {lookback}개 데이터로 예측, 뒤 {pred_len}개 데이터로 비교, 구간 길이: {time_span})"
                 else:
                     # Use latest data
                     x_df = df.iloc[:lookback][required_cols]
                     x_timestamp = df.iloc[:lookback]['timestamps']
                     y_timestamp = df.iloc[lookback:lookback+pred_len]['timestamps']
-                    prediction_type = "Kronos model prediction (latest data)"
+                    prediction_type = "Kronos 모델 예측(최신 데이터)"
                 
                 # Ensure timestamps are Series format, not DatetimeIndex, to avoid .dt attribute error in Kronos model
                 if isinstance(x_timestamp, pd.DatetimeIndex):
@@ -957,9 +957,9 @@ def predict():
                 )
                 
             except Exception as e:
-                return jsonify({'error': f'Kronos model prediction failed: {str(e)}'}), 500
+                return jsonify({'error': f'Kronos 모델 예측 실패: {str(e)}'}), 500
         else:
-            return jsonify({'error': 'Kronos model not loaded, please load model first'}), 400
+            return jsonify({'error': 'Kronos 모델이 로드되지 않았습니다. 먼저 모델을 불러오세요'}), 400
         
         # Prepare actual data for comparison (if exists)
         actual_data = []
@@ -1078,7 +1078,7 @@ def predict():
                 }
             )
         except Exception as e:
-            print(f"Failed to save prediction results: {e}")
+            print(f"예측 결과 저장 실패: {e}")
         
         return jsonify({
             'success': True,
@@ -1087,11 +1087,11 @@ def predict():
             'prediction_results': prediction_results,
             'actual_data': actual_data,
             'has_comparison': len(actual_data) > 0,
-            'message': f'Prediction completed, generated {pred_len} prediction points' + (f', including {len(actual_data)} actual data points for comparison' if len(actual_data) > 0 else '')
+            'message': f'예측이 완료되었습니다. 예측 포인트 {pred_len}개 생성' + (f', 비교용 실제 데이터 포인트 {len(actual_data)}개 포함' if len(actual_data) > 0 else '')
         })
         
     except Exception as e:
-        return jsonify({'error': f'Prediction failed: {str(e)}'}), 500
+        return jsonify({'error': f'예측 실패: {str(e)}'}), 500
 
 @app.route('/api/load-model', methods=['POST'])
 def load_model():
@@ -1100,14 +1100,14 @@ def load_model():
     
     try:
         if not ensure_kronos_imported():
-            return jsonify({'error': f'Kronos model library not available: {MODEL_IMPORT_ERROR}'}), 400
+            return jsonify({'error': f'Kronos 모델 라이브러리를 사용할 수 없습니다: {MODEL_IMPORT_ERROR}'}), 400
         
         data = request.get_json()
         model_key = data.get('model_key', 'kronos-small')
         device = data.get('device', 'cpu')
         
         if model_key not in AVAILABLE_MODELS:
-            return jsonify({'error': f'Unsupported model: {model_key}'}), 400
+            return jsonify({'error': f'지원하지 않는 모델입니다: {model_key}'}), 400
         
         model_config = AVAILABLE_MODELS[model_key]
         
@@ -1120,7 +1120,7 @@ def load_model():
         
         return jsonify({
             'success': True,
-            'message': f'Model loaded successfully: {model_config["name"]} ({model_config["params"]}) on {device}',
+            'message': f'모델을 성공적으로 불러왔습니다: {model_config["name"]} ({model_config["params"]}) / 장치 {device}',
             'model_info': {
                 'name': model_config['name'],
                 'params': model_config['params'],
@@ -1130,7 +1130,7 @@ def load_model():
         })
         
     except Exception as e:
-        return jsonify({'error': f'Model loading failed: {str(e)}'}), 500
+        return jsonify({'error': f'모델 로드 실패: {str(e)}'}), 500
 
 @app.route('/api/available-models')
 def get_available_models():
@@ -1149,7 +1149,7 @@ def get_model_status():
             return jsonify({
                 'available': True,
                 'loaded': True,
-                'message': 'Kronos model loaded and available',
+                'message': 'Kronos 모델이 로드되어 사용할 수 있습니다',
                 'current_model': {
                     'name': predictor.model.__class__.__name__,
                     'device': str(next(predictor.model.parameters()).device)
@@ -1159,17 +1159,17 @@ def get_model_status():
             return jsonify({
                 'available': True,
                 'loaded': False,
-                'message': 'Kronos model available but not loaded'
+                'message': 'Kronos 모델은 사용 가능하지만 아직 로드되지 않았습니다'
             })
     else:
         return jsonify({
             'available': False,
             'loaded': False,
-            'message': f'Kronos model library not available: {MODEL_IMPORT_ERROR}'
+            'message': f'Kronos 모델 라이브러리를 사용할 수 없습니다: {MODEL_IMPORT_ERROR}'
         })
 
 if __name__ == '__main__':
-    print("Starting Kronos Web UI...")
-    print("Tip: Kronos model is imported lazily when /api/load-model is called")
+    print("Kronos 웹 UI 시작 중...")
+    print("안내: Kronos 모델은 /api/load-model 호출 시 지연 import 됩니다")
     
     app.run(debug=True, host='0.0.0.0', port=7070)

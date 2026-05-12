@@ -238,6 +238,8 @@ def test_training_dashboard_routes_register(monkeypatch):
     assert "formatKstEtaTarget" in training_html
     assert "Finish time(KST)" in training_html
     assert "trainingInlinePanel" in index_html
+    assert "Kronos 금융 예측 웹 UI" in index_html
+    assert "제어 패널" in index_html
     assert "trainingInlineReadiness" in index_html
     assert "trainingInlineFinish" in index_html
     assert "formatKstDateTime" in index_html
@@ -254,7 +256,7 @@ def test_training_dashboard_routes_register(monkeypatch):
     status_json = client.get("/api/training/status").get_json()
     assert status_json["run_name"] == "unit"
     assert status_json["readiness"]["performance_ready"] is False
-    assert "tokenizer" in status_json["readiness"]["message"]
+    assert "토크나이저" in status_json["readiness"]["message"]
     artifact_json = client.get("/api/training/artifacts").get_json()
     assert artifact_json["label"] == "checkpoint 대기"
     assert artifact_json["model_weight_file_count"] == 0
