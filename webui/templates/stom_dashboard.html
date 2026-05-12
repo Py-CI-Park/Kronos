@@ -39,12 +39,17 @@
     .muted { color: #64748b; font-size: 13px; line-height: 1.45; }
     .nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     .nav a { border: 1px solid rgba(255,255,255,.35); border-radius: 999px; padding: 7px 12px; text-decoration: none; background: rgba(15, 23, 42, .28); color: #dbeafe; font-weight: 800; }
-    .training-strip { display: grid; grid-template-columns: 1.2fr repeat(5, 1fr) auto; gap: 10px; align-items: center; background: #ecfdf5; border: 1px solid #bbf7d0; border-left: 5px solid #16a34a; border-radius: 14px; padding: 14px; margin-bottom: 18px; }
+    .training-strip { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)) auto; gap: 10px; align-items: center; background: #ecfdf5; border: 1px solid #bbf7d0; border-left: 5px solid #16a34a; border-radius: 14px; padding: 14px; margin-bottom: 18px; }
     .training-strip.waiting { background: #fff7ed; border-color: #fed7aa; border-left-color: #f97316; }
     .training-strip.training { background: #eff6ff; border-color: #bfdbfe; border-left-color: #2563eb; }
     .training-strip.ready { background: #ecfdf5; border-color: #bbf7d0; border-left-color: #16a34a; }
     .training-strip div { background: white; border-radius: 10px; padding: 9px; border: 1px solid #d1fae5; }
     .training-readiness-note { grid-column: 1 / -1; color: #7c2d12; font-weight: 700; line-height: 1.45; }
+    .training-gate { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; background: transparent !important; border: none !important; padding: 0 !important; }
+    .training-gate > div { border-color: #fed7aa; }
+    .training-strip.ready .training-gate > div { border-color: #bbf7d0; }
+    .training-gate .locked span { color: #b45309; }
+    .training-gate .ready span { color: #15803d; }
     .training-strip strong { display: block; color: #475569; font-size: 12px; margin-bottom: 3px; }
     .training-strip span { font-weight: 800; color: #0f172a; }
     .training-strip a, .training-strip button { width: auto; margin: 0; text-decoration: none; border-radius: 8px; padding: 9px 12px; color: white; background: #2563eb; border: none; font-weight: 700; cursor: pointer; }
@@ -80,6 +85,12 @@
       <button type="button" onclick="refreshStomTrainingStatus()">새로고침</button>
       <label for="stomTrainingRefreshSeconds">초</label>
       <input id="stomTrainingRefreshSeconds" type="number" min="2" max="3600" value="{{ default_training_refresh_seconds }}" onchange="restartStomTrainingAutoRefresh()">
+    </div>
+    <div id="stomTrainingGate" class="training-gate">
+      <div class="locked"><strong>성과 사용 Gate</strong><span id="stomPerformanceGate">predictor 완료 전 대기</span></div>
+      <div><strong>Predictor</strong><span id="stomPredictorGate">미시작</span></div>
+      <div><strong>Checkpoint</strong><span id="stomCheckpointGate">확인 중</span></div>
+      <div><strong>속도 / ETA</strong><span id="stomRuntimeGate">-</span></div>
     </div>
     <div id="stomTrainingReadinessNote" class="training-readiness-note">checkpoint와 predictor 상태를 확인하는 중입니다.</div>
     <div id="stomTrainingArtifacts" class="training-readiness-note">checkpoint/model artifact 상태를 확인하는 중입니다.</div>
@@ -294,12 +305,38 @@ function stomTrainingSeconds() {
   return seconds;
 }
 
+function formatTrainingSeconds(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  let seconds = Math.max(0, Math.floor(Number(value)));
+  const days = Math.floor(seconds / 86400); seconds %= 86400;
+  const hours = Math.floor(seconds / 3600); seconds %= 3600;
+  const minutes = Math.floor(seconds / 60);
+  const parts = [];
+  if (days) parts.push(`${days}일`);
+  if (hours || days) parts.push(`${hours}시간`);
+  if (minutes || hours || days) parts.push(`${minutes}분`);
+  return parts.length ? parts.join(' ') : `${Math.floor(Number(value))}초`;
+}
+
+function setGateState(elementId, text, isReady) {
+  const element = document.getElementById(elementId);
+  element.textContent = text;
+  const box = element.closest('div');
+  if (box) {
+    box.classList.toggle('ready', Boolean(isReady));
+    box.classList.toggle('locked', !isReady);
+  }
+}
+
 async function refreshStomTrainingStatus() {
   try {
     const res = await axios.get('/api/training/status');
     const data = res.data;
     const stage = data.latest_stage || {};
     const readiness = data.readiness || {};
+    const stagePercent = Number(stage.stage_percent || 0).toFixed(2);
+    const samplesPerSecond = stage.samples_per_second ? Number(stage.samples_per_second).toFixed(2) : '-';
+    const etaText = formatTrainingSeconds(stage.eta_seconds);
     const strip = document.getElementById('stomTrainingStrip');
     const readinessLevel = ['ready', 'training', 'waiting'].includes(readiness.level) ? readiness.level : 'waiting';
     strip.classList.remove('ready', 'training', 'waiting');
@@ -309,6 +346,18 @@ async function refreshStomTrainingStatus() {
     document.getElementById('stomTrainingStep').textContent = `${stage.step || 0}/${stage.total_steps || '-'}`;
     document.getElementById('stomTrainingProgress').textContent = `${Number(data.overall_percent || 0).toFixed(2)}%`;
     document.getElementById('stomTrainingReadiness').textContent = readiness.label || '성과 대기';
+    setGateState(
+      'stomPerformanceGate',
+      readiness.performance_ready ? '성과 사용 가능' : 'LOCKED: predictor/checkpoint 완료 전 성과 판단 금지',
+      readiness.performance_ready
+    );
+    setGateState(
+      'stomPredictorGate',
+      readiness.predictor_complete ? '완료' : readiness.predictor_started ? '학습 중' : '미시작',
+      readiness.predictor_complete
+    );
+    document.getElementById('stomRuntimeGate').textContent =
+      `${samplesPerSecond} samples/sec · ETA ${etaText} · stage ${stagePercent}%`;
     document.getElementById('stomTrainingReadinessNote').textContent =
       readiness.message || 'checkpoint와 predictor 완료 전까지 예측 성과는 대기 상태입니다.';
     document.getElementById('stomTrainingUpdated').textContent = stage.updated_at || data.updated_at || data.generated_at || '-';
@@ -327,10 +376,17 @@ async function refreshStomTrainingArtifacts() {
     const artifacts = res.data;
     const tokenizer = (artifacts.stages || {}).tokenizer || {};
     const predictor = (artifacts.stages || {}).predictor || {};
+    const predictorReady = Boolean(predictor.checkpoint_ready);
+    const tokenizerReady = Boolean(tokenizer.checkpoint_ready);
+    const checkpointText =
+      `tokenizer ${tokenizerReady ? '준비' : '대기'}(${tokenizer.checkpoint_file_count || 0})` +
+      ` · predictor ${predictorReady ? '준비' : '대기'}(${predictor.checkpoint_file_count || 0})`;
+    setGateState('stomCheckpointGate', checkpointText, predictorReady);
     document.getElementById('stomTrainingArtifacts').textContent =
       `${artifacts.label || 'checkpoint 대기'} · model weight ${artifacts.model_weight_file_count || 0}개` +
       ` · tokenizer checkpoint ${tokenizer.checkpoint_file_count || 0}개` +
-      ` · predictor checkpoint ${predictor.checkpoint_file_count || 0}개`;
+      ` · predictor checkpoint ${predictor.checkpoint_file_count || 0}개` +
+      ` · predictor started ${artifacts.predictor_started ? '예' : '아니오'}`;
   } catch (err) {
     document.getElementById('stomTrainingArtifacts').textContent =
       `artifact 상태 확인 실패: ${err.response?.data?.error || err.message}`;

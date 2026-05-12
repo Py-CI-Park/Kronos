@@ -239,6 +239,10 @@ def test_training_dashboard_routes_register(monkeypatch):
     assert "stomTrainingStrip" in stom_html
     assert "stomTrainingReadiness" in stom_html
     assert "stomTrainingArtifacts" in stom_html
+    assert "stomPerformanceGate" in stom_html
+    assert "stomPredictorGate" in stom_html
+    assert "stomCheckpointGate" in stom_html
+    assert "stomRuntimeGate" in stom_html
     assert client.get("/api/training/runs").get_json() == {"runs": []}
     status_json = client.get("/api/training/status").get_json()
     assert status_json["run_name"] == "unit"
