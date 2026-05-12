@@ -90,7 +90,7 @@
 
         .training-summary-row {
             display: grid;
-            grid-template-columns: repeat(6, minmax(0, 1fr));
+            grid-template-columns: repeat(7, minmax(0, 1fr));
             gap: 10px;
             margin: 12px 0;
         }
@@ -577,7 +577,8 @@
                 <div><strong>Step</strong><span id="trainingInlineStep">-</span></div>
                 <div><strong>Progress</strong><span id="trainingInlineProgress">-</span></div>
                 <div><strong>성과 상태</strong><span id="trainingInlineReadiness">성과 대기</span></div>
-                <div><strong>Updated</strong><span id="trainingInlineUpdated">-</span></div>
+                <div><strong>Updated(KST)</strong><span id="trainingInlineUpdated">-</span></div>
+                <div><strong>Finish(KST)</strong><span id="trainingInlineFinish">-</span></div>
             </div>
             <div id="trainingInlineReadinessNote" class="training-readiness-note">
                 checkpoint와 predictor 상태를 확인하는 중입니다.
@@ -786,12 +787,41 @@
         let availableModels = [];
         let modelLoaded = false;
         let trainingInlineTimer = null;
+        const KST_TIME_ZONE = 'Asia/Seoul';
+        const KST_LOCALE = 'ko-KR';
+        const KST_DATE_TIME_FORMAT = {
+            timeZone: KST_TIME_ZONE,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+        };
 
         // Initialize after page loads
         document.addEventListener('DOMContentLoaded', function() {
             initializeApp();
             initTrainingInlineStatus();
         });
+
+        function parseDateValue(value) {
+            if (!value) return null;
+            const date = value instanceof Date ? value : new Date(value);
+            return Number.isNaN(date.getTime()) ? null : date;
+        }
+
+        function formatKstDateTime(value) {
+            const date = parseDateValue(value);
+            if (!date) return '-';
+            return `${date.toLocaleString(KST_LOCALE, KST_DATE_TIME_FORMAT)} KST`;
+        }
+
+        function formatKstEtaTarget(seconds) {
+            if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) return '-';
+            return formatKstDateTime(new Date(Date.now() + Math.max(0, Number(seconds)) * 1000));
+        }
 
         function trainingInlineSeconds() {
             const input = document.getElementById('trainingInlineRefreshSeconds');
@@ -819,7 +849,8 @@
                 document.getElementById('trainingInlineReadiness').textContent = readiness.label || '성과 대기';
                 document.getElementById('trainingInlineReadinessNote').textContent =
                     readiness.message || 'checkpoint와 predictor 완료 전까지 예측 성과는 대기 상태입니다.';
-                document.getElementById('trainingInlineUpdated').textContent = stage.updated_at || data.updated_at || data.generated_at || '-';
+                document.getElementById('trainingInlineUpdated').textContent = formatKstDateTime(stage.updated_at || data.updated_at || data.generated_at);
+                document.getElementById('trainingInlineFinish').textContent = formatKstEtaTarget(stage.eta_seconds);
                 document.getElementById('trainingInlineAutoStatus').textContent =
                     data.status === 'running'
                         ? `running · ${trainingInlineSeconds()}초마다 자동 갱신`
@@ -828,6 +859,7 @@
             } catch (error) {
                 statusEl.textContent = 'error';
                 document.getElementById('trainingInlineAutoStatus').textContent = error.response?.data?.error || error.message;
+                document.getElementById('trainingInlineFinish').textContent = '-';
                 return 'unknown';
             }
         }
@@ -1170,8 +1202,8 @@
             const endDate = new Date(endTime);
             
             // Update display information
-            document.getElementById('window-start').textContent = `Start: ${startDate.toLocaleDateString()}`;
-            document.getElementById('window-end').textContent = `End: ${endDate.toLocaleDateString()}`;
+            document.getElementById('window-start').textContent = `Start(KST): ${formatKstDateTime(startDate)}`;
+            document.getElementById('window-end').textContent = `End(KST): ${formatKstDateTime(endDate)}`;
             
             // Display fixed window size
             document.getElementById('window-size').textContent = `Window Size: 400 + 120 = 520 data points (fixed)`;
@@ -1372,7 +1404,7 @@
                 
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td>${new Date(pred.timestamp).toLocaleString()}</td>
+                    <td>${formatKstDateTime(pred.timestamp)}</td>
                     <td>${act.open.toFixed(4)}</td>
                     <td>${pred.open.toFixed(4)}</td>
                     <td>${act.high.toFixed(4)}</td>

@@ -39,13 +39,13 @@
     .muted { color: #64748b; font-size: 13px; line-height: 1.45; }
     .nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     .nav a { border: 1px solid rgba(255,255,255,.35); border-radius: 999px; padding: 7px 12px; text-decoration: none; background: rgba(15, 23, 42, .28); color: #dbeafe; font-weight: 800; }
-    .training-strip { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)) auto; gap: 10px; align-items: center; background: #ecfdf5; border: 1px solid #bbf7d0; border-left: 5px solid #16a34a; border-radius: 14px; padding: 14px; margin-bottom: 18px; }
+    .training-strip { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)) auto; gap: 10px; align-items: center; background: #ecfdf5; border: 1px solid #bbf7d0; border-left: 5px solid #16a34a; border-radius: 14px; padding: 14px; margin-bottom: 18px; }
     .training-strip.waiting { background: #fff7ed; border-color: #fed7aa; border-left-color: #f97316; }
     .training-strip.training { background: #eff6ff; border-color: #bfdbfe; border-left-color: #2563eb; }
     .training-strip.ready { background: #ecfdf5; border-color: #bbf7d0; border-left-color: #16a34a; }
     .training-strip div { background: white; border-radius: 10px; padding: 9px; border: 1px solid #d1fae5; }
     .training-readiness-note { grid-column: 1 / -1; color: #7c2d12; font-weight: 700; line-height: 1.45; }
-    .training-gate { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; background: transparent !important; border: none !important; padding: 0 !important; }
+    .training-gate { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 10px; background: transparent !important; border: none !important; padding: 0 !important; }
     .training-gate > div { border-color: #fed7aa; }
     .training-strip.ready .training-gate > div { border-color: #bbf7d0; }
     .training-gate .locked span { color: #b45309; }
@@ -79,7 +79,8 @@
     <div><strong>Step</strong><span id="stomTrainingStep">-</span></div>
     <div><strong>Progress</strong><span id="stomTrainingProgress">-</span></div>
     <div><strong>성과 상태</strong><span id="stomTrainingReadiness">성과 대기</span></div>
-    <div><strong>Updated</strong><span id="stomTrainingUpdated">-</span></div>
+    <div><strong>Updated(KST)</strong><span id="stomTrainingUpdated">-</span></div>
+    <div><strong>Finish(KST)</strong><span id="stomTrainingFinish">-</span></div>
     <div>
       <a href="/training">학습 대시보드</a>
       <button type="button" onclick="refreshStomTrainingStatus()">새로고침</button>
@@ -91,6 +92,7 @@
       <div><strong>Predictor</strong><span id="stomPredictorGate">미시작</span></div>
       <div><strong>Checkpoint</strong><span id="stomCheckpointGate">확인 중</span></div>
       <div><strong>속도 / ETA</strong><span id="stomRuntimeGate">-</span></div>
+      <div><strong>Time zone</strong><span id="stomKstGate">Asia/Seoul / KST</span></div>
     </div>
     <div id="stomTrainingReadinessNote" class="training-readiness-note">checkpoint와 predictor 상태를 확인하는 중입니다.</div>
     <div id="stomTrainingArtifacts" class="training-readiness-note">checkpoint/model artifact 상태를 확인하는 중입니다.</div>
@@ -275,6 +277,18 @@ const windowSelect = document.getElementById('windowSelect');
 const qlibBacktestSelect = document.getElementById('qlibBacktestSelect');
 const filterReportSelect = document.getElementById('filterReportSelect');
 let stomTrainingTimer = null;
+const KST_TIME_ZONE = 'Asia/Seoul';
+const KST_LOCALE = 'ko-KR';
+const KST_DATE_TIME_FORMAT = {
+  timeZone: KST_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+};
 
 function fmt(value, digits = 4) {
   if (value === null || value === undefined || Number.isNaN(value)) return '-';
@@ -318,6 +332,23 @@ function formatTrainingSeconds(value) {
   return parts.length ? parts.join(' ') : `${Math.floor(Number(value))}초`;
 }
 
+function parseDateValue(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatKstDateTime(value) {
+  const date = parseDateValue(value);
+  if (!date) return '-';
+  return `${date.toLocaleString(KST_LOCALE, KST_DATE_TIME_FORMAT)} KST`;
+}
+
+function formatKstEtaTarget(seconds) {
+  if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) return '-';
+  return formatKstDateTime(new Date(Date.now() + Math.max(0, Number(seconds)) * 1000));
+}
+
 function setGateState(elementId, text, isReady) {
   const element = document.getElementById(elementId);
   element.textContent = text;
@@ -337,6 +368,7 @@ async function refreshStomTrainingStatus() {
     const stagePercent = Number(stage.stage_percent || 0).toFixed(2);
     const samplesPerSecond = stage.samples_per_second ? Number(stage.samples_per_second).toFixed(2) : '-';
     const etaText = formatTrainingSeconds(stage.eta_seconds);
+    const finishText = formatKstEtaTarget(stage.eta_seconds);
     const strip = document.getElementById('stomTrainingStrip');
     const readinessLevel = ['ready', 'training', 'waiting'].includes(readiness.level) ? readiness.level : 'waiting';
     strip.classList.remove('ready', 'training', 'waiting');
@@ -358,14 +390,16 @@ async function refreshStomTrainingStatus() {
     );
     document.getElementById('stomRuntimeGate').textContent =
       `${samplesPerSecond} samples/sec · ETA ${etaText} · stage ${stagePercent}%`;
+    document.getElementById('stomTrainingFinish').textContent = finishText;
     document.getElementById('stomTrainingReadinessNote').textContent =
       readiness.message || 'checkpoint와 predictor 완료 전까지 예측 성과는 대기 상태입니다.';
-    document.getElementById('stomTrainingUpdated').textContent = stage.updated_at || data.updated_at || data.generated_at || '-';
+    document.getElementById('stomTrainingUpdated').textContent = formatKstDateTime(stage.updated_at || data.updated_at || data.generated_at);
     await refreshStomTrainingArtifacts();
     return data.status || 'unknown';
   } catch (err) {
     document.getElementById('stomTrainingStatus').textContent = 'error';
     document.getElementById('stomTrainingUpdated').textContent = err.response?.data?.error || err.message;
+    document.getElementById('stomTrainingFinish').textContent = '-';
     return 'unknown';
   }
 }

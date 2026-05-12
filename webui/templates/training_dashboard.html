@@ -62,7 +62,7 @@
 >
 <header>
   <h1>STOM Kronos 실시간 학습 모니터</h1>
-  <p>2025년 STOM tick 전체 학습처럼 며칠 걸리는 작업을 CMD만 보지 않고 웹에서 진행률, ETA, 로그, GPU 사용량으로 확인합니다.</p>
+  <p>Long STOM tick training can be monitored in the browser with progress, ETA, finish datetime(KST), logs, GPU usage, and power.</p>
   <div class="nav">
     <a href="/">Kronos 예측 UI</a>
     <a href="/stom">STOM 예측/성과 대시보드</a>
@@ -99,7 +99,8 @@
           현재 설정: <span id="refreshIntervalLabel" class="refresh-pill">-</span>
           · 상태: <span id="autoRefreshStatus" class="refresh-pill">초기화 중</span>
         </p>
-        <p class="muted">마지막 갱신: <span id="lastRefreshAt">-</span> · 다음 갱신: <span id="nextRefreshAt">-</span></p>
+        <p class="muted">Time zone: <span class="refresh-pill">Asia/Seoul / KST</span></p>
+        <p class="muted">Last refresh(KST): <span id="lastRefreshAt">-</span> / Next refresh(KST): <span id="nextRefreshAt">-</span></p>
       </div>
       <div class="card">
         <h2>전체 진행</h2>
@@ -176,6 +177,25 @@ const DEFAULT_REFRESH_SECONDS = Number(document.body.dataset.defaultRefreshSecon
 const MIN_REFRESH_SECONDS = Number(document.body.dataset.minRefreshSeconds || 2);
 const MAX_REFRESH_SECONDS = Number(document.body.dataset.maxRefreshSeconds || 3600);
 const RUNNING_STATUSES = new Set(['running']);
+const KST_TIME_ZONE = 'Asia/Seoul';
+const KST_LOCALE = 'ko-KR';
+const KST_DATE_TIME_FORMAT = {
+  timeZone: KST_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+};
+const KST_TIME_FORMAT = {
+  timeZone: KST_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+};
 
 function pct(value) {
   const n = Number(value || 0);
@@ -216,9 +236,27 @@ function formatWatts(value) {
   return `${Number(value).toFixed(1)} W`;
 }
 
-function formatEtaTarget(seconds) {
+function parseDateValue(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatKstDateTime(value) {
+  const date = parseDateValue(value);
+  if (!date) return '-';
+  return `${date.toLocaleString(KST_LOCALE, KST_DATE_TIME_FORMAT)} KST`;
+}
+
+function formatKstTime(value) {
+  const date = parseDateValue(value);
+  if (!date) return '-';
+  return `${date.toLocaleTimeString(KST_LOCALE, KST_TIME_FORMAT)} KST`;
+}
+
+function formatKstEtaTarget(seconds) {
   if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) return '-';
-  return new Date(Date.now() + Math.max(0, Number(seconds)) * 1000).toLocaleString();
+  return formatKstDateTime(new Date(Date.now() + Math.max(0, Number(seconds)) * 1000));
 }
 
 function badge(status) {
@@ -267,7 +305,7 @@ function renderArtifacts(artifacts) {
     metric('tokenizer checkpoint', tokenizer.checkpoint_ready ? `준비(${tokenizer.checkpoint_file_count || 0})` : '대기'),
     metric('predictor 시작', safeArtifacts.predictor_started ? '예' : '아니오'),
     metric('predictor checkpoint', predictor.checkpoint_ready ? `준비(${predictor.checkpoint_file_count || 0})` : '대기'),
-    metric('최근 artifact 갱신', safeArtifacts.latest_artifact_updated_at || '-'),
+    metric('Artifact updated(KST)', formatKstDateTime(safeArtifacts.latest_artifact_updated_at)),
   ].join('');
   const files = safeArtifacts.recent_checkpoint_files || safeArtifacts.recent_model_weight_files || [];
   document.getElementById('trainingArtifactFiles').innerHTML = files.slice(0, 5)
@@ -283,18 +321,18 @@ function renderRuntimeSummary(status) {
   const stagePct = pct(latest.stage_percent);
   const overallPct = pct(data.overall_percent);
   const etaText = formatSeconds(latest.eta_seconds);
-  const finishText = formatEtaTarget(latest.eta_seconds);
+  const finishText = formatKstEtaTarget(latest.eta_seconds);
   document.getElementById('runtimeSummary').textContent =
-    `${latest.train_stage || '-'} · ${step} / ${totalSteps} · 단계 ${stagePct}% · 전체 ${overallPct}% · ETA ${etaText}`;
+    `${latest.train_stage || '-'} · ${step} / ${totalSteps} · 단계 ${stagePct}% · 전체 ${overallPct}% · ETA ${etaText} / finish(KST) ${finishText}`;
   document.getElementById('runtimeMetrics').innerHTML = [
     metric('현재 단계', latest.train_stage || '-'),
     metric('단계 상태', latest.status || data.status || '-'),
     metric('samples/sec', formatNumber(latest.samples_per_second, 2)),
     metric('경과 시간', formatSeconds(latest.elapsed_seconds)),
     metric('남은 시간', etaText),
-    metric('예상 완료 시각', finishText),
+    metric('Finish time(KST)', finishText),
     metric('최근 loss', latest.last_loss ?? '-'),
-    metric('최근 갱신', latest.updated_at || data.updated_at || data.generated_at || '-'),
+    metric('Latest update(KST)', formatKstDateTime(latest.updated_at || data.updated_at || data.generated_at)),
   ].join('');
 }
 
@@ -347,7 +385,7 @@ function updateCountdown() {
     return;
   }
   const remaining = Math.max(0, Math.ceil((nextRefreshEpochMs - Date.now()) / 1000));
-  target.textContent = `${new Date(nextRefreshEpochMs).toLocaleTimeString()} (${remaining}초 후)`;
+  target.textContent = `${formatKstTime(new Date(nextRefreshEpochMs))} (${remaining}s later)`;
 }
 
 function scheduleNextRefresh() {
@@ -436,7 +474,7 @@ async function refreshStatus() {
     metric('상태', data.status),
     metric('전체 진행률', `${overall}%`),
     metric('단계 수', data.stage_count),
-    metric('업데이트', data.updated_at || data.generated_at),
+    metric('Updated(KST)', formatKstDateTime(data.updated_at || data.generated_at)),
   ].join('');
 
   const stages = data.stages || [];
@@ -458,6 +496,7 @@ async function refreshStatus() {
       ${metric('best val loss', stage.best_val_loss)}
       ${metric('경과 시간', formatSeconds(stage.elapsed_seconds))}
       ${metric('예상 남은 시간', formatSeconds(stage.eta_seconds))}
+      ${metric('Finish time(KST)', formatKstEtaTarget(stage.eta_seconds))}
       ${metric('samples/sec', formatNumber(stage.samples_per_second, 2))}
       <p class="muted">${escapeHtml(stage.last_line || '')}</p>
     </div>`;
@@ -511,7 +550,7 @@ async function refreshHistory() {
   summary.textContent =
     `${data.stage || '-'} · ${data.point_count || 0}개 최근 step` +
     ` · 최신 ${latest.step || latestProgress.step || '-'} / ${latest.total_steps || latestProgress.total_steps || '-'}` +
-    ` · updated ${latestProgress.updated_at || data.generated_at || '-'}`;
+    ` / updated(KST) ${formatKstDateTime(latestProgress.updated_at || data.generated_at)}`;
   rows.innerHTML = (data.points || []).slice().reverse().map(point => `<tr>
     <td>${escapeHtml(point.step ?? '-')} / ${escapeHtml(point.total_steps ?? '-')}</td>
     <td>${escapeHtml(Number(point.stage_percent || 0).toFixed(2))}%</td>
@@ -538,7 +577,7 @@ async function refreshGpu() {
   const memoryText = `${formatPercent(data.total_memory_used_percent, 2)} · ${formatMib(data.total_memory_used_mib)} / ${formatMib(data.total_memory_total_mib)}`;
   status.textContent =
     `평균 Util ${formatPercent(data.average_utilization_gpu_percent, 1)} · VRAM ${memoryText} · ` +
-    `전력 ${totalPower === '-' ? '실측 불가' : totalPower} / 제한 ${totalLimit} · ${data.generated_at}`;
+    `전력 ${totalPower === '-' ? '실측 불가' : totalPower} / 제한 ${totalLimit} · ${formatKstDateTime(data.generated_at)}`;
   summary.innerHTML = [
     metric('평균 GPU Util', formatPercent(data.average_utilization_gpu_percent, 1)),
     metric('총 VRAM 사용률', memoryText),
@@ -567,7 +606,7 @@ async function refreshAll() {
     await refreshHistory();
     await refreshLogs();
     await refreshGpu();
-    document.getElementById('lastRefreshAt').textContent = new Date().toLocaleTimeString();
+    document.getElementById('lastRefreshAt').textContent = formatKstTime(new Date());
   } catch (err) {
     document.getElementById('stageList').innerHTML = `<span class="error">${escapeHtml(err)}</span>`;
     latestRunStatus = 'unknown';

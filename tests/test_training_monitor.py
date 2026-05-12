@@ -234,10 +234,17 @@ def test_training_dashboard_routes_register(monkeypatch):
     assert "runtimeSummaryCard" in training_html
     assert "gpuSummaryMetrics" in training_html
     assert "historyRows" in training_html
+    assert "formatKstDateTime" in training_html
+    assert "formatKstEtaTarget" in training_html
+    assert "Finish time(KST)" in training_html
     assert "trainingInlinePanel" in index_html
     assert "trainingInlineReadiness" in index_html
+    assert "trainingInlineFinish" in index_html
+    assert "formatKstDateTime" in index_html
     assert "stomTrainingStrip" in stom_html
     assert "stomTrainingReadiness" in stom_html
+    assert "stomTrainingFinish" in stom_html
+    assert "stomKstGate" in stom_html
     assert "stomTrainingArtifacts" in stom_html
     assert "stomPerformanceGate" in stom_html
     assert "stomPredictorGate" in stom_html
