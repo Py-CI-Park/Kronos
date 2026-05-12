@@ -131,8 +131,19 @@ except Exception as exc:
     query_gpu_status = None
     tail_training_log = None
 
+try:
+    try:
+        from .v2 import v2_bp
+    except ImportError:
+        from v2 import v2_bp
+except Exception as exc:
+    print(f"Warning: v2 blueprint cannot be imported ({exc})")
+    v2_bp = None
+
 app = Flask(__name__)
 CORS(app)
+if v2_bp is not None:
+    app.register_blueprint(v2_bp)
 
 # Global variables to store models
 tokenizer = None
