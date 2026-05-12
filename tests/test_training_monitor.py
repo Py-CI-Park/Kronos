@@ -240,6 +240,8 @@ def test_training_dashboard_routes_register(monkeypatch):
     assert "trainingInlinePanel" in index_html
     assert "Kronos 금융 예측 웹 UI" in index_html
     assert "제어 패널" in index_html
+    assert "대시보드 메뉴" in index_html
+    assert 'class="active"' in index_html
     assert "trainingInlineReadiness" in index_html
     assert "trainingInlineFinish" in index_html
     assert "formatKstDateTime" in index_html
