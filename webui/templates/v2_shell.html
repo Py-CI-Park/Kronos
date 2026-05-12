@@ -647,26 +647,32 @@
 
     </div><!-- /tab live-training -->
 
-    <!-- ==================== 탭: 예측 워크벤치 (W6 placeholder) ==================== -->
+    <!-- ==================== 탭: 예측 워크벤치 (P3 placeholder) ==================== -->
     <div class="tab-panel" :class="{'active': activeTab === 'forecast'}">
       <div class="card">
         <h2>예측 워크벤치</h2>
         <div class="locked-widget">
           <div class="lock-icon">🔒</div>
-          <div class="lock-title">예측 워크벤치 (W6)</div>
-          <div class="lock-copy">P5 이후 활성. 예측기 학습 완료 후 사용 가능합니다.</div>
+          <div class="lock-title">예측 워크벤치</div>
+          <div class="lock-copy">
+            <strong>P3</strong> 이후 활성. 예측기(predictor) 학습이 완료되어야 새 모델로 예측할 수 있습니다.<br>
+            과거 모델로 예측을 시도하려면 <a href="/" style="color:#93c5fd;">기존 메인 화면</a>의 lookback / pred_len / temperature / top_p 슬라이더를 사용하세요.
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- ==================== 탭: STOM 진단 ==================== -->
+    <!-- ==================== 탭: STOM 진단 (P4 placeholder) ==================== -->
     <div class="tab-panel" :class="{'active': activeTab === 'stom'}">
       <div class="card">
         <h2>STOM 진단</h2>
         <div class="locked-widget">
           <div class="lock-icon">🔒</div>
-          <div class="lock-title">STOM 진단 (W8)</div>
-          <div class="lock-copy">P5 이후 활성. 자세한 내용은 <a href="/stom" style="color:#93c5fd;">기존 STOM 대시보드</a>를 이용하세요.</div>
+          <div class="lock-title">STOM 진단</div>
+          <div class="lock-copy">
+            <strong>P4</strong> 이후 활성. 통합 진단/추천 화면은 새 대시보드에서 제공할 예정입니다.<br>
+            과거 백테스트·필터 리포트·top-k 추천은 <a href="/stom" style="color:#93c5fd;">기존 STOM 대시보드</a>에서 그대로 확인할 수 있습니다.
+          </div>
         </div>
       </div>
     </div>
@@ -688,11 +694,14 @@
       </div>
     </div>
 
-    <!-- ==================== 탭: 기록 & 런 ==================== -->
+    <!-- ==================== 탭: 기록 & 런 (P2 정식 패널 대기) ==================== -->
     <div class="tab-panel" :class="{'active': activeTab === 'history'}">
       <div class="card">
         <h2>기록 & 런</h2>
-        <div class="muted">런 히스토리는 <a href="/training" style="color:#93c5fd;">기존 학습 모니터</a>에서 확인하세요. v2 전용 기록 뷰는 P3에서 추가됩니다.</div>
+        <div class="muted">
+          현재 손실 곡선은 <a href="#" @click.prevent="activeTab='live-training'" style="color:#93c5fd;">실시간 학습</a> 탭에서 확인할 수 있습니다.<br>
+          전체 런 목록과 기록 패널은 <strong>P2</strong>에서 정식 추가됩니다. 그 전에는 <a href="/training" style="color:#93c5fd;">기존 학습 모니터</a>를 이용하세요.
+        </div>
       </div>
     </div>
 
