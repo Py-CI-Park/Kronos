@@ -108,6 +108,7 @@ try:
         from .training_monitor import (
             inspect_training_artifacts,
             list_training_runs,
+            load_training_history,
             load_training_status,
             query_gpu_status,
             tail_training_log,
@@ -116,6 +117,7 @@ try:
         from training_monitor import (
             inspect_training_artifacts,
             list_training_runs,
+            load_training_history,
             load_training_status,
             query_gpu_status,
             tail_training_log,
@@ -124,6 +126,7 @@ except Exception as exc:
     print(f"Warning: STOM training monitor helpers cannot be imported ({exc})")
     inspect_training_artifacts = None
     list_training_runs = None
+    load_training_history = None
     load_training_status = None
     query_gpu_status = None
     tail_training_log = None
@@ -610,6 +613,22 @@ def training_artifacts():
     try:
         limit = int(request.args.get('limit', 50))
         return jsonify(inspect_training_artifacts(run_name=run_name, limit=limit))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/training/history')
+def training_history():
+    if load_training_history is None:
+        return jsonify({'error': 'STOM training monitor helper is not available'}), 500
+    run_name = request.args.get('run') or None
+    stage = request.args.get('stage') or None
+    try:
+        limit = int(request.args.get('limit', 40))
+        return jsonify(load_training_history(run_name=run_name, stage=stage, limit=limit))
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except ValueError as exc:

@@ -1156,3 +1156,62 @@ artifact: checkpoint 대기, model weight 0개, checkpoint 0개
 ~~~text
 $ralph 현재 실행 중인 STOM full training은 중단하지 말고, docs/stom_dashboard_safe_parallel_improvement_plan.md 계획의 3단계를 구현하세요. 목표는 tokenizer progress JSON/log를 읽기 전용으로 사용해 /training에 간단한 진행률 히스토리 카드 또는 표를 추가하는 것입니다. tests/test_training_monitor.py와 tests/test_training_progress.py를 통과시키고 live HTTP 확인 후 Lore commit으로 남기세요.
 ~~~
+
+---
+
+## 34. 2026-05-12 업데이트: 학습 진행률 히스토리 대시보드 구현
+
+현재 STOM full training을 중단하지 않고 `$ralph` 단계로 `/training` 대시보드에 최근 학습 step 히스토리를 추가했습니다.
+
+구현 완료:
+
+- `/api/training/history` 추가
+- tokenizer stdout log에서 step, total_steps, LR, loss, stage %, overall % 파싱
+- `/training`에 진행률 히스토리 카드와 테이블 추가
+- 자동 새로고침 시 history도 함께 갱신
+- predictor처럼 아직 stdout log가 없는 명시 단계는 tokenizer log로 fallback하지 않도록 안전장치 추가
+
+검증:
+
+```text
+C:\Python\64\Python3119\python.exe -m pytest tests\test_training_monitor.py tests\test_training_progress.py -q
+12 passed in 2.07s
+
+C:\Python\64\Python3119\python.exe -m compileall webui
+통과
+
+Live HTTP:
+/api/training/history?limit=5: point_count 5, latest_point.step 1,320,000
+/api/training/history?stage=predictor&limit=5: point_count 0, no stdout log found
+/training?refresh_interval=10: historyRows/historySummary/refreshIntervalSeconds 확인
+```
+
+현재 live 학습 상태:
+
+```text
+status: running
+stage: tokenizer
+step: 1,320,000 / 4,701,721
+tokenizer 진행률: 28.0748%
+전체 both-stage 진행률: 14.0374%
+readiness: 성과 대기(tokenizer 학습 중, predictor 미시작)
+```
+
+진행률:
+
+```text
+1단계 공통 readiness UI/API       [██████████] 100%
+2단계 read-only artifacts API      [██████████] 100%
+3단계 진행률 히스토리 표시        [██████████] 100%
+4단계 GPU/ETA/속도 카드 개선      [░░░░░░░░░░] 0%
+5단계 /stom 성과 준비 상태 연결   [░░░░░░░░░░] 0%
+6단계 최종 code-review 문서       [░░░░░░░░░░] 0%
+프론트엔드 고도화 전체            [██████░░░░] 60%
+학습 산출물 전체 진행률           [█░░░░░░░░░] 14.04%
+```
+
+다음 권장 OMX 명령:
+
+```text
+$ralph 현재 실행 중인 STOM full training은 중단하지 말고, docs/stom_dashboard_safe_parallel_improvement_plan.md 계획의 4단계를 구현하세요. 목표는 /training의 GPU/ETA/속도 카드를 개선해 samples/sec, ETA, GPU util/VRAM/온도/전력 상태를 더 명확히 표시하는 것입니다. tests/test_training_monitor.py와 tests/test_training_progress.py를 통과시키고 live HTTP 확인 후 Lore commit으로 남기세요.
+```

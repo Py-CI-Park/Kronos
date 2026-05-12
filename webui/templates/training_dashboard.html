@@ -44,6 +44,8 @@
     .readiness-card.ready .readiness-label { background: #14532d; color: #dcfce7; }
     .readiness-card.training .readiness-label { background: #0c4a6e; color: #bae6fd; }
     .artifact-list { margin: 10px 0 0 0; padding-left: 18px; color: #cbd5e1; font-size: 12px; line-height: 1.5; }
+    .history-table { margin-top: 10px; }
+    .history-table td, .history-table th { font-size: 12px; }
     .nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     .nav a { border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 7px 12px; text-decoration: none; background: rgba(15, 23, 42, .35); color: #dbeafe; font-weight: 800; }
     .inline { display: flex; gap: 8px; align-items: center; }
@@ -139,6 +141,14 @@
       <div class="card">
         <h2>단계별 진행률</h2>
         <div id="stageList" class="muted">학습 run을 찾는 중...</div>
+      </div>
+      <div class="card">
+        <h2>진행률 히스토리</h2>
+        <div id="historySummary" class="muted">최근 학습 step 히스토리를 불러오는 중...</div>
+        <table class="history-table">
+          <thead><tr><th>Step</th><th>Stage %</th><th>Overall %</th><th>LR</th><th>Loss</th></tr></thead>
+          <tbody id="historyRows"></tbody>
+        </table>
       </div>
       <div class="card">
         <h2>실시간 로그 tail</h2>
@@ -379,7 +389,7 @@ async function refreshStatus() {
     const overallPct = pct(stage.overall_percent);
     const stageName = String(stage.train_stage || '');
     const encodedStageName = encodeURIComponent(stageName);
-    return `<div class="stage" onclick="currentStage=decodeURIComponent('${encodedStageName}'); refreshLogs();">
+    return `<div class="stage" onclick="currentStage=decodeURIComponent('${encodedStageName}'); refreshHistory(); refreshLogs();">
       <h3><span>${escapeHtml(stage.stage_index || '-')} / ${escapeHtml(stage.stage_count || '-')} · ${escapeHtml(stageName || 'stage')}</span>${badge(stage.status)}</h3>
       <div class="bar"><div class="fill" style="width:${stagePct}%"></div></div>
       ${metric('단계 진행률', `${stagePct}%`)}
@@ -422,6 +432,38 @@ async function refreshArtifacts() {
   renderArtifacts(data);
 }
 
+async function refreshHistory() {
+  const summary = document.getElementById('historySummary');
+  const rows = document.getElementById('historyRows');
+  if (!currentRun) {
+    summary.textContent = '학습 run이 없어 히스토리를 표시할 수 없습니다.';
+    rows.innerHTML = '';
+    return;
+  }
+  let url = `/api/training/history?run=${encodeURIComponent(currentRun)}&limit=12`;
+  if (currentStage) url += `&stage=${encodeURIComponent(currentStage)}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.error) {
+    summary.textContent = data.error;
+    rows.innerHTML = '';
+    return;
+  }
+  const latest = data.latest_point || {};
+  const latestProgress = data.latest_progress || {};
+  summary.textContent =
+    `${data.stage || '-'} · ${data.point_count || 0}개 최근 step` +
+    ` · 최신 ${latest.step || latestProgress.step || '-'} / ${latest.total_steps || latestProgress.total_steps || '-'}` +
+    ` · updated ${latestProgress.updated_at || data.generated_at || '-'}`;
+  rows.innerHTML = (data.points || []).slice().reverse().map(point => `<tr>
+    <td>${escapeHtml(point.step ?? '-')} / ${escapeHtml(point.total_steps ?? '-')}</td>
+    <td>${escapeHtml(Number(point.stage_percent || 0).toFixed(2))}%</td>
+    <td>${escapeHtml(Number(point.overall_percent || 0).toFixed(2))}%</td>
+    <td>${escapeHtml(point.learning_rate ?? '-')}</td>
+    <td>${escapeHtml(point.loss ?? '-')}</td>
+  </tr>`).join('');
+}
+
 async function refreshGpu() {
   const res = await fetch('/api/training/gpu');
   const data = await res.json();
@@ -453,6 +495,7 @@ async function refreshAll() {
     await refreshRuns();
     await refreshStatus();
     await refreshArtifacts();
+    await refreshHistory();
     await refreshLogs();
     await refreshGpu();
     document.getElementById('lastRefreshAt').textContent = new Date().toLocaleTimeString();

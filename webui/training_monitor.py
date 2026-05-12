@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from collections import deque
 from datetime import datetime, timezone
@@ -15,6 +16,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_ROOTS: List[Path] = [PROJECT_ROOT / "finetune" / "outputs"]
 MAX_LOG_LINES = 1000
 MODEL_WEIGHT_SUFFIXES = {".pt", ".pth", ".safetensors", ".ckpt", ".bin"}
+TRAIN_STEP_RE = re.compile(
+    r"\[Rank (?P<rank>\d+), Epoch (?P<epoch>\d+)/(?P<epochs>\d+), "
+    r"Step (?P<step>\d+)/(?P<total_steps>\d+)\]\s+LR "
+    r"(?P<learning_rate>[-+0-9.eE]+), Loss: (?P<loss>[-+0-9.eE]+)"
+)
 
 
 def _utc_now() -> str:
@@ -372,24 +378,109 @@ def _tail_lines(path: Path, line_count: int) -> List[str]:
     return list(tail)
 
 
+def _select_training_stage(status: Dict[str, Any], stage: Optional[str]) -> Optional[Dict[str, Any]]:
+    stages: Sequence[Dict[str, Any]] = status.get("stages", [])
+    if stage:
+        selected = next((item for item in stages if item.get("train_stage") == stage), None)
+        if selected is not None:
+            return selected
+    latest = status.get("latest_stage")
+    return latest if isinstance(latest, dict) else None
+
+
+def _stage_stdout_log(
+    run_dir: Path,
+    selected_stage: Optional[Dict[str, Any]],
+    allow_latest_fallback: bool = True,
+) -> Optional[Path]:
+    if selected_stage and selected_stage.get("stdout_log"):
+        candidate = Path(str(selected_stage["stdout_log"]))
+        if candidate.exists() and _is_relative_to(candidate, run_dir):
+            return candidate
+    if not allow_latest_fallback:
+        return None
+    logs = sorted((run_dir / "logs").glob("*.stdout.log"), key=_file_mtime, reverse=True)
+    return logs[0] if logs else None
+
+
+def _parse_train_step_line(line: str, selected_stage: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    match = TRAIN_STEP_RE.search(line)
+    if not match:
+        return None
+    total_steps = int(match.group("total_steps"))
+    step = int(match.group("step"))
+    stage_percent = round(step / total_steps * 100.0, 4) if total_steps else 0.0
+    stage_index = (selected_stage or {}).get("stage_index")
+    stage_count = (selected_stage or {}).get("stage_count")
+    overall_percent = stage_percent
+    if isinstance(stage_index, int) and isinstance(stage_count, int) and stage_count > 0:
+        overall_percent = round(((stage_index - 1) + stage_percent / 100.0) / stage_count * 100.0, 4)
+    return {
+        "rank": int(match.group("rank")),
+        "epoch": int(match.group("epoch")),
+        "epochs": int(match.group("epochs")),
+        "step": step,
+        "total_steps": total_steps,
+        "stage_percent": stage_percent,
+        "overall_percent": overall_percent,
+        "learning_rate": float(match.group("learning_rate")),
+        "loss": float(match.group("loss")),
+        "line": line,
+    }
+
+
+def load_training_history(run_name: Optional[str] = None, stage: Optional[str] = None, limit: int = 40) -> Dict[str, Any]:
+    """Return recent parsed train-step history from stdout logs without modifying files."""
+    run_dir = resolve_run_dir(run_name)
+    max_points = max(1, min(int(limit), 200))
+    status = load_training_status(run_dir.name)
+    selected_stage = _select_training_stage(status, stage)
+    log_path = _stage_stdout_log(run_dir, selected_stage, allow_latest_fallback=stage is None)
+    if log_path is None or not log_path.exists() or not _is_relative_to(log_path, run_dir):
+        return {
+            "run_name": run_dir.name,
+            "stage": (selected_stage or {}).get("train_stage") or stage,
+            "source_log_path": None,
+            "points": [],
+            "point_count": 0,
+            "error": "no stdout log found for this run",
+            "generated_at": _utc_now(),
+        }
+
+    parsed_points: List[Dict[str, Any]] = []
+    for line in _tail_lines(log_path, max(max_points * 20, max_points)):
+        point = _parse_train_step_line(line, selected_stage)
+        if point:
+            parsed_points.append(point)
+    points = parsed_points[-max_points:]
+    latest_progress = {
+        "step": (selected_stage or {}).get("step"),
+        "total_steps": (selected_stage or {}).get("total_steps"),
+        "stage_percent": (selected_stage or {}).get("stage_percent"),
+        "overall_percent": (selected_stage or {}).get("overall_percent"),
+        "last_loss": (selected_stage or {}).get("last_loss"),
+        "samples_per_second": (selected_stage or {}).get("samples_per_second"),
+        "eta_seconds": (selected_stage or {}).get("eta_seconds"),
+        "updated_at": (selected_stage or {}).get("updated_at"),
+    }
+    return {
+        "run_name": run_dir.name,
+        "stage": (selected_stage or {}).get("train_stage") or stage,
+        "source_log_path": str(log_path),
+        "points": points,
+        "point_count": len(points),
+        "latest_point": points[-1] if points else None,
+        "latest_progress": latest_progress,
+        "generated_at": _utc_now(),
+    }
+
+
 def tail_training_log(run_name: Optional[str] = None, stage: Optional[str] = None, lines: int = 200) -> Dict[str, Any]:
     run_dir = resolve_run_dir(run_name)
     line_count = max(1, min(int(lines), MAX_LOG_LINES))
     status = load_training_status(run_dir.name)
-    stages: Sequence[Dict[str, Any]] = status.get("stages", [])
-    selected_stage: Optional[Dict[str, Any]] = None
-    if stage:
-        selected_stage = next((item for item in stages if item.get("train_stage") == stage), None)
-    if selected_stage is None:
-        selected_stage = status.get("latest_stage") if isinstance(status.get("latest_stage"), dict) else None
-    log_path: Optional[Path] = None
-    if selected_stage and selected_stage.get("stdout_log"):
-        candidate = Path(str(selected_stage["stdout_log"]))
-        if candidate.exists() and _is_relative_to(candidate, run_dir):
-            log_path = candidate
-    if log_path is None:
-        logs = sorted((run_dir / "logs").glob("*.stdout.log"), key=_file_mtime, reverse=True)
-        log_path = logs[0] if logs else None
+    selected_stage = _select_training_stage(status, stage)
+    log_path = _stage_stdout_log(run_dir, selected_stage)
     if log_path is None or not log_path.exists() or not _is_relative_to(log_path, run_dir):
         return {
             "run_name": run_dir.name,

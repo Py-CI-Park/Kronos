@@ -14,7 +14,7 @@ import training_monitor  # noqa: E402
 
 def _write_progress(run_dir: Path, stage: str = "predictor") -> None:
     logs = run_dir / "logs"
-    logs.mkdir(parents=True)
+    logs.mkdir(parents=True, exist_ok=True)
     stdout = logs / f"{stage}.stdout.log"
     stdout.write_text("line 1\nline 2\n", encoding="utf-8")
     progress = {
@@ -76,6 +76,52 @@ def test_training_monitor_inspects_checkpoint_artifacts(tmp_path, monkeypatch):
     assert artifacts["stages"]["predictor"]["checkpoint_file_count"] == 1
 
 
+def test_training_monitor_parses_progress_history(tmp_path, monkeypatch):
+    output_root = tmp_path / "outputs"
+    run_dir = output_root / "unit_run"
+    _write_progress(run_dir, stage="tokenizer")
+    stdout = run_dir / "logs" / "tokenizer.stdout.log"
+    stdout.write_text(
+        "\n".join(
+            [
+                "[Rank 0, Epoch 1/1, Step 100/1000] LR 0.000200, Loss: -0.0100",
+                "noise line",
+                "[Rank 0, Epoch 1/1, Step 200/1000] LR 0.000190, Loss: -0.0200",
+                "[Rank 0, Epoch 1/1, Step 300/1000] LR 0.000180, Loss: -0.0300",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(training_monitor, "OUTPUT_ROOTS", [output_root])
+
+    history = training_monitor.load_training_history("unit_run", stage="tokenizer", limit=2)
+
+    assert history["stage"] == "tokenizer"
+    assert history["point_count"] == 2
+    assert [point["step"] for point in history["points"]] == [200, 300]
+    assert history["latest_point"]["loss"] == -0.03
+    assert history["latest_point"]["stage_percent"] == 30.0
+
+
+def test_training_monitor_history_does_not_fallback_for_requested_empty_stage(tmp_path, monkeypatch):
+    output_root = tmp_path / "outputs"
+    run_dir = output_root / "unit_run"
+    _write_progress(run_dir, stage="tokenizer")
+    _write_progress(run_dir, stage="predictor")
+    (run_dir / "logs" / "predictor.stdout.log").unlink()
+    (run_dir / "logs" / "tokenizer.stdout.log").write_text(
+        "[Rank 0, Epoch 1/1, Step 100/1000] LR 0.000200, Loss: -0.0100",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(training_monitor, "OUTPUT_ROOTS", [output_root])
+
+    history = training_monitor.load_training_history("unit_run", stage="predictor", limit=5)
+
+    assert history["stage"] == "predictor"
+    assert history["point_count"] == 0
+    assert "no stdout log" in history["error"]
+
+
 def test_training_monitor_rejects_path_traversal(tmp_path, monkeypatch):
     output_root = tmp_path / "outputs"
     output_root.mkdir()
@@ -123,6 +169,18 @@ def test_training_dashboard_routes_register(monkeypatch):
     monkeypatch.setattr(webapp, "query_gpu_status", lambda: {"available": False, "gpus": []})
     monkeypatch.setattr(
         webapp,
+        "load_training_history",
+        lambda run_name=None, stage=None, limit=40: {
+            "run_name": "unit",
+            "stage": "tokenizer",
+            "point_count": 1,
+            "points": [{"step": 1, "total_steps": 10, "stage_percent": 10.0, "overall_percent": 5.0, "learning_rate": 0.1, "loss": 0.2}],
+            "latest_point": {"step": 1, "total_steps": 10},
+            "latest_progress": {"updated_at": "2026-05-11T00:01:00Z"},
+        },
+    )
+    monkeypatch.setattr(
+        webapp,
         "inspect_training_artifacts",
         lambda run_name=None, limit=50: {
             "run_name": "unit",
@@ -151,6 +209,7 @@ def test_training_dashboard_routes_register(monkeypatch):
     assert "refreshIntervalSeconds" in training_html
     assert "trainingReadinessCard" in training_html
     assert "trainingArtifactCard" in training_html
+    assert "historyRows" in training_html
     assert "trainingInlinePanel" in index_html
     assert "trainingInlineReadiness" in index_html
     assert "stomTrainingStrip" in stom_html
@@ -164,6 +223,7 @@ def test_training_dashboard_routes_register(monkeypatch):
     artifact_json = client.get("/api/training/artifacts").get_json()
     assert artifact_json["label"] == "checkpoint 대기"
     assert artifact_json["model_weight_file_count"] == 0
+    assert client.get("/api/training/history").get_json()["point_count"] == 1
     assert client.get("/api/training/logs").get_json()["text"] == ""
     assert client.get("/api/training/gpu").get_json()["available"] is False
 
