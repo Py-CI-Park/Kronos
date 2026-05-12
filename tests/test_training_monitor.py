@@ -53,6 +53,29 @@ def test_training_monitor_lists_status_and_tails_logs(tmp_path, monkeypatch):
     assert tail["lines"] == ["line 2"]
 
 
+def test_training_monitor_inspects_checkpoint_artifacts(tmp_path, monkeypatch):
+    output_root = tmp_path / "outputs"
+    run_dir = output_root / "unit_run"
+    _write_progress(run_dir, stage="tokenizer")
+    tokenizer_model = run_dir / "finetune_tokenizer" / "checkpoints" / "best_model" / "model.safetensors"
+    tokenizer_model.parent.mkdir(parents=True)
+    tokenizer_model.write_text("tokenizer", encoding="utf-8")
+    predictor_model = run_dir / "finetune_predictor" / "checkpoints" / "best_model" / "pytorch_model.bin"
+    predictor_model.parent.mkdir(parents=True)
+    predictor_model.write_text("predictor", encoding="utf-8")
+    monkeypatch.setattr(training_monitor, "OUTPUT_ROOTS", [output_root])
+
+    artifacts = training_monitor.inspect_training_artifacts("unit_run")
+
+    assert artifacts["model_weight_file_count"] == 2
+    assert artifacts["checkpoint_file_count"] == 2
+    assert artifacts["tokenizer_checkpoint_ready"] is True
+    assert artifacts["predictor_checkpoint_ready"] is True
+    assert artifacts["level"] == "ready"
+    assert artifacts["stages"]["tokenizer"]["checkpoint_file_count"] == 1
+    assert artifacts["stages"]["predictor"]["checkpoint_file_count"] == 1
+
+
 def test_training_monitor_rejects_path_traversal(tmp_path, monkeypatch):
     output_root = tmp_path / "outputs"
     output_root.mkdir()
@@ -98,6 +121,25 @@ def test_training_dashboard_routes_register(monkeypatch):
     )
     monkeypatch.setattr(webapp, "tail_training_log", lambda run_name=None, stage=None, lines=200: {"lines": [], "text": ""})
     monkeypatch.setattr(webapp, "query_gpu_status", lambda: {"available": False, "gpus": []})
+    monkeypatch.setattr(
+        webapp,
+        "inspect_training_artifacts",
+        lambda run_name=None, limit=50: {
+            "run_name": "unit",
+            "level": "waiting",
+            "label": "checkpoint 대기",
+            "message": "checkpoint 없음",
+            "model_weight_file_count": 0,
+            "checkpoint_file_count": 0,
+            "predictor_started": False,
+            "stages": {
+                "tokenizer": {"checkpoint_ready": False, "checkpoint_file_count": 0},
+                "predictor": {"checkpoint_ready": False, "checkpoint_file_count": 0},
+            },
+            "recent_checkpoint_files": [],
+            "recent_model_weight_files": [],
+        },
+    )
 
     client = webapp.app.test_client()
 
@@ -108,15 +150,20 @@ def test_training_dashboard_routes_register(monkeypatch):
     assert "autoRefreshEnabled" in training_html
     assert "refreshIntervalSeconds" in training_html
     assert "trainingReadinessCard" in training_html
+    assert "trainingArtifactCard" in training_html
     assert "trainingInlinePanel" in index_html
     assert "trainingInlineReadiness" in index_html
     assert "stomTrainingStrip" in stom_html
     assert "stomTrainingReadiness" in stom_html
+    assert "stomTrainingArtifacts" in stom_html
     assert client.get("/api/training/runs").get_json() == {"runs": []}
     status_json = client.get("/api/training/status").get_json()
     assert status_json["run_name"] == "unit"
     assert status_json["readiness"]["performance_ready"] is False
     assert "tokenizer" in status_json["readiness"]["message"]
+    artifact_json = client.get("/api/training/artifacts").get_json()
+    assert artifact_json["label"] == "checkpoint 대기"
+    assert artifact_json["model_weight_file_count"] == 0
     assert client.get("/api/training/logs").get_json()["text"] == ""
     assert client.get("/api/training/gpu").get_json()["available"] is False
 

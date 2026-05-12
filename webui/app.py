@@ -106,6 +106,7 @@ except Exception as exc:
 try:
     try:
         from .training_monitor import (
+            inspect_training_artifacts,
             list_training_runs,
             load_training_status,
             query_gpu_status,
@@ -113,6 +114,7 @@ try:
         )
     except ImportError:
         from training_monitor import (
+            inspect_training_artifacts,
             list_training_runs,
             load_training_status,
             query_gpu_status,
@@ -120,6 +122,7 @@ try:
         )
 except Exception as exc:
     print(f"Warning: STOM training monitor helpers cannot be imported ({exc})")
+    inspect_training_artifacts = None
     list_training_runs = None
     load_training_status = None
     query_gpu_status = None
@@ -592,6 +595,21 @@ def training_logs():
     try:
         lines = int(request.args.get('lines', 200))
         return jsonify(tail_training_log(run_name=run_name, stage=stage, lines=lines))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/training/artifacts')
+def training_artifacts():
+    if inspect_training_artifacts is None:
+        return jsonify({'error': 'STOM training monitor helper is not available'}), 500
+    run_name = request.args.get('run') or None
+    try:
+        limit = int(request.args.get('limit', 50))
+        return jsonify(inspect_training_artifacts(run_name=run_name, limit=limit))
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except ValueError as exc:

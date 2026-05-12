@@ -82,6 +82,7 @@
       <input id="stomTrainingRefreshSeconds" type="number" min="2" max="3600" value="{{ default_training_refresh_seconds }}" onchange="restartStomTrainingAutoRefresh()">
     </div>
     <div id="stomTrainingReadinessNote" class="training-readiness-note">checkpoint와 predictor 상태를 확인하는 중입니다.</div>
+    <div id="stomTrainingArtifacts" class="training-readiness-note">checkpoint/model artifact 상태를 확인하는 중입니다.</div>
   </div>
   <div id="status" class="status info">대시보드 데이터를 불러오는 중입니다...</div>
   <div class="grid">
@@ -311,11 +312,28 @@ async function refreshStomTrainingStatus() {
     document.getElementById('stomTrainingReadinessNote').textContent =
       readiness.message || 'checkpoint와 predictor 완료 전까지 예측 성과는 대기 상태입니다.';
     document.getElementById('stomTrainingUpdated').textContent = stage.updated_at || data.updated_at || data.generated_at || '-';
+    await refreshStomTrainingArtifacts();
     return data.status || 'unknown';
   } catch (err) {
     document.getElementById('stomTrainingStatus').textContent = 'error';
     document.getElementById('stomTrainingUpdated').textContent = err.response?.data?.error || err.message;
     return 'unknown';
+  }
+}
+
+async function refreshStomTrainingArtifacts() {
+  try {
+    const res = await axios.get('/api/training/artifacts');
+    const artifacts = res.data;
+    const tokenizer = (artifacts.stages || {}).tokenizer || {};
+    const predictor = (artifacts.stages || {}).predictor || {};
+    document.getElementById('stomTrainingArtifacts').textContent =
+      `${artifacts.label || 'checkpoint 대기'} · model weight ${artifacts.model_weight_file_count || 0}개` +
+      ` · tokenizer checkpoint ${tokenizer.checkpoint_file_count || 0}개` +
+      ` · predictor checkpoint ${predictor.checkpoint_file_count || 0}개`;
+  } catch (err) {
+    document.getElementById('stomTrainingArtifacts').textContent =
+      `artifact 상태 확인 실패: ${err.response?.data?.error || err.message}`;
   }
 }
 

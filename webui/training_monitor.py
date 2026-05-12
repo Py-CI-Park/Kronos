@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_ROOTS: List[Path] = [PROJECT_ROOT / "finetune" / "outputs"]
 MAX_LOG_LINES = 1000
+MODEL_WEIGHT_SUFFIXES = {".pt", ".pth", ".safetensors", ".ckpt", ".bin"}
 
 
 def _utc_now() -> str:
@@ -238,6 +239,128 @@ def load_training_status(run_name: Optional[str] = None) -> Dict[str, Any]:
         "latest_stage": latest_stage,
         "updated_at": (latest_stage or {}).get("updated_at"),
         "generated_at": _utc_now(),
+    }
+
+
+def _artifact_record(path: Path, run_dir: Path) -> Dict[str, Any]:
+    stat = path.stat()
+    return {
+        "path": path.resolve().relative_to(run_dir.resolve()).as_posix(),
+        "name": path.name,
+        "bytes": stat.st_size,
+        "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+def _safe_files_under(root: Path, run_dir: Path) -> List[Path]:
+    if not root.exists() or not _is_relative_to(root, run_dir):
+        return []
+    return sorted((path for path in root.rglob("*") if path.is_file() and _is_relative_to(path, run_dir)), key=_file_mtime, reverse=True)
+
+
+def _stage_artifact_status(run_dir: Path, stage_name: str, folder_name: str) -> Dict[str, Any]:
+    logs_dir = run_dir / "logs"
+    stage_dir = run_dir / folder_name
+    checkpoint_dir = stage_dir / "checkpoints"
+    checkpoint_files = _safe_files_under(checkpoint_dir, run_dir)
+    best_model = checkpoint_dir / "best_model"
+    progress_path = logs_dir / f"{stage_name}.progress.json"
+    stdout_path = logs_dir / f"{stage_name}.stdout.log"
+    stderr_path = logs_dir / f"{stage_name}.stderr.log"
+
+    manifests: List[Path] = []
+    for manifest_path in run_dir.glob("*run_manifest.json"):
+        payload = _load_json(manifest_path)
+        if str(payload.get("train_stage") or "") == stage_name:
+            manifests.append(manifest_path)
+
+    existing_support_files = [
+        path for path in (progress_path, stdout_path, stderr_path, *manifests)
+        if path.exists() and path.is_file() and _is_relative_to(path, run_dir)
+    ]
+    latest_candidates = checkpoint_files + existing_support_files
+    latest_epoch = _latest_mtime(latest_candidates)
+
+    return {
+        "stage": stage_name,
+        "folder": folder_name,
+        "folder_exists": stage_dir.exists(),
+        "checkpoint_dir": checkpoint_dir.resolve().relative_to(run_dir.resolve()).as_posix() if checkpoint_dir.exists() else None,
+        "checkpoint_dir_exists": checkpoint_dir.exists(),
+        "checkpoint_file_count": len(checkpoint_files),
+        "checkpoint_ready": len(checkpoint_files) > 0,
+        "best_model_exists": best_model.exists(),
+        "progress_exists": progress_path.exists(),
+        "stdout_exists": stdout_path.exists(),
+        "stderr_exists": stderr_path.exists(),
+        "manifest_count": len(manifests),
+        "latest_updated_at": datetime.fromtimestamp(latest_epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if latest_epoch else None,
+        "recent_files": [_artifact_record(path, run_dir) for path in checkpoint_files[:10]],
+    }
+
+
+def inspect_training_artifacts(run_name: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
+    """Summarize checkpoint/model artifacts for a run without modifying outputs."""
+    run_dir = resolve_run_dir(run_name)
+    max_items = max(1, min(int(limit), 200))
+    all_files = _safe_files_under(run_dir, run_dir)
+    weight_files = [path for path in all_files if path.suffix.lower() in MODEL_WEIGHT_SUFFIXES]
+    checkpoint_files = [
+        path for path in all_files
+        if path.suffix.lower() in MODEL_WEIGHT_SUFFIXES
+        or "checkpoint" in path.name.lower()
+        or any(part.lower() in {"checkpoints", "best_model"} for part in path.parts)
+    ]
+
+    tokenizer = _stage_artifact_status(run_dir, "tokenizer", "finetune_tokenizer")
+    predictor = _stage_artifact_status(run_dir, "predictor", "finetune_predictor")
+    predictor_started = bool(
+        predictor["progress_exists"]
+        or predictor["checkpoint_file_count"]
+        or predictor["stdout_exists"]
+    )
+    predictor_ready = bool(predictor["checkpoint_ready"])
+    tokenizer_ready = bool(tokenizer["checkpoint_ready"])
+    any_checkpoint_ready = tokenizer_ready or predictor_ready or bool(checkpoint_files)
+    latest_epoch = _latest_mtime(weight_files + checkpoint_files)
+
+    if predictor_ready:
+        level = "ready"
+        label = "predictor checkpoint 준비"
+        message = "predictor checkpoint가 확인되어 예측 산출물 생성/성과 검증 단계로 넘어갈 수 있습니다."
+    elif predictor_started:
+        level = "training"
+        label = "predictor artifact 생성 중"
+        message = "predictor 관련 로그나 progress는 보이지만 checkpoint 파일은 아직 확인되지 않았습니다."
+    elif tokenizer_ready:
+        level = "training"
+        label = "tokenizer checkpoint 준비"
+        message = "tokenizer checkpoint는 확인됐지만 predictor checkpoint는 아직 없습니다."
+    else:
+        level = "waiting"
+        label = "checkpoint 대기"
+        message = "현재 run에서 tokenizer/predictor checkpoint 또는 model weight 파일이 아직 확인되지 않았습니다."
+
+    return {
+        "run_name": run_dir.name,
+        "run_path": str(run_dir),
+        "generated_at": _utc_now(),
+        "level": level,
+        "label": label,
+        "message": message,
+        "checkpoint_ready": any_checkpoint_ready,
+        "tokenizer_checkpoint_ready": tokenizer_ready,
+        "predictor_started": predictor_started,
+        "predictor_checkpoint_ready": predictor_ready,
+        "model_weight_file_count": len(weight_files),
+        "checkpoint_file_count": len(checkpoint_files),
+        "latest_artifact_updated_at": datetime.fromtimestamp(latest_epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if latest_epoch else None,
+        "stages": {
+            "tokenizer": tokenizer,
+            "predictor": predictor,
+        },
+        "recent_model_weight_files": [_artifact_record(path, run_dir) for path in weight_files[:max_items]],
+        "recent_checkpoint_files": [_artifact_record(path, run_dir) for path in checkpoint_files[:max_items]],
     }
 
 

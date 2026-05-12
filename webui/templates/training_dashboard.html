@@ -43,6 +43,7 @@
     .readiness-label { display: inline-block; border-radius: 999px; padding: 5px 10px; font-weight: 900; background: #422006; color: #fde68a; }
     .readiness-card.ready .readiness-label { background: #14532d; color: #dcfce7; }
     .readiness-card.training .readiness-label { background: #0c4a6e; color: #bae6fd; }
+    .artifact-list { margin: 10px 0 0 0; padding-left: 18px; color: #cbd5e1; font-size: 12px; line-height: 1.5; }
     .nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     .nav a { border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 7px 12px; text-decoration: none; background: rgba(15, 23, 42, .35); color: #dbeafe; font-weight: 800; }
     .inline { display: flex; gap: 8px; align-items: center; }
@@ -108,6 +109,13 @@
         <p><span id="trainingReadinessLabel" class="readiness-label">성과 대기</span></p>
         <p id="trainingReadinessMessage" class="muted">checkpoint와 predictor 상태를 확인하는 중입니다.</p>
         <div id="trainingReadinessMetrics"></div>
+      </div>
+      <div id="trainingArtifactCard" class="card readiness-card waiting">
+        <h2>Checkpoint / Predictor Artifact</h2>
+        <p><span id="trainingArtifactLabel" class="readiness-label">checkpoint 대기</span></p>
+        <p id="trainingArtifactMessage" class="muted">현재 run의 checkpoint/weight 파일을 확인하는 중입니다.</p>
+        <div id="trainingArtifactMetrics"></div>
+        <ul id="trainingArtifactFiles" class="artifact-list"></ul>
       </div>
       <div class="card">
         <h2>GPU / 전력</h2>
@@ -200,6 +208,30 @@ function renderReadiness(readiness) {
     metric('predictor 완료', safeReadiness.predictor_complete ? '예' : '아니오'),
     metric('성과 사용 가능', safeReadiness.performance_ready ? '예' : '아니오'),
   ].join('');
+}
+
+function renderArtifacts(artifacts) {
+  const safeArtifacts = artifacts || {};
+  const card = document.getElementById('trainingArtifactCard');
+  const level = readinessClass(safeArtifacts.level);
+  card.className = `card readiness-card ${level}`;
+  document.getElementById('trainingArtifactLabel').textContent = safeArtifacts.label || 'checkpoint 대기';
+  document.getElementById('trainingArtifactMessage').textContent =
+    safeArtifacts.message || 'checkpoint/model weight 파일이 아직 확인되지 않았습니다.';
+  const tokenizer = (safeArtifacts.stages || {}).tokenizer || {};
+  const predictor = (safeArtifacts.stages || {}).predictor || {};
+  document.getElementById('trainingArtifactMetrics').innerHTML = [
+    metric('model weight 파일', safeArtifacts.model_weight_file_count ?? 0),
+    metric('checkpoint 후보 파일', safeArtifacts.checkpoint_file_count ?? 0),
+    metric('tokenizer checkpoint', tokenizer.checkpoint_ready ? `준비(${tokenizer.checkpoint_file_count || 0})` : '대기'),
+    metric('predictor 시작', safeArtifacts.predictor_started ? '예' : '아니오'),
+    metric('predictor checkpoint', predictor.checkpoint_ready ? `준비(${predictor.checkpoint_file_count || 0})` : '대기'),
+    metric('최근 artifact 갱신', safeArtifacts.latest_artifact_updated_at || '-'),
+  ].join('');
+  const files = safeArtifacts.recent_checkpoint_files || safeArtifacts.recent_model_weight_files || [];
+  document.getElementById('trainingArtifactFiles').innerHTML = files.slice(0, 5)
+    .map(file => `<li>${escapeHtml(file.path)} · ${escapeHtml(file.bytes ?? '-')} bytes</li>`)
+    .join('');
 }
 
 function escapeHtml(value) {
@@ -376,6 +408,20 @@ async function refreshLogs() {
   box.scrollTop = box.scrollHeight;
 }
 
+async function refreshArtifacts() {
+  if (!currentRun) {
+    renderArtifacts(null);
+    return;
+  }
+  const res = await fetch(`/api/training/artifacts?run=${encodeURIComponent(currentRun)}`);
+  const data = await res.json();
+  if (data.error) {
+    document.getElementById('trainingArtifactMessage').textContent = data.error;
+    return;
+  }
+  renderArtifacts(data);
+}
+
 async function refreshGpu() {
   const res = await fetch('/api/training/gpu');
   const data = await res.json();
@@ -406,6 +452,7 @@ async function refreshAll() {
   try {
     await refreshRuns();
     await refreshStatus();
+    await refreshArtifacts();
     await refreshLogs();
     await refreshGpu();
     document.getElementById('lastRefreshAt').textContent = new Date().toLocaleTimeString();
