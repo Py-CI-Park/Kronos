@@ -36,6 +36,13 @@
     .muted { color: #94a3b8; font-size: 13px; line-height: 1.45; }
     .warn { color: #fde68a; }
     .error { color: #fecaca; }
+    .readiness-card { border-left: 5px solid #f59e0b; }
+    .readiness-card.ready { border-left-color: #22c55e; }
+    .readiness-card.training { border-left-color: #38bdf8; }
+    .readiness-card.waiting { border-left-color: #f59e0b; }
+    .readiness-label { display: inline-block; border-radius: 999px; padding: 5px 10px; font-weight: 900; background: #422006; color: #fde68a; }
+    .readiness-card.ready .readiness-label { background: #14532d; color: #dcfce7; }
+    .readiness-card.training .readiness-label { background: #0c4a6e; color: #bae6fd; }
     .nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     .nav a { border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 7px 12px; text-decoration: none; background: rgba(15, 23, 42, .35); color: #dbeafe; font-weight: 800; }
     .inline { display: flex; gap: 8px; align-items: center; }
@@ -95,6 +102,12 @@
         <h2>전체 진행</h2>
         <div class="bar"><div id="overallFill" class="fill"></div></div>
         <div id="overallMetrics"></div>
+      </div>
+      <div id="trainingReadinessCard" class="card readiness-card waiting">
+        <h2>예측 성과 준비 상태</h2>
+        <p><span id="trainingReadinessLabel" class="readiness-label">성과 대기</span></p>
+        <p id="trainingReadinessMessage" class="muted">checkpoint와 predictor 상태를 확인하는 중입니다.</p>
+        <div id="trainingReadinessMetrics"></div>
       </div>
       <div class="card">
         <h2>GPU / 전력</h2>
@@ -167,6 +180,26 @@ function badge(status) {
 
 function metric(label, value) {
   return `<div class="metric"><span>${escapeHtml(label)}</span><span>${escapeHtml(value ?? '-')}</span></div>`;
+}
+
+function readinessClass(level) {
+  const value = String(level || 'waiting').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return ['ready', 'training', 'waiting'].includes(value) ? value : 'waiting';
+}
+
+function renderReadiness(readiness) {
+  const safeReadiness = readiness || {};
+  const card = document.getElementById('trainingReadinessCard');
+  const level = readinessClass(safeReadiness.level);
+  card.className = `card readiness-card ${level}`;
+  document.getElementById('trainingReadinessLabel').textContent = safeReadiness.label || '성과 대기';
+  document.getElementById('trainingReadinessMessage').textContent =
+    safeReadiness.message || 'checkpoint와 predictor 완료 전까지 예측 성과는 대기 상태입니다.';
+  document.getElementById('trainingReadinessMetrics').innerHTML = [
+    metric('predictor 시작', safeReadiness.predictor_started ? '예' : '아니오'),
+    metric('predictor 완료', safeReadiness.predictor_complete ? '예' : '아니오'),
+    metric('성과 사용 가능', safeReadiness.performance_ready ? '예' : '아니오'),
+  ].join('');
 }
 
 function escapeHtml(value) {
@@ -298,6 +331,7 @@ async function refreshStatus() {
   latestRunStatus = data.status || 'unknown';
   const overall = pct(data.overall_percent);
   document.getElementById('overallFill').style.width = `${overall}%`;
+  renderReadiness(data.readiness);
   document.getElementById('overallMetrics').innerHTML = [
     metric('Run', data.run_name),
     metric('상태', data.status),

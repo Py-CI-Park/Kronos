@@ -70,6 +70,18 @@
             border-left: 5px solid #38a169;
         }
 
+        .training-summary-card.waiting {
+            border-left-color: #dd6b20;
+        }
+
+        .training-summary-card.training {
+            border-left-color: #3182ce;
+        }
+
+        .training-summary-card.ready {
+            border-left-color: #38a169;
+        }
+
         .training-summary-card h2 {
             margin-bottom: 10px;
             color: #2d3748;
@@ -78,9 +90,21 @@
 
         .training-summary-row {
             display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
+            grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 10px;
             margin: 12px 0;
+        }
+
+        .training-readiness-note {
+            background: #fffaf0;
+            border: 1px solid #fbd38d;
+            border-radius: 10px;
+            color: #744210;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.45;
+            padding: 10px 12px;
+            margin: 8px 0 12px 0;
         }
 
         .training-summary-row div {
@@ -552,7 +576,11 @@
                 <div><strong>Stage</strong><span id="trainingInlineStage">-</span></div>
                 <div><strong>Step</strong><span id="trainingInlineStep">-</span></div>
                 <div><strong>Progress</strong><span id="trainingInlineProgress">-</span></div>
+                <div><strong>성과 상태</strong><span id="trainingInlineReadiness">성과 대기</span></div>
                 <div><strong>Updated</strong><span id="trainingInlineUpdated">-</span></div>
+            </div>
+            <div id="trainingInlineReadinessNote" class="training-readiness-note">
+                checkpoint와 predictor 상태를 확인하는 중입니다.
             </div>
             <div class="training-summary-actions">
                 <a href="/training">학습 대시보드 열기</a>
@@ -779,10 +807,18 @@
                 const response = await axios.get('/api/training/status');
                 const data = response.data;
                 const stage = data.latest_stage || {};
+                const readiness = data.readiness || {};
+                const panel = document.getElementById('trainingInlinePanel');
+                const readinessLevel = ['ready', 'training', 'waiting'].includes(readiness.level) ? readiness.level : 'waiting';
+                panel.classList.remove('ready', 'training', 'waiting');
+                panel.classList.add(readinessLevel);
                 statusEl.textContent = data.status || 'unknown';
                 document.getElementById('trainingInlineStage').textContent = stage.train_stage || '-';
                 document.getElementById('trainingInlineStep').textContent = `${stage.step || 0}/${stage.total_steps || '-'}`;
                 document.getElementById('trainingInlineProgress').textContent = `${Number(data.overall_percent || 0).toFixed(2)}%`;
+                document.getElementById('trainingInlineReadiness').textContent = readiness.label || '성과 대기';
+                document.getElementById('trainingInlineReadinessNote').textContent =
+                    readiness.message || 'checkpoint와 predictor 완료 전까지 예측 성과는 대기 상태입니다.';
                 document.getElementById('trainingInlineUpdated').textContent = stage.updated_at || data.updated_at || data.generated_at || '-';
                 document.getElementById('trainingInlineAutoStatus').textContent =
                     data.status === 'running'

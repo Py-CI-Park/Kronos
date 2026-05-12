@@ -86,7 +86,16 @@ def test_training_dashboard_routes_register(monkeypatch):
     import app as webapp  # noqa: E402
 
     monkeypatch.setattr(webapp, "list_training_runs", lambda limit=50: [])
-    monkeypatch.setattr(webapp, "load_training_status", lambda run_name=None: {"run_name": "unit", "stages": []})
+    monkeypatch.setattr(
+        webapp,
+        "load_training_status",
+        lambda run_name=None: {
+            "run_name": "unit",
+            "status": "running",
+            "latest_stage": {"train_stage": "tokenizer", "status": "running"},
+            "stages": [{"train_stage": "tokenizer", "status": "running"}],
+        },
+    )
     monkeypatch.setattr(webapp, "tail_training_log", lambda run_name=None, stage=None, lines=200: {"lines": [], "text": ""})
     monkeypatch.setattr(webapp, "query_gpu_status", lambda: {"available": False, "gpus": []})
 
@@ -98,12 +107,50 @@ def test_training_dashboard_routes_register(monkeypatch):
 
     assert "autoRefreshEnabled" in training_html
     assert "refreshIntervalSeconds" in training_html
+    assert "trainingReadinessCard" in training_html
     assert "trainingInlinePanel" in index_html
+    assert "trainingInlineReadiness" in index_html
     assert "stomTrainingStrip" in stom_html
+    assert "stomTrainingReadiness" in stom_html
     assert client.get("/api/training/runs").get_json() == {"runs": []}
-    assert client.get("/api/training/status").get_json()["run_name"] == "unit"
+    status_json = client.get("/api/training/status").get_json()
+    assert status_json["run_name"] == "unit"
+    assert status_json["readiness"]["performance_ready"] is False
+    assert "tokenizer" in status_json["readiness"]["message"]
     assert client.get("/api/training/logs").get_json()["text"] == ""
     assert client.get("/api/training/gpu").get_json()["available"] is False
+
+
+def test_training_readiness_policy_marks_predictor_states():
+    import app as webapp  # noqa: E402
+
+    tokenizer_payload = {
+        "status": "running",
+        "latest_stage": {"train_stage": "tokenizer", "status": "running"},
+        "stages": [{"train_stage": "tokenizer", "status": "running"}],
+    }
+    predictor_payload = {
+        "status": "running",
+        "latest_stage": {"train_stage": "predictor", "status": "running"},
+        "stages": [{"train_stage": "predictor", "status": "running", "stage_percent": 50}],
+    }
+    complete_payload = {
+        "status": "completed",
+        "latest_stage": {"train_stage": "predictor", "status": "completed"},
+        "stages": [{"train_stage": "predictor", "status": "completed", "stage_percent": 100}],
+    }
+
+    tokenizer = webapp.build_training_readiness(tokenizer_payload)
+    predictor = webapp.build_training_readiness(predictor_payload)
+    complete = webapp.build_training_readiness(complete_payload)
+
+    assert tokenizer["level"] == "waiting"
+    assert tokenizer["performance_ready"] is False
+    assert predictor["level"] == "training"
+    assert predictor["predictor_started"] is True
+    assert predictor["performance_ready"] is False
+    assert complete["level"] == "ready"
+    assert complete["performance_ready"] is True
 
 
 def test_training_dashboard_refresh_interval_is_configurable_and_clamped(monkeypatch):

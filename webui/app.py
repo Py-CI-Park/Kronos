@@ -185,6 +185,82 @@ def resolve_training_refresh_seconds(raw_value=None):
         seconds = DEFAULT_TRAINING_REFRESH_SECONDS
     return max(MIN_TRAINING_REFRESH_SECONDS, min(seconds, MAX_TRAINING_REFRESH_SECONDS))
 
+
+def build_training_readiness(status_payload):
+    """Return a shared read-only readiness policy for all training widgets.
+
+    The web UI intentionally distinguishes "training is progressing" from
+    "a usable predictor/checkpoint exists" so an in-progress tokenizer run is
+    not interpreted as a completed forecasting model.
+    """
+    payload = status_payload or {}
+    stages = payload.get("stages") or []
+    latest = payload.get("latest_stage") or {}
+    run_status = str(payload.get("status") or latest.get("status") or "unknown").lower()
+
+    def stage_name(stage):
+        return str((stage or {}).get("train_stage") or (stage or {}).get("stage") or "").lower()
+
+    def stage_status(stage):
+        return str((stage or {}).get("status") or "").lower()
+
+    def safe_percent(stage):
+        try:
+            return float((stage or {}).get("stage_percent") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    predictor_stage = next((stage for stage in stages if stage_name(stage) == "predictor"), None)
+    latest_stage_name = stage_name(latest)
+    predictor_status = stage_status(predictor_stage)
+    complete_statuses = {"complete", "completed", "done", "finished", "success", "succeeded"}
+    pending_statuses = {"", "dry_run", "pending", "queued", "not_started", "waiting"}
+
+    predictor_started = bool(predictor_stage) and predictor_status not in pending_statuses
+    predictor_complete = (
+        bool(predictor_stage)
+        and (
+            predictor_status in complete_statuses
+            or (
+                stage_name(predictor_stage) == "predictor"
+                and safe_percent(predictor_stage) >= 100
+                and run_status in complete_statuses
+            )
+        )
+    )
+
+    if predictor_complete:
+        level = "ready"
+        label = "예측 성과 확인 가능"
+        message = "predictor 학습이 완료된 상태입니다. 이제 실제값/예측값 검증과 성과 지표 확인이 가능합니다."
+        performance_ready = True
+    elif predictor_started:
+        level = "training"
+        label = "predictor 학습 중"
+        message = "predictor 단계가 진행 중입니다. checkpoint가 저장되기 전까지 성과 수치를 확정하지 않습니다."
+        performance_ready = False
+    elif latest_stage_name == "tokenizer" or run_status == "running":
+        level = "waiting"
+        label = "성과 대기: tokenizer 학습 중"
+        message = "현재 tokenizer 단계입니다. checkpoint와 predictor가 아직 준비되지 않아 예측 정확도/수익률을 판단하지 않습니다."
+        performance_ready = False
+    else:
+        level = "waiting"
+        label = "성과 대기"
+        message = "학습 산출물 또는 predictor 완료 상태가 확인되기 전까지 예측 성과는 대기 상태로 표시합니다."
+        performance_ready = False
+
+    return {
+        "level": level,
+        "label": label,
+        "message": message,
+        "performance_ready": performance_ready,
+        "checkpoint_expected": not performance_ready,
+        "predictor_started": predictor_started,
+        "predictor_complete": predictor_complete,
+        "latest_stage": latest_stage_name or "-",
+    }
+
 def load_data_files():
     """Scan data directory and return available data files"""
     data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
@@ -497,7 +573,9 @@ def training_status():
         return jsonify({'error': 'STOM training monitor helper is not available'}), 500
     run_name = request.args.get('run') or None
     try:
-        return jsonify(load_training_status(run_name))
+        status_payload = load_training_status(run_name)
+        status_payload['readiness'] = build_training_readiness(status_payload)
+        return jsonify(status_payload)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except ValueError as exc:
