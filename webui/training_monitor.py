@@ -567,13 +567,31 @@ def query_gpu_status(timeout_seconds: int = 5) -> Dict[str, Any]:
             gpu["memory_used_percent"] = round(gpu["memory_used_mib"] / gpu["memory_total_mib"] * 100.0, 2)
         else:
             gpu["memory_used_percent"] = None
+        gpu["power_draw_available"] = gpu["power_draw_watts"] is not None
         gpus.append(gpu)
 
     power_values = [gpu["power_draw_watts"] for gpu in gpus if gpu["power_draw_watts"] is not None]
     total_power = sum(power_values) if power_values else None
+    power_limit_values = [gpu["power_limit_watts"] for gpu in gpus if gpu["power_limit_watts"] is not None]
+    total_power_limit = sum(power_limit_values) if power_limit_values else None
+    utilization_values = [
+        gpu["utilization_gpu_percent"] for gpu in gpus if gpu["utilization_gpu_percent"] is not None
+    ]
+    total_memory_used = sum(gpu["memory_used_mib"] or 0 for gpu in gpus)
+    total_memory_capacity = sum(gpu["memory_total_mib"] or 0 for gpu in gpus)
     return {
         "available": bool(gpus),
         "gpus": gpus,
         "total_power_draw_watts": total_power,
+        "total_power_limit_watts": total_power_limit,
+        "power_draw_available": total_power is not None,
+        "average_utilization_gpu_percent": round(sum(utilization_values) / len(utilization_values), 2)
+        if utilization_values
+        else None,
+        "total_memory_used_mib": total_memory_used if total_memory_capacity else None,
+        "total_memory_total_mib": total_memory_capacity if total_memory_capacity else None,
+        "total_memory_used_percent": round(total_memory_used / total_memory_capacity * 100.0, 2)
+        if total_memory_capacity
+        else None,
         "generated_at": _utc_now(),
     }

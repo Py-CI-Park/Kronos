@@ -165,3 +165,26 @@ live /training?refresh_interval=10: historyRows/historySummary 확인
 ```
 
 다음 단계는 4단계 `GPU/ETA/속도 카드 개선`입니다.
+
+---
+
+## 11. 2026-05-12 실행 갱신: 4단계 완료
+
+4단계 `GPU/ETA/속도 카드 개선`을 완료했습니다.
+
+- `/training`에 `학습 속도 / ETA` 카드가 추가되었습니다.
+- `samples/sec`, 경과 시간, 남은 시간, 예상 완료 시각, 최근 loss를 한눈에 볼 수 있습니다.
+- GPU summary가 평균 Util, 총 VRAM 사용률, 총 전력 제한, power draw 실측 가능 여부를 반환합니다.
+- 현재 워크스테이션처럼 power draw가 실측되지 않는 경우 `실측 불가`로 표시해 전력 수치를 과장하지 않습니다.
+- 현재 실행 중인 학습은 중단하지 않았습니다.
+
+검증:
+
+```text
+pytest tests\test_training_monitor.py tests\test_training_progress.py -q: 13 passed
+compileall webui: 통과
+live /api/training/gpu: available true, avg util 39.0%, VRAM 19.61%, power limit 320W
+live /training?refresh_interval=10: runtimeSummaryCard/gpuSummaryMetrics 확인
+```
+
+다음 단계는 5단계 `/stom 성과 준비 상태 연결`입니다.

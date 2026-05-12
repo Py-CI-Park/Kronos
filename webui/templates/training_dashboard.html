@@ -106,6 +106,11 @@
         <div class="bar"><div id="overallFill" class="fill"></div></div>
         <div id="overallMetrics"></div>
       </div>
+      <div id="runtimeSummaryCard" class="card">
+        <h2>학습 속도 / ETA</h2>
+        <div id="runtimeSummary" class="muted">학습 속도와 남은 시간을 확인하는 중...</div>
+        <div id="runtimeMetrics"></div>
+      </div>
       <div id="trainingReadinessCard" class="card readiness-card waiting">
         <h2>예측 성과 준비 상태</h2>
         <p><span id="trainingReadinessLabel" class="readiness-label">성과 대기</span></p>
@@ -122,8 +127,9 @@
       <div class="card">
         <h2>GPU / 전력</h2>
         <div id="gpuStatus" class="muted">GPU 정보를 불러오는 중...</div>
+        <div id="gpuSummaryMetrics"></div>
         <table>
-          <thead><tr><th>GPU</th><th>Util %</th><th>VRAM</th><th>W</th><th>Temp</th></tr></thead>
+          <thead><tr><th>GPU</th><th>Util %</th><th>VRAM %</th><th>VRAM</th><th>Power</th><th>Limit</th><th>Temp</th></tr></thead>
           <tbody id="gpuRows"></tbody>
         </table>
       </div>
@@ -190,6 +196,31 @@ function formatSeconds(value) {
   return parts.join(' ');
 }
 
+function formatNumber(value, digits = 2) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  return Number(value).toFixed(digits);
+}
+
+function formatPercent(value, digits = 2) {
+  const formatted = formatNumber(value, digits);
+  return formatted === '-' ? '-' : `${formatted}%`;
+}
+
+function formatMib(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })} MiB`;
+}
+
+function formatWatts(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  return `${Number(value).toFixed(1)} W`;
+}
+
+function formatEtaTarget(seconds) {
+  if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) return '-';
+  return new Date(Date.now() + Math.max(0, Number(seconds)) * 1000).toLocaleString();
+}
+
 function badge(status) {
   const s = String(status || 'unknown');
   const cssClass = s.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -242,6 +273,29 @@ function renderArtifacts(artifacts) {
   document.getElementById('trainingArtifactFiles').innerHTML = files.slice(0, 5)
     .map(file => `<li>${escapeHtml(file.path)} · ${escapeHtml(file.bytes ?? '-')} bytes</li>`)
     .join('');
+}
+
+function renderRuntimeSummary(status) {
+  const data = status || {};
+  const latest = data.latest_stage || {};
+  const step = latest.step ?? '-';
+  const totalSteps = latest.total_steps ?? '-';
+  const stagePct = pct(latest.stage_percent);
+  const overallPct = pct(data.overall_percent);
+  const etaText = formatSeconds(latest.eta_seconds);
+  const finishText = formatEtaTarget(latest.eta_seconds);
+  document.getElementById('runtimeSummary').textContent =
+    `${latest.train_stage || '-'} · ${step} / ${totalSteps} · 단계 ${stagePct}% · 전체 ${overallPct}% · ETA ${etaText}`;
+  document.getElementById('runtimeMetrics').innerHTML = [
+    metric('현재 단계', latest.train_stage || '-'),
+    metric('단계 상태', latest.status || data.status || '-'),
+    metric('samples/sec', formatNumber(latest.samples_per_second, 2)),
+    metric('경과 시간', formatSeconds(latest.elapsed_seconds)),
+    metric('남은 시간', etaText),
+    metric('예상 완료 시각', finishText),
+    metric('최근 loss', latest.last_loss ?? '-'),
+    metric('최근 갱신', latest.updated_at || data.updated_at || data.generated_at || '-'),
+  ].join('');
 }
 
 function escapeHtml(value) {
@@ -361,6 +415,8 @@ async function refreshStatus() {
   if (!currentRun) {
     document.getElementById('stageList').textContent = '아직 표시할 학습 run이 없습니다.';
     document.getElementById('overallFill').style.width = '0%';
+    document.getElementById('runtimeSummary').textContent = '아직 표시할 학습 run이 없습니다.';
+    document.getElementById('runtimeMetrics').innerHTML = '';
     return;
   }
   const res = await fetch(`/api/training/status?run=${encodeURIComponent(currentRun)}`);
@@ -374,6 +430,7 @@ async function refreshStatus() {
   const overall = pct(data.overall_percent);
   document.getElementById('overallFill').style.width = `${overall}%`;
   renderReadiness(data.readiness);
+  renderRuntimeSummary(data);
   document.getElementById('overallMetrics').innerHTML = [
     metric('Run', data.run_name),
     metric('상태', data.status),
@@ -401,7 +458,7 @@ async function refreshStatus() {
       ${metric('best val loss', stage.best_val_loss)}
       ${metric('경과 시간', formatSeconds(stage.elapsed_seconds))}
       ${metric('예상 남은 시간', formatSeconds(stage.eta_seconds))}
-      ${metric('samples/sec', stage.samples_per_second ? Number(stage.samples_per_second).toFixed(2) : '-')}
+      ${metric('samples/sec', formatNumber(stage.samples_per_second, 2))}
       <p class="muted">${escapeHtml(stage.last_line || '')}</p>
     </div>`;
   }).join('') || '단계 진행 파일이 없습니다.';
@@ -469,21 +526,33 @@ async function refreshGpu() {
   const data = await res.json();
   const status = document.getElementById('gpuStatus');
   const rows = document.getElementById('gpuRows');
+  const summary = document.getElementById('gpuSummaryMetrics');
   if (!data.available) {
     status.innerHTML = `<span class="warn">GPU 정보를 사용할 수 없습니다: ${escapeHtml(data.error || 'nvidia-smi 결과 없음')}</span>`;
+    summary.innerHTML = '';
     rows.innerHTML = '';
     return;
   }
-  const totalPower = data.total_power_draw_watts === null || data.total_power_draw_watts === undefined
-    ? '-'
-    : `${Number(data.total_power_draw_watts).toFixed(1)} W`;
-  status.textContent = `총 GPU 전력: ${totalPower} · ${data.generated_at}`;
+  const totalPower = formatWatts(data.total_power_draw_watts);
+  const totalLimit = formatWatts(data.total_power_limit_watts);
+  const memoryText = `${formatPercent(data.total_memory_used_percent, 2)} · ${formatMib(data.total_memory_used_mib)} / ${formatMib(data.total_memory_total_mib)}`;
+  status.textContent =
+    `평균 Util ${formatPercent(data.average_utilization_gpu_percent, 1)} · VRAM ${memoryText} · ` +
+    `전력 ${totalPower === '-' ? '실측 불가' : totalPower} / 제한 ${totalLimit} · ${data.generated_at}`;
+  summary.innerHTML = [
+    metric('평균 GPU Util', formatPercent(data.average_utilization_gpu_percent, 1)),
+    metric('총 VRAM 사용률', memoryText),
+    metric('총 전력 실측', totalPower === '-' ? '실측 불가' : totalPower),
+    metric('전력 제한 합계', totalLimit),
+  ].join('');
   rows.innerHTML = (data.gpus || []).map(gpu => `<tr>
     <td>${escapeHtml(gpu.index)}: ${escapeHtml(gpu.name)}</td>
-    <td>${escapeHtml(gpu.utilization_gpu_percent ?? '-')}</td>
-    <td>${escapeHtml(gpu.memory_used_mib ?? '-')} / ${escapeHtml(gpu.memory_total_mib ?? '-')} MiB</td>
-    <td>${escapeHtml(gpu.power_draw_watts ?? '-')}</td>
-    <td>${escapeHtml(gpu.temperature_c ?? '-')}</td>
+    <td>${escapeHtml(formatPercent(gpu.utilization_gpu_percent, 1))}</td>
+    <td>${escapeHtml(formatPercent(gpu.memory_used_percent, 2))}</td>
+    <td>${escapeHtml(formatMib(gpu.memory_used_mib))} / ${escapeHtml(formatMib(gpu.memory_total_mib))}</td>
+    <td>${escapeHtml(gpu.power_draw_available ? formatWatts(gpu.power_draw_watts) : '실측 불가')}</td>
+    <td>${escapeHtml(formatWatts(gpu.power_limit_watts))}</td>
+    <td>${escapeHtml(formatNumber(gpu.temperature_c, 0))}℃</td>
   </tr>`).join('');
 }
 

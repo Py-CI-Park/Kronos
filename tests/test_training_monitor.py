@@ -148,7 +148,29 @@ def test_query_gpu_status_parses_nvidia_smi(monkeypatch):
     assert status["available"] is True
     assert status["gpus"][0]["name"] == "NVIDIA GeForce RTX 4080 SUPER"
     assert status["gpus"][0]["utilization_gpu_percent"] == 75.0
+    assert status["gpus"][0]["memory_used_percent"] == 54.96
+    assert status["gpus"][0]["power_draw_available"] is True
     assert status["total_power_draw_watts"] == 250.5
+    assert status["total_power_limit_watts"] == 320.0
+    assert status["average_utilization_gpu_percent"] == 75.0
+    assert status["total_memory_used_percent"] == 54.96
+
+
+def test_query_gpu_status_reports_power_limit_when_power_draw_is_missing(monkeypatch):
+    class Completed:
+        returncode = 0
+        stdout = "0, NVIDIA GeForce RTX 4080 SUPER, 43, 3328, 16376, [Not Supported], 320.0, 49\n"
+        stderr = ""
+
+    monkeypatch.setattr(training_monitor.subprocess, "run", lambda *args, **kwargs: Completed())
+
+    status = training_monitor.query_gpu_status()
+
+    assert status["available"] is True
+    assert status["power_draw_available"] is False
+    assert status["total_power_draw_watts"] is None
+    assert status["total_power_limit_watts"] == 320.0
+    assert status["gpus"][0]["power_draw_available"] is False
 
 
 def test_training_dashboard_routes_register(monkeypatch):
@@ -209,6 +231,8 @@ def test_training_dashboard_routes_register(monkeypatch):
     assert "refreshIntervalSeconds" in training_html
     assert "trainingReadinessCard" in training_html
     assert "trainingArtifactCard" in training_html
+    assert "runtimeSummaryCard" in training_html
+    assert "gpuSummaryMetrics" in training_html
     assert "historyRows" in training_html
     assert "trainingInlinePanel" in index_html
     assert "trainingInlineReadiness" in index_html

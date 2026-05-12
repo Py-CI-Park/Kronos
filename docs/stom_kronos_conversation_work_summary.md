@@ -1215,3 +1215,64 @@ readiness: 성과 대기(tokenizer 학습 중, predictor 미시작)
 ```text
 $ralph 현재 실행 중인 STOM full training은 중단하지 말고, docs/stom_dashboard_safe_parallel_improvement_plan.md 계획의 4단계를 구현하세요. 목표는 /training의 GPU/ETA/속도 카드를 개선해 samples/sec, ETA, GPU util/VRAM/온도/전력 상태를 더 명확히 표시하는 것입니다. tests/test_training_monitor.py와 tests/test_training_progress.py를 통과시키고 live HTTP 확인 후 Lore commit으로 남기세요.
 ```
+
+---
+
+## 35. 2026-05-12 업데이트: GPU/ETA/속도 카드 개선
+
+현재 STOM full training을 중단하지 않고 `$ralph` 단계로 `/training` 대시보드의 GPU/ETA/속도 표시를 개선했습니다.
+
+구현 완료:
+
+- `/training`에 `학습 속도 / ETA` 카드 추가
+- 현재 단계, samples/sec, 경과 시간, 남은 시간, 예상 완료 시각, 최근 loss 표시
+- `/api/training/gpu` summary 확장
+- 평균 GPU Util, 총 VRAM 사용률, 총 전력 제한, power draw 실측 가능 여부 표시
+- power draw 실측이 불가한 환경에서는 `실측 불가`로 명확히 표시
+- GPU 테이블에 VRAM %, Power, Limit, Temp 컬럼 확장
+
+검증:
+
+```text
+C:\Python\64\Python3119\python.exe -m pytest tests\test_training_monitor.py tests\test_training_progress.py -q
+13 passed in 1.94s
+
+C:\Python\64\Python3119\python.exe -m compileall webui
+통과
+
+Live HTTP:
+/api/training/gpu: available true, avg util 39.0%, VRAM 19.61%, power limit 320W
+/api/training/status: tokenizer running, step 1,329,000, overall 14.1331%
+/training?refresh_interval=10: runtimeSummaryCard/gpuSummaryMetrics 확인
+```
+
+현재 live 학습 상태:
+
+```text
+status: running
+stage: tokenizer
+step: 1,329,000 / 4,701,721
+tokenizer 진행률: 28.2662%
+전체 both-stage 진행률: 14.1331%
+samples/sec: 약 65.37
+readiness: 성과 대기(tokenizer 학습 중, predictor 미시작)
+```
+
+진행률:
+
+```text
+1단계 공통 readiness UI/API       [██████████] 100%
+2단계 read-only artifacts API      [██████████] 100%
+3단계 진행률 히스토리 표시        [██████████] 100%
+4단계 GPU/ETA/속도 카드 개선      [██████████] 100%
+5단계 /stom 성과 준비 상태 연결   [░░░░░░░░░░] 0%
+6단계 최종 code-review 문서       [░░░░░░░░░░] 0%
+프론트엔드 고도화 전체            [████████░░] 80%
+학습 산출물 전체 진행률           [█░░░░░░░░░] 14.13%
+```
+
+다음 권장 OMX 명령:
+
+```text
+$ralph 현재 실행 중인 STOM full training은 중단하지 말고, docs/stom_dashboard_safe_parallel_improvement_plan.md 계획의 5단계를 구현하세요. 목표는 /stom 성과 대시보드 상단에도 predictor 미시작/성과 대기/학습 진행 상태와 artifact readiness를 더 명확히 연결해, predictor 완료 전에는 예측 성과를 오해하지 않도록 하는 것입니다. tests/test_training_monitor.py와 tests/test_training_progress.py를 통과시키고 live HTTP 확인 후 Lore commit으로 남기세요.
+```
