@@ -922,12 +922,13 @@ function kronosV2() {
         const latest = d.latest_stage || {};
         try { this.overallPercent = parseFloat(latest.stage_percent || 0); } catch(e) { this.overallPercent = 0; }
 
-        /* ETA */
-        this.etaSeconds = d.eta_seconds != null ? d.eta_seconds : null;
-        this._computeEta(d);
+        /* ETA — latest_stage 아래 필드를 우선으로 읽는다 */
+        const updatedAt = latest.updated_at || d.updated_at || null;
+        this.etaSeconds = latest.eta_seconds != null ? latest.eta_seconds
+                           : (d.eta_seconds != null ? d.eta_seconds : null);
+        this._computeEta(this.etaSeconds, updatedAt);
 
         /* 시작 시각 */
-        const updatedAt = latest.updated_at || d.updated_at || null;
         this.startKst = updatedAt ? this._toKst(updatedAt) : '-';
 
         this.lastUpdated = new Date().toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' });
@@ -937,14 +938,15 @@ function kronosV2() {
       } catch(e) { /* 네트워크 오류 무시 */ }
     },
 
-    _computeEta(d) {
-      const eta = d.eta_seconds != null ? d.eta_seconds : null;
-      if (eta != null && eta > 0) {
-        const ms = Date.now() + eta * 1000;
-        this.etaKst = new Date(ms).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-      } else {
+    _computeEta(etaSeconds, updatedAt) {
+      if (etaSeconds == null || !(etaSeconds > 0)) {
         this.etaKst = '-';
+        return;
       }
+      /* 기준 시각: latest_stage.updated_at (없으면 현재 시각으로 폴백) */
+      const base = updatedAt ? Date.parse(updatedAt) : Date.now();
+      const finishMs = (Number.isNaN(base) ? Date.now() : base) + etaSeconds * 1000;
+      this.etaKst = new Date(finishMs).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     },
 
     /* ─ Loss History ─ */
