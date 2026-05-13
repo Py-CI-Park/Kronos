@@ -452,6 +452,58 @@
     .progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #38bdf8); transition: width .4s ease; }
     .error-msg { color: #fca5a5; font-size: 12px; padding: 6px 0; }
 
+    /* ── P0: 메트릭 스트립 (현재 손실 / sps / LR / Epoch) ── */
+    .metrics-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .metric-card {
+      background: #0b1120;
+      border: 1px solid #243244;
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-card .metric-label {
+      font-size: 10px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 600;
+    }
+    .metric-card .metric-value {
+      font-size: 22px;
+      font-weight: 800;
+      color: #e2e8f0;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.15;
+    }
+    .metric-card .metric-unit {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-left: 4px;
+      font-weight: 600;
+    }
+    .metric-card .metric-sub {
+      font-size: 11px;
+      color: #64748b;
+    }
+    .metric-card.metric-loss .metric-value { color: #38bdf8; }
+    .metric-card.metric-sps .metric-value { color: #22c55e; }
+    .metric-card.metric-lr .metric-value { color: #f59e0b; }
+    .metric-card.metric-epoch .metric-value { color: #c084fc; }
+
+    @media (max-width: 900px) {
+      .metrics-strip { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 420px) {
+      .metrics-strip { grid-template-columns: 1fr; }
+    }
+
     /* ── 반응형 (A1~A5 모바일 폴리시) ── */
 
     /* 푸터: 좁아도 줄바꿈 시 간격 유지 (A4) */
@@ -651,6 +703,38 @@
           </div>
         </div>
       </section>
+
+      <!-- P0: 실시간 핵심 지표 스트립 (현재 손실 / sps / LR / Epoch) -->
+      <div class="metrics-strip" x-show="trainingStatus !== ''">
+        <div class="metric-card metric-loss">
+          <div class="metric-label">현재 손실</div>
+          <div class="metric-value">
+            <span x-text="metricsLatest.loss != null ? metricsLatest.loss.toFixed(4) : '-'">-</span>
+          </div>
+          <div class="metric-sub" x-text="lossPoints.length + ' 포인트 누적'">-</div>
+        </div>
+        <div class="metric-card metric-sps">
+          <div class="metric-label">학습 속도</div>
+          <div class="metric-value">
+            <span x-text="metricsLatest.samplesPerSec != null ? metricsLatest.samplesPerSec.toFixed(1) : '-'">-</span><span class="metric-unit">samples/s</span>
+          </div>
+          <div class="metric-sub" x-text="metricsLatest.samplesPerSec != null ? ('step ~' + (metricsLatest.samplesPerSec * 60 / 4).toFixed(0) + ' /분 (batch=4 가정)') : '-'">-</div>
+        </div>
+        <div class="metric-card metric-lr">
+          <div class="metric-label">학습률 (LR)</div>
+          <div class="metric-value">
+            <span x-text="metricsLatest.learningRate != null ? metricsLatest.learningRate.toExponential(2) : '-'">-</span>
+          </div>
+          <div class="metric-sub" x-text="metricsLatest.learningRate != null ? ('소수 표기: ' + metricsLatest.learningRate.toFixed(6)) : '-'">-</div>
+        </div>
+        <div class="metric-card metric-epoch">
+          <div class="metric-label">현재 Epoch</div>
+          <div class="metric-value">
+            <span x-text="metricsLatest.epoch != null ? metricsLatest.epoch : '-'">-</span><span class="metric-unit" x-text="metricsLatest.epochs != null ? ('/ ' + metricsLatest.epochs) : ''"></span>
+          </div>
+          <div class="metric-sub" x-text="metricsLatest.runName ? ('run: ' + metricsLatest.runName) : '-'">-</div>
+        </div>
+      </div>
 
       <!-- W3 + W4: Loss Curve + ETA 타임라인 -->
       <div class="main-grid">
@@ -952,6 +1036,15 @@ function kronosV2() {
     nowKst: '',
 
     lossPoints: [],          // [{step, loss}]
+    /* P0: 실시간 핵심 지표 */
+    metricsLatest: {
+      loss: null,             // 현재 loss
+      samplesPerSec: null,    // 학습 속도
+      learningRate: null,     // 학습률
+      epoch: null,            // 현재 epoch
+      epochs: null,           // 전체 epoch
+      runName: null,          // run 이름 (참고)
+    },
     gpuRing: [],             // ring buffer max 720
     gpuLatest: { util: null, temp: null, vram: null },
     gpuDetail: {              // C4: 시스템 상태 탭 보강
@@ -1177,6 +1270,17 @@ function kronosV2() {
         const d = await r.json();
         const pts = d.points || d.history || [];
         this._appendLossPoints(pts);
+        /* P0: 초기 로드 시점에도 핵심 지표 동기화 */
+        const lp = d.latest_point || {};
+        const lpg = d.latest_progress || {};
+        this.metricsLatest = {
+          loss: lp.loss != null ? lp.loss : (lpg.last_loss != null ? lpg.last_loss : null),
+          samplesPerSec: lpg.samples_per_second != null ? lpg.samples_per_second : null,
+          learningRate: lp.learning_rate != null ? lp.learning_rate : null,
+          epoch: lp.epoch != null ? lp.epoch : null,
+          epochs: lp.epochs != null ? lp.epochs : null,
+          runName: d.run_name != null ? d.run_name : null,
+        };
       } catch(e) {}
     },
 
@@ -1187,6 +1291,21 @@ function kronosV2() {
         const d = await r.json();
         const pts = d.points || d.history || [];
         this._appendLossPoints(pts);
+
+        /* P0: latest_point / latest_progress 에서 핵심 지표 추출 */
+        const lp = d.latest_point || {};
+        const lpg = d.latest_progress || {};
+        const samplesPerSec = lpg.samples_per_second != null
+          ? lpg.samples_per_second
+          : (this.metricsLatest.samplesPerSec);
+        this.metricsLatest = {
+          loss: lp.loss != null ? lp.loss : (lpg.last_loss != null ? lpg.last_loss : this.metricsLatest.loss),
+          samplesPerSec: samplesPerSec,
+          learningRate: lp.learning_rate != null ? lp.learning_rate : this.metricsLatest.learningRate,
+          epoch: lp.epoch != null ? lp.epoch : this.metricsLatest.epoch,
+          epochs: lp.epochs != null ? lp.epochs : this.metricsLatest.epochs,
+          runName: d.run_name != null ? d.run_name : this.metricsLatest.runName,
+        };
       } catch(e) {}
     },
 
