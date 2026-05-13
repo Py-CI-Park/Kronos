@@ -437,6 +437,70 @@
     .progress-bar { width: 100%; height: 8px; border-radius: 999px; background: #1f2937; overflow: hidden; border: 1px solid #334155; margin-top: 4px; }
     .progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #38bdf8); transition: width .4s ease; }
     .error-msg { color: #fca5a5; font-size: 12px; padding: 6px 0; }
+
+    /* ── 반응형 (A1~A5 모바일 폴리시) ── */
+
+    /* 푸터: 좁아도 줄바꿈 시 간격 유지 (A4) */
+    .v2-footer { flex-wrap: wrap; gap: 4px 8px; }
+    .v2-footer a { white-space: nowrap; }
+
+    /* GPU 카드 라벨 줄바꿈 방지 (A3) */
+    .w5-spark-label { white-space: nowrap; }
+
+    /* 태블릿 폭 (≤ 900px): 사이드바를 상단 가로 NAV로 전환 (A2/B2) */
+    @media (max-width: 900px) {
+      .v2-layout { flex-direction: column; overflow: visible; }
+      .v2-nav {
+        width: 100%;
+        max-height: none;
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 6px 12px;
+        border-right: none;
+        border-bottom: 1px solid #243244;
+        gap: 2px;
+      }
+      .v2-nav .nav-section-title { display: none; }
+      .v2-nav a {
+        border-left: none;
+        border-bottom: 2px solid transparent;
+        white-space: nowrap;
+        padding: 8px 12px;
+        flex-shrink: 0;
+      }
+      .v2-nav a.active,
+      .v2-nav a[aria-current="page"] {
+        border-left: none;
+        border-bottom-color: #38bdf8;
+        background: rgba(56,189,248,.08);
+      }
+      .v2-nav .nav-meta { display: none; }
+      .v2-main { padding: 16px 18px; }
+    }
+
+    /* 모바일 (≤ 640px): 헤더 세로 스택, 메인 패딩 축소 (A1/A5) */
+    @media (max-width: 640px) {
+      .v2-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        padding: 12px 16px;
+      }
+      .v2-header h1 { font-size: 17px; }
+      .v2-header .v1-links { font-size: 11px; }
+      .v2-header .v1-links a { margin-left: 0; margin-right: 12px; }
+      .v2-main { padding: 14px 14px; }
+      .card { padding: 14px; }
+      #hero-strip { padding: 14px 16px; gap: 14px; }
+      .w5-spark-card { flex: 1 1 calc(50% - 6px); }
+    }
+
+    /* 초소형 (≤ 420px): GPU 카드 1열 (A3) */
+    @media (max-width: 420px) {
+      .w5-spark-card { flex: 1 1 100%; }
+      .v2-footer { font-size: 10px; }
+    }
   </style>
 </head>
 <body x-data="kronosV2()" x-init="init()">
