@@ -67,7 +67,7 @@
 
     /* ── 좌측 NAV ── */
     .v2-nav {
-      width: 240px;
+      width: 200px;
       flex-shrink: 0;
       background: #0b1120;
       border-right: 1px solid #243244;
@@ -249,24 +249,30 @@
       color: #475569;
     }
 
-    /* W2: Readiness 신호등 + ETA */
+    /* W2: Readiness 신호등 + ETA (가로 정렬, 카드형) */
     .w2-readiness {
       flex: 0 0 auto;
-      min-width: 180px;
+      min-width: 220px;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      align-items: center;
-      gap: 8px;
+      align-items: stretch;
+      gap: 10px;
+      padding: 10px 14px;
+      background: rgba(11,17,32,.55);
+      border: 1px solid #243244;
+      border-radius: 12px;
     }
     .traffic-light {
       display: flex;
-      flex-direction: column;
-      gap: 5px;
+      flex-direction: row;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
     }
     .tl-dot {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
       border-radius: 50%;
       background: #1f2937;
       border: 1px solid #334155;
@@ -275,20 +281,28 @@
     .tl-dot.lit-red    { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
     .tl-dot.lit-yellow { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
     .tl-dot.lit-green  { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+    .tl-label {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-left: 8px;
+      font-weight: 600;
+    }
     .w2-eta {
       text-align: center;
+      border-top: 1px dashed #243244;
+      padding-top: 8px;
     }
     .w2-eta .eta-label {
-      font-size: 10px;
-      color: #475569;
+      font-size: 11px;
+      color: #64748b;
       text-transform: uppercase;
       letter-spacing: .06em;
     }
     .w2-eta .eta-value {
-      font-size: 12px;
+      font-size: 14px;
       color: #e2e8f0;
       font-weight: 700;
-      margin-top: 2px;
+      margin-top: 4px;
     }
 
     /* ── 메인 그리드 (W3 + W4) ── */
@@ -629,6 +643,7 @@
             <div class="tl-dot" :class="readiness.level === 'waiting' ? 'lit-red' : ''"></div>
             <div class="tl-dot" :class="readiness.level === 'training' ? 'lit-yellow' : ''"></div>
             <div class="tl-dot" :class="readiness.level === 'ready' ? 'lit-green' : ''"></div>
+            <span class="tl-label" x-text="readiness.level === 'ready' ? '준비 완료' : readiness.level === 'training' ? '학습 진행' : '대기'">대기</span>
           </div>
           <div class="w2-eta">
             <div class="eta-label">완료 예상 (KST)</div>
@@ -741,19 +756,52 @@
       </div>
     </div>
 
-    <!-- ==================== 탭: 아티팩트 & 모델 ==================== -->
+    <!-- ==================== 탭: 아티팩트 & 모델 (C3 명시 표시) ==================== -->
     <div class="tab-panel" :class="{'active': activeTab === 'artifacts'}">
       <div class="card">
         <h2>아티팩트 & 모델</h2>
-        <template x-if="artifacts.length > 0">
-          <ul style="padding-left:18px;color:#cbd5e1;font-size:13px;line-height:1.8;">
-            <template x-for="(a, i) in artifacts" :key="i">
-              <li x-text="a"></li>
-            </template>
-          </ul>
+        <template x-if="!artifactInfo.loaded">
+          <div class="muted">아티팩트 상태를 불러오는 중...</div>
         </template>
-        <template x-if="artifacts.length === 0">
-          <div class="muted">아티팩트 없음 또는 불러오는 중...</div>
+        <template x-if="artifactInfo.loaded">
+          <div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px;">
+              <div style="background:#0b1120;border:1px solid #243244;border-radius:10px;padding:12px 14px;">
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Checkpoint</div>
+                <div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-top:6px;" x-text="artifactInfo.checkpointCount + '개'">0개</div>
+                <div class="muted" style="margin-top:4px;" x-text="artifactInfo.checkpointReady ? '✅ 사용 가능' : '⏳ 생성 대기'">⏳ 생성 대기</div>
+              </div>
+              <div style="background:#0b1120;border:1px solid #243244;border-radius:10px;padding:12px 14px;">
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Model Weight</div>
+                <div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-top:6px;" x-text="artifactInfo.modelWeightCount + '개'">0개</div>
+                <div class="muted" style="margin-top:4px;" x-text="artifactInfo.predictorComplete ? '✅ 예측기 완료' : (artifactInfo.predictorStarted ? '🔄 예측기 학습 중' : '⏸ 예측기 미시작')">⏸ 예측기 미시작</div>
+              </div>
+            </div>
+            <div class="muted" style="margin-bottom:8px;" x-text="artifactInfo.message">-</div>
+            <template x-if="artifactInfo.recentCheckpoints.length > 0">
+              <div style="margin-top:10px;">
+                <h3>최근 checkpoint 파일</h3>
+                <ul style="padding-left:18px;color:#cbd5e1;font-size:12px;line-height:1.7;">
+                  <template x-for="(f, i) in artifactInfo.recentCheckpoints" :key="'ck'+i">
+                    <li x-text="(f.path || f.name || f)">-</li>
+                  </template>
+                </ul>
+              </div>
+            </template>
+            <template x-if="artifactInfo.recentModelWeights.length > 0">
+              <div style="margin-top:10px;">
+                <h3>최근 model weight 파일</h3>
+                <ul style="padding-left:18px;color:#cbd5e1;font-size:12px;line-height:1.7;">
+                  <template x-for="(f, i) in artifactInfo.recentModelWeights" :key="'mw'+i">
+                    <li x-text="(f.path || f.name || f)">-</li>
+                  </template>
+                </ul>
+              </div>
+            </template>
+            <template x-if="artifactInfo.recentCheckpoints.length === 0 && artifactInfo.recentModelWeights.length === 0">
+              <div class="muted" style="margin-top:8px;font-size:11px;">아직 생성된 파일이 없습니다. tokenizer/predictor 진행 시 자동으로 표시됩니다.</div>
+            </template>
+          </div>
         </template>
       </div>
     </div>
@@ -769,33 +817,96 @@
       </div>
     </div>
 
-    <!-- ==================== 탭: 시스템 상태 ==================== -->
+    <!-- ==================== 탭: 시스템 상태 (C4 강화) ==================== -->
     <div class="tab-panel" :class="{'active': activeTab === 'system-health'}">
-      <div class="card">
-        <h2>시스템 상태</h2>
-        <template x-if="gpuLatest.util != null">
-          <div>
-            <div class="muted" style="margin-bottom:10px;">최근 GPU 스냅샷</div>
+      <template x-if="gpuLatest.util == null">
+        <div class="card"><div class="muted">GPU 데이터 불러오는 중...</div></div>
+      </template>
+      <template x-if="gpuLatest.util != null">
+        <div>
+          <!-- GPU 디바이스 정보 -->
+          <div class="card">
+            <h2>GPU 디바이스</h2>
             <table style="width:100%;border-collapse:collapse;font-size:13px;">
               <tr style="border-bottom:1px solid #243244;">
-                <td style="padding:8px 0;color:#64748b;">GPU 사용률</td>
+                <td style="padding:8px 0;color:#64748b;width:40%;">모델명</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="gpuDetail.name">-</td>
+              </tr>
+              <tr style="border-bottom:1px solid #243244;">
+                <td style="padding:8px 0;color:#64748b;">디바이스 수</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="gpuDetail.gpuCount + '개'">-</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 0;color:#64748b;">마지막 갱신 (KST)</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="gpuDetail.generatedAt ? _toKst(gpuDetail.generatedAt) : '-'">-</td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- 실시간 사용률 -->
+          <div class="card">
+            <h2>실시간 사용률</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <tr style="border-bottom:1px solid #243244;">
+                <td style="padding:8px 0;color:#64748b;width:40%;">GPU 사용률</td>
                 <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="gpuLatest.util != null ? gpuLatest.util.toFixed(1) + '%' : '-'">-</td>
               </tr>
               <tr style="border-bottom:1px solid #243244;">
                 <td style="padding:8px 0;color:#64748b;">온도</td>
                 <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="gpuLatest.temp != null ? gpuLatest.temp.toFixed(1) + '°C' : '-'">-</td>
               </tr>
-              <tr>
+              <tr style="border-bottom:1px solid #243244;">
                 <td style="padding:8px 0;color:#64748b;">VRAM 사용률</td>
                 <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="gpuLatest.vram != null ? gpuLatest.vram.toFixed(1) + '%' : '-'">-</td>
               </tr>
+              <tr>
+                <td style="padding:8px 0;color:#64748b;">VRAM 사용 / 전체</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;"
+                    x-text="(gpuDetail.memoryUsedMib != null && gpuDetail.memoryTotalMib != null) ? (gpuDetail.memoryUsedMib.toFixed(0) + ' / ' + gpuDetail.memoryTotalMib.toFixed(0) + ' MiB') : '-'">-</td>
+              </tr>
             </table>
           </div>
-        </template>
-        <template x-if="gpuLatest.util == null">
-          <div class="muted">GPU 데이터 불러오는 중...</div>
-        </template>
-      </div>
+
+          <!-- 전력 -->
+          <div class="card">
+            <h2>전력</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <tr style="border-bottom:1px solid #243244;">
+                <td style="padding:8px 0;color:#64748b;width:40%;">전력 한계</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;"
+                    x-text="gpuDetail.powerLimitWatts != null ? (gpuDetail.powerLimitWatts.toFixed(0) + ' W') : '-'">-</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 0;color:#64748b;">실측 전력 사용</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;"
+                    x-text="gpuDetail.powerDrawAvailable && gpuDetail.powerDrawWatts != null ? (gpuDetail.powerDrawWatts.toFixed(0) + ' W') : '실측 불가'">실측 불가</td>
+              </tr>
+            </table>
+            <div class="muted" style="margin-top:8px;font-size:11px;" x-show="!gpuDetail.powerDrawAvailable">
+              현재 환경에서 nvidia-smi가 전력 실측값을 보고하지 않습니다. 추정값은 표시하지 않습니다.
+            </div>
+          </div>
+
+          <!-- 학습 폴링 정보 -->
+          <div class="card">
+            <h2>대시보드 폴링</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <tr style="border-bottom:1px solid #243244;">
+                <td style="padding:8px 0;color:#64748b;width:40%;">폴링 간격</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="refreshSeconds + ' 초'">-</td>
+              </tr>
+              <tr style="border-bottom:1px solid #243244;">
+                <td style="padding:8px 0;color:#64748b;">GPU ring buffer</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="gpuRing.length + ' / 720 points'">-</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 0;color:#64748b;">마지막 화면 갱신</td>
+                <td style="padding:8px 0;text-align:right;font-weight:700;" x-text="lastUpdated || '-'">-</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- ==================== 탭: 설정 ==================== -->
@@ -843,8 +954,33 @@ function kronosV2() {
     lossPoints: [],          // [{step, loss}]
     gpuRing: [],             // ring buffer max 720
     gpuLatest: { util: null, temp: null, vram: null },
+    gpuDetail: {              // C4: 시스템 상태 탭 보강
+      name: '-',
+      memoryUsedMib: null,
+      memoryTotalMib: null,
+      powerLimitWatts: null,
+      powerDrawWatts: null,
+      powerDrawAvailable: false,
+      gpuCount: 0,
+      generatedAt: null
+    },
 
     artifacts: [],
+    artifactInfo: {            // C3: 아티팩트 실측 카운트
+      loaded: false,
+      checkpointCount: 0,
+      modelWeightCount: 0,
+      predictorStarted: false,
+      predictorComplete: false,
+      checkpointReady: false,
+      label: '확인 중...',
+      message: '아티팩트 상태를 불러오는 중입니다.',
+      recentCheckpoints: [],
+      recentModelWeights: [],
+      runName: '',
+      tokenizerStage: null,
+      predictorStage: null
+    },
 
     _lossChart: null,
     _sparkUtil: null,
@@ -903,14 +1039,18 @@ function kronosV2() {
     _lossOption(steps, losses) {
       return {
         backgroundColor: 'transparent',
-        grid: { left: 50, right: 20, top: 20, bottom: 36 },
+        grid: { left: 56, right: 24, top: 24, bottom: 56 },
         xAxis: {
           type: 'value',
           name: 'Step',
           nameTextStyle: { color: '#64748b', fontSize: 11 },
           axisLabel: { color: '#64748b', fontSize: 10 },
           splitLine: { lineStyle: { color: '#1e293b' } },
-          axisLine: { lineStyle: { color: '#334155' } }
+          axisLine: { lineStyle: { color: '#334155' } },
+          /* C1: 데이터 영역에만 맞춰 빈 공간 제거 */
+          scale: true,
+          min: 'dataMin',
+          max: 'dataMax'
         },
         yAxis: {
           type: 'value',
@@ -918,8 +1058,24 @@ function kronosV2() {
           nameTextStyle: { color: '#64748b', fontSize: 11 },
           axisLabel: { color: '#64748b', fontSize: 10 },
           splitLine: { lineStyle: { color: '#1e293b' } },
-          axisLine: { lineStyle: { color: '#334155' } }
+          axisLine: { lineStyle: { color: '#334155' } },
+          scale: true
         },
+        /* C1: 마우스 휠/드래그로 줌인, brush 영역 표시 */
+        dataZoom: [
+          { type: 'inside', xAxisIndex: 0, throttle: 50 },
+          {
+            type: 'slider',
+            xAxisIndex: 0,
+            height: 18,
+            bottom: 6,
+            backgroundColor: 'rgba(11,17,32,.5)',
+            borderColor: '#243244',
+            fillerColor: 'rgba(56,189,248,.18)',
+            handleStyle: { color: '#38bdf8', borderColor: '#38bdf8' },
+            textStyle: { color: '#64748b', fontSize: 9 }
+          }
+        ],
         series: [{
           type: 'line',
           data: steps.map((s, i) => [s, losses[i]]),
@@ -1071,6 +1227,17 @@ function kronosV2() {
         const vramPct = gpu.memory_used_percent != null ? parseFloat(gpu.memory_used_percent) : null;
 
         this.gpuLatest = { util, temp, vram: vramPct };
+        /* C4: 시스템 상태 탭용 상세 정보 */
+        this.gpuDetail = {
+          name: gpu.name || '-',
+          memoryUsedMib: gpu.memory_used_mib != null ? gpu.memory_used_mib : null,
+          memoryTotalMib: gpu.memory_total_mib != null ? gpu.memory_total_mib : null,
+          powerLimitWatts: gpu.power_limit_watts != null ? gpu.power_limit_watts : null,
+          powerDrawWatts: gpu.power_draw_watts != null ? gpu.power_draw_watts : null,
+          powerDrawAvailable: !!gpu.power_draw_available,
+          gpuCount: Array.isArray(d.gpus) ? d.gpus.length : 1,
+          generatedAt: d.generated_at || null
+        };
 
         /* ring buffer 720 pts */
         this.gpuRing.push({ util, temp, vram: vramPct });
@@ -1093,7 +1260,23 @@ function kronosV2() {
         const r = await fetch('/api/training/artifacts');
         if (!r.ok) return;
         const d = await r.json();
-        this.artifacts = d.artifacts || d.files || [];
+        this.artifactInfo = {
+          loaded: true,
+          checkpointCount: d.checkpoint_file_count != null ? d.checkpoint_file_count : 0,
+          modelWeightCount: d.model_weight_file_count != null ? d.model_weight_file_count : 0,
+          predictorStarted: !!d.predictor_started,
+          predictorComplete: !!(d.stages && d.stages.predictor && d.stages.predictor.checkpoint_ready),
+          checkpointReady: !!d.checkpoint_ready,
+          label: d.label || '',
+          message: d.message || '',
+          recentCheckpoints: Array.isArray(d.recent_checkpoint_files) ? d.recent_checkpoint_files.slice(0, 5) : [],
+          recentModelWeights: Array.isArray(d.recent_model_weight_files) ? d.recent_model_weight_files.slice(0, 5) : [],
+          runName: d.run_name || '',
+          tokenizerStage: d.stages && d.stages.tokenizer ? d.stages.tokenizer : null,
+          predictorStage: d.stages && d.stages.predictor ? d.stages.predictor : null,
+        };
+        /* 하위 호환: 기존 artifacts 배열 표시 경로도 유지 */
+        this.artifacts = (this.artifactInfo.recentCheckpoints || []).concat(this.artifactInfo.recentModelWeights || []);
       } catch(e) {}
     },
 
