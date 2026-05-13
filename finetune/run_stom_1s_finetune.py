@@ -51,6 +51,21 @@ def _mode_default(value: Optional[int], mode: str, smoke: int, stage: int, full:
     return full
 
 
+def _stage_override(
+    base_value: Optional[int],
+    tokenizer_value: Optional[int],
+    predictor_value: Optional[int],
+    train_stage: str,
+) -> Optional[int]:
+    """Resolve a per-stage CLI override while preserving the existing shared default."""
+
+    if train_stage == "tokenizer" and tokenizer_value is not None:
+        return tokenizer_value
+    if train_stage == "predictor" and predictor_value is not None:
+        return predictor_value
+    return base_value
+
+
 def _tail(text: str, limit: int = 8000) -> str:
     return text[-limit:] if len(text) > limit else text
 
@@ -100,7 +115,19 @@ def build_run(
     manifest_path = save_path / manifest_name
 
     epochs = _mode_default(args.epochs, mode, smoke=1, stage=1, full=1)
-    batch_size = _mode_default(args.batch_size, mode, smoke=1, stage=4, full=4)
+    batch_size_arg = _stage_override(
+        args.batch_size,
+        args.tokenizer_batch_size,
+        args.predictor_batch_size,
+        normalized_stage,
+    )
+    num_workers = _stage_override(
+        args.num_workers,
+        args.tokenizer_num_workers,
+        args.predictor_num_workers,
+        normalized_stage,
+    )
+    batch_size = _mode_default(batch_size_arg, mode, smoke=1, stage=4, full=4)
     default_train = sample_budget["train"] if sample_budget else _mode_default(None, mode, smoke=2, stage=512, full=20_000)
     default_val = sample_budget["val"] if sample_budget else _mode_default(None, mode, smoke=2, stage=128, full=4_000)
     n_train_iter = args.n_train_iter if args.n_train_iter is not None else default_train
@@ -116,7 +143,7 @@ def build_run(
         "KRONOS_N_TRAIN_ITER": str(n_train_iter),
         "KRONOS_N_VAL_ITER": str(n_val_iter),
         "KRONOS_LOG_INTERVAL": str(log_interval),
-        "KRONOS_NUM_WORKERS": str(args.num_workers),
+        "KRONOS_NUM_WORKERS": str(num_workers),
         "KRONOS_USE_COMET": "0",
         "KRONOS_SAVE_PATH": str(save_path),
         "KRONOS_TOKENIZER_SAVE_FOLDER": args.tokenizer_save_folder,
@@ -319,10 +346,34 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--lookback-window", type=int, default=300)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument(
+        "--tokenizer-batch-size",
+        type=int,
+        default=None,
+        help="Tokenizer-only batch-size override for --train-stage both handoff runs.",
+    )
+    parser.add_argument(
+        "--predictor-batch-size",
+        type=int,
+        default=None,
+        help="Predictor-only batch-size override for --train-stage both handoff runs.",
+    )
     parser.add_argument("--n-train-iter", type=int, default=None)
     parser.add_argument("--n-val-iter", type=int, default=None)
     parser.add_argument("--log-interval", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument(
+        "--tokenizer-num-workers",
+        type=int,
+        default=None,
+        help="Tokenizer-only DataLoader worker override for --train-stage both handoff runs.",
+    )
+    parser.add_argument(
+        "--predictor-num-workers",
+        type=int,
+        default=None,
+        help="Predictor-only DataLoader worker override for --train-stage both handoff runs.",
+    )
     parser.add_argument(
         "--dataset-sample-mode",
         choices=["sample_random", "full_sequential"],

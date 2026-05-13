@@ -140,6 +140,50 @@ def test_runner_can_build_tokenizer_stage_and_both_stage_handoff(tmp_path):
     )
 
 
+def test_both_stage_can_use_predictor_efficiency_overrides(tmp_path):
+    dataset_dir = tmp_path / "processed_datasets"
+    dataset_dir.mkdir()
+    (dataset_dir / "train_data.pkl").write_bytes(b"not loaded in dry-run")
+    (dataset_dir / "val_data.pkl").write_bytes(b"not loaded in dry-run")
+
+    args = parse_args(
+        [
+            "--horizon",
+            "60",
+            "--mode",
+            "full",
+            "--train-stage",
+            "both",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--output-root",
+            str(tmp_path / "outputs"),
+            "--run-name",
+            "efficiency_handoff",
+            "--batch-size",
+            "4",
+            "--num-workers",
+            "0",
+            "--predictor-batch-size",
+            "16",
+            "--predictor-num-workers",
+            "2",
+            "--dry-run",
+        ]
+    )
+
+    tokenizer_spec = build_run(60, args, "full", train_stage="tokenizer")
+    predictor_spec = build_run(60, args, "full", train_stage="predictor")
+
+    assert tokenizer_spec["env"]["KRONOS_BATCH_SIZE"] == "4"
+    assert tokenizer_spec["env"]["KRONOS_NUM_WORKERS"] == "0"
+    assert predictor_spec["env"]["KRONOS_BATCH_SIZE"] == "16"
+    assert predictor_spec["env"]["KRONOS_NUM_WORKERS"] == "2"
+    assert predictor_spec["env"]["KRONOS_FINETUNED_TOKENIZER_PATH"].endswith(
+        "efficiency_handoff\\finetune_tokenizer\\checkpoints\\best_model"
+    )
+
+
 def test_full_window_sample_stage_uses_known_full_sample_pool():
     assert sample_stage_budget("full_window", 30) == {"train": 75_277_195, "val": 16_275_307}
     assert sample_stage_budget("full_window", 60) == {"train": 73_718_875, "val": 15_938_107}
