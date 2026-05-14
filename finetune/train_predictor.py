@@ -22,6 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from config import Config
 from dataset import QlibDataset
 from model_source import resolve_model_source
+from predictor_handoff import apply_predictor_handoff_overrides
 from model.kronos import KronosTokenizer, Kronos
 # Import shared utilities
 from utils.training_utils import (
@@ -289,4 +290,10 @@ if __name__ == '__main__':
         raise RuntimeError("This script must be launched with `torchrun`.")
 
     config_instance = Config()
+    handoff = apply_predictor_handoff_overrides(config_instance)
+    if handoff.get("applied"):
+        print(
+            "Predictor handoff overrides applied: "
+            f"{handoff['applied']} from {handoff.get('path')}"
+        )
     main(config_instance.__dict__)
