@@ -77,6 +77,10 @@ class Config:
         self.epochs = _env_int("KRONOS_EPOCHS", 30)
         self.log_interval = _env_int("KRONOS_LOG_INTERVAL", 100)  # Log training status every N batches.
         self.batch_size = _env_int("KRONOS_BATCH_SIZE", 50)  # Batch size per GPU.
+        self.tokenizer_validation_batch_size = _env_int(
+            "KRONOS_TOKENIZER_VAL_BATCH_SIZE",
+            self.batch_size,
+        )
         self.num_workers = _env_int("KRONOS_NUM_WORKERS", 2)
         self.dataset_sample_mode = os.getenv("KRONOS_DATASET_SAMPLE_MODE", "sample_random")
 
@@ -91,6 +95,22 @@ class Config:
 
         # Gradient accumulation to simulate a larger batch size.
         self.accumulation_steps = _env_int("KRONOS_ACCUMULATION_STEPS", 1)
+
+        # Tokenizer long-run safety. STOM full-window runs can spend days in
+        # training before validation starts, so preserve the trained weights
+        # before validation and release CUDA cache aggressively.
+        self.tokenizer_save_pre_validation_checkpoint = _env_bool(
+            "KRONOS_TOKENIZER_SAVE_PRE_VAL_CHECKPOINT",
+            True,
+        )
+        self.tokenizer_pre_validation_checkpoint_name = os.getenv(
+            "KRONOS_TOKENIZER_PRE_VAL_CHECKPOINT_NAME",
+            "latest_train_model",
+        )
+        self.tokenizer_empty_cache_before_validation = _env_bool(
+            "KRONOS_TOKENIZER_EMPTY_CACHE_BEFORE_VAL",
+            True,
+        )
 
         # AdamW optimizer parameters.
         self.adam_beta1 = 0.9

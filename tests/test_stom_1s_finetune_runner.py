@@ -134,7 +134,10 @@ def test_runner_can_build_tokenizer_stage_and_both_stage_handoff(tmp_path):
     assert tokenizer_spec["manifest_path"].endswith("tokenizer_run_manifest.json")
     assert tokenizer_spec["command"][-1].endswith("train_tokenizer.py")
     assert tokenizer_spec["env"]["KRONOS_DATASET_SAMPLE_MODE"] == "full_sequential"
+    assert tokenizer_spec["env"]["KRONOS_TOKENIZER_VAL_BATCH_SIZE"] == "1"
+    assert tokenizer_spec["env"]["KRONOS_TOKENIZER_SAVE_PRE_VAL_CHECKPOINT"] == "1"
     assert predictor_spec["command"][-1].endswith("train_predictor.py")
+    assert "KRONOS_TOKENIZER_VAL_BATCH_SIZE" not in predictor_spec["env"]
     assert predictor_spec["env"]["KRONOS_FINETUNED_TOKENIZER_PATH"].endswith(
         "official_smoke\\finetune_tokenizer\\checkpoints\\best_model"
     )
@@ -176,12 +179,45 @@ def test_both_stage_can_use_predictor_efficiency_overrides(tmp_path):
     predictor_spec = build_run(60, args, "full", train_stage="predictor")
 
     assert tokenizer_spec["env"]["KRONOS_BATCH_SIZE"] == "4"
+    assert tokenizer_spec["env"]["KRONOS_TOKENIZER_VAL_BATCH_SIZE"] == "1"
     assert tokenizer_spec["env"]["KRONOS_NUM_WORKERS"] == "0"
     assert predictor_spec["env"]["KRONOS_BATCH_SIZE"] == "16"
     assert predictor_spec["env"]["KRONOS_NUM_WORKERS"] == "2"
     assert predictor_spec["env"]["KRONOS_FINETUNED_TOKENIZER_PATH"].endswith(
         "efficiency_handoff\\finetune_tokenizer\\checkpoints\\best_model"
     )
+
+
+def test_tokenizer_validation_batch_size_can_be_overridden(tmp_path):
+    dataset_dir = tmp_path / "processed_datasets"
+    dataset_dir.mkdir()
+    (dataset_dir / "train_data.pkl").write_bytes(b"not loaded in dry-run")
+    (dataset_dir / "val_data.pkl").write_bytes(b"not loaded in dry-run")
+
+    args = parse_args(
+        [
+            "--horizon",
+            "60",
+            "--mode",
+            "full",
+            "--train-stage",
+            "tokenizer",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--output-root",
+            str(tmp_path / "outputs"),
+            "--tokenizer-batch-size",
+            "4",
+            "--tokenizer-val-batch-size",
+            "2",
+            "--dry-run",
+        ]
+    )
+
+    tokenizer_spec = build_run(60, args, "full", train_stage="tokenizer")
+
+    assert tokenizer_spec["env"]["KRONOS_BATCH_SIZE"] == "4"
+    assert tokenizer_spec["env"]["KRONOS_TOKENIZER_VAL_BATCH_SIZE"] == "2"
 
 
 def test_full_window_sample_stage_uses_known_full_sample_pool():

@@ -24,6 +24,13 @@ if str(PROJECT_ROOT) not in sys.path:
 from config import Config
 from dataset import QlibDataset
 from model.kronos import KronosTokenizer
+from tokenizer_safety import (
+    is_cuda_oom_error,
+    resolve_tokenizer_validation_batch_size,
+    save_tokenizer_checkpoint,
+    unwrap_model,
+    write_tokenizer_validation_failure,
+)
 # Import shared utilities
 from utils.training_utils import (
     setup_ddp,
@@ -73,16 +80,20 @@ def create_dataloaders(config: dict, rank: int, world_size: int):
         pin_memory=True,
         drop_last=drop_last
     )
+    validation_batch_size = resolve_tokenizer_validation_batch_size(config)
     val_loader = DataLoader(
         valid_dataset,
-        batch_size=config['batch_size'],
+        batch_size=validation_batch_size,
         sampler=val_sampler,
         shuffle=False,
         num_workers=config.get('num_workers', 2),
         pin_memory=True,
         drop_last=False
     )
-    print(f"[Rank {rank}] Dataloaders created. Train steps/epoch: {len(train_loader)}, Val steps: {len(val_loader)}")
+    print(
+        f"[Rank {rank}] Dataloaders created. Train steps/epoch: {len(train_loader)}, "
+        f"Val steps: {len(val_loader)}, Validation batch size: {validation_batch_size}"
+    )
     return train_loader, val_loader, train_dataset, valid_dataset
 
 
@@ -167,7 +178,7 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
             optimizer.step()
             scheduler.step()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
             # --- Logging (Master Process Only) ---
             if rank == 0 and (batch_idx_global_train + 1) % config['log_interval'] == 0:
@@ -186,19 +197,53 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
 
             batch_idx_global_train += 1
 
+        pre_validation_checkpoint = None
+        if config.get("tokenizer_save_pre_validation_checkpoint", True):
+            pre_validation_checkpoint = save_tokenizer_checkpoint(
+                model,
+                save_dir,
+                str(config.get("tokenizer_pre_validation_checkpoint_name") or "latest_train_model"),
+                rank,
+                reason=f"pre-validation epoch {epoch_idx + 1}",
+            )
+
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+
+        try:
+            del ori_batch_x, batch_x, zs, z_pre, z, loss, loss_scaled
+            del bsq_loss, recon_loss_pre, recon_loss_all, recon_loss
+        except UnboundLocalError:
+            pass
+
+        optimizer.zero_grad(set_to_none=True)
+        if torch.cuda.is_available() and config.get("tokenizer_empty_cache_before_validation", True):
+            torch.cuda.empty_cache()
+
         # --- Validation Loop ---
         model.eval()
         tot_val_loss_sum_rank = 0.0
         val_sample_count_rank = 0
-        with torch.no_grad():
-            for ori_batch_x, _ in val_loader:
-                ori_batch_x = ori_batch_x.to(device, non_blocking=True)
-                zs, _, _, _ = model(ori_batch_x)
-                _, z = zs
-                val_loss_item = F.mse_loss(z, ori_batch_x)
+        try:
+            with torch.inference_mode():
+                for ori_batch_x, _ in val_loader:
+                    ori_batch_x = ori_batch_x.to(device, non_blocking=True)
+                    zs, _, _, _ = model(ori_batch_x)
+                    _, z = zs
+                    val_loss_item = F.mse_loss(z, ori_batch_x)
 
-                tot_val_loss_sum_rank += val_loss_item.item() * ori_batch_x.size(0)
-                val_sample_count_rank += ori_batch_x.size(0)
+                    tot_val_loss_sum_rank += val_loss_item.item() * ori_batch_x.size(0)
+                    val_sample_count_rank += ori_batch_x.size(0)
+        except Exception as exc:
+            if torch.cuda.is_available() and is_cuda_oom_error(exc):
+                torch.cuda.empty_cache()
+                write_tokenizer_validation_failure(save_dir, epoch_idx, exc, pre_validation_checkpoint, rank)
+                if rank == 0:
+                    print(
+                        "Tokenizer validation failed with CUDA OOM. "
+                        f"Pre-validation checkpoint remains at {pre_validation_checkpoint}."
+                    )
+            raise
 
         if dist.is_available() and dist.is_initialized():
             val_loss_sum_tensor = torch.tensor(tot_val_loss_sum_rank, device=device)
@@ -225,8 +270,7 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
             if avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
                 save_path = f"{save_dir}/checkpoints/best_model"
-                save_model = model.module if hasattr(model, "module") else model
-                save_model.save_pretrained(save_path)
+                unwrap_model(model).save_pretrained(save_path)
                 print(f"Best model saved to {save_path} (Val Loss: {best_val_loss:.4f})")
                 if logger:
                     logger.log_model("best_model", save_path)

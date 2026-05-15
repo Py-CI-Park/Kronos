@@ -128,6 +128,13 @@ def build_run(
         normalized_stage,
     )
     batch_size = _mode_default(batch_size_arg, mode, smoke=1, stage=4, full=4)
+    tokenizer_val_batch_size = _mode_default(
+        args.tokenizer_val_batch_size,
+        mode,
+        smoke=1,
+        stage=2,
+        full=1,
+    )
     default_train = sample_budget["train"] if sample_budget else _mode_default(None, mode, smoke=2, stage=512, full=20_000)
     default_val = sample_budget["val"] if sample_budget else _mode_default(None, mode, smoke=2, stage=128, full=4_000)
     n_train_iter = args.n_train_iter if args.n_train_iter is not None else default_train
@@ -155,6 +162,10 @@ def build_run(
         "USE_LIBUV": "0",
         "PYTHONUNBUFFERED": "1",
     }
+    if normalized_stage == "tokenizer":
+        env["KRONOS_TOKENIZER_VAL_BATCH_SIZE"] = str(tokenizer_val_batch_size)
+        env["KRONOS_TOKENIZER_SAVE_PRE_VAL_CHECKPOINT"] = "1"
+        env["KRONOS_TOKENIZER_EMPTY_CACHE_BEFORE_VAL"] = "1"
     if args.nproc_per_node == 1:
         env.update(
             {
@@ -351,6 +362,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Tokenizer-only batch-size override for --train-stage both handoff runs.",
+    )
+    parser.add_argument(
+        "--tokenizer-val-batch-size",
+        type=int,
+        default=None,
+        help=(
+            "Tokenizer validation-only batch-size override. "
+            "Defaults to 1 in full mode to avoid post-training CUDA OOM."
+        ),
     )
     parser.add_argument(
         "--predictor-batch-size",
