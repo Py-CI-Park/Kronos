@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- [B-2] SSR Marker — Vite 빌드 후에도 정적 문자열로 보존됨 (test_v2_dist_marker.py 가 검증) -->
+  <meta name="kronos-v2-shell" content="hero,live-training,stom,forecast,artifacts,history,system-health" />
+  <meta name="kronos-v2-version" content="p1-5-spa" />
+  <title>Kronos v2 대시보드</title>
+  <link rel="icon" type="image/svg+xml" href="/static/v2/dist/favicon.svg" />
+</head>
+<body>
+  <!-- 첫 페인트 전 임시 marker (P1 hero-strip 호환) -->
+  <div id="app" data-tab="live-training">
+    <section id="hero-strip" data-tab="live-training">
+      <div style="padding:24px;color:#94a3b8;font-family:'Segoe UI','Malgun Gothic',sans-serif;">
+        Kronos v2 로딩 중…
+      </div>
+    </section>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
