@@ -548,25 +548,25 @@ def create_prediction_chart(df, pred_df, lookback, pred_len, actual_df=None, his
     
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
-@app.route('/')
-def index():
-    """Home page"""
+@app.route('/v1/')
+def v1_index():
+    """v1 legacy 메인 예측 화면 — P6 cutover 후 6 개월 archive 정책."""
     return render_template(
         'index.html',
         default_training_refresh_seconds=resolve_training_refresh_seconds(request.args.get('refresh_interval')),
     )
 
-@app.route('/stom')
-def stom_dashboard_page():
-    """STOM OHLCV actual-vs-predicted dashboard."""
+@app.route('/v1/stom')
+def v1_stom_dashboard_page():
+    """v1 legacy STOM 진단 대시보드."""
     return render_template(
         'stom_dashboard.html',
         default_training_refresh_seconds=resolve_training_refresh_seconds(request.args.get('refresh_interval')),
     )
 
-@app.route('/training')
-def training_dashboard_page():
-    """Live STOM Kronos fine-tuning monitor."""
+@app.route('/v1/training')
+def v1_training_dashboard_page():
+    """v1 legacy 학습 모니터."""
     return render_template(
         'training_dashboard.html',
         default_training_refresh_seconds=resolve_training_refresh_seconds(request.args.get('refresh_interval')),
