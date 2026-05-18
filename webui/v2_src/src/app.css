@@ -1,35 +1,21 @@
+/* =================================================================
+   Kronos v2 SPA — 디자인 시스템 v2 (human-approachable, light+dark)
+   ================================================================= */
+
+/* 1) 디자인 토큰 + 컴포넌트 — @import 는 다른 statement 보다 먼저 */
+@import './styles/core.css';
+@import './styles/components.css';
+
+/* 2) Tailwind utilities (margin/padding/flex/grid 등 layout 유틸만 활용) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* design_spec §2 CSS 변수 baseline — Tailwind tokens 와 별도로 ECharts/Plotly 가 직접 읽는 변수 */
-:root {
-  --chart-color-primary: #38bdf8;
-  --chart-color-secondary: #22c55e;
-  --chart-color-warn: #f59e0b;
-  --chart-color-danger: #ef4444;
-  --chart-bg: #111827;
-  --chart-grid: #243244;
-  --chart-font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+/* 3) body 보강 (core.css 가 이미 설정하지만 Tailwind preflight 와 충돌 방지) */
+body {
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  line-height: 1.55;
+  color: var(--fg);
+  background: var(--bg);
 }
-
-html, body, #app {
-  background: #0f172a;
-  color: #e2e8f0;
-  font-family: var(--chart-font-family);
-  min-height: 100vh;
-  margin: 0;
-}
-
-/* 신호등 글로우 */
-.tl-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #1f2937;
-  border: 1px solid #334155;
-  transition: background 300ms, box-shadow 300ms;
-}
-.tl-dot.lit-red    { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
-.tl-dot.lit-yellow { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
-.tl-dot.lit-green  { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
