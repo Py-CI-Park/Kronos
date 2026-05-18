@@ -541,4 +541,41 @@ Critic verdict ITERATE를 받아 5개 CRITICAL blocker (B-1~B-5)와 부수 revis
 - Architect: APPROVE_AS_IS (MINOR concerns 4건은 plan 본문 수정 강제 아님)
 - Critic: APPROVE (5 blocker + 7 AC 모두 RESOLVED, 자기-모순 해소, 코드 정합성 검증 완료)
 
-상태: pending approval (사용자 승인 대기)
+---
+
+## 부록 B: Phase 실행 결과 (2026-05-18 갱신)
+
+| Phase | 계획 상태 | 실행 결과 | 핵심 Commit |
+|---|---|---|---|
+| P0 | ✅ pending approval → APPROVED | ✅ 사용자 승인 후 commit | `5c46ccd` |
+| P1 | predictor 미시작 상태에서 SSR 골격 | ✅ npm 0 의존성으로 학습 영향 0 | `888bb08` |
+| P1.5 | predictor 완료 후 예정이었으나 학습 실패로 디스크 해방 → 진행 | ✅ Vite+Svelte+TS+Tailwind 정식 | `2695151` |
+| (외 1) | 디자인 시스템 v2 도입 — 계획 외 추가 (사용자 요청) | ✅ Designer 프로토타입 통합 | `ce42ab4` |
+| P2 | Live Training/History 정식 패널 | ✅ Loss 카드/메트릭/History 14 run 그리드 | `a631b54`, `8f1beb4` |
+| P3 | Forecast Workbench `/api/predict` 통합 | ✅ predictor 학습 전이지만 base/mini 모델로 작동 | `7e38c18` |
+| P4 | STOM Diagnostics + 9 endpoint 통합 | ✅ 4 KPI + 3 tabs + 파일 브라우저 + diagnostics | `98d66d2` |
+| P5 | Lighthouse a11y ≥ 90 / perf ≥ 80 + code-reviewer 메타-게이트 | ⏸ **미진행** (별도 PR 권장) | - |
+| **P6** | Cutover (`KRONOS_V2_ENABLED=1`, v1 → `/v1/` 6 개월 archive) | ✅ 사용자 요청에 따라 즉시 진행 | `8562c64` |
+
+### B.1 Plan 대비 실측 차이
+- **B-1 GO/NOGO 대안 경로 사용**: predictor 학습 완료 대신 학습 실패로 디스크 해방 — `docs/p1_5_nogo_reason.md` 에 예외 처리 근거 commit
+- **REV-7 dist commit**: `webui/static/v2/dist/` 정상 commit 중 (`.gitignore` 의 `dist/` 패턴은 `!webui/static/v2/dist/` 예외로 해소)
+- **Cutover 시점**: 계획은 predictor 완료 + 1주일 병행 운영 후였으나 사용자 명시 요청으로 즉시 진행 — v1 페이지는 6개월 archive 정책 유지
+
+### B.2 Plan 대비 추가된 작업
+| 항목 | 사유 | Commit |
+|---|---|---|
+| 디자인 시스템 v2 (Pretendard + JetBrains Mono + OKLch 토큰 + light/dark) | 사용자가 별도 제작한 프로토타입 zip 을 통합 | `ce42ab4` |
+| 7개 탭 본격 시각 리디자인 | 디자인 시스템 v2 적용 + 실 API 통합 | `a631b54` ~ `98d66d2` |
+| P0 메트릭 스트립 + 모바일 반응형 + 데스크탑 폴리시 | 학습 중 진행한 P1 폴리시 사이클 | `d0d58b2`, `c6ca0ae`, `249a785`, `4e54f45` |
+
+### B.3 미진행 / 잔여 작업
+- **P5 정식 quality gate** (Lighthouse + code-reviewer + WCAG)
+- **재학습** (validation OOM 수정 후 finetune 재실행 — 사용자 영역)
+- **잔여 폴리시**: Forecast Candlestick / STOM Plotly heatmap / top-k / CSV 다운로드 / 학습 단계 알림
+- **v1 archive 6개월 후 삭제 결정**
+
+---
+
+상태: **execution complete** (P0~P4, P6 ✅ · P5 ⏸ deferred · 재학습 deferred)
+사용자 승인: ✅ P0+P1 시작 (5c46ccd) · ✅ P6 cutover 즉시 진행 요청
