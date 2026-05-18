@@ -1179,8 +1179,93 @@ def get_model_status():
             'message': f'Kronos 모델 라이브러리를 사용할 수 없습니다: {MODEL_IMPORT_ERROR}'
         })
 
+# ──────────────────────────────────────────────────────────────────
+# /api/docs/* — wiki 마크다운 read-only 서빙
+# ──────────────────────────────────────────────────────────────────
+import re as _re
+
+_DOCS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'docs', 'wiki'))
+
+
+def _safe_wiki_path(rel: str) -> str | None:
+    """path traversal 방지 — docs/wiki/ 외부 접근 거부."""
+    if not rel or not isinstance(rel, str):
+        return None
+    if '..' in rel or rel.startswith('/') or rel.startswith('\\') or ':' in rel:
+        return None
+    abs_path = os.path.abspath(os.path.join(_DOCS_ROOT, rel))
+    if not abs_path.startswith(_DOCS_ROOT + os.sep) and abs_path != _DOCS_ROOT:
+        return None
+    return abs_path
+
+
+@app.route('/api/docs/list')
+def docs_list():
+    """docs/wiki/ 의 마크다운 파일 목록을 분류된 형태로 반환."""
+    if not os.path.isdir(_DOCS_ROOT):
+        return jsonify({'available': False, 'docs': [], 'message': 'docs/wiki 디렉터리 없음'})
+    out = []
+    try:
+        for name in sorted(os.listdir(_DOCS_ROOT)):
+            if not name.endswith('.md'):
+                continue
+            full = os.path.join(_DOCS_ROOT, name)
+            st = os.stat(full)
+            # H1 추출 (첫 줄에서)
+            title = name.replace('.md', '')
+            try:
+                with open(full, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        m = _re.match(r'^#\s+(.+)$', line.strip())
+                        if m:
+                            title = m.group(1).strip()
+                            break
+            except Exception:
+                pass
+            # 카테고리 추출 (파일명 prefix 00-/01-/02- 등으로 정렬)
+            order_match = _re.match(r'^(\d+)[-_]', name)
+            order = int(order_match.group(1)) if order_match else 99
+            out.append({
+                'slug': name.replace('.md', ''),
+                'name': name,
+                'title': title,
+                'size_bytes': st.st_size,
+                'modified_at': st.st_mtime,
+                'order': order,
+            })
+        out.sort(key=lambda d: (d['order'], d['name']))
+    except Exception as exc:
+        return jsonify({'available': False, 'docs': [], 'error': str(exc)})
+    return jsonify({'available': True, 'docs': out, 'root': _DOCS_ROOT})
+
+
+@app.route('/api/docs/read')
+def docs_read():
+    """특정 마크다운 파일 내용을 반환 (path traversal 방지)."""
+    slug = request.args.get('slug', '').strip()
+    if not slug:
+        return jsonify({'error': 'slug parameter required'}), 400
+    name = slug if slug.endswith('.md') else slug + '.md'
+    safe = _safe_wiki_path(name)
+    if not safe or not os.path.isfile(safe):
+        return jsonify({'error': f'file not found: {slug}'}), 404
+    try:
+        with open(safe, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+    st = os.stat(safe)
+    return jsonify({
+        'slug': slug.replace('.md', ''),
+        'name': name,
+        'content': content,
+        'size_bytes': st.st_size,
+        'modified_at': st.st_mtime,
+    })
+
+
 if __name__ == '__main__':
     print("Kronos 웹 UI 시작 중...")
     print("안내: Kronos 모델은 /api/load-model 호출 시 지연 import 됩니다")
-    
+
     app.run(debug=True, host='0.0.0.0', port=7070)

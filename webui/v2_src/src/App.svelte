@@ -10,6 +10,7 @@
   import HistoryRunsTab from '$tabs/HistoryRunsTab.svelte';
   import SystemHealthTab from '$tabs/SystemHealthTab.svelte';
   import SettingsTab from '$tabs/SettingsTab.svelte';
+  import DocsTab from '$tabs/DocsTab.svelte';
   import { activeTab, sidebarCollapsed } from '$lib/stores';
   import { installPollingWatcher, startPolling } from '$lib/polling';
 
@@ -44,6 +45,8 @@
         <SystemHealthTab />
       {:else if tab === 'settings'}
         <SettingsTab />
+      {:else if tab === 'docs'}
+        <DocsTab />
       {/if}
     </div>
   </div>

@@ -20,6 +20,7 @@
     history: '기록 & 런',
     'system-health': '시스템 상태',
     settings: '설정',
+    docs: '문서 · Wiki',
   };
 
   let tab = $state('live-training');

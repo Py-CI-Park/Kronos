@@ -39,6 +39,12 @@
         { id: 'settings', label: '설정', icon: 'settings', badge: null },
       ],
     },
+    {
+      label: '도움말',
+      items: [
+        { id: 'docs', label: '문서 · Wiki', icon: 'file', badge: null },
+      ],
+    },
   ];
 
   let current = $state('live-training');
