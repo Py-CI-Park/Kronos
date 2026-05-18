@@ -1,68 +1,294 @@
 <script lang="ts">
-  import { gpuStatus, refreshSeconds, gpuRing, lastUpdatedAt } from '$lib/stores';
-  import { toKst } from '$lib/kstFormat';
+  import { gpuStatus, gpuRing, refreshSeconds, lastUpdatedAt, theme } from '$lib/stores';
+  import { fmt } from '$lib/format';
+  import EChartsRenderer from '../charts/EChartsRenderer.svelte';
 
   let gpu = $state<any>(null);
   gpuStatus.subscribe((v) => (gpu = v));
 
-  let g = $derived(gpu?.gpus?.[0]);
+  let ring = $state<any[]>([]);
+  gpuRing.subscribe((v) => (ring = v));
+
   let sec = $state(5);
   refreshSeconds.subscribe((v) => (sec = v));
-  let ringLen = $state(0);
-  gpuRing.subscribe((v) => (ringLen = v.length));
+
   let last = $state('-');
   lastUpdatedAt.subscribe((v) => (last = v));
+
+  let currentTheme = $state<'light' | 'dark'>('light');
+  theme.subscribe((v) => (currentTheme = v));
+
+  let g = $derived(gpu?.gpus?.[0]);
+  let utilPct = $derived(g?.utilization_gpu_percent);
+  let tempC = $derived(g?.temperature_c);
+  let vramPct = $derived(g?.memory_used_percent);
+
+  // util 평균/최고 (ring buffer 기반)
+  let stats = $derived.by(() => {
+    if (ring.length === 0) return { utilAvg: null, tempMax: null, vramAvg: null };
+    const utils = ring.map((p) => p.util).filter((v) => v != null) as number[];
+    const temps = ring.map((p) => p.temp).filter((v) => v != null) as number[];
+    const vrams = ring.map((p) => p.vram).filter((v) => v != null) as number[];
+    return {
+      utilAvg: utils.length ? utils.reduce((a, b) => a + b, 0) / utils.length : null,
+      tempMax: temps.length ? Math.max(...temps) : null,
+      vramAvg: vrams.length ? vrams.reduce((a, b) => a + b, 0) / vrams.length : null,
+    };
+  });
+
+  // 임계값 색상
+  let utilPillKind = $derived(utilPct == null ? '' : utilPct >= 90 ? 'warn' : 'success');
+  let tempPillKind = $derived(tempC == null ? '' : tempC >= 80 ? 'danger' : tempC >= 70 ? 'warn' : 'success');
+  let vramPillKind = $derived(vramPct == null ? '' : vramPct >= 90 ? 'warn' : 'success');
+
+  let palette = $derived.by(() => {
+    void currentTheme;
+    if (typeof window === 'undefined') return null;
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      c2: cs.getPropertyValue('--c-2').trim(),
+      c3: cs.getPropertyValue('--c-3').trim(),
+      c4: cs.getPropertyValue('--c-4').trim(),
+      grid: cs.getPropertyValue('--border-faint').trim(),
+      border: cs.getPropertyValue('--border').trim(),
+      text: cs.getPropertyValue('--fg').trim(),
+      textDim: cs.getPropertyValue('--dim').trim(),
+      surface: cs.getPropertyValue('--surface').trim(),
+    };
+  });
+
+  let multiOption = $derived.by(() => {
+    void currentTheme;
+    if (!palette) return {};
+    return {
+      backgroundColor: 'transparent',
+      textStyle: { color: palette.text, fontFamily: 'Pretendard Variable, sans-serif' },
+      grid: { left: 48, right: 24, top: 20, bottom: 32 },
+      xAxis: {
+        type: 'category',
+        data: ring.map((_, i) => i),
+        axisLabel: { show: false },
+        axisLine: { lineStyle: { color: palette.border } },
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        min: 0,
+        max: 100,
+        axisLabel: { color: palette.textDim, fontSize: 10, formatter: '{value}%' },
+        splitLine: { lineStyle: { color: palette.grid } },
+        axisLine: { show: false },
+      },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: palette.surface,
+        borderColor: palette.border,
+        textStyle: { color: palette.text, fontSize: 12 },
+      },
+      series: [
+        { name: 'GPU util %', type: 'line', smooth: 0.5, symbol: 'none', data: ring.map((p) => p.util), lineStyle: { color: palette.c3, width: 1.8 } },
+        { name: 'VRAM %', type: 'line', smooth: 0.5, symbol: 'none', data: ring.map((p) => p.vram), lineStyle: { color: palette.c2, width: 1.8 } },
+        { name: '온도 °C', type: 'line', smooth: 0.5, symbol: 'none', data: ring.map((p) => p.temp), lineStyle: { color: palette.c4, width: 1.8 } },
+      ],
+    };
+  });
 </script>
 
-{#if g == null}
-  <div class="bg-card border border-border rounded-lg p-4">
-    <div class="text-text-dim text-[12px]">GPU 데이터 불러오는 중...</div>
+<section class="page-hero">
+  <div class="row" style="gap:10px">
+    <span class="text-eyebrow">P1.5 · 정식</span>
+    <span class="pill"><span class="dot" style="background:var(--info)"></span>/api/training/gpu · 5초 폴링 · read-only</span>
   </div>
-{:else}
-  <div class="bg-card border border-border rounded-lg p-4 mb-4">
-    <h2 class="text-accent-subtle text-[15px] font-semibold m-0 mb-3">GPU 디바이스</h2>
-    <table class="w-full border-collapse text-[13px]">
-      <tbody>
-        <tr class="border-b border-border-muted"><td class="py-2 text-text-dim w-2/5">모델명</td><td class="py-2 text-right text-text font-bold">{g.name ?? '-'}</td></tr>
-        <tr class="border-b border-border-muted"><td class="py-2 text-text-dim">디바이스 수</td><td class="py-2 text-right text-text font-bold">{(gpu.gpus?.length ?? 1) + '개'}</td></tr>
-        <tr><td class="py-2 text-text-dim">마지막 갱신 (KST)</td><td class="py-2 text-right text-text font-bold font-mono">{gpu?.generated_at ? toKst(gpu.generated_at) : '-'}</td></tr>
-      </tbody>
-    </table>
+  <h1 class="text-h2" style="margin-top:8px">시스템 상태</h1>
+  <p class="text-muted" style="margin-top:6px">
+    학습 호스트의 GPU 디바이스와 Flask 폴링 상태. 모든 값은 nvidia-smi 실측이며 전력은 측정 가능할 때만 표시합니다.
+    CPU·RAM·디스크 측정은 P2 에서 별도 endpoint 로 추가됩니다.
+  </p>
+</section>
+
+<!-- ===== Top KPIs ===== -->
+<section class="grid-3-kpi">
+  <div class="metric" class:glow={utilPct != null && utilPct >= 50}>
+    <div class="metric-head">
+      <span class="metric-label">GPU 활용률</span>
+      {#if utilPillKind}
+        <span class="pill {utilPillKind}" style="padding:2px 8px"><span class="dot"></span>
+          {utilPillKind === 'warn' ? '높음' : '정상'}
+        </span>
+      {/if}
+    </div>
+    <div class="metric-value tnum">
+      {utilPct != null ? utilPct.toFixed(1) : '—'}<span class="metric-unit">%</span>
+    </div>
+    <div class="metric-foot">
+      {g?.name ?? 'GPU'} · 평균 {stats.utilAvg != null ? stats.utilAvg.toFixed(1) + '%' : '—'}
+    </div>
   </div>
 
-  <div class="bg-card border border-border rounded-lg p-4 mb-4">
-    <h2 class="text-accent-subtle text-[15px] font-semibold m-0 mb-3">실시간 사용률</h2>
-    <table class="w-full border-collapse text-[13px]">
-      <tbody>
-        <tr class="border-b border-border-muted"><td class="py-2 text-text-dim w-2/5">GPU 사용률</td><td class="py-2 text-right text-text font-bold font-mono">{g.utilization_gpu_percent != null ? g.utilization_gpu_percent.toFixed(1) + '%' : '-'}</td></tr>
-        <tr class="border-b border-border-muted"><td class="py-2 text-text-dim">온도</td><td class="py-2 text-right text-text font-bold font-mono">{g.temperature_c != null ? g.temperature_c.toFixed(1) + '°C' : '-'}</td></tr>
-        <tr class="border-b border-border-muted"><td class="py-2 text-text-dim">VRAM 사용률</td><td class="py-2 text-right text-text font-bold font-mono">{g.memory_used_percent != null ? g.memory_used_percent.toFixed(1) + '%' : '-'}</td></tr>
-        <tr><td class="py-2 text-text-dim">VRAM 사용 / 전체</td><td class="py-2 text-right text-text font-bold font-mono">{(g.memory_used_mib != null && g.memory_total_mib != null) ? g.memory_used_mib.toFixed(0) + ' / ' + g.memory_total_mib.toFixed(0) + ' MiB' : '-'}</td></tr>
-      </tbody>
-    </table>
+  <div class="metric">
+    <div class="metric-head">
+      <span class="metric-label">온도</span>
+      {#if tempPillKind}
+        <span class="pill {tempPillKind}" style="padding:2px 8px"><span class="dot"></span>
+          {tempPillKind === 'danger' ? '경고' : tempPillKind === 'warn' ? '주의' : '정상'}
+        </span>
+      {/if}
+    </div>
+    <div class="metric-value tnum">
+      {tempC != null ? tempC.toFixed(1) : '—'}<span class="metric-unit">°C</span>
+    </div>
+    <div class="metric-foot">
+      최고 {stats.tempMax != null ? stats.tempMax.toFixed(0) + '°C' : '—'} (최근 {ring.length} 샘플)
+    </div>
   </div>
 
-  <div class="bg-card border border-border rounded-lg p-4 mb-4">
-    <h2 class="text-accent-subtle text-[15px] font-semibold m-0 mb-3">전력</h2>
-    <table class="w-full border-collapse text-[13px]">
+  <div class="metric">
+    <div class="metric-head">
+      <span class="metric-label">VRAM</span>
+      {#if vramPillKind}
+        <span class="pill {vramPillKind}" style="padding:2px 8px"><span class="dot"></span>
+          {vramPillKind === 'warn' ? '높음' : '정상'}
+        </span>
+      {/if}
+    </div>
+    <div class="metric-value tnum">
+      {g?.memory_used_mib != null ? (g.memory_used_mib / 1024).toFixed(1) : '—'}<span class="metric-unit">/ {g?.memory_total_mib != null ? (g.memory_total_mib / 1024).toFixed(0) + ' GiB' : '— GiB'}</span>
+    </div>
+    <div class="metric-foot">
+      평균 {stats.vramAvg != null ? stats.vramAvg.toFixed(1) + '%' : '—'} · 현재 {vramPct != null ? vramPct.toFixed(1) + '%' : '—'}
+    </div>
+  </div>
+</section>
+
+<!-- ===== GPU 시계열 ===== -->
+<section class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-eyebrow">/api/training/gpu · 시계열</div>
+      <div class="card-title">{g?.name ?? 'GPU'} · 자원 트렌드</div>
+    </div>
+    <div class="row" style="gap:14px;flex-wrap:wrap">
+      <span class="legend"><span class="swatch" style="background:var(--c-3)"></span>util %</span>
+      <span class="legend"><span class="swatch" style="background:var(--c-2)"></span>VRAM %</span>
+      <span class="legend"><span class="swatch" style="background:var(--c-4)"></span>온도 °C</span>
+    </div>
+  </div>
+  <EChartsRenderer option={multiOption} height="280px" />
+  <div class="row" style="border-top:1px solid var(--border-faint);padding-top:14px;margin-top:8px;flex-wrap:wrap;gap:24px">
+    <div class="stack" style="gap:4px">
+      <span class="text-eyebrow">평균 활용률</span>
+      <span class="text-mono tnum" style="font-size:18px;font-weight:600">{stats.utilAvg != null ? stats.utilAvg.toFixed(1) + '%' : '—'}</span>
+    </div>
+    <div class="stack" style="gap:4px">
+      <span class="text-eyebrow">최고 온도</span>
+      <span class="text-mono tnum" style="font-size:18px;font-weight:600;color:{stats.tempMax != null && stats.tempMax >= 80 ? 'var(--danger)' : stats.tempMax != null && stats.tempMax >= 70 ? 'var(--warn)' : 'var(--fg-strong)'}">
+        {stats.tempMax != null ? stats.tempMax.toFixed(0) + '°C' : '—'}
+      </span>
+    </div>
+    <div class="stack" style="gap:4px">
+      <span class="text-eyebrow">평균 VRAM</span>
+      <span class="text-mono tnum" style="font-size:18px;font-weight:600">{stats.vramAvg != null ? stats.vramAvg.toFixed(1) + '%' : '—'}</span>
+    </div>
+    <div class="stack" style="gap:4px">
+      <span class="text-eyebrow">전력 한계</span>
+      <span class="text-mono tnum" style="font-size:18px;font-weight:600">{g?.power_limit_watts != null ? g.power_limit_watts.toFixed(0) + ' W' : '—'}</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Detail + Polling ===== -->
+<section class="grid-2-detail">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-eyebrow">GPU · 디바이스</div>
+        <div class="card-title">하드웨어 상세</div>
+      </div>
+      <span class="pill success" style="padding:2px 8px"><span class="dot"></span>OK</span>
+    </div>
+    <table class="kv-table">
       <tbody>
-        <tr class="border-b border-border-muted"><td class="py-2 text-text-dim w-2/5">전력 한계</td><td class="py-2 text-right text-text font-bold font-mono">{g.power_limit_watts != null ? g.power_limit_watts.toFixed(0) + ' W' : '-'}</td></tr>
-        <tr><td class="py-2 text-text-dim">실측 전력 사용</td><td class="py-2 text-right text-text font-bold font-mono">{g.power_draw_available && g.power_draw_watts != null ? g.power_draw_watts.toFixed(0) + ' W' : '실측 불가'}</td></tr>
+        <tr><td>모델명</td><td class="text-mono">{g?.name ?? '—'}</td></tr>
+        <tr><td>디바이스 수</td><td class="text-mono tnum">{(gpu?.gpus?.length ?? 1)}개</td></tr>
+        <tr><td>VRAM 총량</td><td class="text-mono tnum">{g?.memory_total_mib != null ? fmt.bytes(g.memory_total_mib) : '—'}</td></tr>
+        <tr><td>VRAM 사용</td><td class="text-mono tnum">{g?.memory_used_mib != null ? fmt.bytes(g.memory_used_mib) : '—'}</td></tr>
+        <tr><td>전력 한계</td><td class="text-mono tnum">{g?.power_limit_watts != null ? g.power_limit_watts.toFixed(0) + ' W' : '—'}</td></tr>
+        <tr><td>실측 전력</td><td class="text-mono tnum">
+          {g?.power_draw_available && g?.power_draw_watts != null ? g.power_draw_watts.toFixed(0) + ' W' : '실측 불가'}
+        </td></tr>
+        <tr><td>API 갱신 (KST)</td><td class="text-mono tnum">{gpu?.generated_at ? fmt.kst(gpu.generated_at) : '—'}</td></tr>
       </tbody>
     </table>
-    {#if !g.power_draw_available}
-      <div class="text-text-dim text-[11px] mt-2">현재 환경에서 nvidia-smi 가 전력 실측값을 보고하지 않습니다. 추정값은 표시하지 않습니다.</div>
+    {#if !g?.power_draw_available}
+      <div class="text-caption" style="margin-top:8px">
+        nvidia-smi 가 현재 환경에서 power draw 를 보고하지 않습니다. 추정값은 표시하지 않습니다.
+      </div>
     {/if}
   </div>
 
-  <div class="bg-card border border-border rounded-lg p-4 mb-4">
-    <h2 class="text-accent-subtle text-[15px] font-semibold m-0 mb-3">대시보드 폴링</h2>
-    <table class="w-full border-collapse text-[13px]">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-eyebrow">FLASK · :5070</div>
+        <div class="card-title">대시보드 폴링 상태</div>
+      </div>
+      <span class="pill success" style="padding:2px 8px"><span class="dot"></span>up</span>
+    </div>
+    <table class="kv-table">
       <tbody>
-        <tr class="border-b border-border-muted"><td class="py-2 text-text-dim w-2/5">폴링 간격</td><td class="py-2 text-right text-text font-bold font-mono">{sec} 초</td></tr>
-        <tr class="border-b border-border-muted"><td class="py-2 text-text-dim">GPU ring buffer</td><td class="py-2 text-right text-text font-bold font-mono">{ringLen} / 720 points</td></tr>
-        <tr><td class="py-2 text-text-dim">마지막 화면 갱신</td><td class="py-2 text-right text-text font-bold font-mono">{last}</td></tr>
+        <tr><td>폴링 간격</td><td class="text-mono tnum">{sec} 초</td></tr>
+        <tr><td>GPU ring buffer</td><td class="text-mono tnum">{ring.length} / 720 points</td></tr>
+        <tr><td>버퍼 시간</td><td class="text-mono tnum">{fmt.durationCompact(ring.length * sec)}</td></tr>
+        <tr><td>마지막 화면 갱신</td><td class="text-mono tnum">{last}</td></tr>
+        <tr><td>Artifacts 폴링</td><td class="text-mono">30 초 (고정)</td></tr>
+        <tr><td>SPA 모드</td><td class="text-mono">P1.5 dist (KRONOS_V2_DIST=1)</td></tr>
       </tbody>
     </table>
+    <div class="card compact flat" style="background:var(--surface-sunken);border:none;padding:12px;gap:8px;border-radius:12px;margin-top:8px">
+      <div class="row" style="gap:8px"><span class="pill warn" style="padding:2px 8px"><span class="dot"></span>P2 예정</span><span class="text-caption">CPU/RAM/디스크 측정</span></div>
+      <p class="text-caption" style="line-height:1.5;margin:0">
+        현재는 GPU 디바이스만 nvidia-smi 로 측정됩니다. CPU 부하·시스템 RAM·디스크 사용량은 P2 에서 별도 endpoint 로 노출 예정입니다.
+      </p>
+    </div>
   </div>
-{/if}
+</section>
+
+<style>
+  .page-hero { padding: 8px 0; }
+  .grid-3-kpi {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .grid-2-detail {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .grid-3-kpi, .grid-2-detail { grid-template-columns: 1fr; }
+  }
+  .kv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .kv-table tbody tr {
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .kv-table tbody tr:last-child {
+    border-bottom: none;
+  }
+  .kv-table td {
+    padding: 10px 0;
+  }
+  .kv-table td:first-child {
+    color: var(--muted);
+    width: 40%;
+  }
+  .kv-table td:last-child {
+    color: var(--fg-strong);
+    text-align: right;
+    font-weight: 600;
+  }
+</style>
