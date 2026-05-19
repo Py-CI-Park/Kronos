@@ -223,9 +223,10 @@ def test_training_dashboard_routes_register(monkeypatch):
 
     client = webapp.app.test_client()
 
-    training_html = client.get("/training").get_data(as_text=True)
-    index_html = client.get("/").get_data(as_text=True)
-    stom_html = client.get("/stom").get_data(as_text=True)
+    # P6 cutover 이후 v1 markup 검증은 /v1/* prefix 로 이동
+    training_html = client.get("/v1/training").get_data(as_text=True)
+    index_html = client.get("/v1/").get_data(as_text=True)
+    stom_html = client.get("/v1/stom").get_data(as_text=True)
 
     assert "autoRefreshEnabled" in training_html
     assert "refreshIntervalSeconds" in training_html
@@ -309,11 +310,12 @@ def test_training_dashboard_refresh_interval_is_configurable_and_clamped(monkeyp
 
     client = webapp.app.test_client()
 
-    too_fast = client.get("/training?refresh_interval=1").get_data(as_text=True)
-    custom = client.get("/training?refresh_interval=17").get_data(as_text=True)
-    too_slow = client.get("/training?refresh_interval=99999").get_data(as_text=True)
-    index_custom = client.get("/?refresh_interval=11").get_data(as_text=True)
-    stom_custom = client.get("/stom?refresh_interval=13").get_data(as_text=True)
+    # P6 cutover: v1 refresh_interval 동작은 /v1/* 에서만 검증 (`/` 는 v2 SPA)
+    too_fast = client.get("/v1/training?refresh_interval=1").get_data(as_text=True)
+    custom = client.get("/v1/training?refresh_interval=17").get_data(as_text=True)
+    too_slow = client.get("/v1/training?refresh_interval=99999").get_data(as_text=True)
+    index_custom = client.get("/v1/?refresh_interval=11").get_data(as_text=True)
+    stom_custom = client.get("/v1/stom?refresh_interval=13").get_data(as_text=True)
 
     assert 'data-default-refresh-seconds="2"' in too_fast
     assert 'value="17"' in custom

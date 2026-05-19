@@ -71,14 +71,23 @@ def create_dataloaders(config: dict, rank: int, world_size: int):
     )
     drop_last = config.get("dataset_sample_mode") != "full_sequential"
 
+    # GPU 최대 활용: persistent_workers + prefetch_factor 는 num_workers > 0 일 때만 의미.
+    n_workers = int(config.get('num_workers', 2) or 0)
+    persistent = bool(config.get('persistent_workers', False)) and n_workers > 0
+    loader_extra = {}
+    if n_workers > 0:
+        loader_extra['prefetch_factor'] = int(config.get('prefetch_factor', 2))
+        loader_extra['persistent_workers'] = persistent
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['batch_size'],
         sampler=train_sampler,
         shuffle=train_sampler is None and config.get("dataset_sample_mode") != "full_sequential",
-        num_workers=config.get('num_workers', 2),
+        num_workers=n_workers,
         pin_memory=True,
-        drop_last=drop_last
+        drop_last=drop_last,
+        **loader_extra,
     )
     validation_batch_size = resolve_tokenizer_validation_batch_size(config)
     val_loader = DataLoader(
@@ -86,9 +95,10 @@ def create_dataloaders(config: dict, rank: int, world_size: int):
         batch_size=validation_batch_size,
         sampler=val_sampler,
         shuffle=False,
-        num_workers=config.get('num_workers', 2),
+        num_workers=n_workers,
         pin_memory=True,
-        drop_last=False
+        drop_last=False,
+        **loader_extra,
     )
     print(
         f"[Rank {rank}] Dataloaders created. Train steps/epoch: {len(train_loader)}, "
@@ -140,6 +150,27 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
     dt_result = {}
     batch_idx_global_train = 0
 
+    # ── AMP / autocast 설정 (opt-in) ────────────────────────────
+    amp_enabled = bool(config.get('tokenizer_enable_amp', False)) and torch.cuda.is_available()
+    amp_dtype_label = str(config.get('tokenizer_amp_dtype', 'bf16')).lower()
+    if amp_dtype_label in ('bf16', 'bfloat16'):
+        amp_dtype = torch.bfloat16
+    elif amp_dtype_label in ('fp16', 'float16', 'half'):
+        amp_dtype = torch.float16
+    else:
+        amp_enabled = False
+        amp_dtype = torch.float32
+    amp_use_scaler = amp_enabled and amp_dtype == torch.float16
+    scaler = torch.amp.GradScaler('cuda', enabled=amp_use_scaler)
+    if rank == 0 and amp_enabled:
+        print(f"[Rank {rank}] AMP enabled — dtype={amp_dtype_label} scaler={amp_use_scaler}")
+
+    def autocast_ctx():
+        if not amp_enabled:
+            from contextlib import nullcontext
+            return nullcontext()
+        return torch.amp.autocast('cuda', dtype=amp_dtype)
+
     for epoch_idx in range(config['epochs']):
         epoch_start_time = time.time()
         model.train()
@@ -160,23 +191,32 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
                 end_idx = (j + 1) * (ori_batch_x.shape[0] // config['accumulation_steps'])
                 batch_x = ori_batch_x[start_idx:end_idx]
 
-                # Forward pass
-                zs, bsq_loss, _, _ = model(batch_x)
-                z_pre, z = zs
-
-                # Loss calculation
-                recon_loss_pre = F.mse_loss(z_pre, batch_x)
-                recon_loss_all = F.mse_loss(z, batch_x)
-                recon_loss = recon_loss_pre + recon_loss_all
-                loss = (recon_loss + bsq_loss) / 2  # Assuming w_1=w_2=1
+                # Forward + loss (AMP autocast 활성 시 bf16/fp16 로 자동 cast)
+                with autocast_ctx():
+                    zs, bsq_loss, _, _ = model(batch_x)
+                    z_pre, z = zs
+                    recon_loss_pre = F.mse_loss(z_pre, batch_x)
+                    recon_loss_all = F.mse_loss(z, batch_x)
+                    recon_loss = recon_loss_pre + recon_loss_all
+                    loss = (recon_loss + bsq_loss) / 2  # Assuming w_1=w_2=1
 
                 loss_scaled = loss / config['accumulation_steps']
                 current_batch_total_loss += loss.item()
-                loss_scaled.backward()
+                # fp16 일 때만 GradScaler — bf16/fp32 에서는 일반 backward
+                if amp_use_scaler:
+                    scaler.scale(loss_scaled).backward()
+                else:
+                    loss_scaled.backward()
 
             # --- Optimizer Step after Accumulation ---
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
-            optimizer.step()
+            if amp_use_scaler:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
+                optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
 
@@ -228,9 +268,10 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
             with torch.inference_mode():
                 for ori_batch_x, _ in val_loader:
                     ori_batch_x = ori_batch_x.to(device, non_blocking=True)
-                    zs, _, _, _ = model(ori_batch_x)
-                    _, z = zs
-                    val_loss_item = F.mse_loss(z, ori_batch_x)
+                    with autocast_ctx():
+                        zs, _, _, _ = model(ori_batch_x)
+                        _, z = zs
+                        val_loss_item = F.mse_loss(z, ori_batch_x)
 
                     tot_val_loss_sum_rank += val_loss_item.item() * ori_batch_x.size(0)
                     val_sample_count_rank += ori_batch_x.size(0)
@@ -323,6 +364,19 @@ def main(config: dict):
     if dist.is_available() and dist.is_initialized() and world_size > 1:
         ddp_kwargs = {"device_ids": [local_rank]} if torch.cuda.is_available() else {}
         model = DDP(model, find_unused_parameters=False, **ddp_kwargs)
+
+    # torch.compile (opt-in). Kronos 의 rotary attention 등 비표준 연산이 trace 실패할 수 있어
+    # fullgraph=False 가 안전. 실패 시 OOM 안전망과 무관하게 즉시 raise 되므로 학습 자체에는 영향 없음.
+    if bool(config.get('tokenizer_enable_compile', False)):
+        compile_mode = str(config.get('tokenizer_compile_mode', 'reduce-overhead'))
+        compile_fullgraph = bool(config.get('tokenizer_compile_fullgraph', False))
+        try:
+            model = torch.compile(model, mode=compile_mode, fullgraph=compile_fullgraph)
+            if rank == 0:
+                print(f"[Rank {rank}] torch.compile enabled — mode={compile_mode} fullgraph={compile_fullgraph}")
+        except Exception as compile_exc:
+            if rank == 0:
+                print(f"[Rank {rank}] torch.compile failed ({compile_exc}); falling back to eager mode.")
 
     if rank == 0:
         size_model = model.module if hasattr(model, "module") else model

@@ -30,18 +30,21 @@ Rename-Item -Path 'stom_1s_grid_pred60_2025_full_small' -NewName 'stom_1s_grid_p
 
 ## 2. 재학습 실행 (백그라운드 권장)
 
-### 2.1 핵심 PowerShell 명령
+### 2.1 핵심 PowerShell 명령 — 옵션 C 풀 최적화 (torch.compile + bf16 + persistent + batch 32)
+
+> **OOM 안전성**: validation batch 는 여전히 1 로 강제. train batch 만 4 → 32 로 상향.
+> **예상 시간 단축**: 83h → **약 10~15h** (5~7x). 첫 epoch torch.compile 컴파일 오버헤드 발생.
 
 ```powershell
 cd D:\Chanil_Park\Project\Programming\Kronos
 
-# 환경변수 — commit 7742cb8 Directive 에 따른 필수 안전 옵션
+# 필수 안전 옵션 (validation OOM 회피)
 $env:KRONOS_TOKENIZER_VAL_BATCH_SIZE = "1"
 
-# (선택) GPU OOM debug 정보
-# $env:CUDA_LAUNCH_BLOCKING = "1"   # 디버그 시에만 — 학습 속도 저하
+# (선택) torch.compile 디버그 정보가 필요하면
+# $env:TORCH_LOGS = "+dynamo"
 
-# 재학습 시작
+# 재학습 시작 — 옵션 C 풀 최적화
 C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
   --horizon 60 `
   --mode full `
@@ -50,10 +53,30 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
   --output-root finetune\outputs `
   --run-name stom_1s_grid_pred60_2025_full_small `
   --dataset-sample-mode full_sequential `
-  --tokenizer-batch-size 4 `
+  --tokenizer-batch-size 32 `
   --tokenizer-val-batch-size 1 `
   --epochs 1 `
-  --num-workers 0
+  --num-workers 4 `
+  --persistent-workers `
+  --prefetch-factor 4 `
+  --tokenizer-amp `
+  --tokenizer-amp-dtype bf16 `
+  --tokenizer-compile `
+  --tokenizer-compile-mode reduce-overhead
+```
+
+### 2.1b 안전 모드 (옵션 C 실패 시 fallback)
+
+torch.compile 또는 AMP 가 호환되지 않아 실패하면 다음 옵션으로 회귀:
+
+```powershell
+# 옵션 B (bf16 만)
+... --tokenizer-batch-size 16 --num-workers 4 --persistent-workers --tokenizer-amp --tokenizer-amp-dtype bf16
+# torch.compile 만 제거
+
+# 옵션 A (가장 보수적)
+... --tokenizer-batch-size 8 --num-workers 4
+# AMP 및 compile 모두 제거
 ```
 
 ### 2.2 백그라운드 실행 (권장 — 83시간이라 터미널 점유 불가)

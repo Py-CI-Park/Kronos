@@ -166,6 +166,20 @@ def build_run(
         env["KRONOS_TOKENIZER_VAL_BATCH_SIZE"] = str(tokenizer_val_batch_size)
         env["KRONOS_TOKENIZER_SAVE_PRE_VAL_CHECKPOINT"] = "1"
         env["KRONOS_TOKENIZER_EMPTY_CACHE_BEFORE_VAL"] = "1"
+        # ── GPU 최대 활용 최적화 (opt-in flags propagation) ──────
+        if getattr(args, "persistent_workers", False):
+            env["KRONOS_PERSISTENT_WORKERS"] = "1"
+        prefetch_factor_val = getattr(args, "prefetch_factor", None)
+        if prefetch_factor_val is not None:
+            env["KRONOS_PREFETCH_FACTOR"] = str(prefetch_factor_val)
+        if getattr(args, "tokenizer_amp", False):
+            env["KRONOS_TOKENIZER_AMP"] = "1"
+            env["KRONOS_TOKENIZER_AMP_DTYPE"] = str(getattr(args, "tokenizer_amp_dtype", "bf16"))
+        if getattr(args, "tokenizer_compile", False):
+            env["KRONOS_TOKENIZER_COMPILE"] = "1"
+            env["KRONOS_TOKENIZER_COMPILE_MODE"] = str(getattr(args, "tokenizer_compile_mode", "reduce-overhead"))
+            if getattr(args, "tokenizer_compile_fullgraph", False):
+                env["KRONOS_TOKENIZER_COMPILE_FULLGRAPH"] = "1"
     if args.nproc_per_node == 1:
         env.update(
             {
@@ -377,6 +391,45 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Predictor-only batch-size override for --train-stage both handoff runs.",
+    )
+    # ── GPU 최대 활용 최적화 옵션 (opt-in, default 는 기존 동작 유지) ──
+    parser.add_argument(
+        "--persistent-workers",
+        action="store_true",
+        help="DataLoader persistent_workers=True (num_workers > 0 일 때만 효과).",
+    )
+    parser.add_argument(
+        "--prefetch-factor",
+        type=int,
+        default=None,
+        help="DataLoader prefetch_factor (default 2). num_workers > 0 일 때만 효과.",
+    )
+    parser.add_argument(
+        "--tokenizer-amp",
+        action="store_true",
+        help="Tokenizer 학습 시 mixed precision (autocast) 사용. dtype 은 --tokenizer-amp-dtype.",
+    )
+    parser.add_argument(
+        "--tokenizer-amp-dtype",
+        choices=["bf16", "fp16", "fp32"],
+        default="bf16",
+        help="AMP dtype. bf16 권장 (4080 SUPER 가속 + GradScaler 불필요).",
+    )
+    parser.add_argument(
+        "--tokenizer-compile",
+        action="store_true",
+        help="Tokenizer 모델을 torch.compile 로 래핑. 첫 epoch 컴파일 오버헤드 발생.",
+    )
+    parser.add_argument(
+        "--tokenizer-compile-mode",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        default="reduce-overhead",
+        help="torch.compile mode. reduce-overhead 가 일반 학습에 적합.",
+    )
+    parser.add_argument(
+        "--tokenizer-compile-fullgraph",
+        action="store_true",
+        help="torch.compile fullgraph=True. Kronos rotary attention 호환 실패 시 비활성화 필요.",
     )
     parser.add_argument("--n-train-iter", type=int, default=None)
     parser.add_argument("--n-val-iter", type=int, default=None)

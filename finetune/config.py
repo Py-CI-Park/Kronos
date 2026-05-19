@@ -84,6 +84,24 @@ class Config:
         self.num_workers = _env_int("KRONOS_NUM_WORKERS", 2)
         self.dataset_sample_mode = os.getenv("KRONOS_DATASET_SAMPLE_MODE", "sample_random")
 
+        # =================================================================
+        # GPU 최대 활용 최적화 (모두 opt-in — default 는 기존 동작 유지)
+        # =================================================================
+        # DataLoader: persistent_workers 와 prefetch_factor 는 num_workers > 0 일 때만 효과.
+        self.persistent_workers = _env_bool("KRONOS_PERSISTENT_WORKERS", False)
+        self.prefetch_factor = _env_int("KRONOS_PREFETCH_FACTOR", 2)
+
+        # Mixed precision (AMP): bf16 권장 (4080 SUPER 가속 + GradScaler 불필요).
+        # KRONOS_TOKENIZER_AMP=1 + KRONOS_TOKENIZER_AMP_DTYPE=bf16 으로 활성화.
+        self.tokenizer_enable_amp = _env_bool("KRONOS_TOKENIZER_AMP", False)
+        self.tokenizer_amp_dtype = os.getenv("KRONOS_TOKENIZER_AMP_DTYPE", "bf16")  # bf16 / fp16 / fp32
+
+        # torch.compile: rotary attention 등 비표준 연산이 trace 실패할 수 있어 opt-in.
+        # 활성화 시 첫 epoch 컴파일 오버헤드 발생 — 학습 길수록 ROI 큼.
+        self.tokenizer_enable_compile = _env_bool("KRONOS_TOKENIZER_COMPILE", False)
+        self.tokenizer_compile_mode = os.getenv("KRONOS_TOKENIZER_COMPILE_MODE", "reduce-overhead")
+        self.tokenizer_compile_fullgraph = _env_bool("KRONOS_TOKENIZER_COMPILE_FULLGRAPH", False)
+
         # Number of samples to draw for one "epoch" of training/validation.
         # This is useful for large datasets where a true epoch is too long.
         self.n_train_iter = _env_int("KRONOS_N_TRAIN_ITER", 2000 * self.batch_size)
