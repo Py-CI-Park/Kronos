@@ -30,10 +30,11 @@ Rename-Item -Path 'stom_1s_grid_pred60_2025_full_small' -NewName 'stom_1s_grid_p
 
 ## 2. 재학습 실행 (백그라운드 권장)
 
-### 2.1 핵심 PowerShell 명령 — 옵션 C 풀 최적화 (torch.compile + bf16 + persistent + batch 32)
+### 2.1 핵심 PowerShell 명령 — **옵션 D 풀 최대 활용** (Threadripper 3990X + RTX 4080 SUPER + 273GB RAM)
 
-> **OOM 안전성**: validation batch 는 여전히 1 로 강제. train batch 만 4 → 32 로 상향.
-> **예상 시간 단축**: 83h → **약 10~15h** (5~7x). 첫 epoch torch.compile 컴파일 오버헤드 발생.
+> **시스템 사양 실측**: AMD Threadripper 3990X (64 cores), RTX 4080 SUPER 16 GiB (free 12.4), System RAM 273 GB, PyTorch 2.9.0 + CUDA 12.8 + bf16 native (Ada Lovelace sm_89).
+> **OOM 안전성**: validation batch 는 여전히 1 로 강제. train batch 4 → **64** 로 상향 (AMP bf16 으로 VRAM ~12 GiB, 안전 4 GiB).
+> **예상 시간 단축**: 83h → **약 5~8h** (10~16x). 첫 epoch torch.compile max-autotune 컴파일 오버헤드 ~120s.
 
 ```powershell
 cd D:\Chanil_Park\Project\Programming\Kronos
@@ -44,7 +45,7 @@ $env:KRONOS_TOKENIZER_VAL_BATCH_SIZE = "1"
 # (선택) torch.compile 디버그 정보가 필요하면
 # $env:TORCH_LOGS = "+dynamo"
 
-# 재학습 시작 — 옵션 C 풀 최적화
+# 재학습 시작 — 옵션 D 풀 최대 활용
 C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
   --horizon 60 `
   --mode full `
@@ -53,17 +54,25 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
   --output-root finetune\outputs `
   --run-name stom_1s_grid_pred60_2025_full_small `
   --dataset-sample-mode full_sequential `
-  --tokenizer-batch-size 32 `
+  --tokenizer-batch-size 64 `
   --tokenizer-val-batch-size 1 `
   --epochs 1 `
-  --num-workers 4 `
+  --num-workers 12 `
   --persistent-workers `
-  --prefetch-factor 4 `
+  --prefetch-factor 6 `
   --tokenizer-amp `
   --tokenizer-amp-dtype bf16 `
   --tokenizer-compile `
-  --tokenizer-compile-mode reduce-overhead
+  --tokenizer-compile-mode max-autotune
 ```
+
+### 2.1a 옵션 D 검증 — 대시보드에서 즉시 확인 (W9 로그 tail 카드)
+학습 시작 1분 후 `http://127.0.0.1:5070/` Live Training 탭 하단의 **W9 학습 로그 tail** 카드에서 다음 줄 자동 노출:
+- `[Rank 0] BATCHSIZE (per GPU): 64`
+- `[Rank 0] AMP enabled — dtype=bf16 scaler=False` (초록 강조)
+- `[Rank 0] torch.compile enabled — mode=max-autotune fullgraph=False` (시안 강조)
+- 이후 step/loss/sps 가 색상 분기로 표시
+- OOM/Traceback 발생 시 빨간색 자동 강조
 
 ### 2.1b 안전 모드 (옵션 C 실패 시 fallback)
 

@@ -5,6 +5,7 @@
   import W4EtaTimeline from '$widgets/W4_EtaTimeline.svelte';
   import W5GpuSparkline from '$widgets/W5_GpuSparkline.svelte';
   import W6LossVolatility from '$widgets/W6_LossVolatility.svelte';
+  import W9LogTail from '$widgets/W9_LogTail.svelte';
 
   let m = $state<any>({});
   metricsLatest.subscribe((v) => (m = v));
@@ -119,6 +120,9 @@
 
 <!-- ===== W5 GPU TREND ===== -->
 <W5GpuSparkline />
+
+<!-- ===== W9 LOG TAIL (AMP/compile/OOM 가시화) ===== -->
+<W9LogTail />
 
 <style>
   .grid-1-1-1-1 {
