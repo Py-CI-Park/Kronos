@@ -27,6 +27,17 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _parse_utc_timestamp(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        normalized = value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
 def _load_json(path: Path) -> Dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -87,10 +98,24 @@ def _summarize_stage(payload: Dict[str, Any], source_path: Path) -> Dict[str, An
     progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
     timing = payload.get("timing") if isinstance(payload.get("timing"), dict) else {}
     paths = payload.get("paths") if isinstance(payload.get("paths"), dict) else {}
+    status = payload.get("status", "unknown")
+    updated_at = payload.get("updated_at") or payload.get("completed_at") or payload.get("created_at")
+    elapsed_seconds = timing.get("elapsed_seconds")
+    seconds_since_update = None
+    now = datetime.now(timezone.utc)
+    updated_dt = _parse_utc_timestamp(updated_at)
+    if updated_dt is not None:
+        seconds_since_update = max(0.0, (now - updated_dt).total_seconds())
+    if status == "running":
+        started_dt = _parse_utc_timestamp(timing.get("started_at"))
+        if started_dt is not None:
+            live_elapsed = max(0.0, (now - started_dt).total_seconds())
+            if not isinstance(elapsed_seconds, (int, float)) or live_elapsed > float(elapsed_seconds):
+                elapsed_seconds = live_elapsed
     return {
         "source_path": str(source_path),
-        "updated_at": payload.get("updated_at") or payload.get("completed_at") or payload.get("created_at"),
-        "status": payload.get("status", "unknown"),
+        "updated_at": updated_at,
+        "status": status,
         "run_name": payload.get("run_name"),
         "train_stage": payload.get("train_stage") or stage.get("name"),
         "horizon": payload.get("horizon"),
@@ -106,7 +131,8 @@ def _summarize_stage(payload: Dict[str, Any], source_path: Path) -> Dict[str, An
         "last_loss": (payload.get("metrics") or {}).get("last_loss") if isinstance(payload.get("metrics"), dict) else None,
         "last_validation_loss": (payload.get("metrics") or {}).get("last_validation_loss") if isinstance(payload.get("metrics"), dict) else None,
         "best_val_loss": (payload.get("metrics") or {}).get("best_val_loss") if isinstance(payload.get("metrics"), dict) else None,
-        "elapsed_seconds": timing.get("elapsed_seconds"),
+        "elapsed_seconds": elapsed_seconds,
+        "seconds_since_update": seconds_since_update,
         "eta_seconds": timing.get("eta_seconds"),
         "samples_per_second": timing.get("samples_per_second"),
         "stdout_log": paths.get("stdout_log") or payload.get("stdout_log"),

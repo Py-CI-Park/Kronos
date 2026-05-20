@@ -117,3 +117,22 @@ C:\Python\64\Python3119\python.exe -m pytest tests\test_v2_blueprint_isolation.p
 ```
 
 결과: `8 passed`.
+
+## 2026-05-20 10:52 대시보드 live elapsed 보정
+
+토크나이저 학습은 현재 첫 100 step 로그가 나오기 전까지 stdout/progress 파일이 갱신되지 않는 구조다. 이 때문에 실제 프로세스가 살아 있어도 대시보드의 elapsed 값이 마지막 progress 파일 기록 시점에 멈춰 보일 수 있다.
+
+조치:
+
+- `webui/training_monitor.py`에서 `status=running`이면 `timing.started_at` 기준 live elapsed를 API 응답 시점에 다시 계산하도록 보정했다.
+- `seconds_since_update` 필드를 추가해 progress 파일이 얼마나 오래 갱신되지 않았는지도 확인할 수 있게 했다.
+- 학습 자체는 건드리지 않았고, 웹 대시보드 표시/모니터링 품질만 개선했다.
+
+검증:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m py_compile webui\training_monitor.py
+C:\Python\64\Python3119\python.exe -m pytest tests\test_v2_blueprint_isolation.py tests\test_v2_route.py -q
+```
+
+결과: `8 passed`.
