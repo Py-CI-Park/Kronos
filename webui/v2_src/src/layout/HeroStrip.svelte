@@ -122,33 +122,24 @@
   <div class="hero-right">
     <div class="card glow" style="padding:20px;gap:16px;align-items:center">
       <div class="row spread" style="width:100%">
-        <span class="card-eyebrow">전체 진행률</span>
+        <span class="card-eyebrow">실행 요약</span>
         <span class="signal" data-level={readinessLevel === 'ready' ? 'ready' : readinessLevel === 'training' ? 'ready' : 'waiting'}>
           <span class="light"></span>
           <span>{readinessLabel}</span>
         </span>
       </div>
 
-      <div class="hero-donut">
-        <svg viewBox="0 0 100 100" width="180" height="180" aria-hidden="true">
-          <circle cx="50" cy="50" r="42" fill="none" stroke="var(--border-faint)" stroke-width="10"/>
-          <circle
-            cx="50" cy="50" r="42"
-            fill="none"
-            stroke="var(--accent)"
-            stroke-width="10"
-            stroke-linecap="round"
-            stroke-dasharray={`${(overallPct / 100) * 264} 264`}
-            transform="rotate(-90 50 50)"
-            style="transition:stroke-dasharray 400ms ease"
-          />
-          <text x="50" y="48" text-anchor="middle" font-family="var(--font-mono)" font-size="14" font-weight="700" fill="var(--fg-strong)">
-            {fmt.pct(overallPct, 1)}
-          </text>
-          <text x="50" y="62" text-anchor="middle" font-family="var(--font-display)" font-size="6.5" fill="var(--muted)">
-            전체 진행
-          </text>
-        </svg>
+      <div class="hero-summary">
+        <div>
+          <div class="text-eyebrow">전체 진행</div>
+          <strong class="text-mono tnum">{fmt.pct(overallPct, 1)}</strong>
+          <span>단계 구간은 아래 원형 그래프에서 확인</span>
+        </div>
+        <div>
+          <div class="text-eyebrow">현재 단계</div>
+          <strong class="text-mono tnum">{fmt.pct(stagePct, 1)}</strong>
+          <span>{stageName}</span>
+        </div>
       </div>
 
       <div class="grid-2" style="width:100%">
@@ -173,9 +164,29 @@
 </section>
 
 <style>
-  .hero-donut {
+  .hero-summary {
+    width: 100%;
     display: grid;
-    place-items: center;
-    padding: 4px 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .hero-summary > div {
+    padding: 14px;
+    border-radius: var(--r-md);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-faint);
+  }
+  .hero-summary strong {
+    display: block;
+    margin-top: 5px;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--fg-strong);
+  }
+  .hero-summary span {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font: 600 11px/1.3 var(--font-display);
   }
 </style>
