@@ -267,6 +267,8 @@ def execute_run(spec: Mapping[str, Any], dry_run: bool = False) -> Dict[str, Any
 
     env = os.environ.copy()
     env.update({str(k): str(v) for k, v in spec["env"].items()})
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
     started = datetime.now(timezone.utc)
     tracker = TrainingProgressTracker(
         spec=spec,

@@ -163,7 +163,7 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
     amp_use_scaler = amp_enabled and amp_dtype == torch.float16
     scaler = torch.amp.GradScaler('cuda', enabled=amp_use_scaler)
     if rank == 0 and amp_enabled:
-        print(f"[Rank {rank}] AMP enabled — dtype={amp_dtype_label} scaler={amp_use_scaler}")
+        print(f"[Rank {rank}] AMP enabled - dtype={amp_dtype_label} scaler={amp_use_scaler}")
 
     def autocast_ctx():
         if not amp_enabled:
@@ -373,7 +373,7 @@ def main(config: dict):
         try:
             model = torch.compile(model, mode=compile_mode, fullgraph=compile_fullgraph)
             if rank == 0:
-                print(f"[Rank {rank}] torch.compile enabled — mode={compile_mode} fullgraph={compile_fullgraph}")
+                print(f"[Rank {rank}] torch.compile enabled - mode={compile_mode} fullgraph={compile_fullgraph}")
         except Exception as compile_exc:
             if rank == 0:
                 print(f"[Rank {rank}] torch.compile failed ({compile_exc}); falling back to eager mode.")

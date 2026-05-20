@@ -12,6 +12,16 @@ def test_root_serves_v2_after_cutover():
     assert 'kronos-v2-shell' in body
 
 
+
+def test_training_bookmark_serves_v2_shell():
+    """Operator bookmarks for the live-training dashboard should not 404."""
+    client = app.test_client()
+    for path in ['/training', '/dashboard']:
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} broke"
+        assert 'kronos-v2-shell' in resp.data.decode('utf-8')
+
+
 def test_v1_legacy_routes_still_available():
     """P6: 기존 v1 페이지 3종은 /v1/ prefix 로 보존 (6개월 archive)."""
     client = app.test_client()

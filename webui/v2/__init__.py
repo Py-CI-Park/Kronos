@@ -25,6 +25,20 @@ def v2_root():
 
 
 # ── 하위 호환: `/v2` 는 `/` 로 영구 리다이렉트 ────────────────
+
+# Direct dashboard bookmarks used during long-running training.
+#
+# The v2 UI is a single-page shell and selects the live-training view by
+# default. Serving the same shell for these explicit paths keeps operator
+# bookmarks such as http://127.0.0.1:5070/training working without adding a
+# broad Flask catch-all that could mask API/static mistakes.
+@v2_bp.route('/training')
+@v2_bp.route('/dashboard')
+def v2_training_alias():
+    """Serve the v2 live-training shell for direct dashboard bookmarks."""
+    return _serve_v2_shell()
+
+
 @v2_bp.route('/v2')
 def v2_legacy_redirect():
     """기존 북마크/링크 호환용 영구 리다이렉트."""
