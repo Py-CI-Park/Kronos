@@ -2,7 +2,10 @@
 // readonly only — 새 endpoint 도입 0건, 기존 응답 구조만 사용.
 
 export interface TrainingStatus {
+  run_name?: string;
   status: string;
+  overall_percent?: number;
+  stage_count?: number;
   stages: TrainingStage[];
   latest_stage?: TrainingStage;
   dataset_summary?: DatasetSummary;
@@ -16,6 +19,7 @@ export interface TrainingStatus {
   };
   updated_at?: string;
   default_training_refresh_seconds?: number;
+  generated_at?: string;
 }
 
 export interface DatasetSplitSummary {
@@ -72,12 +76,17 @@ export interface DatasetSummary {
 
 export interface TrainingStage {
   train_stage: string;
+  stage_index?: number;
+  stage_count?: number;
   step?: number;
   total_steps?: number;
   overall_percent?: number;
   stage_percent?: number;
   eta_seconds?: number;
   samples_per_second?: number;
+  last_loss?: number | null;
+  epoch?: number | null;
+  epochs?: number | null;
   status?: string;
   updated_at?: string;
 }

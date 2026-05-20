@@ -15,6 +15,19 @@
     summary: DatasetSplitSummary;
   };
 
+  type ProgressSegment = {
+    key: string;
+    label: string;
+    stageIndex: number;
+    start: number;
+    end: number;
+    stagePercent: number;
+    overallContribution: number;
+    active: boolean;
+    complete: boolean;
+    status?: string;
+  };
+
   let m = $state<any>({});
   metricsLatest.subscribe((v) => (m = v));
 
@@ -53,6 +66,13 @@
 
   let lr = $derived(m.learningRate);
   const dataset = $derived(status?.dataset_summary ?? null);
+  const latestStage = $derived(status?.latest_stage ?? null);
+  const overallPercent = $derived.by(() =>
+    clampPercent(status?.overall_percent ?? latestStage?.overall_percent ?? 0),
+  );
+  const stageCount = $derived.by(() => Math.max(1, Number(latestStage?.stage_count ?? status?.stage_count ?? 2) || 2));
+  const currentStagePercent = $derived.by(() => clampPercent(latestStage?.stage_percent ?? 0));
+  const currentStageLabel = $derived(stageLabel(latestStage?.train_stage));
 
   const splitRows = $derived.by<SplitRow[]>(() => {
     const splits = dataset?.splits ?? {};
@@ -92,6 +112,84 @@
     };
     return labels[value] ?? value;
   }
+
+  function clampPercent(value: unknown): number {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.min(100, numeric));
+  }
+
+  function stageLabel(value?: string | null): string {
+    if (value === 'tokenizer') return '토크나이저';
+    if (value === 'predictor') return '프리딕터';
+    if (!value) return '대기';
+    return value;
+  }
+
+  function defaultStageName(index: number, count: number): string {
+    if (count === 2 && index === 1) return 'tokenizer';
+    if (count === 2 && index === 2) return 'predictor';
+    return `stage-${index}`;
+  }
+
+  const progressSegments = $derived.by<ProgressSegment[]>(() => {
+    const latest = latestStage;
+    const count = stageCount;
+    const latestIndex = Number(latest?.stage_index ?? 1) || 1;
+    const stages = Array.isArray(status?.stages) ? status.stages : [];
+    const byName = new Map(stages.map((stage) => [stage.train_stage, stage]));
+
+    return Array.from({ length: count }, (_, idx) => {
+      const stageIndex = idx + 1;
+      const key = defaultStageName(stageIndex, count);
+      const stage = byName.get(key);
+      const active = stageIndex === latestIndex || latest?.train_stage === key;
+      const inferredPercent =
+        stage?.stage_percent ??
+        (active ? latest?.stage_percent : stageIndex < latestIndex ? 100 : 0);
+      const stagePercent = clampPercent(inferredPercent);
+      const start = (idx / count) * 100;
+      const end = ((idx + 1) / count) * 100;
+      return {
+        key,
+        label: stageLabel(key),
+        stageIndex,
+        start,
+        end,
+        stagePercent,
+        overallContribution: stagePercent / count,
+        active,
+        complete: stagePercent >= 99.95 || stage?.status === 'ok',
+        status: stage?.status ?? (active ? latest?.status : undefined),
+      };
+    });
+  });
+
+  const progressRingStyle = $derived.by(() => {
+    const pieces: string[] = [];
+    const gap = 0.65;
+    for (const segment of progressSegments) {
+      const fillEnd = segment.start + ((segment.end - segment.start) * segment.stagePercent) / 100;
+      const filledColor = segment.complete ? 'var(--success)' : segment.active ? 'var(--accent)' : 'var(--border-strong)';
+      const remainderColor = segment.active ? 'var(--accent-soft)' : 'var(--surface-sunken)';
+      const boundaryStart = Math.max(segment.start, segment.end - gap);
+      if (fillEnd > segment.start) {
+        pieces.push(`${filledColor} ${segment.start}% ${Math.max(segment.start, fillEnd - gap)}%`);
+      }
+      if (fillEnd < boundaryStart) {
+        pieces.push(`${remainderColor} ${Math.max(segment.start, fillEnd)}% ${boundaryStart}%`);
+      }
+      pieces.push(`var(--border) ${boundaryStart}% ${segment.end}%`);
+    }
+    return `conic-gradient(from -90deg, ${pieces.join(', ')})`;
+  });
+
+  const progressFormula = $derived.by(() => {
+    const count = stageCount;
+    const latest = latestStage;
+    if (!latest) return '전체 진행률 = 단계별 진행률을 동일 구간으로 합산';
+    return `전체 ${fmt.num(overallPercent, 1)}% = ${currentStageLabel} ${fmt.num(currentStagePercent, 1)}% × 1/${count}`;
+  });
 </script>
 
 <!-- ===== 핵심 실시간 지표 ===== -->
@@ -151,6 +249,59 @@
     </div>
     <div class="metric-foot">
       소수 표기 <span class="text-mono" style="color:var(--fg)">{lr != null ? lr.toFixed(6) : '-'}</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 단계 구간이 보이는 전체 진행률 원형 그래프 ===== -->
+<section class="card progress-card glow" aria-label="단계별 전체 진행률 원형 그래프">
+  <div class="progress-layout">
+    <div class="progress-ring-panel">
+      <div class="progress-donut" style:background={progressRingStyle}>
+        <div class="progress-donut-hole">
+          <span>전체 진행률</span>
+          <strong class="tnum">{fmt.num(overallPercent, 1)}%</strong>
+          <small>{stageCount}단계 구간 합산</small>
+        </div>
+      </div>
+      <div class="progress-boundary-row">
+        {#each progressSegments as segment (segment.key)}
+          <span class="text-mono">{fmt.num(segment.start, 0)}~{fmt.num(segment.end, 0)}%</span>
+        {/each}
+      </div>
+    </div>
+
+    <div class="progress-copy">
+      <div>
+        <div class="text-eyebrow">STAGE-AWARE PROGRESS</div>
+        <h2>전체 진행률과 현재 단계 진행률을 분리해서 봅니다</h2>
+        <p>
+          원형 그래프는 전체 100%를 단계 수만큼 나눈 뒤, 현재 단계의 진행률만 해당 구간 안에서 채웁니다.
+          지금은 <strong>{currentStageLabel}</strong>가 전체 원의
+          <strong> {fmt.num(100 / stageCount, 0)}%</strong> 구간을 담당합니다.
+        </p>
+      </div>
+      <div class="progress-formula text-mono">{progressFormula}</div>
+      <div class="segment-list">
+        {#each progressSegments as segment (segment.key)}
+          <div class="segment-row" data-active={segment.active ? 'true' : 'false'}>
+            <div class="segment-main">
+              <span class="segment-dot" data-active={segment.active ? 'true' : 'false'} data-complete={segment.complete ? 'true' : 'false'}></span>
+              <div>
+                <strong>{segment.stageIndex}구간 · {segment.label}</strong>
+                <small>전체 {fmt.num(segment.start, 0)}~{fmt.num(segment.end, 0)}%</small>
+              </div>
+            </div>
+            <div class="segment-stat">
+              <strong class="tnum">{fmt.num(segment.stagePercent, 1)}%</strong>
+              <small>전체 기여 {fmt.num(segment.overallContribution, 1)}%</small>
+            </div>
+            <div class="segment-bar" aria-hidden="true">
+              <span style:width={`${segment.stagePercent}%`}></span>
+            </div>
+          </div>
+        {/each}
+      </div>
     </div>
   </div>
 </section>
@@ -290,6 +441,188 @@
     display: grid;
     grid-template-columns: 3fr 1fr;
     gap: 16px;
+  }
+
+  .progress-card {
+    overflow: hidden;
+  }
+  .progress-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent), var(--info), var(--warm));
+  }
+  .progress-layout {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.82fr) minmax(0, 1.55fr);
+    align-items: center;
+    gap: 24px;
+  }
+  .progress-ring-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .progress-donut {
+    width: min(280px, 78vw);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    position: relative;
+    box-shadow: inset 0 0 0 1px var(--border), var(--shadow-glow);
+  }
+  .progress-donut::after {
+    content: '';
+    position: absolute;
+    inset: 13px;
+    border-radius: 50%;
+    border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+    pointer-events: none;
+  }
+  .progress-donut-hole {
+    width: 58%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: color-mix(in oklab, var(--surface) 90%, var(--bg));
+    border: 1px solid var(--border-faint);
+    box-shadow: var(--shadow-md);
+    text-align: center;
+  }
+  .progress-donut-hole span,
+  .progress-donut-hole small {
+    color: var(--muted);
+    font: 700 11px/1.2 var(--font-display);
+  }
+  .progress-donut-hole strong {
+    color: var(--fg-strong);
+    font: 800 35px/1 var(--font-display);
+    letter-spacing: -0.035em;
+  }
+  .progress-boundary-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .progress-boundary-row span {
+    padding: 4px 8px;
+    border-radius: var(--r-pill);
+    background: var(--surface-sunken);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .progress-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .progress-copy h2 {
+    margin-top: 4px;
+    font: 700 22px/1.25 var(--font-display);
+    letter-spacing: -0.018em;
+    color: var(--fg-strong);
+  }
+  .progress-copy p {
+    margin-top: 8px;
+    color: var(--muted);
+    max-width: 820px;
+  }
+  .progress-copy strong {
+    color: var(--fg-strong);
+  }
+  .progress-formula {
+    width: fit-content;
+    max-width: 100%;
+    padding: 10px 12px;
+    border-radius: var(--r-md);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+  :global([data-theme='dark']) .progress-formula {
+    color: var(--accent);
+  }
+  .segment-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .segment-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px 12px;
+    align-items: center;
+    padding: 13px 14px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--r-md);
+    background: var(--surface-raised);
+  }
+  .segment-row[data-active='true'] {
+    border-color: var(--accent-tint);
+    background: color-mix(in oklab, var(--surface-raised) 82%, var(--accent-soft));
+  }
+  .segment-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .segment-main strong {
+    display: block;
+    color: var(--fg-strong);
+    font: 700 13px/1.2 var(--font-display);
+  }
+  .segment-main small,
+  .segment-stat small {
+    color: var(--muted);
+    font: 600 11px/1.25 var(--font-mono);
+  }
+  .segment-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--border-strong);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--border-strong) 18%, transparent);
+    flex-shrink: 0;
+  }
+  .segment-dot[data-active='true'] {
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-glow);
+  }
+  .segment-dot[data-complete='true'] {
+    background: var(--success);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--success) 18%, transparent);
+  }
+  .segment-stat {
+    text-align: right;
+  }
+  .segment-stat strong {
+    display: block;
+    color: var(--fg-strong);
+    font: 800 18px/1 var(--font-display);
+  }
+  .segment-bar {
+    grid-column: 1 / -1;
+    height: 7px;
+    border-radius: var(--r-pill);
+    background: var(--surface-sunken);
+    overflow: hidden;
+  }
+  .segment-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent) 50%, var(--info)));
   }
 
   .dataset-card {
@@ -449,10 +782,12 @@
   @media (max-width: 1200px) {
     .grid-1-1-1-1 { grid-template-columns: repeat(2, 1fr); }
     .grid-3-1 { grid-template-columns: 1fr; }
+    .progress-layout { grid-template-columns: 1fr; }
     .dataset-metrics { grid-template-columns: repeat(2, 1fr); }
     .dataset-detail-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 760px) {
+    .segment-list { grid-template-columns: 1fr; }
     .dataset-hero { flex-direction: column; }
     .dataset-badges { justify-content: flex-start; min-width: 0; }
     .split-table { overflow-x: auto; }
