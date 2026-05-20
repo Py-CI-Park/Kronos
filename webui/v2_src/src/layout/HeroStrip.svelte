@@ -32,7 +32,7 @@
   function stageState(stage: any, isCurrent: boolean): 'active' | 'done' | 'pending' {
     if (!stage) return 'pending';
     const stat = stage.status;
-    if (['complete', 'completed', 'done', 'finished', 'success', 'succeeded'].includes(stat)) return 'done';
+    if (['ok', 'recovered', 'complete', 'completed', 'done', 'finished', 'success', 'succeeded'].includes(stat)) return 'done';
     if (isCurrent || stat === 'running' || stat === 'active') return 'active';
     return 'pending';
   }

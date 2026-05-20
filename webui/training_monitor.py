@@ -42,7 +42,7 @@ def _parse_utc_timestamp(value: Any) -> Optional[datetime]:
 
 def _load_json(path: Path) -> Dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
         return payload if isinstance(payload, dict) else {}
     except Exception as exc:
         return {"status": "unreadable", "error": str(exc), "path": str(path)}
@@ -130,6 +130,11 @@ def _summarize_stage(payload: Dict[str, Any], source_path: Path) -> Dict[str, An
         "epochs": progress.get("epochs"),
         "step": progress.get("step"),
         "total_steps": progress.get("total_steps"),
+        "phase": progress.get("phase"),
+        "validation_step": progress.get("validation_step"),
+        "validation_total_steps": progress.get("validation_total_steps"),
+        "validation_samples": progress.get("validation_samples"),
+        "validation_fraction": progress.get("validation_fraction"),
         "last_loss": (payload.get("metrics") or {}).get("last_loss") if isinstance(payload.get("metrics"), dict) else None,
         "last_validation_loss": (payload.get("metrics") or {}).get("last_validation_loss") if isinstance(payload.get("metrics"), dict) else None,
         "best_val_loss": (payload.get("metrics") or {}).get("best_val_loss") if isinstance(payload.get("metrics"), dict) else None,
@@ -363,8 +368,8 @@ def list_training_runs(limit: int = 50) -> List[Dict[str, Any]]:
                 status = "running"
             elif "failed" in statuses:
                 status = "failed"
-            elif statuses and statuses <= {"ok", "dry_run"}:
-                status = "ok" if "ok" in statuses else "dry_run"
+            elif statuses and statuses <= {"ok", "dry_run", "recovered"}:
+                status = "ok" if "ok" in statuses or "recovered" in statuses else "dry_run"
             elif statuses:
                 status = sorted(statuses)[0]
             percents = [stage.get("overall_percent") for stage in stages if isinstance(stage.get("overall_percent"), (int, float))]
@@ -424,8 +429,8 @@ def load_training_status(run_name: Optional[str] = None) -> Dict[str, Any]:
         status = "running"
     elif "failed" in statuses:
         status = "failed"
-    elif statuses and statuses <= {"ok", "dry_run"}:
-        status = "ok" if "ok" in statuses else "dry_run"
+    elif statuses and statuses <= {"ok", "dry_run", "recovered"}:
+        status = "ok" if "ok" in statuses or "recovered" in statuses else "dry_run"
     elif statuses:
         status = sorted(statuses)[0]
     else:

@@ -141,6 +141,7 @@ def test_runner_can_build_tokenizer_stage_and_both_stage_handoff(tmp_path):
     assert predictor_spec["env"]["KRONOS_FINETUNED_TOKENIZER_PATH"].endswith(
         "official_smoke\\finetune_tokenizer\\checkpoints\\best_model"
     )
+    assert predictor_spec["tokenizer_handoff_source"] == "best_model_expected"
 
 
 def test_both_stage_can_use_predictor_efficiency_overrides(tmp_path):
@@ -185,6 +186,52 @@ def test_both_stage_can_use_predictor_efficiency_overrides(tmp_path):
     assert predictor_spec["env"]["KRONOS_NUM_WORKERS"] == "2"
     assert predictor_spec["env"]["KRONOS_FINETUNED_TOKENIZER_PATH"].endswith(
         "efficiency_handoff\\finetune_tokenizer\\checkpoints\\best_model"
+    )
+
+
+def test_both_stage_predictor_handoff_falls_back_to_latest_train_model(tmp_path):
+    dataset_dir = tmp_path / "processed_datasets"
+    dataset_dir.mkdir()
+    (dataset_dir / "train_data.pkl").write_bytes(b"not loaded in dry-run")
+    (dataset_dir / "val_data.pkl").write_bytes(b"not loaded in dry-run")
+    latest = (
+        tmp_path
+        / "outputs"
+        / "resume_handoff"
+        / "finetune_tokenizer"
+        / "checkpoints"
+        / "latest_train_model"
+    )
+    latest.mkdir(parents=True)
+    (latest / "model.safetensors").write_bytes(b"weights")
+
+    args = parse_args(
+        [
+            "--horizon",
+            "60",
+            "--mode",
+            "full",
+            "--train-stage",
+            "both",
+            "--start-stage",
+            "predictor",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--output-root",
+            str(tmp_path / "outputs"),
+            "--run-name",
+            "resume_handoff",
+            "--dry-run",
+        ]
+    )
+
+    predictor_spec = build_run(60, args, "full", train_stage="predictor")
+
+    assert predictor_spec["stage_index"] == 2
+    assert predictor_spec["stage_count"] == 2
+    assert predictor_spec["tokenizer_handoff_source"] == "latest_train_model"
+    assert predictor_spec["env"]["KRONOS_FINETUNED_TOKENIZER_PATH"].endswith(
+        "resume_handoff\\finetune_tokenizer\\checkpoints\\latest_train_model"
     )
 
 

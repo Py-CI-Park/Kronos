@@ -129,6 +129,13 @@ class Config:
             "KRONOS_TOKENIZER_EMPTY_CACHE_BEFORE_VAL",
             True,
         )
+        self.tokenizer_validation_log_interval = _env_int(
+            "KRONOS_TOKENIZER_VAL_LOG_INTERVAL",
+            max(1, self.log_interval),
+        )
+        # 0 means "validate the full validation set". Non-zero values are a
+        # recovery/smoke-test guardrail for very large STOM validation pools.
+        self.tokenizer_validation_max_steps = _env_int("KRONOS_TOKENIZER_VAL_MAX_STEPS", 0)
 
         # AdamW optimizer parameters.
         self.adam_beta1 = 0.9

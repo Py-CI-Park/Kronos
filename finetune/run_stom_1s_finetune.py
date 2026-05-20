@@ -35,6 +35,8 @@ SAMPLE_STAGE_PRESETS = {
     "full_window": None,
 }
 TRAIN_STAGES = {"tokenizer", "predictor", "both"}
+RESUME_STAGES = {"tokenizer", "predictor"}
+TOKENIZER_CHECKPOINT_POLICIES = {"best_then_latest", "best", "latest_train_model"}
 
 
 def _utc_now() -> str:
@@ -79,6 +81,44 @@ def sample_stage_budget(stage: Optional[str], horizon: int) -> Optional[Dict[str
     if preset is None:
         raise ValueError(f"Unknown sample stage: {stage}")
     return dict(preset)
+
+
+def _checkpoint_has_model_weights(path: Path) -> bool:
+    """Return True when a Hugging Face checkpoint folder has model weights."""
+
+    if not path.is_dir():
+        return False
+    return any((path / name).exists() for name in ("model.safetensors", "pytorch_model.bin"))
+
+
+def resolve_tokenizer_handoff_checkpoint(
+    save_path: Path,
+    tokenizer_save_folder: str,
+    policy: str,
+) -> tuple[Path, str]:
+    """Pick the tokenizer checkpoint used by the predictor handoff.
+
+    Full STOM runs save ``latest_train_model`` before tokenizer validation.
+    Validation can be much slower than training when the validation batch size
+    is forced to 1 for OOM safety, so the default policy keeps the official
+    ``best_model`` path when it exists and safely falls back to the trained
+    pre-validation checkpoint when it is the only available checkpoint.
+    """
+
+    checkpoint_root = save_path / tokenizer_save_folder / "checkpoints"
+    best_model = checkpoint_root / "best_model"
+    latest_train_model = checkpoint_root / "latest_train_model"
+    if policy == "best":
+        return best_model, "best_model"
+    if policy == "latest_train_model":
+        return latest_train_model, "latest_train_model"
+    if policy != "best_then_latest":
+        raise ValueError(f"Unknown tokenizer checkpoint policy: {policy}")
+    if _checkpoint_has_model_weights(best_model):
+        return best_model, "best_model"
+    if _checkpoint_has_model_weights(latest_train_model):
+        return latest_train_model, "latest_train_model"
+    return best_model, "best_model_expected"
 
 
 def build_run(
@@ -191,11 +231,19 @@ def build_run(
                 "KRONOS_DISABLE_DDP": "1",
             }
         )
+    tokenizer_handoff_checkpoint: Optional[Path] = None
+    tokenizer_handoff_source: Optional[str] = None
     if args.finetuned_tokenizer_path:
-        env["KRONOS_FINETUNED_TOKENIZER_PATH"] = str(Path(args.finetuned_tokenizer_path).resolve())
+        tokenizer_handoff_checkpoint = Path(args.finetuned_tokenizer_path).resolve()
+        tokenizer_handoff_source = "explicit"
+        env["KRONOS_FINETUNED_TOKENIZER_PATH"] = str(tokenizer_handoff_checkpoint)
     elif normalized_stage == "predictor" and getattr(args, "train_stage", "predictor") == "both":
-        tokenizer_checkpoint = save_path / args.tokenizer_save_folder / "checkpoints" / "best_model"
-        env["KRONOS_FINETUNED_TOKENIZER_PATH"] = str(tokenizer_checkpoint)
+        tokenizer_handoff_checkpoint, tokenizer_handoff_source = resolve_tokenizer_handoff_checkpoint(
+            save_path,
+            args.tokenizer_save_folder,
+            getattr(args, "tokenizer_checkpoint_policy", "best_then_latest"),
+        )
+        env["KRONOS_FINETUNED_TOKENIZER_PATH"] = str(tokenizer_handoff_checkpoint)
     if args.finetuned_predictor_path:
         env["KRONOS_FINETUNED_PREDICTOR_PATH"] = str(Path(args.finetuned_predictor_path).resolve())
 
@@ -232,6 +280,9 @@ def build_run(
         "manifest_path": str(manifest_path),
         "command": command,
         "env": env,
+        "tokenizer_checkpoint_policy": getattr(args, "tokenizer_checkpoint_policy", "best_then_latest"),
+        "tokenizer_handoff_checkpoint": str(tokenizer_handoff_checkpoint) if tokenizer_handoff_checkpoint else None,
+        "tokenizer_handoff_source": tokenizer_handoff_source,
     }
 
 
@@ -359,6 +410,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Run tokenizer, predictor, or tokenizer then predictor. Official Kronos fine-tuning uses both.",
     )
     parser.add_argument(
+        "--start-stage",
+        choices=sorted(RESUME_STAGES),
+        default=None,
+        help="Resume a --train-stage both run from tokenizer or predictor while preserving 2-stage progress.",
+    )
+    parser.add_argument(
         "--sample-stage",
         choices=sorted(SAMPLE_STAGE_PRESETS),
         default=None,
@@ -386,6 +443,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help=(
             "Tokenizer validation-only batch-size override. "
             "Defaults to 1 in full mode to avoid post-training CUDA OOM."
+        ),
+    )
+    parser.add_argument(
+        "--tokenizer-checkpoint-policy",
+        choices=sorted(TOKENIZER_CHECKPOINT_POLICIES),
+        default="best_then_latest",
+        help=(
+            "Predictor handoff policy for --train-stage both. "
+            "best_then_latest uses best_model when present and latest_train_model when validation has not finished."
         ),
     )
     parser.add_argument(
@@ -475,11 +541,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise ValueError("--dataset-dir can only be used with --horizon 30 or --horizon 60")
     if args.run_name and args.horizon == "all":
         raise ValueError("--run-name can only be used with --horizon 30 or --horizon 60")
+    if args.start_stage and args.train_stage != "both":
+        raise ValueError("--start-stage is only valid with --train-stage both")
 
     horizons: List[int] = [30, 60] if args.horizon == "all" else [int(args.horizon)]
     results = []
     for horizon in horizons:
         stages = ["tokenizer", "predictor"] if args.train_stage == "both" else [args.train_stage]
+        if args.start_stage:
+            stages = stages[stages.index(args.start_stage):]
         for stage in stages:
             spec = build_run(horizon, args, args.mode, train_stage=stage)
             result = execute_run(spec, dry_run=args.dry_run)

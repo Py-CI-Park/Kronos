@@ -22,6 +22,10 @@ TRAIN_STEP_RE = re.compile(
     r"LR\s+(?P<lr>[0-9.eE+-]+),\s*Loss:\s*(?P<loss>[0-9.eE+-]+)"
 )
 VALIDATION_LOSS_RE = re.compile(r"Validation Loss:\s*(?P<validation_loss>[0-9.eE+-]+)")
+TOKENIZER_VALIDATION_PROGRESS_RE = re.compile(
+    r"Tokenizer validation progress:\s*Step\s+(?P<validation_step>\d+)\/(?P<validation_total_steps>\d+),\s*"
+    r"Samples\s+(?P<validation_samples>\d+),\s*Loss:\s*(?P<validation_loss>[0-9.eE+-]+)"
+)
 BEST_MODEL_RE = re.compile(
     r"Best model saved to\s+(?P<best_model_path>.+?)\s*\(Val Loss:\s*(?P<best_val_loss>[0-9.eE+-]+)\)"
 )
@@ -59,6 +63,16 @@ def parse_training_log_line(line: str) -> Dict[str, Any]:
     match = VALIDATION_LOSS_RE.search(line)
     if match:
         return {"event": "validation", "validation_loss": float(match.group("validation_loss"))}
+
+    match = TOKENIZER_VALIDATION_PROGRESS_RE.search(line)
+    if match:
+        return {
+            "event": "validation_progress",
+            "validation_step": int(match.group("validation_step")),
+            "validation_total_steps": int(match.group("validation_total_steps")),
+            "validation_samples": int(match.group("validation_samples")),
+            "validation_loss": float(match.group("validation_loss")),
+        }
 
     match = BEST_MODEL_RE.search(line)
     if match:
@@ -123,11 +137,16 @@ class TrainingProgressTracker:
     best_model_path: Optional[str] = None
     train_dataset_size: Optional[int] = None
     val_dataset_size: Optional[int] = None
+    validation_step: int = 0
+    validation_total_steps: int = 0
+    validation_samples: int = 0
+    phase: str = "created"
     returncode: Optional[int] = None
 
     def start(self, pid: Optional[int] = None) -> Dict[str, Any]:
         self.pid = pid
         self.status = "running"
+        self.phase = "running"
         return self.write()
 
     def observe_line(self, line: str) -> Dict[str, Any]:
@@ -141,11 +160,20 @@ class TrainingProgressTracker:
             self.total_steps = parsed["total_steps"]
             self.last_learning_rate = parsed["learning_rate"]
             self.last_loss = parsed["loss"]
+            self.phase = "training"
         elif event == "validation":
             self.last_validation_loss = parsed["validation_loss"]
+            self.phase = "validation_complete"
+        elif event == "validation_progress":
+            self.validation_step = parsed["validation_step"]
+            self.validation_total_steps = parsed["validation_total_steps"]
+            self.validation_samples = parsed["validation_samples"]
+            self.last_validation_loss = parsed["validation_loss"]
+            self.phase = "validation"
         elif event == "best_model":
             self.best_val_loss = parsed["best_val_loss"]
             self.best_model_path = parsed["best_model_path"]
+            self.phase = "checkpoint"
         elif event == "dataset_size":
             self.train_dataset_size = parsed["train_dataset_size"]
             self.val_dataset_size = parsed["val_dataset_size"]
@@ -157,10 +185,12 @@ class TrainingProgressTracker:
     def finish(self, returncode: int) -> Dict[str, Any]:
         self.returncode = returncode
         self.status = "ok" if returncode == 0 else "failed"
+        self.phase = "completed" if returncode == 0 else "failed"
         return self.write()
 
     def fail_before_start(self, error: str) -> Dict[str, Any]:
         self.status = "failed"
+        self.phase = "failed"
         self.last_line = error
         self.returncode = -1
         return self.write(extra={"error": error})
@@ -189,6 +219,13 @@ class TrainingProgressTracker:
         else:
             completed_steps = 0
             stage_fraction = 0.0
+        validation_fraction = 0.0
+        if self.validation_total_steps > 0:
+            validation_fraction = min(1.0, max(0.0, self.validation_step / float(self.validation_total_steps)))
+            # Tokenizer validation starts after the train loop has completed.
+            # Reserve the final 2% of the stage for validation so long-running
+            # validation no longer appears frozen at the last training log line.
+            stage_fraction = max(stage_fraction, 0.98 + 0.02 * validation_fraction)
         stage_fraction = max(0.0, min(1.0, stage_fraction))
         if self.status == "dry_run":
             overall_fraction = 0.0
@@ -227,6 +264,7 @@ class TrainingProgressTracker:
                 "overall_percent": round(overall_fraction * 100.0, 4),
             },
             "progress": {
+                "phase": self.phase,
                 "epoch": self.current_epoch,
                 "epochs": self.epochs or epochs,
                 "step": self.current_step,
@@ -234,6 +272,10 @@ class TrainingProgressTracker:
                 "completed_steps": completed_steps,
                 "stage_fraction": stage_fraction,
                 "overall_fraction": overall_fraction,
+                "validation_step": self.validation_step,
+                "validation_total_steps": self.validation_total_steps,
+                "validation_samples": self.validation_samples,
+                "validation_fraction": validation_fraction,
             },
             "metrics": {
                 "last_loss": self.last_loss,

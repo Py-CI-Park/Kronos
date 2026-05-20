@@ -265,9 +265,18 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
         model.eval()
         tot_val_loss_sum_rank = 0.0
         val_sample_count_rank = 0
+        val_total_steps = len(val_loader)
+        val_log_interval = max(1, int(config.get('tokenizer_validation_log_interval', config['log_interval']) or 1))
+        val_max_steps = max(0, int(config.get('tokenizer_validation_max_steps', 0) or 0))
+        if rank == 0:
+            val_limit_label = val_max_steps if val_max_steps > 0 else "all"
+            print(
+                f"[Rank {rank}] Tokenizer validation started. "
+                f"Steps: {val_total_steps}, Log interval: {val_log_interval}, Max steps: {val_limit_label}"
+            )
         try:
             with torch.inference_mode():
-                for ori_batch_x, _ in val_loader:
+                for val_step_idx, (ori_batch_x, _) in enumerate(val_loader, start=1):
                     ori_batch_x = ori_batch_x.to(device, non_blocking=True)
                     with autocast_ctx():
                         zs, _, _, _ = model(ori_batch_x)
@@ -276,6 +285,30 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
 
                     tot_val_loss_sum_rank += val_loss_item.item() * ori_batch_x.size(0)
                     val_sample_count_rank += ori_batch_x.size(0)
+                    should_log_validation = (
+                        val_step_idx == 1
+                        or val_step_idx % val_log_interval == 0
+                        or val_step_idx == val_total_steps
+                        or (val_max_steps > 0 and val_step_idx >= val_max_steps)
+                    )
+                    if rank == 0 and should_log_validation:
+                        running_val_loss = (
+                            tot_val_loss_sum_rank / val_sample_count_rank
+                            if val_sample_count_rank > 0
+                            else 0.0
+                        )
+                        print(
+                            f"[Rank {rank}] Tokenizer validation progress: "
+                            f"Step {val_step_idx}/{val_total_steps}, Samples {val_sample_count_rank}, "
+                            f"Loss: {running_val_loss:.4f}"
+                        )
+                    if val_max_steps > 0 and val_step_idx >= val_max_steps:
+                        if rank == 0:
+                            print(
+                                f"[Rank {rank}] Tokenizer validation capped at "
+                                f"{val_step_idx}/{val_total_steps} steps by KRONOS_TOKENIZER_VAL_MAX_STEPS."
+                            )
+                        break
         except Exception as exc:
             if torch.cuda.is_available() and is_cuda_oom_error(exc):
                 torch.cuda.empty_cache()

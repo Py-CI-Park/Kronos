@@ -159,7 +159,7 @@
         stagePercent,
         overallContribution: stagePercent / count,
         active,
-        complete: stagePercent >= 99.95 || stage?.status === 'ok',
+        complete: stagePercent >= 99.95 || ['ok', 'recovered'].includes(stage?.status),
         status: stage?.status ?? (active ? latest?.status : undefined),
       };
     });

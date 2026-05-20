@@ -7,7 +7,7 @@
   let stages = $derived<any[]>(Array.isArray(status?.stages) ? status.stages : []);
 
   function isDone(s: any): boolean {
-    return ['complete', 'completed', 'done', 'finished', 'success', 'succeeded'].includes(s?.status);
+    return ['ok', 'recovered', 'complete', 'completed', 'done', 'finished', 'success', 'succeeded'].includes(s?.status);
   }
 
   function isActive(s: any): boolean {

@@ -85,6 +85,12 @@ export interface TrainingStage {
   eta_seconds?: number;
   samples_per_second?: number;
   last_loss?: number | null;
+  last_validation_loss?: number | null;
+  phase?: string | null;
+  validation_step?: number | null;
+  validation_total_steps?: number | null;
+  validation_samples?: number | null;
+  validation_fraction?: number | null;
   epoch?: number | null;
   epochs?: number | null;
   status?: string;
