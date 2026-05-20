@@ -57,9 +57,9 @@
   const splitRows = $derived.by<SplitRow[]>(() => {
     const splits = dataset?.splits ?? {};
     const rows: Array<{ key: 'train' | 'val' | 'test'; label: string; tone: 'accent' | 'info' | 'warn' }> = [
-      { key: 'train', label: '??', tone: 'accent' },
-      { key: 'val', label: '??', tone: 'info' },
-      { key: 'test', label: '???', tone: 'warn' },
+      { key: 'train', label: '학습', tone: 'accent' },
+      { key: 'val', label: '검증', tone: 'info' },
+      { key: 'test', label: '테스트', tone: 'warn' },
     ];
     return rows
       .map((row) => ({ ...row, summary: splits[row.key] }))
@@ -78,47 +78,47 @@
 
   function featureLabel(value: string): string {
     const labels: Record<string, string> = {
-      open: '??',
-      high: '??',
-      low: '??',
-      close: '??/???',
-      vol: '???',
-      amt: '????',
-      minute: '?',
-      hour: '?',
-      weekday: '??',
-      day: '?',
-      month: '?',
+      open: '시가',
+      high: '고가',
+      low: '저가',
+      close: '종가/현재가',
+      vol: '거래량',
+      amt: '거래대금',
+      minute: '분',
+      hour: '시',
+      weekday: '요일',
+      day: '일',
+      month: '월',
     };
     return labels[value] ?? value;
   }
 </script>
 
-<!-- ===== ?? ??? ?? ===== -->
+<!-- ===== 핵심 실시간 지표 ===== -->
 <section class="grid-1-1-1-1">
   <div class="metric glow">
     <div class="metric-head">
-      <span class="metric-label">?? ??</span>
+      <span class="metric-label">현재 손실</span>
       {#if trend.dir !== 'flat'}
         <span class="delta {trend.dir === 'down' ? 'down' : 'up'}">
-          {trend.dir === 'down' ? '? ??' : '? ??'} {fmt.num(trend.pct, 1)}%
+          {trend.dir === 'down' ? '↓ 개선' : '↑ 상승'} {fmt.num(trend.pct, 1)}%
         </span>
       {:else}
-        <span class="delta flat">? 0.0%</span>
+        <span class="delta flat">→ 0.0%</span>
       {/if}
     </div>
     <div class="metric-value tnum">
-      {m.loss != null ? m.loss.toFixed(4) : '-'}<span class="metric-unit">???</span>
+      {m.loss != null ? m.loss.toFixed(4) : '-'}<span class="metric-unit">최근값</span>
     </div>
     <div class="metric-foot">
-      ?? <span class="text-mono" style="color:var(--fg)">{stats.mean != null ? stats.mean.toFixed(4) : '-'}</span>
-      ? <span class="text-mono" style="color:var(--fg)">{stats.std != null ? stats.std.toFixed(4) : '-'}</span>
+      평균 <span class="text-mono" style="color:var(--fg)">{stats.mean != null ? stats.mean.toFixed(4) : '-'}</span>
+      ± <span class="text-mono" style="color:var(--fg)">{stats.std != null ? stats.std.toFixed(4) : '-'}</span>
     </div>
   </div>
 
   <div class="metric">
     <div class="metric-head">
-      <span class="metric-label">?? ???</span>
+      <span class="metric-label">단계 진행률</span>
       <span class="pill accent" style="padding:2px 8px;font-size:10px">step</span>
     </div>
     <div class="metric-value tnum">
@@ -132,13 +132,13 @@
 
   <div class="metric">
     <div class="metric-head">
-      <span class="metric-label">?? ??</span>
+      <span class="metric-label">처리 속도</span>
       <span class="pill success" style="padding:2px 8px;font-size:10px">live</span>
     </div>
     <div class="metric-value tnum">
       {fmt.num(m.samplesPerSec, 1)}<span class="metric-unit">samples/s</span>
     </div>
-    <div class="metric-foot">?? batch ?? ???</div>
+    <div class="metric-foot">현재 batch 기준 처리량</div>
   </div>
 
   <div class="metric">
@@ -150,62 +150,62 @@
       {lr != null ? lr.toExponential(2) : '-'}
     </div>
     <div class="metric-foot">
-      ?? ?? <span class="text-mono" style="color:var(--fg)">{lr != null ? lr.toFixed(6) : '-'}</span>
+      소수 표기 <span class="text-mono" style="color:var(--fg)">{lr != null ? lr.toFixed(6) : '-'}</span>
     </div>
   </div>
 </section>
 
-<!-- ===== ?? ??? ?? / ?? ?? ===== -->
+<!-- ===== 학습 데이터 범위 / 특징 요약 ===== -->
 {#if dataset?.available}
-  <section class="card dataset-card glow" aria-label="STOM ?? ??? ?? ??">
+  <section class="card dataset-card glow" aria-label="STOM 학습 데이터 범위 요약">
     <div class="dataset-hero">
       <div>
         <div class="text-eyebrow">DATASET SCOPE</div>
-        <h2>STOM 2025 ?? 1?? ? pred{dataset.horizon_seconds ?? dataset.predict_window ?? '-'}</h2>
+        <h2>STOM 2025 전체 1초봉 · pred{dataset.horizon_seconds ?? dataset.predict_window ?? '-'}</h2>
         <p>
-          ?? Kronos OHLCV ??? ?? <strong>{dataset.features?.map(featureLabel).join(' ? ')}</strong>? ????,
-          ?? feature? <strong>{dataset.time_features?.map(featureLabel).join(' ? ')}</strong>? ?????.
+          공식 Kronos OHLCV 입력에 맞춰 <strong>{dataset.features?.map(featureLabel).join(' · ')}</strong>를 사용하고,
+          시간 feature는 <strong>{dataset.time_features?.map(featureLabel).join(' · ')}</strong>로 보강합니다.
         </p>
       </div>
-      <div class="dataset-badges" aria-label="??? ??">
+      <div class="dataset-badges" aria-label="데이터 설정">
         <span class="pill accent">{dataset.freq ?? '1s'}</span>
         <span class="pill">{hms(dataset.range?.time_start)}~{hms(dataset.range?.time_end)}</span>
         <span class="pill">lookback {fmt.int(dataset.lookback_window)}</span>
         <span class="pill">window {fmt.int(dataset.sample_window)}</span>
-        {#if dataset.regularize_1s}<span class="pill success">1? ???</span>{/if}
+        {#if dataset.regularize_1s}<span class="pill success">1초 정규화</span>{/if}
       </div>
     </div>
 
     <div class="dataset-metrics">
       <div class="dataset-mini">
-        <span>?? samples</span>
+        <span>학습 samples</span>
         <strong class="tnum">{fmt.int(dataset.current_targets?.train_samples)}</strong>
-        <small>?? {fmt.int(dataset.current_targets?.val_samples)}</small>
+        <small>검증 {fmt.int(dataset.current_targets?.val_samples)}</small>
       </div>
       <div class="dataset-mini">
-        <span>?? rows</span>
+        <span>전체 rows</span>
         <strong class="tnum">{fmt.int(dataset.counts?.exported_row_count)}</strong>
-        <small>?? {fmt.int(dataset.counts?.exported_group_count)}</small>
+        <small>그룹 {fmt.int(dataset.counts?.exported_group_count)}</small>
       </div>
       <div class="dataset-mini">
-        <span>?? ???</span>
+        <span>종목 테이블</span>
         <strong class="tnum">{fmt.int(dataset.counts?.tables_with_rows)}</strong>
-        <small>?? {fmt.int(dataset.counts?.table_count)} ? 0? {fmt.int(dataset.counts?.tables_zero_rows)}</small>
+        <small>전체 {fmt.int(dataset.counts?.table_count)} · 0행 {fmt.int(dataset.counts?.tables_zero_rows)}</small>
       </div>
       <div class="dataset-mini">
-        <span>?? ???</span>
+        <span>실제 거래일</span>
         <strong>{ymd(dataset.range?.actual_start)}</strong>
         <small>~ {ymd(dataset.range?.actual_end)}</small>
       </div>
     </div>
 
     <div class="dataset-detail-grid">
-      <div class="split-table" role="table" aria-label="?? ?? ??? ??">
+      <div class="split-table" role="table" aria-label="학습 검증 테스트 분할">
         <div class="split-row split-head" role="row">
-          <span>??</span>
-          <span>??</span>
-          <span>??</span>
-          <span>??</span>
+          <span>구간</span>
+          <span>기간</span>
+          <span>세션</span>
+          <span>그룹</span>
           <span>rows</span>
           <span>samples</span>
         </div>
@@ -239,7 +239,7 @@
           </div>
         </div>
         <div class="dataset-note">
-          <strong>??:</strong> price_mode? <code>{dataset.price_mode ?? '-'}</code>?? STOM tick DB? ??? ???? OHLC? ?????.
+          <strong>주의:</strong> price_mode가 <code>{dataset.price_mode ?? '-'}</code>이면 STOM tick DB의 현재가 기반으로 OHLC가 구성됩니다.
           {#if dataset.warnings?.length}
             <br />{dataset.warnings[0]}
           {/if}
@@ -249,35 +249,35 @@
 
     <div class="dataset-source text-caption">
       DB: <span class="text-mono">{dataset.source_db ?? '-'}</span>
-      ? Report: <span class="text-mono">{dataset.report_path ?? '-'}</span>
+      · Report: <span class="text-mono">{dataset.report_path ?? '-'}</span>
     </div>
   </section>
 {:else if dataset}
-  <section class="card dataset-card dataset-card-warn" aria-label="STOM ?? ??? ?? ?? ??">
+  <section class="card dataset-card dataset-card-warn" aria-label="STOM 학습 데이터 범위 요약 없음">
     <div class="dataset-hero">
       <div>
         <div class="text-eyebrow">DATASET SCOPE</div>
-        <h2>??? ??? ?? ?? ?????</h2>
-        <p>{dataset.message ?? '?? run? Qlib export report? ?? ????.'}</p>
+        <h2>데이터 요약을 아직 읽지 못했습니다</h2>
+        <p>{dataset.message ?? '현재 run의 Qlib export report를 찾는 중입니다.'}</p>
       </div>
-      <span class="pill warn">?? ??</span>
+      <span class="pill warn">확인 필요</span>
     </div>
   </section>
 {/if}
 
-<!-- ===== ?? ?? + ??? ===== -->
+<!-- ===== 손실 곡선 + 변동성 ===== -->
 <section class="grid-3-1">
   <W3LossCurve />
   <W6LossVolatility {stats} {trend} />
 </section>
 
-<!-- ===== ETA ???? ===== -->
+<!-- ===== ETA 타임라인 ===== -->
 <W4EtaTimeline />
 
-<!-- ===== GPU ?? ===== -->
+<!-- ===== GPU 추세 ===== -->
 <W5GpuSparkline />
 
-<!-- ===== ?? tail ===== -->
+<!-- ===== 로그 tail ===== -->
 <W9LogTail />
 
 <style>
