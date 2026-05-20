@@ -11,7 +11,7 @@
 - [x] **데이터셋 무결성**: `finetune/qlib_exports/stom_1s_grid_pred60_2025/processed_datasets/{train,val,test}_data.pkl` 존재
 - [x] **GPU 가용**: RTX 4080 SUPER, 16 GiB, 현재 사용 3.3 GiB (Flask 무관)
 - [x] **디스크 가용**: D:\ 528 GB free (학습 산출물 약 20 GiB 예상)
-- [x] **재학습 시간 인지**: 약 83시간 (3.5일) — 백그라운드 실행 필요
+- [x] **재학습 시간 인지**: 옵션 D 성공 시 6~12시간 목표, 보수적으로 8~16시간 — 백그라운드 실행 필요
 
 ---
 
@@ -34,7 +34,7 @@ Rename-Item -Path 'stom_1s_grid_pred60_2025_full_small' -NewName 'stom_1s_grid_p
 
 > **시스템 사양 실측**: AMD Threadripper 3990X (64 cores), RTX 4080 SUPER 16 GiB (free 12.4), System RAM 273 GB, PyTorch 2.9.0 + CUDA 12.8 + bf16 native (Ada Lovelace sm_89).
 > **OOM 안전성**: validation batch 는 여전히 1 로 강제. train batch 4 → **64** 로 상향 (AMP bf16 으로 VRAM ~12 GiB, 안전 4 GiB).
-> **예상 시간 단축**: 83h → **약 5~8h** (10~16x). 첫 epoch torch.compile max-autotune 컴파일 오버헤드 ~120s.
+> **예상 시간 단축**: 83h → **약 6~12h 목표 / 8~16h 보수**. 첫 epoch torch.compile max-autotune 컴파일 오버헤드 ~120s. 실제 ETA는 첫 5~10분 sps 로 재계산한다.
 
 ```powershell
 cd D:\Chanil_Park\Project\Programming\Kronos
@@ -54,8 +54,12 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
   --output-root finetune\outputs `
   --run-name stom_1s_grid_pred60_2025_full_small `
   --dataset-sample-mode full_sequential `
+  --n-train-iter 18806883 `
+  --n-val-iter 3925397 `
   --tokenizer-batch-size 64 `
   --tokenizer-val-batch-size 1 `
+  --predictor-batch-size 16 `
+  --predictor-num-workers 2 `
   --epochs 1 `
   --num-workers 12 `
   --persistent-workers `
@@ -103,10 +107,20 @@ $job = Start-Job -ScriptBlock {
         --output-root 'finetune\outputs' `
         --run-name 'stom_1s_grid_pred60_2025_full_small' `
         --dataset-sample-mode full_sequential `
-        --tokenizer-batch-size 4 `
+        --n-train-iter 18806883 `
+        --n-val-iter 3925397 `
+        --tokenizer-batch-size 64 `
         --tokenizer-val-batch-size 1 `
+        --predictor-batch-size 16 `
+        --predictor-num-workers 2 `
         --epochs 1 `
-        --num-workers 0
+        --num-workers 12 `
+        --persistent-workers `
+        --prefetch-factor 6 `
+        --tokenizer-amp `
+        --tokenizer-amp-dtype bf16 `
+        --tokenizer-compile `
+        --tokenizer-compile-mode max-autotune
 }
 Write-Host "Job started — id=$($job.Id), name=$($job.Name)"
 # 종료: Stop-Job -Id $job.Id; Remove-Job -Id $job.Id
@@ -118,7 +132,7 @@ Write-Host "Job started — id=$($job.Id), name=$($job.Name)"
 Start-Process powershell -ArgumentList '-NoExit', '-Command', @'
 cd D:\Chanil_Park\Project\Programming\Kronos
 $env:KRONOS_TOKENIZER_VAL_BATCH_SIZE="1"
-C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py --horizon 60 --mode full --train-stage both --dataset-dir finetune\qlib_exports\stom_1s_grid_pred60_2025\processed_datasets --output-root finetune\outputs --run-name stom_1s_grid_pred60_2025_full_small --dataset-sample-mode full_sequential --tokenizer-batch-size 4 --tokenizer-val-batch-size 1 --epochs 1 --num-workers 0
+C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py --horizon 60 --mode full --train-stage both --dataset-dir finetune\qlib_exports\stom_1s_grid_pred60_2025\processed_datasets --output-root finetune\outputs --run-name stom_1s_grid_pred60_2025_full_small --dataset-sample-mode full_sequential --n-train-iter 18806883 --n-val-iter 3925397 --tokenizer-batch-size 64 --tokenizer-val-batch-size 1 --predictor-batch-size 16 --predictor-num-workers 2 --epochs 1 --num-workers 12 --persistent-workers --prefetch-factor 6 --tokenizer-amp --tokenizer-amp-dtype bf16 --tokenizer-compile --tokenizer-compile-mode max-autotune
 '@
 ```
 
@@ -168,12 +182,13 @@ while ($true) {
 
 | 단계 | 예상 시간 | 누적 |
 |---|---:|---:|
-| tokenizer train loop (step 0 → 4.7M) | ~83h | 83h |
-| tokenizer validation (batch=1 으로 OOM 회피) | ~2h | 85h |
-| predictor train loop | ~20h | 105h |
-| predictor validation | ~1h | 106h |
+| tokenizer compile/warmup | ~1~5분 | ~5분 |
+| tokenizer train loop (약 294k step, batch 64, train 18,806,883 samples) | ~5~10h | ~5~10h |
+| tokenizer validation (batch=1, val 3,925,397 samples) | ~30~120min | ~6~12h |
+| predictor train loop (batch=16, num_workers=2) | ~1~4h | ~7~16h |
+| predictor validation | ~10~30min | ~7~16h |
 
-총 **약 4.5일** 예상.
+총 **약 6~12시간 목표 / 8~16시간 보수** 예상.
 
 ---
 

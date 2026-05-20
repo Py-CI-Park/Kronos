@@ -15,7 +15,7 @@
 - **무엇을 하나**: validation OOM 으로 실패한 STOM tokenizer 학습을 옵션 D (풀 최대 활용) 변수로 재시작하고, v2 대시보드에서 실시간 모니터링.
 - **왜**: 이전 학습 99.98% (step 4.7M 거의 끝) 에서 validation forward OOM → checkpoint 0개 → predictor 미시작 → STOM 예측 진단/Forecast 워크벤치 검증 불가.
 - **무엇이 준비됐나**: finetune 코드에 AMP/torch.compile/persistent_workers opt-in flag 추가 (commit `dc7315a`), W9 로그 tail 위젯 추가 (commit `0563734`).
-- **남은 1단계**: 사용자가 §4 명령어를 별도 PowerShell 콘솔에 붙여넣고 실행. 5~8시간 후 학습 종료.
+- **남은 1단계**: 사용자가 §4 명령어를 별도 PowerShell 콘솔에 붙여넣고 실행. 보정된 명령은 이전 실패 run 과 동일한 `n-train-iter=18806883`, `n-val-iter=3925397` 및 predictor 고속 설정을 포함한다. 옵션 D 성공 시 6~12시간 목표, 보수적으로 8~16시간 후 학습 종료 예상.
 
 ---
 
@@ -107,8 +107,12 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
   --output-root finetune\outputs `
   --run-name stom_1s_grid_pred60_2025_full_small `
   --dataset-sample-mode full_sequential `
+  --n-train-iter 18806883 `
+  --n-val-iter 3925397 `
   --tokenizer-batch-size 64 `
   --tokenizer-val-batch-size 1 `
+  --predictor-batch-size 16 `
+  --predictor-num-workers 2 `
   --epochs 1 `
   --num-workers 12 `
   --persistent-workers `
@@ -128,7 +132,7 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
 | `--prefetch-factor` | **6** | RAM 273 GB 이라 부담 0 |
 | `--persistent-workers` | ✅ | DataLoader 재초기화 비용 ↓ |
 | `--tokenizer-amp-dtype` | **bf16** | 4080 SUPER native + GradScaler 불필요 |
-| `--tokenizer-compile-mode` | **max-autotune** | 5~8시간 학습이라 컴파일 오버헤드 (~120s) ROI 충분 |
+| `--tokenizer-compile-mode` | **max-autotune** | 6~12시간 목표 학습이라 컴파일 오버헤드 (~120s) ROI 충분 |
 | `--tokenizer-val-batch-size` | **1** | validation OOM 회피 (env 강제) |
 
 ---
@@ -139,13 +143,13 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
 |---|---:|---:|
 | 명령 실행 → 첫 step 진입 | ~30s | 30s |
 | **torch.compile max-autotune 1st epoch** | ~60~180s | ~3분 |
-| tokenizer train loop (587k step, batch 64) | ~4~6h | ~4~6h |
-| tokenizer validation (batch=1) | ~30~60min | ~5~7h |
-| predictor train loop | ~1~2h (batch 64 + compile) | ~6~9h |
-| predictor validation | ~10~30min | ~6~9h |
-| **총 예상** | | **5~8h** |
+| tokenizer train loop (약 294k step, batch 64, train 18,806,883 samples) | ~5~10h | ~5~10h |
+| tokenizer validation (batch=1, val 3,925,397 samples) | ~30~120min | ~6~12h |
+| predictor train loop | ~1~4h (batch 16 + num_workers 2) | ~7~16h |
+| predictor validation | ~10~30min | ~7~16h |
+| **총 예상** | | **6~12h 목표 / 8~16h 보수** |
 
-기존 83h 대비 **10~16x faster**.
+기존 83h 대비 **약 5~14x faster 목표**. 실제 ETA는 첫 5~10분 sps 실측으로 재계산한다.
 
 ---
 
@@ -160,7 +164,7 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
 | 1분 | `[Rank 0] BATCHSIZE (per GPU): 64` |
 | 1분 | `[Rank 0] AMP enabled — dtype=bf16 scaler=False` (초록) |
 | 1분 | `[Rank 0] torch.compile enabled — mode=max-autotune fullgraph=False` (시안) |
-| 3분 후 | `[Rank 0, Epoch 1/1, Step N/587000] LR 0.00X (주황), Loss: -0.XX (시안)` |
+| 3분 후 | `[Rank 0, Epoch 1/1, Step N/294000] LR 0.00X (주황), Loss: -0.XX (시안)` |
 | 학습 중 | `samples/s=500~700 (초록)` |
 | OOM 발생 시 | `out of memory / Traceback (빨강 강조)` |
 | checkpoint 저장 시 | `checkpoint saved / pre-validation epoch 1 (초록)` |
@@ -178,7 +182,7 @@ C:\Python\64\Python3119\python.exe finetune\run_stom_1s_finetune.py `
 - 온도 ~60~70°C (학습 부하 적정)
 
 ### 6.4 ETA (W2/W4)
-- 학습 시작 5분 후 **5~8시간** 표시 → 옵션 D 작동
+- 학습 시작 5~10분 후 **6~12시간 목표 / 8~16시간 보수** 범위 표시 → 옵션 D 작동
 - KST 완료 예상 시각 자동 표시
 
 ---
@@ -269,7 +273,7 @@ curl -s http://127.0.0.1:5070/api/training/status | python -m json.tool
 
 - W9 로그 tail 카드 확인 → AMP/compile 활성 정상인지 검증
 - 메트릭 카드의 sps 가 500+ 인지 확인 → 옵션 D 작동 신호
-- ETA 5~8시간 표시 확인
+- ETA 6~12시간 목표 또는 8~16시간 보수 범위 표시 확인
 - 사용자에게 진행률 보고
 
 ### 10.4 학습이 실패했다면 (OOM 등)
@@ -314,7 +318,7 @@ curl -s http://127.0.0.1:5070/api/training/status | python -m json.tool
 
 ## 13. 한 줄 미션 (다음 AI 에게)
 
-> **"사용자가 §4 명령으로 옵션 D 학습을 시작했는지 확인하고, W9 로그 tail + 메트릭 카드의 sps/ETA 로 옵션 D 작동을 검증한 뒤, 5~8시간 후 학습이 끝나면 §8 다음 단계 (예측 검증 + STOM 진단 + P5 gate) 로 자연스럽게 이어가라. OOM/compile 실패 시 §7 폴백 명령 제시."**
+> **"사용자가 §4 명령으로 옵션 D 학습을 시작했는지 확인하고, W9 로그 tail + 메트릭 카드의 sps/ETA 로 옵션 D 작동을 검증한 뒤, 6~12시간 목표 또는 보수 8~16시간 후 학습이 끝나면 §8 다음 단계 (예측 검증 + STOM 진단 + P5 gate) 로 자연스럽게 이어가라. OOM/compile 실패 시 §7 폴백 명령 제시."**
 
 ---
 
