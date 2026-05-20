@@ -58,3 +58,28 @@ C:\Python\64\Python3119\python.exe -m pytest tests\test_v2_blueprint_isolation.p
    - `samples_per_second > 0`인지
    - GPU 사용률/VRAM이 증가하는지
 4. 만약 batch 64에서 실제 CUDA OOM이 발생하면 이 기록과 분리하여 batch 32 또는 16 fallback을 진행한다.
+
+## 2026-05-20 10:25 재시작 결과
+
+CP949 실패 run은 `finetune/outputs/stom_1s_grid_pred60_2025_full_small_failed_cp949_archive_20260520_102513` 로 보관했다.
+
+수정 커밋 후 같은 옵션 D 명령을 다시 시작했다.
+
+| 확인 항목 | 값 |
+|---|---|
+| launcher PID | `91084` |
+| runner PID | `20784` |
+| tokenizer PID | `93016` |
+| dashboard URL | `http://127.0.0.1:5070/training` |
+| `/training` HTTP 상태 | `200` |
+| 학습 상태 | `running` |
+| 현재 단계 | `tokenizer` |
+| batch size | `64` |
+| validation batch size | `1` |
+| train samples | `18,806,883` |
+| val samples | `3,925,397` |
+| train steps/epoch | `293,858` |
+| torch.compile | `enabled - mode=max-autotune fullgraph=False` |
+| AMP | `bf16`, scaler `False` |
+
+10:29 기준 진행률 JSON은 아직 `step=0`이다. 이는 `torch.compile max-autotune` 첫 그래프 컴파일/워밍업 중일 가능성이 높다. 프로세스는 살아 있고 GPU 사용률도 관측되므로, 다음 점검은 `step > 0`, `samples_per_second > 0`, `loss` 생성 여부에 집중한다.
