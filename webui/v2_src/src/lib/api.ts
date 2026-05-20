@@ -5,6 +5,7 @@ export interface TrainingStatus {
   status: string;
   stages: TrainingStage[];
   latest_stage?: TrainingStage;
+  dataset_summary?: DatasetSummary;
   readiness?: {
     level: 'waiting' | 'training' | 'ready';
     label: string;
@@ -15,6 +16,58 @@ export interface TrainingStatus {
   };
   updated_at?: string;
   default_training_refresh_seconds?: number;
+}
+
+export interface DatasetSplitSummary {
+  name: 'train' | 'val' | 'test' | string;
+  sessions?: number;
+  first_session?: string | null;
+  last_session?: string | null;
+  groups?: number | null;
+  rows?: number | null;
+  possible_samples?: number | null;
+  current_target_samples?: number | null;
+}
+
+export interface DatasetSummary {
+  available: boolean;
+  dataset_dir?: string | null;
+  report_path?: string | null;
+  source_db?: string | null;
+  freq?: string | null;
+  regularize_1s?: boolean;
+  price_mode?: string | null;
+  horizon_seconds?: number | null;
+  lookback_window?: number | null;
+  predict_window?: number | null;
+  sample_window?: number | null;
+  features?: string[];
+  time_features?: string[];
+  range?: {
+    session_start?: string | null;
+    session_end?: string | null;
+    actual_start?: string | null;
+    actual_end?: string | null;
+    time_start?: string | null;
+    time_end?: string | null;
+  };
+  counts?: {
+    selected_table_count?: string | number | null;
+    table_count?: number | null;
+    tables_with_rows?: number | null;
+    tables_zero_rows?: number | null;
+    exported_group_count?: number | null;
+    exported_row_count?: number | null;
+    regularized_groups?: number | null;
+    regularized_inserted_rows?: number | null;
+  };
+  splits?: Record<string, DatasetSplitSummary>;
+  current_targets?: {
+    train_samples?: number | null;
+    val_samples?: number | null;
+  };
+  warnings?: string[];
+  message?: string;
 }
 
 export interface TrainingStage {

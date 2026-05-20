@@ -21,6 +21,8 @@ TRAIN_STEP_RE = re.compile(
     r"Step (?P<step>\d+)/(?P<total_steps>\d+)\]\s+LR "
     r"(?P<learning_rate>[-+0-9.eE]+), Loss: (?P<loss>[-+0-9.eE]+)"
 )
+STOM_MODEL_FEATURES = ["open", "high", "low", "close", "vol", "amt"]
+STOM_TIME_FEATURES = ["minute", "hour", "weekday", "day", "month"]
 
 
 def _utc_now() -> str:
@@ -168,6 +170,176 @@ def _manifest_as_stage(payload: Dict[str, Any], source_path: Path) -> Dict[str, 
     }
 
 
+def _to_int(value: Any) -> Optional[int]:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compact_path(path: Optional[Path]) -> Optional[str]:
+    if path is None:
+        return None
+    try:
+        return str(path.resolve().relative_to(PROJECT_ROOT.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def _extract_dataset_run_metadata(artifacts: Dict[str, List[Path]]) -> Dict[str, Any]:
+    """Read small run progress/manifest files and collect dataset-related fields."""
+    metadata: Dict[str, Any] = {
+        "dataset_dir": None,
+        "target_train_samples": None,
+        "target_val_samples": None,
+        "train_dataset_size": None,
+        "val_dataset_size": None,
+    }
+    for source_path in [*artifacts.get("progress", []), *artifacts.get("manifest", [])]:
+        payload = _load_json(source_path)
+        dataset = payload.get("dataset") if isinstance(payload.get("dataset"), dict) else {}
+        env_overrides = payload.get("env_overrides") if isinstance(payload.get("env_overrides"), dict) else {}
+        dataset_dir = payload.get("dataset_dir") or env_overrides.get("KRONOS_DATASET_PATH")
+        if not metadata["dataset_dir"] and dataset_dir:
+            metadata["dataset_dir"] = str(dataset_dir)
+        for key in ("target_train_samples", "target_val_samples"):
+            if metadata.get(key) is None:
+                metadata[key] = _to_int(payload.get(key))
+        if metadata["train_dataset_size"] is None:
+            metadata["train_dataset_size"] = _to_int(dataset.get("train_dataset_size"))
+        if metadata["val_dataset_size"] is None:
+            metadata["val_dataset_size"] = _to_int(dataset.get("val_dataset_size"))
+    return metadata
+
+
+def _split_possible_samples(split_counts: Dict[str, Any], min_rows_per_group: Optional[int]) -> Optional[int]:
+    rows = _to_int(split_counts.get("rows"))
+    groups = _to_int(split_counts.get("groups"))
+    if rows is None or groups is None or not min_rows_per_group:
+        return None
+    return max(0, rows - groups * (min_rows_per_group - 1))
+
+
+def _summarize_export_split(
+    split_name: str,
+    report: Dict[str, Any],
+    current_targets: Dict[str, Optional[int]],
+) -> Dict[str, Any]:
+    split_counts = report.get("split_counts") if isinstance(report.get("split_counts"), dict) else {}
+    split_sessions = report.get("split_sessions") if isinstance(report.get("split_sessions"), dict) else {}
+    counts = split_counts.get(split_name) if isinstance(split_counts.get(split_name), dict) else {}
+    sessions = split_sessions.get(split_name) if isinstance(split_sessions.get(split_name), list) else []
+    possible_samples = _split_possible_samples(counts, _to_int(report.get("min_rows_per_group")))
+    target_key = "train_samples" if split_name == "train" else "val_samples" if split_name == "val" else None
+    return {
+        "name": split_name,
+        "sessions": _to_int(counts.get("sessions")) or len(sessions),
+        "first_session": sessions[0] if sessions else None,
+        "last_session": sessions[-1] if sessions else None,
+        "groups": _to_int(counts.get("groups")),
+        "rows": _to_int(counts.get("rows")),
+        "possible_samples": possible_samples,
+        "current_target_samples": current_targets.get(target_key) if target_key else None,
+    }
+
+
+def load_dataset_summary(run_dir: Path, artifacts: Optional[Dict[str, List[Path]]] = None) -> Dict[str, Any]:
+    """Return compact STOM/Qlib dataset metadata for the live dashboard.
+
+    The full export report includes per-table details and can be large, so this
+    function exposes only the range, split, feature, and count fields needed by
+    the UI.
+    """
+    artifacts = artifacts or _run_artifacts(run_dir)
+    metadata = _extract_dataset_run_metadata(artifacts)
+    dataset_dir = Path(metadata["dataset_dir"]) if metadata.get("dataset_dir") else None
+    export_root = dataset_dir.parent if dataset_dir else None
+    report_path = export_root / "stom_qlib_export_report.json" if export_root else None
+    current_targets = {
+        "train_samples": metadata.get("target_train_samples") or metadata.get("train_dataset_size"),
+        "val_samples": metadata.get("target_val_samples") or metadata.get("val_dataset_size"),
+    }
+
+    if report_path is None or not report_path.exists():
+        return {
+            "available": False,
+            "dataset_dir": _compact_path(dataset_dir),
+            "report_path": _compact_path(report_path),
+            "current_targets": current_targets,
+            "features": STOM_MODEL_FEATURES,
+            "time_features": STOM_TIME_FEATURES,
+            "message": "STOM Qlib export report was not found for this run.",
+        }
+
+    report = _load_json(report_path)
+    config = report.get("config") if isinstance(report.get("config"), dict) else {}
+    split_sessions = report.get("split_sessions") if isinstance(report.get("split_sessions"), dict) else {}
+    all_sessions: List[str] = []
+    for split_name in ("train", "val", "test"):
+        sessions = split_sessions.get(split_name)
+        if isinstance(sessions, list):
+            all_sessions.extend(str(session) for session in sessions)
+
+    tables = report.get("tables") if isinstance(report.get("tables"), list) else []
+    tables_with_rows = sum(1 for table in tables if _to_int(table.get("written_rows")) and _to_int(table.get("written_rows")) > 0)
+    table_count = len(tables) if tables else None
+    min_rows_per_group = _to_int(report.get("min_rows_per_group"))
+    lookback_window = _to_int(config.get("lookback_window"))
+    predict_window = _to_int(config.get("predict_window"))
+    sample_window = min_rows_per_group or (
+        lookback_window + predict_window + 1
+        if lookback_window is not None and predict_window is not None
+        else None
+    )
+    warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
+
+    return {
+        "available": True,
+        "dataset_dir": _compact_path(dataset_dir),
+        "report_path": _compact_path(report_path),
+        "source_db": config.get("db_path"),
+        "freq": config.get("freq"),
+        "regularize_1s": bool(config.get("regularize_1s")),
+        "price_mode": config.get("price_mode"),
+        "horizon_seconds": _to_int(config.get("horizon_seconds")),
+        "lookback_window": lookback_window,
+        "predict_window": predict_window,
+        "sample_window": sample_window,
+        "features": STOM_MODEL_FEATURES,
+        "time_features": STOM_TIME_FEATURES,
+        "range": {
+            "session_start": config.get("session_start"),
+            "session_end": config.get("session_end"),
+            "actual_start": min(all_sessions) if all_sessions else None,
+            "actual_end": max(all_sessions) if all_sessions else None,
+            "time_start": config.get("time_start"),
+            "time_end": config.get("time_end"),
+        },
+        "counts": {
+            "selected_table_count": report.get("selected_table_count"),
+            "table_count": table_count,
+            "tables_with_rows": tables_with_rows,
+            "tables_zero_rows": table_count - tables_with_rows if table_count is not None else None,
+            "exported_group_count": _to_int(report.get("exported_group_count")),
+            "exported_row_count": _to_int(report.get("exported_row_count")),
+            "regularized_groups": _to_int((report.get("grid_summary") or {}).get("regularized_groups"))
+            if isinstance(report.get("grid_summary"), dict)
+            else None,
+            "regularized_inserted_rows": _to_int((report.get("grid_summary") or {}).get("inserted_rows"))
+            if isinstance(report.get("grid_summary"), dict)
+            else None,
+        },
+        "splits": {
+            split_name: _summarize_export_split(split_name, report, current_targets)
+            for split_name in ("train", "val", "test")
+        },
+        "current_targets": current_targets,
+        "warnings": [str(warning) for warning in warnings[:5]],
+    }
+
+
 def list_training_runs(limit: int = 50) -> List[Dict[str, Any]]:
     """List known finetune output runs without reading arbitrary paths."""
     runs: List[Dict[str, Any]] = []
@@ -269,6 +441,7 @@ def load_training_status(run_name: Optional[str] = None) -> Dict[str, Any]:
         "stage_count": len(stages),
         "stages": stages,
         "latest_stage": latest_stage,
+        "dataset_summary": load_dataset_summary(run_dir, artifacts),
         "updated_at": (latest_stage or {}).get("updated_at"),
         "generated_at": _utc_now(),
     }
