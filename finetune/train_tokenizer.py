@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import importlib.util
 from time import gmtime, strftime
 import torch.distributed as dist
 import torch
@@ -370,13 +371,21 @@ def main(config: dict):
     if bool(config.get('tokenizer_enable_compile', False)):
         compile_mode = str(config.get('tokenizer_compile_mode', 'reduce-overhead'))
         compile_fullgraph = bool(config.get('tokenizer_compile_fullgraph', False))
-        try:
-            model = torch.compile(model, mode=compile_mode, fullgraph=compile_fullgraph)
+        # CUDA torch.compile on this Windows workstation requires Triton during
+        # the first compiled forward pass. Without this guard the run can pass
+        # torch.compile(...) and then fail before step 1 with
+        # "ModuleNotFoundError: No module named 'triton'".
+        if torch.cuda.is_available() and importlib.util.find_spec('triton') is None:
             if rank == 0:
-                print(f"[Rank {rank}] torch.compile enabled - mode={compile_mode} fullgraph={compile_fullgraph}")
-        except Exception as compile_exc:
-            if rank == 0:
-                print(f"[Rank {rank}] torch.compile failed ({compile_exc}); falling back to eager mode.")
+                print('[Rank 0] torch.compile skipped - Triton is not installed; using eager mode.')
+        else:
+            try:
+                model = torch.compile(model, mode=compile_mode, fullgraph=compile_fullgraph)
+                if rank == 0:
+                    print(f"[Rank {rank}] torch.compile enabled - mode={compile_mode} fullgraph={compile_fullgraph}")
+            except Exception as compile_exc:
+                if rank == 0:
+                    print(f"[Rank {rank}] torch.compile failed ({compile_exc}); falling back to eager mode.")
 
     if rank == 0:
         size_model = model.module if hasattr(model, "module") else model

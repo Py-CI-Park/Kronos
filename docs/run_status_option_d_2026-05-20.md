@@ -83,3 +83,37 @@ CP949 실패 run은 `finetune/outputs/stom_1s_grid_pred60_2025_full_small_failed
 | AMP | `bf16`, scaler `False` |
 
 10:29 기준 진행률 JSON은 아직 `step=0`이다. 이는 `torch.compile max-autotune` 첫 그래프 컴파일/워밍업 중일 가능성이 높다. 프로세스는 살아 있고 GPU 사용률도 관측되므로, 다음 점검은 `step > 0`, `samples_per_second > 0`, `loss` 생성 여부에 집중한다.
+
+## 2026-05-20 10:42 torch.compile / Triton 실패
+
+재시작된 옵션 D 학습은 step 0에서 실패했다. 원인은 데이터/OOM이 아니라 `torch.compile` 실행 중 PyTorch Inductor가 Triton을 요구했지만 현재 Windows 워크스테이션 Python 환경에 `triton` 모듈이 없었기 때문이다.
+
+핵심 로그:
+
+```text
+torch._inductor.exc.InductorError: LoweringException: ModuleNotFoundError: No module named 'triton'
+target: aten.addmm.default
+```
+
+판단:
+
+- STOM 1초봉 dataset 로딩은 정상이다.
+- train/val sample count 계산도 정상이다.
+- batch 64 자체 OOM으로 실패한 증거는 없다.
+- 실패 지점은 첫 compiled forward pass 전후다.
+- 공식 Kronos fine-tuning 목적에는 `torch.compile`이 필수 조건이 아니므로, 현재 Windows 4080 SUPER 환경에서는 compile을 자동 skip하고 eager + bf16 AMP로 진행하는 것이 더 안정적이다.
+
+적용 조치:
+
+1. `train_tokenizer.py`에서 CUDA + compile 요청 상태라도 `triton` 모듈이 없으면 `torch.compile`을 건너뛰도록 보호했다.
+2. 보호 메시지: `[Rank 0] torch.compile skipped - Triton is not installed; using eager mode.`
+3. 기존 batch 64 / bf16 AMP / val batch 1 / full sample 조건은 유지한다.
+
+검증:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m py_compile finetune\train_tokenizer.py finetune\run_stom_1s_finetune.py
+C:\Python\64\Python3119\python.exe -m pytest tests\test_v2_blueprint_isolation.py tests\test_v2_route.py -q
+```
+
+결과: `8 passed`.
