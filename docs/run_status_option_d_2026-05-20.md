@@ -161,3 +161,37 @@ Triton guard 적용 후 옵션 D 학습을 다시 시작했고, 웹 대시보드
 - `torch.compile`은 Triton 부재로 스킵되었지만, 공식 fine-tuning 자체는 eager + bf16 AMP로 정상 진행 중이다.
 - 현재 관측 속도 기준 단순 계산 시 tokenizer train 구간만 약 54~56시간 수준이다. validation 구간은 batch 1이므로 별도 시간이 추가될 수 있다.
 - 다음 점검은 30~60분 간격으로 `samples/sec`, `loss`, `ETA`, GPU 사용률, checkpoint 생성 여부를 확인하는 것이다.
+
+## 2026-05-20 11:40:04 +09:00ST 학습 모니터링 스냅샷
+
+Ralph 점검 명령을 다시 수행했고, 현재 옵션 D 전체 샘플 tokenizer 학습은 정상적으로 계속 진행 중이다. 웹 대시보드는 직접 브라우저로 다시 열었다.
+
+| 항목 | 값 |
+|---|---|
+| 대시보드 URL | http://127.0.0.1:5070/training |
+| /training | HTTP 200 |
+| /api/training/status | HTTP 200 |
+| 상태 | $(@{generated_at=2026-05-20T02:40:04Z; latest_stage=; overall_percent=5.8021; readiness=; run_name=stom_1s_grid_pred60_2025_full_small; run_path=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small; stage_count=1; stages=System.Object[]; status=running; updated_at=2026-05-20T02:40:00Z}.status) |
+| 단계 | $(@{best_val_loss=; elapsed_seconds=3314.215636; epoch=1; epochs=1; eta_seconds=25217.688689933493; horizon=60; last_line=[Rank 0, Epoch 1/1, Step 34100/293858] LR 0.000196, Loss: -0.0304; last_loss=-0.0304; last_validation_loss=; mode=full; overall_percent=5.8021; run_name=stom_1s_grid_pred60_2025_full_small; samples_per_second=659.2401153177947; seconds_since_update=4.215636; source_path=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.progress.json; stage_count=2; stage_index=1; stage_percent=11.6042; status=running; stdout_log=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.stdout.log; step=34100; total_steps=293858; train_stage=tokenizer; updated_at=2026-05-20T02:40:00Z}.train_stage) |
+| step | $(@{best_val_loss=; elapsed_seconds=3314.215636; epoch=1; epochs=1; eta_seconds=25217.688689933493; horizon=60; last_line=[Rank 0, Epoch 1/1, Step 34100/293858] LR 0.000196, Loss: -0.0304; last_loss=-0.0304; last_validation_loss=; mode=full; overall_percent=5.8021; run_name=stom_1s_grid_pred60_2025_full_small; samples_per_second=659.2401153177947; seconds_since_update=4.215636; source_path=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.progress.json; stage_count=2; stage_index=1; stage_percent=11.6042; status=running; stdout_log=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.stdout.log; step=34100; total_steps=293858; train_stage=tokenizer; updated_at=2026-05-20T02:40:00Z}.step) / 293858 |
+| tokenizer 단계 진행률 | $stagePercent% |
+| 전체 학습 진행률 | $overallPercent% |
+| samples/sec | $([math]::Round(659.240115317795,2)) |
+| 최근 loss | $(@{best_val_loss=; elapsed_seconds=3314.215636; epoch=1; epochs=1; eta_seconds=25217.688689933493; horizon=60; last_line=[Rank 0, Epoch 1/1, Step 34100/293858] LR 0.000196, Loss: -0.0304; last_loss=-0.0304; last_validation_loss=; mode=full; overall_percent=5.8021; run_name=stom_1s_grid_pred60_2025_full_small; samples_per_second=659.2401153177947; seconds_since_update=4.215636; source_path=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.progress.json; stage_count=2; stage_index=1; stage_percent=11.6042; status=running; stdout_log=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.stdout.log; step=34100; total_steps=293858; train_stage=tokenizer; updated_at=2026-05-20T02:40:00Z}.last_loss) |
+| 최근 로그 | $(@{best_val_loss=; elapsed_seconds=3314.215636; epoch=1; epochs=1; eta_seconds=25217.688689933493; horizon=60; last_line=[Rank 0, Epoch 1/1, Step 34100/293858] LR 0.000196, Loss: -0.0304; last_loss=-0.0304; last_validation_loss=; mode=full; overall_percent=5.8021; run_name=stom_1s_grid_pred60_2025_full_small; samples_per_second=659.2401153177947; seconds_since_update=4.215636; source_path=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.progress.json; stage_count=2; stage_index=1; stage_percent=11.6042; status=running; stdout_log=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.stdout.log; step=34100; total_steps=293858; train_stage=tokenizer; updated_at=2026-05-20T02:40:00Z}.last_line) |
+| train ETA | 약 $etaHours 시간 |
+| train 예상 완료(KST) | $etaKst |
+| progress 갱신 지연 | $([math]::Round([double]@{best_val_loss=; elapsed_seconds=3314.215636; epoch=1; epochs=1; eta_seconds=25217.688689933493; horizon=60; last_line=[Rank 0, Epoch 1/1, Step 34100/293858] LR 0.000196, Loss: -0.0304; last_loss=-0.0304; last_validation_loss=; mode=full; overall_percent=5.8021; run_name=stom_1s_grid_pred60_2025_full_small; samples_per_second=659.2401153177947; seconds_since_update=4.215636; source_path=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.progress.json; stage_count=2; stage_index=1; stage_percent=11.6042; status=running; stdout_log=D:\Chanil_Park\Project\Programming\Kronos\finetune\outputs\stom_1s_grid_pred60_2025_full_small\logs\tokenizer.stdout.log; step=34100; total_steps=293858; train_stage=tokenizer; updated_at=2026-05-20T02:40:00Z}.seconds_since_update,1)) 초 |
+
+GPU API 원문 요약:
+
+`json
+{"available":true,"average_utilization_gpu_percent":93.0,"generated_at":"2026-05-20T02:40:04Z","gpus":[{"index":0,"memory_total_mib":16376.0,"memory_used_mib":6851.0,"memory_used_percent":41.84,"name":"NVIDIA GeForce RTX 4080 SUPER","power_draw_available":true,"power_draw_watts":191.44,"power_limit_watts":320.0,"temperature_c":67.0,"utilization_gpu_percent":93.0}],"power_draw_available":true,"total_memory_total_mib":16376.0,"total_memory_used_mib":6851.0,"total_memory_used_percent":41.84,"total_power_draw_watts":191.44,"total_power_limit_watts":320.0}
+`
+
+해석:
+
+- 직전 기록의 step 1,600에서 이번 점검 기준 step 34100까지 증가했다.
+- samples/sec가 $([math]::Round(659.240115317795,2))로 안정적으로 관측되어 실제 데이터 학습이 진행 중이다.
+- 현재 진행률은 tokenizer 기준 $stagePercent%, 전체 both-stage 기준 $overallPercent%다.
+- 다음 점검은 tokenizer 20~30% 구간 또는 30~60분 뒤에 수행해 속도 유지, loss 이상치, GPU 사용률, ETA 변화를 기록한다.
