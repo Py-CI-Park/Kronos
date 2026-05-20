@@ -136,3 +136,28 @@ C:\Python\64\Python3119\python.exe -m pytest tests\test_v2_blueprint_isolation.p
 ```
 
 결과: `8 passed`.
+
+## 2026-05-20 10:54 학습 step 진입 확인
+
+Triton guard 적용 후 옵션 D 학습을 다시 시작했고, 웹 대시보드를 재기동해 `http://127.0.0.1:5070/training` 직접 접속을 확인했다.
+
+| 항목 | 값 |
+|---|---|
+| 대시보드 URL | `http://127.0.0.1:5070/training` |
+| `/training` | HTTP `200` |
+| `/api/training/status` | HTTP `200` |
+| 상태 | `running` |
+| 단계 | `tokenizer` |
+| step | `900 / 293,858` |
+| tokenizer 단계 진행률 | `0.3063%` |
+| 전체 학습 진행률 | `0.1531%` |
+| samples/sec | 약 `95.11` |
+| loss | `-0.0279` |
+| last line | `[Rank 0, Epoch 1/1, Step 900/293858] LR 0.000025, Loss: -0.0279` |
+
+해석:
+
+- 이제 실제 학습 step이 증가하고 있으므로 더 이상 step 0 초기화/컴파일/인코딩 실패 상태가 아니다.
+- `torch.compile`은 Triton 부재로 스킵되었지만, 공식 fine-tuning 자체는 eager + bf16 AMP로 정상 진행 중이다.
+- 현재 관측 속도 기준 단순 계산 시 tokenizer train 구간만 약 54~56시간 수준이다. validation 구간은 batch 1이므로 별도 시간이 추가될 수 있다.
+- 다음 점검은 30~60분 간격으로 `samples/sec`, `loss`, `ETA`, GPU 사용률, checkpoint 생성 여부를 확인하는 것이다.
