@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { metricsLatest, lossPoints, trainingStatus } from '$lib/stores';
+  import { metricsLatest, lossPoints, trainingStatus, systemStatus } from '$lib/stores';
   import { fmt } from '$lib/format';
   import type { DatasetSplitSummary, TrainingStatus } from '$lib/api';
   import W3LossCurve from '$widgets/W3_LossCurve.svelte';
@@ -28,6 +28,16 @@
     status?: string;
   };
 
+  type HealthLevel = 'ok' | 'watch' | 'bad' | 'info';
+  type HealthCheck = {
+    key: string;
+    label: string;
+    value: string;
+    normal: string;
+    level: HealthLevel;
+    message: string;
+  };
+
   let m = $state<any>({});
   metricsLatest.subscribe((v) => (m = v));
 
@@ -36,6 +46,9 @@
 
   let status = $state<TrainingStatus | null>(null);
   trainingStatus.subscribe((v) => (status = v));
+
+  let system = $state<any>(null);
+  systemStatus.subscribe((v) => (system = v));
 
   const stats = $derived.by(() => {
     const window = pts.slice(-200);
@@ -67,12 +80,24 @@
   let lr = $derived(m.learningRate);
   const dataset = $derived(status?.dataset_summary ?? null);
   const latestStage = $derived(status?.latest_stage ?? null);
+  const cpu = $derived(system?.cpu ?? null);
+  const memory = $derived(system?.memory ?? null);
+  const cpuPct = $derived(cpu?.utilization_percent ?? null);
+  const cpuTempC = $derived(cpu?.temperature_c ?? null);
+  const cpuTempPct = $derived(cpu?.temperature_percent ?? null);
+  const memoryPct = $derived(memory?.used_percent ?? null);
   const overallPercent = $derived.by(() =>
     clampPercent(status?.overall_percent ?? latestStage?.overall_percent ?? 0),
   );
   const stageCount = $derived.by(() => Math.max(1, Number(latestStage?.stage_count ?? status?.stage_count ?? 2) || 2));
   const currentStagePercent = $derived.by(() => clampPercent(latestStage?.stage_percent ?? 0));
   const currentStageLabel = $derived(stageLabel(latestStage?.train_stage));
+  const latestLossPoint = $derived(pts.length ? pts[pts.length - 1] : null);
+  const recentAnchorPoint = $derived(pts.length > 1 ? pts[Math.max(0, pts.length - 30)] : null);
+  const recentStepDelta = $derived.by(() => {
+    if (!latestLossPoint || !recentAnchorPoint) return null;
+    return latestLossPoint.step - recentAnchorPoint.step;
+  });
 
   const splitRows = $derived.by<SplitRow[]>(() => {
     const splits = dataset?.splits ?? {};
@@ -132,6 +157,25 @@
     return `stage-${index}`;
   }
 
+  function fmtMaybePct(value: unknown, digits = 1): string {
+    if (value == null) return '—';
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? `${fmt.num(numeric, digits)}%` : '—';
+  }
+
+  function fmtMaybeTemp(value: unknown): string {
+    if (value == null) return '미측정';
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? `${fmt.num(numeric, 1)}°C` : '미측정';
+  }
+
+  function healthLabel(level: HealthLevel): string {
+    if (level === 'ok') return '정상';
+    if (level === 'watch') return '주의';
+    if (level === 'bad') return '위험';
+    return '정보';
+  }
+
   const progressSegments = $derived.by<ProgressSegment[]>(() => {
     const latest = latestStage;
     const count = stageCount;
@@ -170,6 +214,108 @@
     const latest = latestStage;
     if (!latest) return '전체 진행률 = 단계별 진행률을 동일 구간으로 합산';
     return `전체 ${fmt.num(overallPercent, 1)}% = 완료 구간 + ${currentStageLabel} ${fmt.num(currentStagePercent, 1)}% × 1/${count}`;
+  });
+
+  const healthChecks = $derived.by<HealthCheck[]>(() => {
+    const currentLoss = m.loss ?? latestLossPoint?.loss ?? null;
+    const lossUpper = stats.mean != null && stats.std != null ? stats.mean + stats.std * 2 : null;
+    const lossLower = stats.mean != null && stats.std != null ? Math.max(0, stats.mean - stats.std * 2) : null;
+    const lossLevel: HealthLevel =
+      currentLoss == null || lossUpper == null
+        ? 'info'
+        : currentLoss <= lossUpper
+          ? 'ok'
+          : currentLoss <= lossUpper * 1.25
+            ? 'watch'
+            : 'bad';
+    const stepMoving = (recentStepDelta ?? 0) > 0 || (m.samplesPerSec ?? 0) > 0;
+    const stepLevel: HealthLevel = latestStage?.status === 'running' && !stepMoving ? 'watch' : 'ok';
+    const lrLevel: HealthLevel =
+      lr == null ? 'info' : lr > 0 && lr <= 1e-3 ? 'ok' : lr > 0 && lr <= 1e-2 ? 'watch' : 'bad';
+    const progressLevel: HealthLevel =
+      overallPercent >= 0 && overallPercent <= 100 && currentStagePercent >= 0 && currentStagePercent <= 100
+        ? 'ok'
+        : 'bad';
+    const cpuLevel: HealthLevel =
+      cpuPct == null && cpuTempC == null
+        ? 'info'
+        : (cpuTempC != null && cpuTempC >= 92) || (cpuPct != null && cpuPct >= 98)
+          ? 'bad'
+          : (cpuTempC != null && cpuTempC >= 85) || (cpuPct != null && cpuPct >= 95)
+            ? 'watch'
+            : 'ok';
+
+    return [
+      {
+        key: 'progress',
+        label: '진행률',
+        value: `전체 ${fmt.num(overallPercent, 1)}% · 단계 ${fmt.num(currentStagePercent, 1)}%`,
+        normal: '0~100%, 현재 단계 안에서 증가',
+        level: progressLevel,
+        message: progressLevel === 'ok' ? '단계/전체 진행률 산식이 정상 범위입니다.' : '진행률 값이 정상 범위를 벗어났습니다.',
+      },
+      {
+        key: 'lr',
+        label: '학습률(LR)',
+        value: lr != null ? lr.toExponential(2) : '—',
+        normal: '0 < LR ≤ 1e-3 참고',
+        level: lrLevel,
+        message:
+          lrLevel === 'ok'
+            ? '현재 LR은 보수적인 미세조정 범위입니다.'
+            : lrLevel === 'info'
+              ? '최근 history에서 LR을 아직 읽지 못했습니다.'
+              : 'LR이 일반 참고 범위보다 큽니다. 손실 급등 여부를 함께 보세요.',
+      },
+      {
+        key: 'loss',
+        label: 'Rolling avg loss',
+        value:
+          currentLoss != null
+            ? `현재 ${currentLoss.toFixed(4)} · 평균 ${stats.mean != null ? stats.mean.toFixed(4) : '—'}`
+            : '—',
+        normal:
+          lossLower != null && lossUpper != null
+            ? `${lossLower.toFixed(4)} ~ ${lossUpper.toFixed(4)}`
+            : '최근 200포인트 평균 ± 2σ',
+        level: lossLevel,
+        message:
+          lossLevel === 'ok'
+            ? '현재 손실이 최근 rolling 범위 안에 있습니다.'
+            : lossLevel === 'info'
+              ? 'rolling loss 포인트가 더 필요합니다.'
+              : '현재 손실이 rolling 평균 대비 높습니다. 다음 몇 분 추세 확인이 필요합니다.',
+      },
+      {
+        key: 'step',
+        label: 'Step/Loss 수신',
+        value: `step ${fmt.int(latestStage?.step)} · Δ${fmt.int(recentStepDelta ?? 0)}`,
+        normal: '최근 30포인트에서 step 증가',
+        level: stepLevel,
+        message: stepLevel === 'ok' ? 'step과 loss 로그가 계속 갱신되고 있습니다.' : 'running 상태지만 최근 step 증가가 약합니다.',
+      },
+      {
+        key: 'cpu',
+        label: 'CPU 온도/사용률',
+        value: `${fmtMaybePct(cpuPct)} · ${fmtMaybeTemp(cpuTempC)}${cpuTempPct != null ? ` (${fmt.num(cpuTempPct, 0)}%)` : ''}`,
+        normal: 'CPU < 95%, 온도 < 85°C 권장',
+        level: cpuLevel,
+        message:
+          cpuLevel === 'ok'
+            ? 'CPU 사용률/온도는 학습 감시에 무리가 없는 범위입니다.'
+            : cpuLevel === 'info'
+              ? 'CPU 온도 센서가 OS에서 노출되지 않을 수 있습니다.'
+              : 'CPU 부하 또는 온도가 높습니다. 냉각/백그라운드 작업을 확인하세요.',
+      },
+    ];
+  });
+
+  const healthSummary = $derived.by(() => {
+    const bad = healthChecks.filter((item) => item.level === 'bad').length;
+    const watch = healthChecks.filter((item) => item.level === 'watch').length;
+    if (bad > 0) return { level: 'bad' as HealthLevel, label: '학습 상태 위험', message: `${bad}개 항목이 위험 범위입니다.` };
+    if (watch > 0) return { level: 'watch' as HealthLevel, label: '학습 상태 주의', message: `${watch}개 항목을 관찰하세요.` };
+    return { level: 'ok' as HealthLevel, label: '학습 정상 진행', message: '진행률·LR·loss·step·CPU 기준이 정상입니다.' };
   });
 </script>
 
@@ -220,6 +366,60 @@
     <div class="metric-foot">
       소수 표기 <span class="text-mono" style="color:var(--fg)">{lr != null ? lr.toFixed(6) : '-'}</span>
     </div>
+  </div>
+
+  <div class="metric">
+    <div class="metric-head">
+      <span class="metric-label">CPU 온도/사용률</span>
+      <span class="pill {cpuTempC == null ? '' : cpuTempC >= 85 ? 'warn' : 'success'}" style="padding:2px 8px;font-size:10px">host</span>
+    </div>
+    <div class="metric-value tnum">
+      {fmtMaybePct(cpuPct)}<span class="metric-unit">CPU</span>
+    </div>
+    <div class="metric-foot cpu-metric-foot">
+      <span>온도 <strong class="text-mono">{fmtMaybeTemp(cpuTempC)}</strong></span>
+      {#if cpuTempPct != null}
+        <span>열한도 <strong class="text-mono">{fmt.num(cpuTempPct, 0)}%</strong></span>
+      {:else}
+        <span>열한도 <strong class="text-mono">미측정</strong></span>
+      {/if}
+      {#if memoryPct != null}
+        <span>RAM <strong class="text-mono">{fmt.num(memoryPct, 0)}%</strong></span>
+      {/if}
+    </div>
+  </div>
+</section>
+
+<!-- ===== 학습 정상 범위 점검 ===== -->
+<section class="card training-health-card glow" aria-label="학습 정상 범위와 현재 상태 점검">
+  <div class="training-health-head">
+    <div>
+      <div class="text-eyebrow">TRAINING HEALTH</div>
+      <h2>현재 학습이 잘 진행 중인지 기준과 함께 확인합니다</h2>
+      <p>
+        아래 정상 범위는 수익률 보장이 아니라 실시간 학습 모니터링용 안전 기준입니다.
+        손실은 고정 절대값보다 최근 rolling 평균과 표준편차를 기준으로 이상 여부를 판단합니다.
+      </p>
+    </div>
+    <div class="health-summary" data-level={healthSummary.level}>
+      <span>{healthLabel(healthSummary.level)}</span>
+      <strong>{healthSummary.label}</strong>
+      <small>{healthSummary.message}</small>
+    </div>
+  </div>
+
+  <div class="health-check-grid">
+    {#each healthChecks as item (item.key)}
+      <div class="health-check" data-level={item.level}>
+        <div class="row spread">
+          <strong>{item.label}</strong>
+          <span class="health-chip">{healthLabel(item.level)}</span>
+        </div>
+        <div class="health-value text-mono tnum">{item.value}</div>
+        <div class="health-normal">정상 범위: {item.normal}</div>
+        <p>{item.message}</p>
+      </div>
+    {/each}
   </div>
 </section>
 
@@ -421,13 +621,145 @@
 <style>
   .metric-grid {
     display: grid;
-    grid-template-columns: 1.12fr 1fr 1fr;
+    grid-template-columns: 1.12fr 1fr 0.95fr 1.05fr;
     gap: 16px;
   }
   .grid-3-1 {
     display: grid;
     grid-template-columns: 3fr 1fr;
     gap: 16px;
+  }
+  .cpu-metric-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 9px;
+  }
+  .cpu-metric-foot strong {
+    color: var(--fg);
+    font-weight: 700;
+  }
+
+  .training-health-card {
+    overflow: hidden;
+  }
+  .training-health-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--success), var(--accent), var(--info));
+  }
+  .training-health-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.72fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .training-health-head h2 {
+    margin-top: 4px;
+    color: var(--fg-strong);
+    font: 700 22px/1.25 var(--font-display);
+    letter-spacing: -0.018em;
+  }
+  .training-health-head p {
+    margin-top: 8px;
+    color: var(--muted);
+    max-width: 920px;
+  }
+  .health-summary {
+    padding: 15px 16px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--border-faint);
+    background: var(--surface-sunken);
+  }
+  .health-summary[data-level='ok'] {
+    border-color: color-mix(in oklab, var(--success) 34%, var(--border-faint));
+    background: var(--success-soft);
+  }
+  .health-summary[data-level='watch'] {
+    border-color: color-mix(in oklab, var(--warn) 34%, var(--border-faint));
+    background: var(--warn-soft);
+  }
+  .health-summary[data-level='bad'] {
+    border-color: color-mix(in oklab, var(--danger) 34%, var(--border-faint));
+    background: var(--danger-soft);
+  }
+  .health-summary span,
+  .health-summary small {
+    display: block;
+    color: var(--muted);
+    font: 700 11px/1.25 var(--font-display);
+  }
+  .health-summary strong {
+    display: block;
+    margin: 6px 0 5px;
+    color: var(--fg-strong);
+    font: 800 24px/1.1 var(--font-display);
+    letter-spacing: -0.02em;
+  }
+  .health-check-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .health-check {
+    min-width: 0;
+    padding: 13px 14px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--r-md);
+    background: var(--surface-raised);
+  }
+  .health-check[data-level='ok'] {
+    border-color: color-mix(in oklab, var(--success) 26%, var(--border-faint));
+  }
+  .health-check[data-level='watch'] {
+    border-color: color-mix(in oklab, var(--warn) 34%, var(--border-faint));
+    background: color-mix(in oklab, var(--surface-raised) 76%, var(--warn-soft));
+  }
+  .health-check[data-level='bad'] {
+    border-color: color-mix(in oklab, var(--danger) 34%, var(--border-faint));
+    background: color-mix(in oklab, var(--surface-raised) 76%, var(--danger-soft));
+  }
+  .health-check strong {
+    color: var(--fg-strong);
+    font: 700 13px/1.2 var(--font-display);
+  }
+  .health-chip {
+    padding: 2px 7px;
+    border-radius: var(--r-pill);
+    color: var(--muted);
+    background: var(--surface-sunken);
+    font: 800 10px/1.4 var(--font-display);
+  }
+  .health-check[data-level='ok'] .health-chip {
+    color: var(--success);
+    background: var(--success-soft);
+  }
+  .health-check[data-level='watch'] .health-chip {
+    color: var(--warn);
+    background: var(--warn-soft);
+  }
+  .health-check[data-level='bad'] .health-chip {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+  .health-value {
+    margin-top: 10px;
+    color: var(--fg-strong);
+    font-size: 17px;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+  }
+  .health-normal {
+    margin-top: 7px;
+    color: var(--muted);
+    font: 700 11px/1.35 var(--font-display);
+  }
+  .health-check p {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
   }
 
   .progress-card {
@@ -778,11 +1110,14 @@
   @media (max-width: 1200px) {
     .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .grid-3-1 { grid-template-columns: 1fr; }
+    .training-health-head { grid-template-columns: 1fr; }
+    .health-check-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .stage-progress-head { grid-template-columns: 1fr; }
     .dataset-metrics { grid-template-columns: repeat(2, 1fr); }
     .dataset-detail-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 760px) {
+    .health-check-grid { grid-template-columns: 1fr; }
     .segment-list { grid-template-columns: 1fr; }
     .dataset-hero { flex-direction: column; }
     .dataset-badges { justify-content: flex-start; min-width: 0; }

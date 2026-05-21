@@ -2,12 +2,13 @@
 // state 단일 owner — App.svelte 에서 import 해서 모든 컴포넌트가 공유.
 
 import { writable, type Writable, derived, type Readable } from 'svelte/store';
-import type { TrainingStatus, HistoryResponse, ArtifactsResponse, GpuResponse } from './api';
+import type { TrainingStatus, HistoryResponse, ArtifactsResponse, GpuResponse, SystemResponse } from './api';
 
 export const trainingStatus: Writable<TrainingStatus | null> = writable(null);
 export const trainingHistory: Writable<HistoryResponse | null> = writable(null);
 export const artifacts: Writable<ArtifactsResponse | null> = writable(null);
 export const gpuStatus: Writable<GpuResponse | null> = writable(null);
+export const systemStatus: Writable<SystemResponse | null> = writable(null);
 
 // 사용자 설정 — refresh 주기, 활성 탭, 사이드바 collapse 상태
 export const refreshSeconds: Writable<number> = writable(5);

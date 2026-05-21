@@ -4,12 +4,19 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+try:  # optional dependency: use it when the runtime already has psutil.
+    import psutil as _psutil  # type: ignore
+except Exception:  # pragma: no cover - exercised through fallback paths.
+    _psutil = None
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +30,8 @@ TRAIN_STEP_RE = re.compile(
 )
 STOM_MODEL_FEATURES = ["open", "high", "low", "close", "vol", "amt"]
 STOM_TIME_FEATURES = ["minute", "hour", "weekday", "day", "month"]
+CPU_TEMPERATURE_LIMIT_C = 95.0
+_SYSTEM_STATUS_CACHE: Dict[str, Any] = {"expires_at": 0.0, "payload": None}
 
 
 def _utc_now() -> str:
@@ -712,6 +721,192 @@ def _number_or_none(value: str) -> Optional[float]:
         return float(value)
     except ValueError:
         return None
+
+
+def _round_or_none(value: Optional[float], digits: int = 2) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not (numeric == numeric):  # NaN guard without importing math.
+        return None
+    return round(numeric, digits)
+
+
+def _run_powershell_float(script: str, timeout_seconds: int = 3) -> Optional[float]:
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except Exception:
+        return None
+    if completed.returncode != 0:
+        return None
+    for line in completed.stdout.splitlines():
+        value = _number_or_none(line)
+        if value is not None:
+            return value
+    return None
+
+
+def _query_windows_cpu_percent(timeout_seconds: int = 3) -> Optional[float]:
+    if os.name != "nt":
+        return None
+    return _run_powershell_float(
+        "(Get-CimInstance Win32_Processor | "
+        "Measure-Object -Property LoadPercentage -Average).Average",
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _query_windows_memory_percent(timeout_seconds: int = 3) -> Dict[str, Optional[float]]:
+    if os.name != "nt":
+        return {"used_percent": None, "total_bytes": None, "available_bytes": None}
+    script = (
+        "$os=Get-CimInstance Win32_OperatingSystem; "
+        "$total=[double]$os.TotalVisibleMemorySize*1024; "
+        "$free=[double]$os.FreePhysicalMemory*1024; "
+        "if ($total -gt 0) { "
+        "Write-Output ((($total-$free)/$total)*100); "
+        "Write-Output $total; "
+        "Write-Output $free }"
+    )
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except Exception:
+        return {"used_percent": None, "total_bytes": None, "available_bytes": None}
+    if completed.returncode != 0:
+        return {"used_percent": None, "total_bytes": None, "available_bytes": None}
+    values = [_number_or_none(line) for line in completed.stdout.splitlines()]
+    values = [value for value in values if value is not None]
+    return {
+        "used_percent": _round_or_none(values[0] if len(values) > 0 else None),
+        "total_bytes": _round_or_none(values[1] if len(values) > 1 else None, 0),
+        "available_bytes": _round_or_none(values[2] if len(values) > 2 else None, 0),
+    }
+
+
+def _query_windows_cpu_temperature(timeout_seconds: int = 3) -> tuple[Optional[float], Optional[str]]:
+    """Best-effort Windows ACPI thermal-zone temperature.
+
+    Many desktop boards do not expose the CPU package sensor through this WMI
+    class. When unavailable, the dashboard should show "미측정" instead of
+    implying that CPU temperature is safe.
+    """
+    if os.name != "nt":
+        return None, None
+    raw = _run_powershell_float(
+        "Get-CimInstance -Namespace root/WMI -ClassName MSAcpi_ThermalZoneTemperature "
+        "-ErrorAction Stop | Select-Object -First 1 -ExpandProperty CurrentTemperature",
+        timeout_seconds=timeout_seconds,
+    )
+    if raw is None:
+        return None, None
+    temp_c = raw / 10.0 - 273.15 if raw > 1000 else raw
+    if temp_c < -20 or temp_c > 150:
+        return None, None
+    return round(temp_c, 1), "windows_acpi_thermal_zone"
+
+
+def _query_psutil_temperature() -> tuple[Optional[float], Optional[str]]:
+    if _psutil is None or not hasattr(_psutil, "sensors_temperatures"):
+        return None, None
+    try:
+        sensors = _psutil.sensors_temperatures(fahrenheit=False)  # type: ignore[attr-defined]
+    except Exception:
+        return None, None
+    candidates: List[tuple[str, float]] = []
+    for sensor_name, entries in (sensors or {}).items():
+        for entry in entries or []:
+            current = getattr(entry, "current", None)
+            if current is None:
+                continue
+            label = getattr(entry, "label", "") or sensor_name
+            candidates.append((f"psutil:{sensor_name}:{label}", float(current)))
+    if not candidates:
+        return None, None
+    source, value = max(candidates, key=lambda item: item[1])
+    return round(value, 1), source
+
+
+def query_system_status(timeout_seconds: int = 3, cache_seconds: int = 10) -> Dict[str, Any]:
+    """Return best-effort CPU/memory telemetry for the local training host."""
+    now = time.monotonic()
+    cached = _SYSTEM_STATUS_CACHE.get("payload")
+    if cached is not None and now < float(_SYSTEM_STATUS_CACHE.get("expires_at", 0.0)) and cache_seconds > 0:
+        return dict(cached)
+
+    cpu_source = None
+    if _psutil is not None:
+        try:
+            cpu_percent = float(_psutil.cpu_percent(interval=0.1))
+            cpu_source = "psutil"
+        except Exception:
+            cpu_percent = None
+    else:
+        cpu_percent = None
+
+    if cpu_percent is None:
+        cpu_percent = _query_windows_cpu_percent(timeout_seconds=timeout_seconds)
+        cpu_source = "windows_cim" if cpu_percent is not None else None
+
+    temp_c, temp_source = _query_psutil_temperature()
+    if temp_c is None:
+        temp_c, temp_source = _query_windows_cpu_temperature(timeout_seconds=timeout_seconds)
+
+    if _psutil is not None:
+        try:
+            vm = _psutil.virtual_memory()
+            memory = {
+                "used_percent": _round_or_none(getattr(vm, "percent", None)),
+                "total_bytes": _round_or_none(getattr(vm, "total", None), 0),
+                "available_bytes": _round_or_none(getattr(vm, "available", None), 0),
+            }
+        except Exception:
+            memory = {"used_percent": None, "total_bytes": None, "available_bytes": None}
+    else:
+        memory = _query_windows_memory_percent(timeout_seconds=timeout_seconds)
+
+    temperature_percent = (
+        round(max(0.0, min(100.0, float(temp_c) / CPU_TEMPERATURE_LIMIT_C * 100.0)), 2)
+        if temp_c is not None
+        else None
+    )
+    payload = {
+        "available": cpu_percent is not None or temp_c is not None or memory.get("used_percent") is not None,
+        "cpu": {
+            "utilization_percent": _round_or_none(cpu_percent),
+            "temperature_c": temp_c,
+            "temperature_limit_c": CPU_TEMPERATURE_LIMIT_C,
+            "temperature_percent": temperature_percent,
+            "temperature_available": temp_c is not None,
+            "temperature_source": temp_source,
+            "utilization_source": cpu_source,
+        },
+        "memory": memory,
+        "generated_at": _utc_now(),
+    }
+    _SYSTEM_STATUS_CACHE["payload"] = payload
+    _SYSTEM_STATUS_CACHE["expires_at"] = now + max(0, cache_seconds)
+    return dict(payload)
 
 
 def query_gpu_status(timeout_seconds: int = 5) -> Dict[str, Any]:

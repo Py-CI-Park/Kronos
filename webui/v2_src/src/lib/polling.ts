@@ -1,7 +1,7 @@
 // 폴링 유틸리티 — refreshSeconds 가 바뀌면 자동 재시작.
 
 import { get } from 'svelte/store';
-import { refreshSeconds, trainingStatus, trainingHistory, artifacts, gpuStatus, lastUpdatedAt, mergeLossPoints, setLossPoints, pushGpuRing } from './stores';
+import { refreshSeconds, trainingStatus, trainingHistory, artifacts, gpuStatus, systemStatus, lastUpdatedAt, mergeLossPoints, setLossPoints, pushGpuRing } from './stores';
 import { api } from './api';
 
 let timers: number[] = [];
@@ -57,6 +57,11 @@ async function pollGpu(): Promise<void> {
   }
 }
 
+async function pollSystem(): Promise<void> {
+  const d = await api.system();
+  if (d) systemStatus.set(d);
+}
+
 export function startPolling(): void {
   clearTimers();
   const sec = get(refreshSeconds);
@@ -66,12 +71,14 @@ export function startPolling(): void {
   pollHistory();
   pollArtifacts();
   pollGpu();
+  pollSystem();
 
   timers.push(
     window.setInterval(pollStatus, sec * 1000),
     window.setInterval(pollHistory, sec * 1000),
     window.setInterval(pollArtifacts, 30000),
     window.setInterval(pollGpu, sec * 1000),
+    window.setInterval(pollSystem, sec * 1000),
   );
 }
 

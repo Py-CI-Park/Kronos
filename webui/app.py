@@ -111,6 +111,7 @@ try:
             load_training_history,
             load_training_status,
             query_gpu_status,
+            query_system_status,
             tail_training_log,
         )
     except ImportError:
@@ -120,6 +121,7 @@ try:
             load_training_history,
             load_training_status,
             query_gpu_status,
+            query_system_status,
             tail_training_log,
         )
 except Exception as exc:
@@ -129,6 +131,7 @@ except Exception as exc:
     load_training_history = None
     load_training_status = None
     query_gpu_status = None
+    query_system_status = None
     tail_training_log = None
 
 try:
@@ -652,6 +655,12 @@ def training_gpu():
     if query_gpu_status is None:
         return jsonify({'error': 'STOM training monitor helper is not available'}), 500
     return jsonify(query_gpu_status())
+
+@app.route('/api/training/system')
+def training_system():
+    if query_system_status is None:
+        return jsonify({'error': 'STOM training monitor helper is not available'}), 500
+    return jsonify(query_system_status())
 
 @app.route('/api/stom/summary')
 def stom_summary():

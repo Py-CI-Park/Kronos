@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { gpuStatus, gpuRing, refreshSeconds, lastUpdatedAt, theme } from '$lib/stores';
+  import { gpuStatus, gpuRing, systemStatus, refreshSeconds, lastUpdatedAt, theme } from '$lib/stores';
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
 
   let gpu = $state<any>(null);
   gpuStatus.subscribe((v) => (gpu = v));
+
+  let system = $state<any>(null);
+  systemStatus.subscribe((v) => (system = v));
 
   let ring = $state<any[]>([]);
   gpuRing.subscribe((v) => (ring = v));
@@ -19,9 +22,15 @@
   theme.subscribe((v) => (currentTheme = v));
 
   let g = $derived(gpu?.gpus?.[0]);
+  let cpu = $derived(system?.cpu);
+  let memory = $derived(system?.memory);
   let utilPct = $derived(g?.utilization_gpu_percent);
   let tempC = $derived(g?.temperature_c);
   let vramPct = $derived(g?.memory_used_percent);
+  let cpuPct = $derived(cpu?.utilization_percent);
+  let cpuTempC = $derived(cpu?.temperature_c);
+  let cpuTempPct = $derived(cpu?.temperature_percent);
+  let memoryPct = $derived(memory?.used_percent);
 
   type GpuTrendPoint = {
     util: number | null;
@@ -93,6 +102,7 @@
   let utilPillKind = $derived(utilPct == null ? '' : utilPct >= 90 ? 'warn' : 'success');
   let tempPillKind = $derived(tempC == null ? '' : tempC >= 80 ? 'danger' : tempC >= 70 ? 'warn' : 'success');
   let vramPillKind = $derived(vramPct == null ? '' : vramPct >= 90 ? 'warn' : 'success');
+  let cpuPillKind = $derived(cpuPct == null ? '' : cpuPct >= 95 ? 'warn' : 'success');
 
   let palette = $derived.by(() => {
     void currentTheme;
@@ -167,17 +177,16 @@
 <section class="page-hero">
   <div class="row" style="gap:10px">
     <span class="text-eyebrow">P1.5 · 정식</span>
-    <span class="pill"><span class="dot" style="background:var(--info)"></span>/api/training/gpu · 5초 폴링 · read-only</span>
+    <span class="pill"><span class="dot" style="background:var(--info)"></span>/api/training/gpu · /api/training/system · 5초 폴링</span>
   </div>
   <h1 class="text-h2" style="margin-top:8px">시스템 상태</h1>
   <p class="text-muted" style="margin-top:6px">
-    학습 호스트의 GPU 디바이스와 Flask 폴링 상태. 모든 값은 nvidia-smi 실측이며 전력은 측정 가능할 때만 표시합니다.
-    CPU·RAM·디스크 측정은 P2 에서 별도 endpoint 로 추가됩니다.
+    학습 호스트의 GPU·CPU·RAM과 Flask 폴링 상태입니다. GPU는 nvidia-smi, CPU/RAM은 시스템 endpoint에서 읽으며 온도는 OS 센서가 노출될 때만 표시합니다.
   </p>
 </section>
 
 <!-- ===== Top KPIs ===== -->
-<section class="grid-3-kpi">
+<section class="grid-4-kpi">
   <div class="metric" class:glow={utilPct != null && utilPct >= 50}>
     <div class="metric-head">
       <span class="metric-label">GPU 활용률</span>
@@ -226,6 +235,25 @@
     </div>
     <div class="metric-foot">
       평균 {stats.vramAvg != null ? stats.vramAvg.toFixed(1) + '%' : '—'} · 현재 {vramPct != null ? vramPct.toFixed(1) + '%' : '—'}
+    </div>
+  </div>
+
+  <div class="metric">
+    <div class="metric-head">
+      <span class="metric-label">CPU / RAM</span>
+      {#if cpuPillKind}
+        <span class="pill {cpuPillKind}" style="padding:2px 8px"><span class="dot"></span>
+          {cpuPillKind === 'warn' ? '높음' : '정상'}
+        </span>
+      {/if}
+    </div>
+    <div class="metric-value tnum">
+      {cpuPct != null ? cpuPct.toFixed(1) : '—'}<span class="metric-unit">%</span>
+    </div>
+    <div class="metric-foot">
+      온도 {cpuTempC != null ? cpuTempC.toFixed(1) + '°C' : '미측정'}
+      {#if cpuTempPct != null}({cpuTempPct.toFixed(0)}%){/if}
+      · RAM {memoryPct != null ? memoryPct.toFixed(1) + '%' : '—'}
     </div>
   </div>
 </section>
@@ -308,6 +336,7 @@
       <tbody>
         <tr><td>폴링 간격</td><td class="text-mono tnum">{sec} 초</td></tr>
         <tr><td>GPU ring buffer</td><td class="text-mono tnum">{ring.length} / 720 points</td></tr>
+        <tr><td>CPU/RAM endpoint</td><td class="text-mono">/api/training/system</td></tr>
         <tr><td>버퍼 시간</td><td class="text-mono tnum">{fmt.durationCompact(ring.length * sec)}</td></tr>
         <tr><td>마지막 화면 갱신</td><td class="text-mono tnum">{last}</td></tr>
         <tr><td>Artifacts 폴링</td><td class="text-mono">30 초 (고정)</td></tr>
@@ -315,9 +344,9 @@
       </tbody>
     </table>
     <div class="card compact flat" style="background:var(--surface-sunken);border:none;padding:12px;gap:8px;border-radius:12px;margin-top:8px">
-      <div class="row" style="gap:8px"><span class="pill warn" style="padding:2px 8px"><span class="dot"></span>P2 예정</span><span class="text-caption">CPU/RAM/디스크 측정</span></div>
+      <div class="row" style="gap:8px"><span class="pill success" style="padding:2px 8px"><span class="dot"></span>CPU/RAM 활성</span><span class="text-caption">디스크 측정은 후속 단계</span></div>
       <p class="text-caption" style="line-height:1.5;margin:0">
-        현재는 GPU 디바이스만 nvidia-smi 로 측정됩니다. CPU 부하·시스템 RAM·디스크 사용량은 P2 에서 별도 endpoint 로 노출 예정입니다.
+        CPU 사용률과 RAM 사용률은 현재 노출됩니다. CPU 온도는 Windows/메인보드 센서가 OS에 값을 제공하지 않으면 미측정으로 표시합니다.
       </p>
     </div>
   </div>
@@ -325,9 +354,9 @@
 
 <style>
   .page-hero { padding: 8px 0; }
-  .grid-3-kpi {
+  .grid-4-kpi {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 16px;
   }
   .grid-2-detail {
@@ -336,7 +365,11 @@
     gap: 16px;
   }
   @media (max-width: 900px) {
-    .grid-3-kpi, .grid-2-detail { grid-template-columns: 1fr; }
+    .grid-4-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-2-detail { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .grid-4-kpi { grid-template-columns: 1fr; }
   }
   .kv-table {
     width: 100%;

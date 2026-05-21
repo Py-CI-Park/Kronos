@@ -2,6 +2,7 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -173,6 +174,33 @@ def test_query_gpu_status_reports_power_limit_when_power_draw_is_missing(monkeyp
     assert status["gpus"][0]["power_draw_available"] is False
 
 
+def test_query_system_status_uses_optional_psutil(monkeypatch):
+    class FakePsutil:
+        @staticmethod
+        def cpu_percent(interval=0.1):
+            return 42.5
+
+        @staticmethod
+        def virtual_memory():
+            return SimpleNamespace(percent=61.2, total=128 * 1024**3, available=48 * 1024**3)
+
+        @staticmethod
+        def sensors_temperatures(fahrenheit=False):
+            return {"k10temp": [SimpleNamespace(current=63.4, label="Tctl")]}
+
+    monkeypatch.setattr(training_monitor, "_psutil", FakePsutil)
+    monkeypatch.setitem(training_monitor._SYSTEM_STATUS_CACHE, "payload", None)
+    monkeypatch.setitem(training_monitor._SYSTEM_STATUS_CACHE, "expires_at", 0.0)
+
+    status = training_monitor.query_system_status(cache_seconds=0)
+
+    assert status["available"] is True
+    assert status["cpu"]["utilization_percent"] == 42.5
+    assert status["cpu"]["temperature_c"] == 63.4
+    assert status["cpu"]["temperature_percent"] == 66.74
+    assert status["memory"]["used_percent"] == 61.2
+
+
 def test_training_dashboard_routes_register(monkeypatch):
     import app as webapp  # noqa: E402
 
@@ -189,6 +217,7 @@ def test_training_dashboard_routes_register(monkeypatch):
     )
     monkeypatch.setattr(webapp, "tail_training_log", lambda run_name=None, stage=None, lines=200: {"lines": [], "text": ""})
     monkeypatch.setattr(webapp, "query_gpu_status", lambda: {"available": False, "gpus": []})
+    monkeypatch.setattr(webapp, "query_system_status", lambda: {"available": True, "cpu": {"utilization_percent": 10}})
     monkeypatch.setattr(
         webapp,
         "load_training_history",
@@ -266,6 +295,7 @@ def test_training_dashboard_routes_register(monkeypatch):
     assert client.get("/api/training/history").get_json()["point_count"] == 1
     assert client.get("/api/training/logs").get_json()["text"] == ""
     assert client.get("/api/training/gpu").get_json()["available"] is False
+    assert client.get("/api/training/system").get_json()["cpu"]["utilization_percent"] == 10
 
 
 def test_training_readiness_policy_marks_predictor_states():
@@ -307,6 +337,7 @@ def test_training_dashboard_refresh_interval_is_configurable_and_clamped(monkeyp
     monkeypatch.setattr(webapp, "load_training_status", lambda run_name=None: {"run_name": "unit", "stages": []})
     monkeypatch.setattr(webapp, "tail_training_log", lambda run_name=None, stage=None, lines=200: {"lines": [], "text": ""})
     monkeypatch.setattr(webapp, "query_gpu_status", lambda: {"available": False, "gpus": []})
+    monkeypatch.setattr(webapp, "query_system_status", lambda: {"available": False, "cpu": {}})
 
     client = webapp.app.test_client()
 

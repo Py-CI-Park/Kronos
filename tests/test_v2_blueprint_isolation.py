@@ -46,6 +46,7 @@ def test_api_routes_unchanged():
         '/api/training/history',
         '/api/training/artifacts',
         '/api/training/gpu',
+        '/api/training/system',
         '/api/training/runs',
     ]:
         resp = client.get(path)

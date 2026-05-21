@@ -155,6 +155,25 @@ export interface GpuResponse {
   available: boolean;
 }
 
+export interface SystemResponse {
+  available: boolean;
+  cpu?: {
+    utilization_percent?: number | null;
+    temperature_c?: number | null;
+    temperature_limit_c?: number | null;
+    temperature_percent?: number | null;
+    temperature_available?: boolean;
+    temperature_source?: string | null;
+    utilization_source?: string | null;
+  };
+  memory?: {
+    used_percent?: number | null;
+    total_bytes?: number | null;
+    available_bytes?: number | null;
+  };
+  generated_at?: string;
+}
+
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
     const r = await fetch(url);
@@ -170,4 +189,5 @@ export const api = {
   history: (limit: number = 200) => fetchJson<HistoryResponse>(`/api/training/history?limit=${limit}`),
   artifacts: () => fetchJson<ArtifactsResponse>('/api/training/artifacts'),
   gpu: () => fetchJson<GpuResponse>('/api/training/gpu'),
+  system: () => fetchJson<SystemResponse>('/api/training/system'),
 };
