@@ -1,10 +1,11 @@
 // 폴링 유틸리티 — refreshSeconds 가 바뀌면 자동 재시작.
 
 import { get } from 'svelte/store';
-import { refreshSeconds, trainingStatus, trainingHistory, artifacts, gpuStatus, lastUpdatedAt, mergeLossPoints, pushGpuRing } from './stores';
+import { refreshSeconds, trainingStatus, trainingHistory, artifacts, gpuStatus, lastUpdatedAt, mergeLossPoints, setLossPoints, pushGpuRing } from './stores';
 import { api } from './api';
 
 let timers: number[] = [];
+let lossContextKey: string | null = null;
 
 function clearTimers(): void {
   for (const t of timers) clearInterval(t);
@@ -24,7 +25,14 @@ async function pollHistory(): Promise<void> {
   if (d) {
     trainingHistory.set(d);
     if (Array.isArray(d.points)) {
-      mergeLossPoints(d.points.map((p) => ({ step: p.step, loss: p.loss })));
+      const nextPoints = d.points.map((p) => ({ step: p.step, loss: p.loss }));
+      const nextContextKey = [d.run_name, d.stage, d.source_log_path].filter(Boolean).join('|') || null;
+      if (nextContextKey !== lossContextKey) {
+        lossContextKey = nextContextKey;
+        setLossPoints(nextPoints);
+      } else {
+        mergeLossPoints(nextPoints);
+      }
     }
   }
 }

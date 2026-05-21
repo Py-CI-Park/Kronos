@@ -23,6 +23,59 @@
   let tempC = $derived(g?.temperature_c);
   let vramPct = $derived(g?.memory_used_percent);
 
+  type GpuTrendPoint = {
+    util: number | null;
+    temp: number | null;
+    vram: number | null;
+    ts: number;
+  };
+
+  function currentGpuPoint(): GpuTrendPoint | null {
+    if (!g) return null;
+    return {
+      util: g.utilization_gpu_percent ?? null,
+      temp: g.temperature_c ?? null,
+      vram: g.memory_used_percent ?? null,
+      ts: Date.now(),
+    };
+  }
+
+  function formatTime(ts: number | null | undefined): string {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleTimeString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+  }
+
+  function formatGpuTooltip(params: any, points: GpuTrendPoint[]): string {
+    const rows = Array.isArray(params) ? params : [params];
+    const idx = rows[0]?.dataIndex ?? 0;
+    const point = points[idx];
+    const body = rows
+      .map((p: any) => {
+        const value = p.value;
+        if (value == null || Number.isNaN(Number(value))) return '';
+        const unit = p.seriesName?.includes('온도') ? '°C' : '%';
+        return `<div style="display:flex;gap:10px;justify-content:space-between;min-width:170px">
+          <span>${p.marker ?? ''}${p.seriesName}</span>
+          <b>${Number(value).toFixed(1)}${unit}</b>
+        </div>`;
+      })
+      .filter(Boolean)
+      .join('');
+    return `<div style="font-weight:700;margin-bottom:4px">${formatTime(point?.ts)}</div>${body}`;
+  }
+
+  let chartRing = $derived.by(() => {
+    if (ring.length > 0) return ring as GpuTrendPoint[];
+    const point = currentGpuPoint();
+    return point ? [point] : [];
+  });
+
   // util 평균/최고 (ring buffer 기반)
   let stats = $derived.by(() => {
     if (ring.length === 0) return { utilAvg: null, tempMax: null, vramAvg: null };
@@ -60,13 +113,15 @@
   let multiOption = $derived.by(() => {
     void currentTheme;
     if (!palette) return {};
+    const data = chartRing;
+    const showSymbols = data.length <= 2;
     return {
       backgroundColor: 'transparent',
       textStyle: { color: palette.text, fontFamily: 'Pretendard Variable, sans-serif' },
       grid: { left: 48, right: 24, top: 20, bottom: 32 },
       xAxis: {
         type: 'category',
-        data: ring.map((_, i) => i),
+        data: data.map((p) => formatTime(p.ts)),
         axisLabel: { show: false },
         axisLine: { lineStyle: { color: palette.border } },
         axisTick: { show: false },
@@ -81,14 +136,29 @@
       },
       tooltip: {
         trigger: 'axis',
+        appendToBody: true,
+        confine: true,
+        axisPointer: { type: 'line', lineStyle: { color: palette.border, type: 'dashed' } },
         backgroundColor: palette.surface,
         borderColor: palette.border,
         textStyle: { color: palette.text, fontSize: 12 },
+        formatter: (params: any) => formatGpuTooltip(params, data),
       },
+      graphic: data.length === 0 ? [{
+        type: 'text',
+        left: 'center',
+        top: 'middle',
+        style: {
+          text: 'GPU 데이터 수신 대기 중…',
+          fill: palette.textDim,
+          fontSize: 12,
+          fontFamily: 'Pretendard Variable, sans-serif',
+        },
+      }] : [],
       series: [
-        { name: 'GPU util %', type: 'line', smooth: 0.5, symbol: 'none', data: ring.map((p) => p.util), lineStyle: { color: palette.c3, width: 1.8 } },
-        { name: 'VRAM %', type: 'line', smooth: 0.5, symbol: 'none', data: ring.map((p) => p.vram), lineStyle: { color: palette.c2, width: 1.8 } },
-        { name: '온도 °C', type: 'line', smooth: 0.5, symbol: 'none', data: ring.map((p) => p.temp), lineStyle: { color: palette.c4, width: 1.8 } },
+        { name: 'GPU util %', type: 'line', smooth: 0.5, symbol: 'circle', showSymbol: showSymbols, symbolSize: 5, data: data.map((p) => p.util), lineStyle: { color: palette.c3, width: 1.8 } },
+        { name: 'VRAM %', type: 'line', smooth: 0.5, symbol: 'circle', showSymbol: showSymbols, symbolSize: 5, data: data.map((p) => p.vram), lineStyle: { color: palette.c2, width: 1.8 } },
+        { name: '온도 °C', type: 'line', smooth: 0.5, symbol: 'circle', showSymbol: showSymbols, symbolSize: 5, data: data.map((p) => p.temp), lineStyle: { color: palette.c4, width: 1.8 } },
       ],
     };
   });

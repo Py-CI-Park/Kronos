@@ -72,18 +72,24 @@ export interface LossPoint {
 }
 export const lossPoints: Writable<LossPoint[]> = writable([]);
 
+function normalizeLossPoints(points: LossPoint[]): LossPoint[] {
+  const byStep = new Map<number, LossPoint>();
+  for (const p of points) {
+    if (p.step != null && p.loss != null && Number.isFinite(p.step) && Number.isFinite(p.loss)) {
+      byStep.set(p.step, { step: p.step, loss: p.loss });
+    }
+  }
+  const merged = Array.from(byStep.values()).sort((a, b) => a.step - b.step);
+  return merged.length > 1000 ? merged.slice(merged.length - 1000) : merged;
+}
+
+export function setLossPoints(newPts: LossPoint[]): void {
+  lossPoints.set(normalizeLossPoints(newPts));
+}
+
 export function mergeLossPoints(newPts: LossPoint[]): void {
   lossPoints.update((existing) => {
-    const seen = new Set(existing.map((p) => p.step));
-    const merged = [...existing];
-    for (const p of newPts) {
-      if (p.step != null && p.loss != null && !seen.has(p.step)) {
-        merged.push({ step: p.step, loss: p.loss });
-        seen.add(p.step);
-      }
-    }
-    merged.sort((a, b) => a.step - b.step);
-    return merged.length > 1000 ? merged.slice(merged.length - 1000) : merged;
+    return normalizeLossPoints([...existing, ...newPts]);
   });
 }
 
