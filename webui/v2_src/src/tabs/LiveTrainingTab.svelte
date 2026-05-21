@@ -81,11 +81,9 @@
   const dataset = $derived(status?.dataset_summary ?? null);
   const latestStage = $derived(status?.latest_stage ?? null);
   const cpu = $derived(system?.cpu ?? null);
-  const memory = $derived(system?.memory ?? null);
   const cpuPct = $derived(cpu?.utilization_percent ?? null);
   const cpuTempC = $derived(cpu?.temperature_c ?? null);
   const cpuTempPct = $derived(cpu?.temperature_percent ?? null);
-  const memoryPct = $derived(memory?.used_percent ?? null);
   const overallPercent = $derived.by(() =>
     clampPercent(status?.overall_percent ?? latestStage?.overall_percent ?? 0),
   );
@@ -296,7 +294,7 @@
       },
       {
         key: 'cpu',
-        label: 'CPU 온도/사용률',
+        label: 'Host CPU 상태',
         value: `${fmtMaybePct(cpuPct)} · ${fmtMaybeTemp(cpuTempC)}${cpuTempPct != null ? ` (${fmt.num(cpuTempPct, 0)}%)` : ''}`,
         normal: 'CPU < 95%, 온도 < 85°C 권장',
         level: cpuLevel,
@@ -365,27 +363,6 @@
     </div>
     <div class="metric-foot">
       소수 표기 <span class="text-mono" style="color:var(--fg)">{lr != null ? lr.toFixed(6) : '-'}</span>
-    </div>
-  </div>
-
-  <div class="metric">
-    <div class="metric-head">
-      <span class="metric-label">CPU 온도/사용률</span>
-      <span class="pill {cpuTempC == null ? '' : cpuTempC >= 85 ? 'warn' : 'success'}" style="padding:2px 8px;font-size:10px">host</span>
-    </div>
-    <div class="metric-value tnum">
-      {fmtMaybePct(cpuPct)}<span class="metric-unit">CPU</span>
-    </div>
-    <div class="metric-foot cpu-metric-foot">
-      <span>온도 <strong class="text-mono">{fmtMaybeTemp(cpuTempC)}</strong></span>
-      {#if cpuTempPct != null}
-        <span>열한도 <strong class="text-mono">{fmt.num(cpuTempPct, 0)}%</strong></span>
-      {:else}
-        <span>열한도 <strong class="text-mono">미측정</strong></span>
-      {/if}
-      {#if memoryPct != null}
-        <span>RAM <strong class="text-mono">{fmt.num(memoryPct, 0)}%</strong></span>
-      {/if}
     </div>
   </div>
 </section>
@@ -621,7 +598,7 @@
 <style>
   .metric-grid {
     display: grid;
-    grid-template-columns: 1.12fr 1fr 0.95fr 1.05fr;
+    grid-template-columns: 1.18fr 1fr 0.95fr;
     gap: 16px;
   }
   .grid-3-1 {
@@ -629,16 +606,6 @@
     grid-template-columns: 3fr 1fr;
     gap: 16px;
   }
-  .cpu-metric-foot {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 9px;
-  }
-  .cpu-metric-foot strong {
-    color: var(--fg);
-    font-weight: 700;
-  }
-
   .training-health-card {
     overflow: hidden;
   }

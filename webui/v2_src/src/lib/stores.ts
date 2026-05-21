@@ -66,6 +66,23 @@ export function pushGpuRing(point: GpuRingPoint): void {
   });
 }
 
+// CPU/RAM ring buffer — GPU 트렌드와 같은 시간축에서 host 상태를 함께 표시.
+export interface SystemRingPoint {
+  cpuUtil: number | null;
+  cpuTemp: number | null;
+  cpuTempPct: number | null;
+  ram: number | null;
+  ts: number;
+}
+export const systemRing: Writable<SystemRingPoint[]> = writable([]);
+
+export function pushSystemRing(point: SystemRingPoint): void {
+  systemRing.update((r) => {
+    const next = [...r, point];
+    return next.length > 720 ? next.slice(next.length - 720) : next;
+  });
+}
+
 // Loss points ring buffer (max 1000)
 export interface LossPoint {
   step: number;
