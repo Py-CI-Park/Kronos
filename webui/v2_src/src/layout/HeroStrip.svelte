@@ -12,30 +12,20 @@
   lastUpdatedAt.subscribe((v) => (last = v));
 
   let latest = $derived(status?.latest_stage ?? {});
-  let stages = $derived<any[]>(Array.isArray(status?.stages) ? status.stages : []);
-  let tokenizer = $derived(stages.find((s) => s.train_stage === 'tokenizer'));
-  let predictor = $derived(stages.find((s) => s.train_stage === 'predictor'));
   let stagePct = $derived(latest.stage_percent ?? 0);
-  let overallPct = $derived(latest.overall_percent ?? 0);
-  let sps = $derived(latest.samples_per_second ?? null);
+  let overallPct = $derived(latest.overall_percent ?? status?.overall_percent ?? 0);
+  let sps = $derived(latest.samples_per_second ?? m.samplesPerSec ?? null);
   let etaSeconds = $derived(latest.eta_seconds ?? null);
   let etaCompact = $derived(fmt.durationCompact(etaSeconds));
   let etaFinish = $derived(fmt.finishKst(etaSeconds, latest.updated_at));
   let stageName = $derived(latest.train_stage ?? '-');
+  let runName = $derived(m.runName ?? status?.run_name ?? '-');
   let readinessLevel = $derived(status?.readiness?.level ?? 'waiting');
   let readinessLabel = $derived(
     readinessLevel === 'ready' ? 'Predictor 완료' :
     readinessLevel === 'training' ? '학습 진행 중' :
     'Predictor 대기'
   );
-
-  function stageState(stage: any, isCurrent: boolean): 'active' | 'done' | 'pending' {
-    if (!stage) return 'pending';
-    const stat = stage.status;
-    if (['ok', 'recovered', 'complete', 'completed', 'done', 'finished', 'success', 'succeeded'].includes(stat)) return 'done';
-    if (isCurrent || stat === 'running' || stat === 'active') return 'active';
-    return 'pending';
-  }
 </script>
 
 <section class="hero">
@@ -48,73 +38,33 @@
     </div>
 
     <h1 class="hero-title">
-      {#if m.runName}
-        <span class="text-mono" style="font-size:18px;font-weight:600;letter-spacing:0;color:var(--muted);display:block;margin-bottom:6px">
-          {m.runName}
-        </span>
-      {/if}
-      {stageName} 단계 <span class="accent">{fmt.pct(stagePct)} 진행</span>
+      <span class="text-mono" style="font-size:18px;font-weight:600;letter-spacing:0;color:var(--muted);display:block;margin-bottom:6px">
+        {runName}
+      </span>
+      {stageName} 학습 중 <span class="accent">전체 {fmt.pct(overallPct, 1)}</span>
     </h1>
 
     <p class="hero-sub">
-      현재 stage <span class="text-mono" style="color:var(--fg);font-weight:600">{stageName}</span>,
-      Epoch <span class="text-mono" style="color:var(--fg);font-weight:600">{m.epoch ?? '-'}/{m.epochs ?? '-'}</span>,
-      처리 속도 <span class="text-mono" style="color:var(--accent-strong);font-weight:600">{fmt.num(sps, 1)} samples/s</span>.
-      Predictor 단계는 Tokenizer 완료 시 자동 진입합니다.
+      Hero 영역은 실행 핵심만 요약합니다. 전체 진행률과 단계 구간은 아래 긴 단계 바에서 확인하고,
+      손실 곡선·GPU·데이터 범위는 각 전용 카드에서 분리해 확인합니다.
     </p>
 
-    <div class="stepper" style="margin-top:8px">
-      <div class="step" data-state={stageState(tokenizer, latest.train_stage === 'tokenizer')}>
-        <div class="row spread">
-          <span class="step-num">STAGE 1</span>
-          {#if stageState(tokenizer, latest.train_stage === 'tokenizer') === 'active'}
-            <span class="pill accent"><span class="dot"></span>진행 중</span>
-          {:else if stageState(tokenizer, false) === 'done'}
-            <span class="pill success"><span class="dot"></span>완료</span>
-          {:else}
-            <span class="pill"><span class="dot"></span>대기</span>
-          {/if}
-        </div>
-        <div class="step-title">Tokenizer · K-line 양자화</div>
-        <div class="step-meta">
-          step
-          <span class="text-mono tnum" style="color:var(--fg-strong);font-weight:600">
-            {fmt.int(tokenizer?.step)} / {fmt.int(tokenizer?.total_steps)}
-          </span>
-          · loss
-          <span class="text-mono tnum" style="color:var(--accent-strong);font-weight:600">
-            {m.loss != null ? m.loss.toFixed(4) : '—'}
-          </span>
-        </div>
-        <div class="step-bar"><span style:width={`${tokenizer?.stage_percent ?? 0}%`}></span></div>
+    <div class="hero-status-strip" aria-label="실시간 학습 핵심 상태">
+      <div>
+        <span>현재 단계</span>
+        <strong class="text-mono">{stageName}</strong>
       </div>
-
-      <div class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5 12h14M13 6l6 6-6 6" />
-        </svg>
+      <div>
+        <span>Step</span>
+        <strong class="text-mono tnum">{fmt.int(latest.step)} / {fmt.int(latest.total_steps)}</strong>
       </div>
-
-      <div class="step" data-state={stageState(predictor, latest.train_stage === 'predictor')}>
-        <div class="row spread">
-          <span class="step-num">STAGE 2</span>
-          {#if stageState(predictor, latest.train_stage === 'predictor') === 'active'}
-            <span class="pill accent"><span class="dot"></span>진행 중</span>
-          {:else if stageState(predictor, false) === 'done'}
-            <span class="pill success"><span class="dot"></span>완료</span>
-          {:else}
-            <span class="pill"><span class="dot"></span>대기</span>
-          {/if}
-        </div>
-        <div class="step-title">Predictor · 다음 step 예측</div>
-        <div class="step-meta">
-          step
-          <span class="text-mono tnum" style="color:var(--muted)">
-            {fmt.int(predictor?.step ?? 0)} / {fmt.int(predictor?.total_steps ?? 0)}
-          </span>
-          · loss <span class="text-mono" style="color:var(--muted)">—</span>
-        </div>
-        <div class="step-bar"><span style:width={`${predictor?.stage_percent ?? 0}%`}></span></div>
+      <div>
+        <span>Epoch</span>
+        <strong class="text-mono tnum">{m.epoch ?? '-'} / {m.epochs ?? '-'}</strong>
+      </div>
+      <div>
+        <span>Loss</span>
+        <strong class="text-mono tnum">{m.loss != null ? m.loss.toFixed(4) : '—'}</strong>
       </div>
     </div>
   </div>
@@ -133,10 +83,10 @@
         <div>
           <div class="text-eyebrow">전체 진행</div>
           <strong class="text-mono tnum">{fmt.pct(overallPct, 1)}</strong>
-          <span>단계 구간은 아래 원형 그래프에서 확인</span>
+          <span>단계 구간은 아래 가로 진행 바로 확인</span>
         </div>
         <div>
-          <div class="text-eyebrow">현재 단계</div>
+          <div class="text-eyebrow">현재 단계 진행</div>
           <strong class="text-mono tnum">{fmt.pct(stagePct, 1)}</strong>
           <span>{stageName}</span>
         </div>
@@ -164,6 +114,35 @@
 </section>
 
 <style>
+  .hero-status-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .hero-status-strip > div {
+    min-width: 0;
+    padding: 13px 14px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--r-md);
+    background: color-mix(in oklab, var(--surface-raised) 84%, var(--accent-soft));
+  }
+  .hero-status-strip span {
+    display: block;
+    color: var(--muted);
+    font: 700 11px/1.2 var(--font-display);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .hero-status-strip strong {
+    display: block;
+    margin-top: 6px;
+    color: var(--fg-strong);
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .hero-summary {
     width: 100%;
     display: grid;
@@ -188,5 +167,12 @@
     margin-top: 3px;
     color: var(--muted);
     font: 600 11px/1.3 var(--font-display);
+  }
+  @media (max-width: 980px) {
+    .hero-status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 560px) {
+    .hero-status-strip { grid-template-columns: 1fr; }
+    .hero-summary { grid-template-columns: 1fr; }
   }
 </style>

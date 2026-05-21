@@ -165,35 +165,16 @@
     });
   });
 
-  const progressRingStyle = $derived.by(() => {
-    const pieces: string[] = [];
-    const gap = 0.65;
-    for (const segment of progressSegments) {
-      const fillEnd = segment.start + ((segment.end - segment.start) * segment.stagePercent) / 100;
-      const filledColor = segment.complete ? 'var(--success)' : segment.active ? 'var(--accent)' : 'var(--border-strong)';
-      const remainderColor = segment.active ? 'var(--accent-soft)' : 'var(--surface-sunken)';
-      const boundaryStart = Math.max(segment.start, segment.end - gap);
-      if (fillEnd > segment.start) {
-        pieces.push(`${filledColor} ${segment.start}% ${Math.max(segment.start, fillEnd - gap)}%`);
-      }
-      if (fillEnd < boundaryStart) {
-        pieces.push(`${remainderColor} ${Math.max(segment.start, fillEnd)}% ${boundaryStart}%`);
-      }
-      pieces.push(`var(--border) ${boundaryStart}% ${segment.end}%`);
-    }
-    return `conic-gradient(from -90deg, ${pieces.join(', ')})`;
-  });
-
   const progressFormula = $derived.by(() => {
     const count = stageCount;
     const latest = latestStage;
     if (!latest) return '전체 진행률 = 단계별 진행률을 동일 구간으로 합산';
-    return `전체 ${fmt.num(overallPercent, 1)}% = ${currentStageLabel} ${fmt.num(currentStagePercent, 1)}% × 1/${count}`;
+    return `전체 ${fmt.num(overallPercent, 1)}% = 완료 구간 + ${currentStageLabel} ${fmt.num(currentStagePercent, 1)}% × 1/${count}`;
   });
 </script>
 
 <!-- ===== 핵심 실시간 지표 ===== -->
-<section class="grid-1-1-1-1">
+<section class="metric-grid">
   <div class="metric glow">
     <div class="metric-head">
       <span class="metric-label">현재 손실</span>
@@ -216,27 +197,16 @@
 
   <div class="metric">
     <div class="metric-head">
-      <span class="metric-label">단계 진행률</span>
-      <span class="pill accent" style="padding:2px 8px;font-size:10px">step</span>
-    </div>
-    <div class="metric-value tnum">
-      {status?.latest_stage?.stage_percent != null ? status.latest_stage.stage_percent.toFixed(1) : '-'}<span class="metric-unit">%</span>
-    </div>
-    <div class="metric-foot">
-      step <span class="text-mono" style="color:var(--fg)">{fmt.int(status?.latest_stage?.step)}</span>
-      / {fmt.int(status?.latest_stage?.total_steps)}
-    </div>
-  </div>
-
-  <div class="metric">
-    <div class="metric-head">
       <span class="metric-label">처리 속도</span>
       <span class="pill success" style="padding:2px 8px;font-size:10px">live</span>
     </div>
     <div class="metric-value tnum">
       {fmt.num(m.samplesPerSec, 1)}<span class="metric-unit">samples/s</span>
     </div>
-    <div class="metric-foot">현재 batch 기준 처리량</div>
+    <div class="metric-foot">
+      step <span class="text-mono" style="color:var(--fg)">{fmt.int(status?.latest_stage?.step)}</span>
+      / {fmt.int(status?.latest_stage?.total_steps)} · 현재 batch 기준
+    </div>
   </div>
 
   <div class="metric">
@@ -253,56 +223,73 @@
   </div>
 </section>
 
-<!-- ===== 단계 구간이 보이는 전체 진행률 원형 그래프 ===== -->
-<section class="card progress-card glow" aria-label="단계별 전체 진행률 원형 그래프">
-  <div class="progress-layout">
-    <div class="progress-ring-panel">
-      <div class="progress-donut" style:background={progressRingStyle}>
-        <div class="progress-donut-hole">
-          <span>전체 진행률</span>
-          <strong class="tnum">{fmt.num(overallPercent, 1)}%</strong>
-          <small>{stageCount}단계 구간 합산</small>
+<!-- ===== 단계 구간이 보이는 전체 진행률 가로 바 ===== -->
+<section class="card progress-card stage-timeline-card glow" aria-label="단계별 전체 진행률 가로 막대">
+  <div class="stage-progress-head">
+    <div>
+      <div class="text-eyebrow">STAGE-AWARE PROGRESS</div>
+      <h2>전체 진행률을 한 줄 단계 바로 봅니다</h2>
+      <p>
+        전체 100%를 {stageCount}개 단계 구간으로 나누고, 현재 단계의 채움 값은 해당 구간 안에서만 표시합니다.
+        중복 표시를 줄이고, 단계별 위치·기여도·현재 속도를 한 화면에서 비교합니다.
+      </p>
+    </div>
+    <div class="stage-progress-kpis" aria-label="전체와 현재 단계 진행 요약">
+      <div>
+        <span>전체 진행</span>
+        <strong class="tnum">{fmt.num(overallPercent, 1)}%</strong>
+      </div>
+      <div>
+        <span>현재 단계</span>
+        <strong class="tnum">{currentStageLabel} {fmt.num(currentStagePercent, 1)}%</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="progress-formula text-mono">{progressFormula}</div>
+
+  <div
+    class="stage-track"
+    role="img"
+    aria-label={`전체 진행률 ${fmt.num(overallPercent, 1)}%, 현재 단계 ${currentStageLabel} ${fmt.num(currentStagePercent, 1)}%`}
+  >
+    {#each progressSegments as segment (segment.key)}
+      <div
+        class="stage-track-segment"
+        data-active={segment.active ? 'true' : 'false'}
+        data-complete={segment.complete ? 'true' : 'false'}
+        style:flex-basis={`${100 / stageCount}%`}
+        title={`${segment.stageIndex}구간 ${segment.label}: ${fmt.num(segment.stagePercent, 1)}%`}
+      >
+        <span style:width={`${segment.stagePercent}%`}></span>
+        <em>{segment.stageIndex}</em>
+      </div>
+    {/each}
+  </div>
+
+  <div class="stage-scale-row" aria-hidden="true">
+    {#each progressSegments as segment (segment.key)}
+      <span style:left={`${segment.start}%`}>{fmt.num(segment.start, 0)}%</span>
+    {/each}
+    <span style:left="100%">100%</span>
+  </div>
+
+  <div class="segment-list compact">
+    {#each progressSegments as segment (segment.key)}
+      <div class="segment-row" data-active={segment.active ? 'true' : 'false'}>
+        <div class="segment-main">
+          <span class="segment-dot" data-active={segment.active ? 'true' : 'false'} data-complete={segment.complete ? 'true' : 'false'}></span>
+          <div>
+            <strong>{segment.stageIndex}구간 · {segment.label}</strong>
+            <small>전체 {fmt.num(segment.start, 0)}~{fmt.num(segment.end, 0)}%</small>
+          </div>
+        </div>
+        <div class="segment-stat">
+          <strong class="tnum">{fmt.num(segment.stagePercent, 1)}%</strong>
+          <small>전체 기여 {fmt.num(segment.overallContribution, 1)}%</small>
         </div>
       </div>
-      <div class="progress-boundary-row">
-        {#each progressSegments as segment (segment.key)}
-          <span class="text-mono">{fmt.num(segment.start, 0)}~{fmt.num(segment.end, 0)}%</span>
-        {/each}
-      </div>
-    </div>
-
-    <div class="progress-copy">
-      <div>
-        <div class="text-eyebrow">STAGE-AWARE PROGRESS</div>
-        <h2>전체 진행률과 현재 단계 진행률을 분리해서 봅니다</h2>
-        <p>
-          원형 그래프는 전체 100%를 단계 수만큼 나눈 뒤, 현재 단계의 진행률만 해당 구간 안에서 채웁니다.
-          지금은 <strong>{currentStageLabel}</strong>가 전체 원의
-          <strong> {fmt.num(100 / stageCount, 0)}%</strong> 구간을 담당합니다.
-        </p>
-      </div>
-      <div class="progress-formula text-mono">{progressFormula}</div>
-      <div class="segment-list">
-        {#each progressSegments as segment (segment.key)}
-          <div class="segment-row" data-active={segment.active ? 'true' : 'false'}>
-            <div class="segment-main">
-              <span class="segment-dot" data-active={segment.active ? 'true' : 'false'} data-complete={segment.complete ? 'true' : 'false'}></span>
-              <div>
-                <strong>{segment.stageIndex}구간 · {segment.label}</strong>
-                <small>전체 {fmt.num(segment.start, 0)}~{fmt.num(segment.end, 0)}%</small>
-              </div>
-            </div>
-            <div class="segment-stat">
-              <strong class="tnum">{fmt.num(segment.stagePercent, 1)}%</strong>
-              <small>전체 기여 {fmt.num(segment.overallContribution, 1)}%</small>
-            </div>
-            <div class="segment-bar" aria-hidden="true">
-              <span style:width={`${segment.stagePercent}%`}></span>
-            </div>
-          </div>
-        {/each}
-      </div>
-    </div>
+    {/each}
   </div>
 </section>
 
@@ -432,9 +419,9 @@
 <W9LogTail />
 
 <style>
-  .grid-1-1-1-1 {
+  .metric-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: 1.12fr 1fr 1fr;
     gap: 16px;
   }
   .grid-3-1 {
@@ -453,91 +440,48 @@
     height: 4px;
     background: linear-gradient(90deg, var(--accent), var(--info), var(--warm));
   }
-  .progress-layout {
+  .stage-timeline-card {
+    gap: 18px;
+  }
+  .stage-progress-head {
     display: grid;
-    grid-template-columns: minmax(260px, 0.82fr) minmax(0, 1.55fr);
-    align-items: center;
-    gap: 24px;
+    grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.78fr);
+    gap: 18px;
+    align-items: start;
   }
-  .progress-ring-panel {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-  }
-  .progress-donut {
-    width: min(280px, 78vw);
-    aspect-ratio: 1;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    position: relative;
-    box-shadow: inset 0 0 0 1px var(--border), var(--shadow-glow);
-  }
-  .progress-donut::after {
-    content: '';
-    position: absolute;
-    inset: 13px;
-    border-radius: 50%;
-    border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
-    pointer-events: none;
-  }
-  .progress-donut-hole {
-    width: 58%;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    background: color-mix(in oklab, var(--surface) 90%, var(--bg));
-    border: 1px solid var(--border-faint);
-    box-shadow: var(--shadow-md);
-    text-align: center;
-  }
-  .progress-donut-hole span,
-  .progress-donut-hole small {
-    color: var(--muted);
-    font: 700 11px/1.2 var(--font-display);
-  }
-  .progress-donut-hole strong {
-    color: var(--fg-strong);
-    font: 800 35px/1 var(--font-display);
-    letter-spacing: -0.035em;
-  }
-  .progress-boundary-row {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-  }
-  .progress-boundary-row span {
-    padding: 4px 8px;
-    border-radius: var(--r-pill);
-    background: var(--surface-sunken);
-    color: var(--muted);
-    font-size: 11px;
-  }
-  .progress-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    min-width: 0;
-  }
-  .progress-copy h2 {
+  .stage-progress-head h2 {
     margin-top: 4px;
     font: 700 22px/1.25 var(--font-display);
     letter-spacing: -0.018em;
     color: var(--fg-strong);
   }
-  .progress-copy p {
+  .stage-progress-head p {
     margin-top: 8px;
     color: var(--muted);
-    max-width: 820px;
+    max-width: 880px;
   }
-  .progress-copy strong {
+  .stage-progress-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .stage-progress-kpis > div {
+    padding: 14px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--r-md);
+    background: color-mix(in oklab, var(--surface-raised) 84%, var(--accent-soft));
+  }
+  .stage-progress-kpis span {
+    display: block;
+    color: var(--muted);
+    font: 700 11px/1.2 var(--font-display);
+  }
+  .stage-progress-kpis strong {
+    display: block;
+    margin-top: 6px;
     color: var(--fg-strong);
+    font: 800 24px/1.05 var(--font-display);
+    letter-spacing: -0.02em;
   }
   .progress-formula {
     width: fit-content;
@@ -551,6 +495,72 @@
   }
   :global([data-theme='dark']) .progress-formula {
     color: var(--accent);
+  }
+  .stage-track {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 34px;
+    overflow: hidden;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--border-faint);
+    background: var(--surface-sunken);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, white 36%, transparent);
+  }
+  .stage-track-segment {
+    position: relative;
+    flex-grow: 0;
+    flex-shrink: 0;
+    min-width: 0;
+    height: 100%;
+    background: var(--surface-sunken);
+    border-left: 1px solid var(--border-faint);
+  }
+  .stage-track-segment:first-child {
+    border-left: none;
+  }
+  .stage-track-segment > span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    display: block;
+    max-width: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent) 52%, var(--info)));
+  }
+  .stage-track-segment[data-complete='true'] > span {
+    background: linear-gradient(90deg, var(--success), color-mix(in oklab, var(--success) 45%, var(--accent)));
+  }
+  .stage-track-segment[data-active='true'] {
+    background: color-mix(in oklab, var(--accent-soft) 55%, var(--surface-sunken));
+  }
+  .stage-track-segment em {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--fg-strong);
+    font: 800 12px/1 var(--font-display);
+    font-style: normal;
+    text-shadow: 0 1px 2px color-mix(in oklab, black 35%, transparent);
+    pointer-events: none;
+  }
+  .stage-scale-row {
+    position: relative;
+    height: 20px;
+    margin-top: -8px;
+  }
+  .stage-scale-row span {
+    position: absolute;
+    transform: translateX(-50%);
+    color: var(--muted);
+    font: 700 10px/1 var(--font-mono);
+    white-space: nowrap;
+  }
+  .stage-scale-row span:first-child {
+    transform: translateX(0);
+  }
+  .stage-scale-row span:last-child {
+    transform: translateX(-100%);
   }
   .segment-list {
     display: grid;
@@ -611,20 +621,6 @@
     color: var(--fg-strong);
     font: 800 18px/1 var(--font-display);
   }
-  .segment-bar {
-    grid-column: 1 / -1;
-    height: 7px;
-    border-radius: var(--r-pill);
-    background: var(--surface-sunken);
-    overflow: hidden;
-  }
-  .segment-bar span {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent) 50%, var(--info)));
-  }
-
   .dataset-card {
     overflow: hidden;
   }
@@ -780,9 +776,9 @@
   }
 
   @media (max-width: 1200px) {
-    .grid-1-1-1-1 { grid-template-columns: repeat(2, 1fr); }
+    .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .grid-3-1 { grid-template-columns: 1fr; }
-    .progress-layout { grid-template-columns: 1fr; }
+    .stage-progress-head { grid-template-columns: 1fr; }
     .dataset-metrics { grid-template-columns: repeat(2, 1fr); }
     .dataset-detail-grid { grid-template-columns: 1fr; }
   }
@@ -794,7 +790,7 @@
     .split-row { min-width: 740px; }
   }
   @media (max-width: 560px) {
-    .grid-1-1-1-1 { grid-template-columns: 1fr; }
+    .metric-grid { grid-template-columns: 1fr; }
     .dataset-metrics { grid-template-columns: 1fr; }
   }
 </style>
