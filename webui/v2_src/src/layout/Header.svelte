@@ -16,6 +16,7 @@
     'live-training': '실시간 학습',
     forecast: '예측 워크벤치',
     stom: '예측 진단',
+    'rl-lab': '강화학습 실험실',
     artifacts: '아티팩트 & 모델',
     history: '기록 & 런',
     'system-health': '시스템 상태',

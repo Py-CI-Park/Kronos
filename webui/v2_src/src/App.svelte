@@ -6,6 +6,7 @@
   import LiveTrainingTab from '$tabs/LiveTrainingTab.svelte';
   import ForecastWorkbenchTab from '$tabs/ForecastWorkbenchTab.svelte';
   import StomDiagnosticsTab from '$tabs/StomDiagnosticsTab.svelte';
+  import RLLabTab from '$tabs/RLLabTab.svelte';
   import ArtifactsModelsTab from '$tabs/ArtifactsModelsTab.svelte';
   import HistoryRunsTab from '$tabs/HistoryRunsTab.svelte';
   import SystemHealthTab from '$tabs/SystemHealthTab.svelte';
@@ -37,6 +38,8 @@
         <ForecastWorkbenchTab />
       {:else if tab === 'stom'}
         <StomDiagnosticsTab />
+      {:else if tab === 'rl-lab'}
+        <RLLabTab />
       {:else if tab === 'artifacts'}
         <ArtifactsModelsTab />
       {:else if tab === 'history'}

@@ -174,6 +174,54 @@ export interface SystemResponse {
   generated_at?: string;
 }
 
+export interface RlRunRecord {
+  name: string;
+  artifact_type: 'contextual_bandit' | 'cost_gate' | 'baseline' | 'episode_manifest' | string;
+  modified_at?: string;
+  summary?: Record<string, any>;
+  policies?: string[];
+}
+
+export interface RlRunsResponse {
+  runs: RlRunRecord[];
+}
+
+export interface RlRunDetail extends RlRunRecord {
+  artifacts?: Array<{
+    name: string;
+    suffix?: string;
+    size_bytes?: number;
+    modified_at?: string;
+  }>;
+  detail?: Record<string, any>;
+  model?: {
+    model_type?: string;
+    feature_columns?: string[];
+    train_summary?: Record<string, any>;
+  };
+}
+
+export interface RlTableResponse {
+  run?: string;
+  artifact_type?: string;
+  table?: string;
+  policy?: string | null;
+  source_file?: string;
+  rows: Array<Record<string, any>>;
+  row_count?: number;
+  truncated?: boolean;
+  policies?: string[];
+}
+
+export interface RlCostGateResponse {
+  run?: string;
+  artifact_type?: string;
+  summary?: Record<string, any>;
+  gate?: RlTableResponse;
+  scenario?: RlTableResponse;
+  rolling?: RlTableResponse;
+}
+
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
     const r = await fetch(url);
@@ -190,4 +238,16 @@ export const api = {
   artifacts: () => fetchJson<ArtifactsResponse>('/api/training/artifacts'),
   gpu: () => fetchJson<GpuResponse>('/api/training/gpu'),
   system: () => fetchJson<SystemResponse>('/api/training/system'),
+  rlRuns: (limit: number = 20) => fetchJson<RlRunsResponse>(`/api/rl/runs?limit=${limit}`),
+  rlRun: (run: string) => fetchJson<RlRunDetail>(`/api/rl/runs/${encodeURIComponent(run)}`),
+  rlActions: (run: string, limit: number = 500) =>
+    fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/actions?limit=${limit}`),
+  rlTrades: (run: string, limit: number = 500) =>
+    fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/trades?limit=${limit}`),
+  rlEquity: (run: string, limit: number = 500) =>
+    fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/equity?limit=${limit}`),
+  rlEpisodes: (run: string, limit: number = 500) =>
+    fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/episodes?limit=${limit}`),
+  rlCostGate: (run: string, limit: number = 500) =>
+    fetchJson<RlCostGateResponse>(`/api/rl/runs/${encodeURIComponent(run)}/cost-gate?limit=${limit}`),
 };
