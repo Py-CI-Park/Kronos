@@ -223,6 +223,48 @@ def test_filter_report_listing_loads_search_and_rolling_artifacts(tmp_path, monk
     assert loaded["artifact_type"] == "rolling_filter_validation"
 
 
+def test_horizon_comparison_loads_dashboard_summary(tmp_path, monkeypatch):
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    (report_dir / "stom_1s_2025_full_small_horizon_comparison.json").write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        "horizon": 30,
+                        "direction": 0.39,
+                        "random_direction": 0.38,
+                        "dir_edge": 0.01,
+                        "topk_net": -0.25,
+                        "rolling_net": -0.24,
+                        "rolling_hit": 0.32,
+                        "passes_gate": False,
+                    },
+                    {
+                        "horizon": 300,
+                        "direction": 0.49,
+                        "random_direction": 0.46,
+                        "dir_edge": 0.03,
+                        "topk_net": -0.11,
+                        "rolling_net": -0.005,
+                        "rolling_hit": 0.44,
+                        "passes_gate": False,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(stom_dashboard, "QLIB_BACKTEST_DIRS", [report_dir])
+
+    payload = stom_dashboard.load_horizon_comparison()
+
+    assert [row["horizon"] for row in payload["rows"]] == [30, 300]
+    assert payload["best_by_direction"]["horizon"] == 300
+    assert payload["best_by_rolling_net"]["horizon"] == 300
+    assert payload["decision"] == "hold_expand_200k"
+
+
 def test_dashboard_rejects_path_traversal(tmp_path, monkeypatch):
     pred_dir = tmp_path / "preds"
     pred_dir.mkdir()
@@ -261,6 +303,7 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "recommendation_export_csv", stom_dashboard.recommendation_export_csv)
     monkeypatch.setattr(app, "list_filter_report_files", stom_dashboard.list_filter_report_files)
     monkeypatch.setattr(app, "load_filter_report_artifact", stom_dashboard.load_filter_report_artifact)
+    monkeypatch.setattr(app, "load_horizon_comparison", stom_dashboard.load_horizon_comparison)
     monkeypatch.setattr(app, "prediction_diagnostics", stom_dashboard.prediction_diagnostics)
     monkeypatch.setattr(app, "prediction_visual_payload", stom_dashboard.prediction_visual_payload)
 
@@ -272,6 +315,7 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     assert client.get("/api/stom/prediction-files").status_code == 200
     assert client.get("/api/stom/qlib-backtests").status_code == 200
     assert client.get("/api/stom/filter-reports").status_code == 200
+    assert client.get("/api/stom/horizon-comparison").status_code == 200
     assert client.get("/api/stom/prediction?file=sample.csv").status_code == 200
     assert client.get("/api/stom/prediction?file=sample.csv").get_json()["visual"]["selected_window"]["symbol"] == "000001"
     rec = client.get("/api/stom/recommendations?file=sample.csv")

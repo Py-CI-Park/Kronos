@@ -48,6 +48,7 @@ try:
             list_filter_report_files,
             list_qlib_backtest_files,
             list_prediction_files,
+            load_horizon_comparison,
             load_filter_report_artifact,
             load_qlib_backtest_artifact,
             load_prediction_frame,
@@ -69,6 +70,7 @@ try:
             list_filter_report_files,
             list_qlib_backtest_files,
             list_prediction_files,
+            load_horizon_comparison,
             load_filter_report_artifact,
             load_qlib_backtest_artifact,
             load_prediction_frame,
@@ -90,6 +92,7 @@ except Exception as exc:
     list_filter_report_files = None
     list_qlib_backtest_files = None
     list_prediction_files = None
+    load_horizon_comparison = None
     load_filter_report_artifact = None
     load_qlib_backtest_artifact = None
     load_prediction_frame = None
@@ -712,6 +715,16 @@ def stom_filter_reports():
         if load_filter_report_artifact is None:
             return jsonify({'error': 'STOM filter report loader is not available'}), 500
         return jsonify({'artifact': load_filter_report_artifact(file_name)})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/stom/horizon-comparison')
+def stom_horizon_comparison():
+    if load_horizon_comparison is None:
+        return jsonify({'error': 'STOM horizon comparison helper is not available'}), 500
+    try:
+        return jsonify(load_horizon_comparison())
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
 

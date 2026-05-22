@@ -1,10 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fmt } from '$lib/format';
-  import { ICONS } from '$lib/icons';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
 
-  // ── Summary 데이터 ───────────────────────────────────────────
   interface StomSummary {
     compatible_stock_table_count?: number;
     db_size_bytes?: number;
@@ -17,6 +15,7 @@
     inspect_available?: boolean;
     scale_available?: boolean;
   }
+
   interface FileItem {
     name: string;
     path: string;
@@ -26,33 +25,36 @@
     artifact_type?: string;
   }
 
+  type ViewName = 'prediction' | 'backtest' | 'filter';
+
   let summary = $state<StomSummary | null>(null);
+  let horizonComparison = $state<any>(null);
   let predFiles = $state<FileItem[]>([]);
   let backtestFiles = $state<FileItem[]>([]);
   let filterFiles = $state<FileItem[]>([]);
   let loadingSummary = $state(false);
   let summaryError = $state<string | null>(null);
 
-  // 활성 패널
-  let view = $state<'prediction' | 'backtest' | 'filter'>('prediction');
-
-  // 선택한 파일 + 진단 결과
+  let view = $state<ViewName>('prediction');
   let selectedFile = $state<FileItem | null>(null);
+  let selectedArtifact = $state<any>(null);
   let diagnostics = $state<any>(null);
   let predictionDetail = $state<any>(null);
   let backtestReport = $state<any>(null);
   let loadingDiag = $state(false);
   let diagError = $state<string | null>(null);
 
+  onMount(() => {
+    void loadSummary();
+    void loadAllLists();
+  });
+
   async function loadSummary() {
     loadingSummary = true;
     summaryError = null;
     try {
       const r = await fetch('/api/stom/summary');
-      if (!r.ok) {
-        summaryError = `HTTP ${r.status}`;
-        return;
-      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       summary = await r.json();
     } catch (e: any) {
       summaryError = e?.message ?? 'STOM 요약 조회 실패';
@@ -73,11 +75,16 @@
   }
 
   async function loadAllLists() {
-    [predFiles, backtestFiles, filterFiles] = await Promise.all([
+    const [pred, backtests, filters, horizonRes] = await Promise.all([
       loadList('/api/stom/prediction-files'),
       loadList('/api/stom/qlib-backtests'),
       loadList('/api/stom/filter-reports'),
+      fetch('/api/stom/horizon-comparison').catch(() => null),
     ]);
+    predFiles = pred;
+    backtestFiles = backtests;
+    filterFiles = filters;
+    if (horizonRes?.ok) horizonComparison = await horizonRes.json();
     const latest = preferredPredictionFile();
     if (!selectedFile && latest && view === 'prediction') {
       await selectFile(latest);
@@ -90,47 +97,60 @@
 
   async function selectFile(f: FileItem) {
     selectedFile = f;
+    selectedArtifact = null;
     diagnostics = null;
     predictionDetail = null;
     backtestReport = null;
     diagError = null;
-    if (view !== 'prediction') return;
     loadingDiag = true;
     try {
       const query = encodeURIComponent(fileQuery(f));
-      const [diagRes, predictionRes, reportRes] = await Promise.all([
-        fetch(`/api/stom/diagnostics?file=${query}&max_symbols=30`),
-        fetch(`/api/stom/prediction?file=${query}`),
-        fetch(`/api/stom/backtest-report?file=${query}&top_k=5`),
-      ]);
-      if (!diagRes.ok) throw new Error(`진단 HTTP ${diagRes.status}`);
-      if (!predictionRes.ok) throw new Error(`예측 상세 HTTP ${predictionRes.status}`);
-      diagnostics = await diagRes.json();
-      predictionDetail = await predictionRes.json();
-      backtestReport = reportRes.ok ? await reportRes.json() : null;
+      if (view === 'prediction') {
+        const [diagRes, predictionRes, reportRes] = await Promise.all([
+          fetch(`/api/stom/diagnostics?file=${query}&max_symbols=30`),
+          fetch(`/api/stom/prediction?file=${query}`),
+          fetch(`/api/stom/backtest-report?file=${query}&top_k=5`),
+        ]);
+        if (!diagRes.ok) throw new Error(`진단 HTTP ${diagRes.status}`);
+        if (!predictionRes.ok) throw new Error(`예측 상세 HTTP ${predictionRes.status}`);
+        diagnostics = await diagRes.json();
+        predictionDetail = await predictionRes.json();
+        backtestReport = reportRes.ok ? await reportRes.json() : null;
+      } else if (view === 'backtest') {
+        const r = await fetch(`/api/stom/qlib-backtests?file=${query}`);
+        if (!r.ok) throw new Error(`백테스트 HTTP ${r.status}`);
+        selectedArtifact = await r.json();
+      } else {
+        const r = await fetch(`/api/stom/filter-reports?file=${query}`);
+        if (!r.ok) throw new Error(`필터 리포트 HTTP ${r.status}`);
+        selectedArtifact = await r.json();
+      }
     } catch (e: any) {
-      diagError = e?.message ?? '진단 조회 실패';
+      diagError = e?.message ?? '상세 조회 실패';
     } finally {
       loadingDiag = false;
     }
   }
 
-  onMount(() => {
-    loadSummary();
-    loadAllLists();
-  });
+  function switchView(next: ViewName) {
+    view = next;
+    selectedFile = null;
+    selectedArtifact = null;
+    diagnostics = null;
+    predictionDetail = null;
+    backtestReport = null;
+    diagError = null;
+    const list = next === 'prediction' ? sortedPredFiles : next === 'backtest' ? sortedBacktestFiles : sortedFilterFiles;
+    if (list[0]) void selectFile(list[0]);
+  }
 
   function gib(b: number | undefined | null): string {
     if (b == null) return '—';
     if (b >= 1024 ** 3) return (b / 1024 ** 3).toFixed(2) + ' GiB';
     if (b >= 1024 ** 2) return (b / 1024 ** 2).toFixed(1) + ' MiB';
     if (b >= 1024) return (b / 1024).toFixed(1) + ' KiB';
-    return b + ' B';
+    return `${b} B`;
   }
-
-  let activeFiles = $derived(view === 'prediction' ? predFiles : view === 'backtest' ? backtestFiles : filterFiles);
-  let viewLabel = $derived(view === 'prediction' ? '예측 결과' : view === 'backtest' ? '백테스트' : '필터 리포트');
-  let sortedActiveFiles = $derived(sortFilesForDisplay(activeFiles, view));
 
   function predictionPriority(name: string): number {
     if (name.includes('_kronos.csv')) return 0;
@@ -139,40 +159,45 @@
     return 3;
   }
 
-  function sortFilesForDisplay(files: FileItem[], currentView: 'prediction' | 'backtest' | 'filter'): FileItem[] {
+  function horizonPriority(name: string): number {
+    const match = name.match(/pred(\d+)/);
+    return match ? -Number(match[1]) : 0;
+  }
+
+  function sortFilesForDisplay(files: FileItem[], currentView: ViewName): FileItem[] {
     return [...files].sort((a, b) => {
-      const modified = (b.modified_at ?? 0) - (a.modified_at ?? 0);
-      if (Math.abs(modified) > 120) return modified;
       if (currentView === 'prediction') {
+        const horizon = horizonPriority(a.name) - horizonPriority(b.name);
+        if (horizon !== 0) return horizon;
         const priority = predictionPriority(a.name) - predictionPriority(b.name);
         if (priority !== 0) return priority;
       }
+      const modified = (b.modified_at ?? 0) - (a.modified_at ?? 0);
+      if (Math.abs(modified) > 120) return modified;
       return a.name.localeCompare(b.name);
     });
   }
 
-  function preferredPredictionFile(): FileItem | undefined {
-    const sorted = sortFilesForDisplay(predFiles, 'prediction');
-    return sorted.find((file) => file.name.includes('_kronos.csv')) ?? sorted[0];
-  }
+  const sortedPredFiles = $derived(sortFilesForDisplay(predFiles, 'prediction'));
+  const sortedBacktestFiles = $derived(sortFilesForDisplay(backtestFiles, 'backtest'));
+  const sortedFilterFiles = $derived(sortFilesForDisplay(filterFiles, 'filter'));
+  const activeFiles = $derived(view === 'prediction' ? sortedPredFiles : view === 'backtest' ? sortedBacktestFiles : sortedFilterFiles);
+  const viewLabel = $derived(view === 'prediction' ? '예측 결과' : view === 'backtest' ? '백테스트' : '필터 리포트');
 
-  function switchView(next: 'prediction' | 'backtest' | 'filter') {
-    view = next;
-    selectedFile = null;
-    diagnostics = null;
-    predictionDetail = null;
-    backtestReport = null;
-    diagError = null;
-    if (next === 'prediction') {
-      const latest = preferredPredictionFile();
-      if (latest) void selectFile(latest);
-    }
+  function preferredPredictionFile(): FileItem | undefined {
+    return sortedPredFiles.find((file) => file.name.includes('_kronos.csv')) ?? sortedPredFiles[0];
   }
 
   function pct(value: unknown, digits = 1): string {
     const n = Number(value);
     if (!Number.isFinite(n)) return '—';
     return `${n.toFixed(digits)}%`;
+  }
+
+  function ratioPct(value: unknown, digits = 1): string {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    return `${(n * 100).toFixed(digits)}%`;
   }
 
   function num(value: unknown, digits = 3): string {
@@ -185,20 +210,39 @@
   function verdict(overall: any): { label: string; tone: 'success' | 'warn' | 'danger'; message: string } {
     const direction = Number(overall?.direction_accuracy ?? 0);
     const avgReturn = Number(overall?.avg_actual_return ?? 0);
-    if (direction >= 0.45 && avgReturn >= 0) {
-      return { label: '탐색 가치 있음', tone: 'success', message: '방향 적중률이 0.40 기준선을 넘고 평균 실제 수익률도 양수입니다. 단, 비용 반영 수익은 별도 확인이 필요합니다.' };
+    if (direction >= 0.5 && avgReturn >= 0) {
+      return { label: '실전 후보 검토 가능', tone: 'success', message: '방향 적중률이 50% 이상입니다. 그래도 비용 반영 rolling 검증을 함께 확인해야 합니다.' };
     }
     if (direction >= 0.4) {
-      return { label: '조건식 보완 필요', tone: 'warn', message: '방향성은 기준선을 넘지만 수익/비용 관점에서 필터와 리스크 조건을 추가해야 합니다.' };
+      return { label: '조건식 보완 필요', tone: 'warn', message: '방향성은 일부 있지만 50%를 넘지 못했거나 비용 검증이 부족합니다. 조건식과 horizon 비교가 필요합니다.' };
     }
-    return { label: '실전 사용 보류', tone: 'danger', message: '방향 적중률이 낮아 현재 결과만으로 자동매매 신호로 쓰기 어렵습니다.' };
+    return { label: '실전 사용 보류', tone: 'danger', message: '현재 결과만으로 자동매매 신호로 사용하기 어렵습니다.' };
   }
 
   const resultVerdict = $derived(verdict(diagnostics?.overall));
 
+  const horizonRows = $derived(horizonComparison?.rows ?? []);
+  const bestHorizon = $derived(horizonComparison?.best_by_rolling_net ?? horizonComparison?.best_by_direction ?? null);
+  const horizonChartOption = $derived.by(() => {
+    const rows = horizonRows;
+    if (!rows.length) return {};
+    return {
+      backgroundColor: 'transparent',
+      grid: { left: 52, right: 24, top: 42, bottom: 44 },
+      tooltip: { trigger: 'axis' },
+      legend: { top: 0, textStyle: { color: 'inherit' } },
+      xAxis: { type: 'category', data: rows.map((r: any) => `${r.horizon}s`), axisLabel: { color: '#64748b' } },
+      yAxis: { type: 'value', axisLabel: { formatter: '{value}%', color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.2)' } } },
+      series: [
+        { name: 'Kronos 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.direction_accuracy ?? 0) * 100), itemStyle: { color: '#2563eb' } },
+        { name: 'Random 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.random_direction_accuracy ?? 0) * 100), itemStyle: { color: '#94a3b8' } },
+        { name: 'Rolling net', type: 'line', data: rows.map((r: any) => Number(r.rolling_net_return_pct ?? 0)), lineStyle: { color: '#ef4444', width: 3 }, symbolSize: 8 },
+      ],
+    };
+  });
+
   const actualPredictionOption = $derived.by(() => {
-    const visual = predictionDetail?.visual;
-    const rows = visual?.window_series ?? [];
+    const rows = predictionDetail?.visual?.window_series ?? [];
     if (!rows.length) return {};
     return {
       backgroundColor: 'transparent',
@@ -240,545 +284,328 @@
       ],
     };
   });
+
+  function fileModified(file: FileItem): string {
+    if (!file.modified_at) return '—';
+    return new Date(file.modified_at * 1000).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  }
 </script>
 
 <section class="page-hero">
   <div class="row" style="gap:10px;flex-wrap:wrap">
     <span class="text-eyebrow">P4 · 본격</span>
-    <span class="pill"><span class="dot" style="background:var(--info)"></span>9개 endpoint · read-only</span>
+    <span class="pill"><span class="dot" style="background:var(--info)"></span>STOM 1초봉 · read-only</span>
     <span class="pill"><span class="dot" style="background:{summary?.inspect_available ? 'var(--success)' : 'var(--warn)'}"></span>
       inspect {summary?.inspect_available ? 'OK' : '제한'}</span>
   </div>
   <h1 class="text-h2" style="margin-top:8px">예측 진단</h1>
   <p class="text-muted" style="margin-top:6px">
-    STOM (Securities Time-series Open Market) 데이터셋 요약과 예측·백테스트·필터 산출물을 통합 조회합니다.
-    모든 데이터는 read-only 이며 사용자는 산출물을 수정할 수 없습니다.
+    STOM 1초봉 예측, 백테스트, 필터 산출물과 horizon별 성과를 한 화면에서 비교합니다.
+    모든 데이터는 read-only이며, 런타임 예측 CSV는 소스 커밋에 포함하지 않습니다.
   </p>
 </section>
 
-<!-- ===== DB summary KPIs ===== -->
 {#if loadingSummary && !summary}
-  <div class="card"><div class="text-muted">STOM 데이터셋 요약 조회 중...</div></div>
+  <div class="card">요약 로딩 중...</div>
 {:else if summaryError}
-  <div class="card" style="border-color:var(--danger-soft)">
-    <div class="text-caption" style="color:var(--danger)">⚠ {summaryError}</div>
-    <button class="btn" onclick={loadSummary} style="margin-top:8px">다시 시도</button>
-  </div>
+  <div class="card error-card">요약 조회 실패: {summaryError}</div>
 {:else if summary}
-  <section class="grid-4-summary">
-    <div class="metric">
-      <div class="metric-head">
-        <span class="metric-label">DB 크기</span>
-        <span class="pill"><span class="dot" style="background:var(--info)"></span>SQLite</span>
-      </div>
-      <div class="metric-value tnum">{gib(summary.db_size_bytes)}</div>
-      <div class="metric-foot">테이블 {fmt.int(summary.table_count)} · 호환 {fmt.int(summary.compatible_stock_table_count)}</div>
-    </div>
-    <div class="metric">
-      <div class="metric-head">
-        <span class="metric-label">총 row 수</span>
-        <span class="pill accent"><span class="dot"></span>stock_groups</span>
-      </div>
-      <div class="metric-value tnum">{fmt.int(summary.total_rows_stock_groups)}</div>
-      <div class="metric-foot">stock_groups 테이블 누적</div>
-    </div>
-    <div class="metric">
-      <div class="metric-head">
-        <span class="metric-label">학습 가능 그룹</span>
-        <span class="pill success"><span class="dot"></span>eligible</span>
-      </div>
-      <div class="metric-value tnum">{fmt.int(summary.eligible_group_count)}</div>
-      <div class="metric-foot">길이·결측 검증 통과</div>
-    </div>
-    <div class="metric">
-      <div class="metric-head">
-        <span class="metric-label">예상 샘플 수</span>
-        <span class="pill"><span class="dot"></span>estimated</span>
-      </div>
-      <div class="metric-value tnum">{fmt.int(summary.estimated_samples)}</div>
-      <div class="metric-foot">학습/검증 분할 가능</div>
-    </div>
+  <section class="kpi-grid">
+    <div class="card kpi"><span>호환 테이블</span><strong>{fmt.int(summary.compatible_stock_table_count ?? 0)}</strong><small>stock table</small></div>
+    <div class="card kpi"><span>학습 후보 그룹</span><strong>{fmt.int(summary.eligible_group_count ?? 0)}</strong><small>lookback/predict 가능</small></div>
+    <div class="card kpi"><span>예상 샘플</span><strong>{fmt.int(summary.estimated_samples ?? 0)}</strong><small>lookback 300 기준</small></div>
+    <div class="card kpi"><span>DB 크기</span><strong>{gib(summary.db_size_bytes)}</strong><small>STOM tick database</small></div>
   </section>
-
-  {#if summary.warnings && summary.warnings.length > 0}
-    <div class="card compact flat" style="background:var(--warn-soft);border-color:transparent;padding:12px 16px">
-      <div class="row" style="gap:8px;margin-bottom:6px">
-        <span class="pill warn"><span class="dot"></span>경고 {summary.warnings.length}</span>
-      </div>
-      {#each summary.warnings as w}
-        <div class="text-caption" style="line-height:1.6">⚠ {w}</div>
-      {/each}
-    </div>
-  {/if}
 {/if}
 
-<!-- ===== File browser ===== -->
-<section class="row" style="gap:10px;flex-wrap:wrap">
-  <div class="tabs">
-    <button data-active={view === 'prediction' ? 'true' : 'false'} onclick={() => switchView('prediction')}>
-      예측 결과 ({predFiles.length})
-    </button>
-    <button data-active={view === 'backtest' ? 'true' : 'false'} onclick={() => switchView('backtest')}>
-      백테스트 ({backtestFiles.length})
-    </button>
-    <button data-active={view === 'filter' ? 'true' : 'false'} onclick={() => switchView('filter')}>
-      필터 리포트 ({filterFiles.length})
-    </button>
-  </div>
-  <button class="btn ghost sm" onclick={loadAllLists} style="margin-left:auto">
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">{@html ICONS.refresh}</svg>
-    목록 새로고침
-  </button>
-</section>
-
-<section class="grid-list-detail">
-  <!-- File list -->
-  <div class="card" style="padding:0;overflow:hidden">
-    <div class="row spread" style="padding:14px 18px 8px">
+{#if horizonRows.length}
+  <section class="card horizon-card">
+    <div class="section-head">
       <div>
-        <div class="card-eyebrow">{viewLabel.toUpperCase()} ({activeFiles.length})</div>
-        <div class="card-title">파일 목록</div>
+        <div class="card-eyebrow">HORIZON COMPARISON · 30/60/120/300초 비교</div>
+        <h2>어느 예측 시간이 가장 의미 있는가?</h2>
+        <p>동일 checkpoint로 각 horizon을 walk-forward 평가하고, 비용 25bp 기준 rolling gate까지 비교합니다.</p>
       </div>
-      <span class="text-caption">최신순</span>
+      <span class="pill {horizonComparison?.passes_any_gate ? 'success' : 'warn'}">
+        {horizonComparison?.passes_any_gate ? '확장 가능' : '확장 보류'}
+      </span>
     </div>
-    <div class="file-list">
-      {#if activeFiles.length === 0}
-        <div class="text-caption" style="padding:32px 20px;text-align:center;color:var(--dim)">
-          파일이 없습니다
-        </div>
-      {:else}
-        {#each sortedActiveFiles as f}
-          <button
-            type="button"
-            class="file-row-btn"
-            data-active={selectedFile?.path === f.path ? 'true' : 'false'}
-            onclick={() => selectFile(f)}
-          >
-            <span class="file-icon">
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">{@html ICONS.file}</svg>
-            </span>
-            <div style="min-width:0;flex:1">
-              <div class="text-mono" style="font-weight:600;color:var(--fg-strong);font-size:12px;line-height:1.3;word-break:break-all">{f.name}</div>
-              <div class="text-caption" style="font-size:10px;margin-top:2px">
-                {gib(f.size_bytes)} · {f.modified_at ? fmt.relative(f.modified_at * 1000) : '—'}
-              </div>
-            </div>
-            {#if f.artifact_type}
-              <span class="pill" style="padding:2px 6px;font-size:10px">{f.artifact_type}</span>
-            {/if}
-          </button>
-        {/each}
+    <div class="verdict-card {horizonComparison?.passes_any_gate ? 'success' : 'warn'}">
+      <div>
+        <div class="text-eyebrow">현재 결론</div>
+        <h3>{bestHorizon ? `${bestHorizon.horizon}초가 상대적으로 가장 유망` : '비교 결과 없음'}</h3>
+        <p>{horizonComparison?.message}</p>
+      </div>
+      {#if bestHorizon}
+        <span class="pill accent">Rolling net {pct(bestHorizon.rolling_net_return_pct, 3)}</span>
       {/if}
     </div>
-  </div>
-
-  <!-- Detail panel -->
-  <div class="card">
-    {#if !selectedFile}
-      <div class="card-eyebrow">DETAIL</div>
-      <div class="text-muted" style="padding:24px 0;text-align:center">
-        좌측에서 파일을 선택하면 상세 정보가 표시됩니다.
-      </div>
-    {:else}
-      <div class="card-header">
-        <div style="min-width:0;flex:1">
-          <div class="card-eyebrow">{viewLabel.toUpperCase()} · DETAIL</div>
-          <div class="text-mono" style="font-weight:700;color:var(--fg-strong);font-size:13px;word-break:break-all">{selectedFile.name}</div>
-        </div>
-        <span class="pill"><span class="dot"></span>{gib(selectedFile.size_bytes)}</span>
-      </div>
-
-      <table class="kv-table">
+    <EChartsRenderer option={horizonChartOption} height="320px" />
+    <div class="table-scroll">
+      <table class="result-table">
+        <thead>
+          <tr>
+            <th>horizon</th><th>방향 적중</th><th>random 대비</th><th>Top-K net</th><th>최적 필터 net</th><th>Rolling net</th><th>Rolling 방향</th><th>Gate</th>
+          </tr>
+        </thead>
         <tbody>
-          <tr><td>전체 경로</td><td class="text-mono" style="word-break:break-all;font-size:11px">{selectedFile.path}</td></tr>
-          <tr><td>수정 시각</td><td class="text-mono">{selectedFile.modified_at ? fmt.kst(selectedFile.modified_at * 1000) : '—'}</td></tr>
-          <tr><td>파일 크기</td><td class="text-mono tnum">{gib(selectedFile.size_bytes)}</td></tr>
-          {#if selectedFile.artifact_type}
-            <tr><td>아티팩트 타입</td><td class="text-mono">{selectedFile.artifact_type}</td></tr>
-          {/if}
+          {#each horizonRows as row}
+            <tr class:best-row={bestHorizon?.horizon === row.horizon}>
+              <td><strong>{row.horizon}초</strong></td>
+              <td>{ratioPct(row.direction_accuracy, 2)}</td>
+              <td class={row.direction_edge_vs_random >= 0 ? 'positive' : 'negative'}>{pct(row.direction_edge_vs_random * 100, 2)}</td>
+              <td class={row.topk_net_return_pct >= 0 ? 'positive' : 'negative'}>{pct(row.topk_net_return_pct, 3)}</td>
+              <td class={row.best_filter_net_return_pct >= 0 ? 'positive' : 'negative'}>{pct(row.best_filter_net_return_pct, 3)}</td>
+              <td class={row.rolling_net_return_pct >= 0 ? 'positive' : 'negative'}>{pct(row.rolling_net_return_pct, 3)}</td>
+              <td>{ratioPct(row.rolling_direction_hit_rate, 2)}</td>
+              <td><span class="pill {row.passes_gate ? 'success' : 'warn'}">{row.passes_gate ? '통과' : '보류'}</span></td>
+            </tr>
+          {/each}
         </tbody>
       </table>
+    </div>
+  </section>
+{/if}
 
-      {#if view === 'prediction'}
-        <div style="margin-top:12px">
-          {#if loadingDiag}
-            <div class="text-caption">진단 데이터 조회 중...</div>
-          {:else if diagError}
-            <div class="text-caption" style="color:var(--danger)">⚠ {diagError}</div>
-          {:else if diagnostics}
-            <div class="card-eyebrow" style="margin-bottom:8px">EVALUATION SUMMARY · 사용자가 바로 읽는 성과 요약</div>
-            {#if diagnostics.overall}
-              <div class="verdict-card {resultVerdict.tone}">
-                <div>
-                  <div class="text-eyebrow">MODEL VERDICT</div>
-                  <h3>{resultVerdict.label}</h3>
-                  <p>{resultVerdict.message}</p>
-                </div>
-                <span class="pill {resultVerdict.tone}">
-                  방향 적중 {pct(Number(diagnostics.overall.direction_accuracy ?? 0) * 100)}
-                </span>
-              </div>
+<section class="card workspace">
+  <div class="tabs">
+    <button class={view === 'prediction' ? 'active' : ''} onclick={() => switchView('prediction')}>예측 결과</button>
+    <button class={view === 'backtest' ? 'active' : ''} onclick={() => switchView('backtest')}>백테스트</button>
+    <button class={view === 'filter' ? 'active' : ''} onclick={() => switchView('filter')}>필터 리포트</button>
+  </div>
 
-              <div class="eval-kpi-grid">
-                <div class="eval-kpi">
-                  <span>방향 적중률</span>
-                  <strong>{pct(Number(diagnostics.overall.direction_accuracy ?? 0) * 100)}</strong>
-                  <small>0.40 기준선 대비 {Number(diagnostics.overall.direction_accuracy ?? 0) >= 0.4 ? '상회' : '미달'}</small>
-                </div>
-                <div class="eval-kpi">
-                  <span>MAPE</span>
-                  <strong>{pct(diagnostics.overall.mape)}</strong>
-                  <small>가격 경로 평균 오차율</small>
-                </div>
-                <div class="eval-kpi">
-                  <span>평가 범위</span>
-                  <strong>{fmt.int(diagnostics.overall.windows)} windows</strong>
-                  <small>{fmt.int(diagnostics.overall.symbols)}종목 · {fmt.int(diagnostics.overall.sessions)}거래일</small>
-                </div>
-                <div class="eval-kpi">
-                  <span>평균 실제 등락률</span>
-                  <strong>{pct(diagnostics.overall.avg_actual_return, 3)}</strong>
-                  <small>예측 window 최종 시점 기준</small>
-                </div>
-              </div>
-
-              {#if backtestReport?.filters}
-                <div class="card-eyebrow" style="margin:16px 0 8px">조건식/Top-K 필터별 성과</div>
-                <div class="filter-grid">
-                  {#each backtestReport.filters.slice(0, 6) as row}
-                    <div class="filter-card">
-                      <span>{row.label}</span>
-                      <strong>{pct(row.hit_rate * 100)}</strong>
-                      <small>count {fmt.int(row.count)} · 실제 {pct(row.avg_actual_return, 3)}</small>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-
-              {#if predictionDetail?.visual?.window_series?.length}
-                <div class="chart-section">
-                  <div class="chart-title">
-                    <div>
-                      <div class="card-eyebrow">ACTUAL VS PREDICTION</div>
-                      <h3>선택 window 실제 종가와 Kronos 예측 종가</h3>
-                    </div>
-                    {#if predictionDetail.visual.selected_window}
-                      <span class="pill accent">
-                        {predictionDetail.visual.selected_window.symbol} · window {predictionDetail.visual.selected_window.window_id}
-                      </span>
-                    {/if}
-                  </div>
-                  <EChartsRenderer option={actualPredictionOption} height="320px" />
-                </div>
-
-                <div class="chart-section">
-                  <div class="chart-title">
-                    <div>
-                      <div class="card-eyebrow">RETURN SCATTER</div>
-                      <h3>전체 window 예측 등락률 vs 실제 등락률</h3>
-                    </div>
-                    <span class="text-caption">초록=방향 적중 · 빨강=방향 실패</span>
-                  </div>
-                  <EChartsRenderer option={returnScatterOption} height="320px" />
-                </div>
-              {/if}
-
-              {#if predictionDetail?.recommendations?.length}
-                <div class="card-eyebrow" style="margin:16px 0 8px">Kronos 점수 상위 후보</div>
-                <div class="table-scroll">
-                  <table class="result-table">
-                    <thead>
-                      <tr>
-                        <th>순위</th>
-                        <th>종목</th>
-                        <th>일자</th>
-                        <th>점수</th>
-                        <th>신호</th>
-                        <th>예측 등락률</th>
-                        <th>실제 등락률</th>
-                        <th>방향</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each predictionDetail.recommendations.slice(0, 10) as row, idx}
-                        <tr>
-                          <td>{idx + 1}</td>
-                          <td class="text-mono">{row.symbol}</td>
-                          <td class="text-mono">{row.session}</td>
-                          <td class="tnum">{num(row.kronos_score, 1)}</td>
-                          <td><span class="pill {row.signal === 'BUY_CANDIDATE' ? 'success' : row.signal === 'WATCH' ? 'warn' : 'danger'}">{row.signal}</span></td>
-                          <td class="tnum">{pct(row.pred_return_window, 3)}</td>
-                          <td class="tnum">{pct(row.actual_return_window, 3)}</td>
-                          <td>{row.direction_hit_window ? '적중' : '실패'}</td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-              {/if}
-
-              {#if diagnostics.best_symbols?.length}
-                <div class="card-eyebrow" style="margin:16px 0 8px">종목별 해석</div>
-                <div class="symbol-columns">
-                  <div>
-                    <h4>상위 종목</h4>
-                    {#each diagnostics.best_symbols.slice(0, 6) as row}
-                      <div class="symbol-row">
-                        <strong class="text-mono">{row.symbol}</strong>
-                        <span>방향 {pct(row.direction_accuracy * 100, 1)} · MAPE {pct(row.mape, 2)}</span>
-                      </div>
-                    {/each}
-                  </div>
-                  <div>
-                    <h4>주의 종목</h4>
-                    {#each diagnostics.worst_symbols.slice(0, 6) as row}
-                      <div class="symbol-row">
-                        <strong class="text-mono">{row.symbol}</strong>
-                        <span>방향 {pct(row.direction_accuracy * 100, 1)} · MAPE {pct(row.mape, 2)}</span>
-                      </div>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-            {:else}
-              <pre class="diag-json">{JSON.stringify(diagnostics, null, 2).slice(0, 800)}{JSON.stringify(diagnostics).length > 800 ? '\n...' : ''}</pre>
-            {/if}
-          {:else}
-            <div class="text-caption">진단 결과 없음</div>
-          {/if}
+  <div class="workspace-grid">
+    <aside class="file-list">
+      <div class="file-list-head">
+        <div>
+          <div class="card-eyebrow">{viewLabel}</div>
+          <h3>산출물 목록</h3>
         </div>
+        <button class="ghost" onclick={loadAllLists}>갱신</button>
+      </div>
+      {#if activeFiles.length}
+        {#each activeFiles.slice(0, 80) as file}
+          <button class="file-row {selectedFile?.name === file.name ? 'selected' : ''}" onclick={() => selectFile(file)}>
+            <strong>{file.name}</strong>
+            <span>{gib(file.size_bytes)} · {fileModified(file)}</span>
+          </button>
+        {/each}
+      {:else}
+        <div class="empty">표시할 산출물이 없습니다.</div>
       {/if}
-    {/if}
+    </aside>
+
+    <main class="detail-panel">
+      {#if loadingDiag}
+        <div class="loading-box">상세 분석 로딩 중...</div>
+      {:else if diagError}
+        <div class="error-card">⚠ {diagError}</div>
+      {:else if view === 'prediction' && diagnostics}
+        <div class="card-eyebrow" style="margin-bottom:8px">EVALUATION SUMMARY · 사용자가 바로 읽는 성과 요약</div>
+        {#if diagnostics.overall}
+          <div class="verdict-card {resultVerdict.tone}">
+            <div>
+              <div class="text-eyebrow">MODEL VERDICT</div>
+              <h3>{resultVerdict.label}</h3>
+              <p>{resultVerdict.message}</p>
+            </div>
+            <span class="pill {resultVerdict.tone}">방향 적중 {ratioPct(diagnostics.overall.direction_accuracy, 2)}</span>
+          </div>
+
+          <div class="eval-kpi-grid">
+            <div class="eval-kpi"><span>방향 적중률</span><strong>{ratioPct(diagnostics.overall.direction_accuracy, 2)}</strong><small>50% 기준 대비 {Number(diagnostics.overall.direction_accuracy ?? 0) >= 0.5 ? '상회' : '미달'}</small></div>
+            <div class="eval-kpi"><span>MAPE</span><strong>{pct(diagnostics.overall.mape, 3)}</strong><small>가격 경로 평균 오차율</small></div>
+            <div class="eval-kpi"><span>평가 범위</span><strong>{fmt.int(diagnostics.overall.windows)} windows</strong><small>{fmt.int(diagnostics.overall.symbols)}종목 · {fmt.int(diagnostics.overall.sessions)}거래일</small></div>
+            <div class="eval-kpi"><span>평균 실제 등락률</span><strong>{pct(diagnostics.overall.avg_actual_return, 3)}</strong><small>예측 window 최종 시점 기준</small></div>
+          </div>
+        {/if}
+
+        {#if backtestReport?.filters}
+          <div class="card-eyebrow" style="margin:16px 0 8px">조건식/Top-K 필터별 성과</div>
+          <div class="filter-grid">
+            {#each backtestReport.filters.slice(0, 6) as row}
+              <div class="filter-card">
+                <span>{row.label}</span>
+                <strong>{ratioPct(row.hit_rate, 1)}</strong>
+                <small>count {fmt.int(row.count)} · 실제 {pct(row.avg_actual_return, 3)}</small>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        {#if predictionDetail?.visual?.window_series?.length}
+          <div class="chart-section">
+            <div class="chart-title">
+              <div><div class="card-eyebrow">ACTUAL VS PREDICTION</div><h3>선택 window 실제 종가와 Kronos 예측 종가</h3></div>
+              {#if predictionDetail.visual.selected_window}
+                <span class="pill accent">{predictionDetail.visual.selected_window.symbol} · window {predictionDetail.visual.selected_window.window_id}</span>
+              {/if}
+            </div>
+            <EChartsRenderer option={actualPredictionOption} height="320px" />
+          </div>
+          <div class="chart-section">
+            <div class="chart-title">
+              <div><div class="card-eyebrow">RETURN SCATTER</div><h3>전체 window 예측 등락률 vs 실제 등락률</h3></div>
+              <span class="text-caption">초록=방향 적중 · 빨강=방향 실패</span>
+            </div>
+            <EChartsRenderer option={returnScatterOption} height="320px" />
+          </div>
+        {/if}
+
+        {#if predictionDetail?.recommendations?.length}
+          <div class="card-eyebrow" style="margin:16px 0 8px">KRONOS 점수 상위 후보</div>
+          <div class="table-scroll">
+            <table class="result-table">
+              <thead><tr><th>순위</th><th>종목</th><th>일자</th><th>점수</th><th>신호</th><th>예측 등락률</th><th>실제 등락률</th><th>방향</th></tr></thead>
+              <tbody>
+                {#each predictionDetail.recommendations.slice(0, 10) as row, idx}
+                  <tr>
+                    <td>{idx + 1}</td><td class="text-mono">{row.symbol}</td><td class="text-mono">{row.session}</td><td>{num(row.kronos_score, 1)}</td>
+                    <td><span class="pill {row.signal === 'BUY_CANDIDATE' ? 'success' : row.signal === 'WATCH' ? 'warn' : 'danger'}">{row.signal}</span></td>
+                    <td>{pct(row.pred_return_window, 3)}</td><td>{pct(row.actual_return_window, 3)}</td><td>{row.direction_hit_window ? '적중' : '실패'}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      {:else if selectedArtifact}
+        <div class="artifact-summary">
+          <div class="card-eyebrow">ARTIFACT DETAIL</div>
+          <h3>{selectedFile?.name}</h3>
+          {#if selectedArtifact.metrics}
+            <div class="eval-kpi-grid">
+              <div class="eval-kpi"><span>평균 gross</span><strong>{pct(selectedArtifact.metrics.avg_gross_return_pct, 3)}</strong></div>
+              <div class="eval-kpi"><span>평균 net</span><strong>{pct(selectedArtifact.metrics.avg_net_return_pct, 3)}</strong></div>
+              <div class="eval-kpi"><span>방향 적중</span><strong>{ratioPct(selectedArtifact.metrics.direction_hit_rate, 2)}</strong></div>
+              <div class="eval-kpi"><span>누적 수익</span><strong>{pct(selectedArtifact.metrics.cumulative_return_pct, 2)}</strong></div>
+            </div>
+          {:else if selectedArtifact.summary}
+            <div class="eval-kpi-grid">
+              <div class="eval-kpi"><span>fold 수</span><strong>{fmt.int(selectedArtifact.summary.fold_count ?? 0)}</strong></div>
+              <div class="eval-kpi"><span>test net</span><strong>{pct(selectedArtifact.summary.avg_test_net_return_pct, 3)}</strong></div>
+              <div class="eval-kpi"><span>positive fold</span><strong>{ratioPct(selectedArtifact.summary.positive_test_fold_rate, 2)}</strong></div>
+              <div class="eval-kpi"><span>overfit gap</span><strong>{pct(selectedArtifact.summary.overfit_gap_pct, 3)}</strong></div>
+            </div>
+          {:else if selectedArtifact.best_filter}
+            <div class="eval-kpi-grid">
+              <div class="eval-kpi"><span>best net</span><strong>{pct(selectedArtifact.best_filter.avg_net_return_pct, 3)}</strong></div>
+              <div class="eval-kpi"><span>direction</span><strong>{ratioPct(selectedArtifact.best_filter.direction_hit_rate, 2)}</strong></div>
+              <div class="eval-kpi"><span>trades</span><strong>{fmt.int(selectedArtifact.best_filter.trade_count ?? 0)}</strong></div>
+              <div class="eval-kpi"><span>coverage</span><strong>{ratioPct(selectedArtifact.best_filter.coverage, 2)}</strong></div>
+            </div>
+          {/if}
+          <pre class="diag-json">{JSON.stringify(selectedArtifact, null, 2).slice(0, 2000)}{JSON.stringify(selectedArtifact).length > 2000 ? '\n...' : ''}</pre>
+        </div>
+      {:else}
+        <div class="empty detail-empty">왼쪽에서 산출물을 선택하세요.</div>
+      {/if}
+    </main>
   </div>
 </section>
 
 <style>
-  .page-hero { padding: 8px 0; }
-  .grid-4-summary {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-  }
-  @media (max-width: 1200px) { .grid-4-summary { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 560px) { .grid-4-summary { grid-template-columns: 1fr; } }
-
-  .grid-list-detail {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr);
-    gap: 16px;
-  }
-  @media (max-width: 1100px) {
-    .grid-list-detail { grid-template-columns: 1fr; }
-  }
-  .file-list {
-    max-height: 540px;
-    overflow-y: auto;
-    padding: 6px 8px 12px;
-  }
-  .file-row-btn {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: var(--r-sm);
-    background: transparent;
-    border: 1px solid transparent;
-    cursor: pointer;
-    text-align: left;
-    width: 100%;
-    transition: background var(--d-fast), border-color var(--d-fast);
-  }
-  .file-row-btn:hover {
-    background: var(--surface-sunken);
-  }
-  .file-row-btn[data-active="true"] {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-  }
-  .file-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--r-sm);
-    background: var(--accent-soft);
-    color: var(--accent-strong);
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-  }
-
-  .kv-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    margin-top: 8px;
-  }
-  .kv-table tbody tr {
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .kv-table tbody tr:last-child {
-    border-bottom: none;
-  }
-  .kv-table td {
-    padding: 8px 0;
-    vertical-align: top;
-  }
-  .kv-table td:first-child {
-    color: var(--muted);
-    width: 35%;
-    padding-right: 12px;
-  }
-  .kv-table td:last-child {
-    color: var(--fg-strong);
-    text-align: right;
-    font-weight: 600;
-  }
-  .diag-json {
-    background: var(--surface-sunken);
-    border-radius: var(--r-sm);
-    padding: 10px;
-    font: 500 11px/1.5 var(--font-mono);
-    color: var(--muted);
-    max-height: 280px;
-    overflow: auto;
-    white-space: pre;
-  }
-
-  .verdict-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 14px;
-    align-items: start;
-    padding: 16px;
-    border-radius: var(--r-md);
-    border: 1px solid var(--border-faint);
-    margin-bottom: 14px;
-  }
-  .verdict-card h3 {
-    margin: 4px 0 6px;
-    font: 800 20px/1.2 var(--font-display);
-    color: var(--fg-strong);
-  }
-  .verdict-card p {
-    margin: 0;
-    color: var(--muted);
-    line-height: 1.55;
-  }
-  .verdict-card.success { background: var(--success-soft); border-color: color-mix(in oklch, var(--success) 28%, transparent); }
-  .verdict-card.warn { background: var(--warn-soft); border-color: color-mix(in oklch, var(--warn) 28%, transparent); }
-  .verdict-card.danger { background: var(--danger-soft); border-color: color-mix(in oklch, var(--danger) 28%, transparent); }
-
+  .kpi-grid,
   .eval-kpi-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
-  }
-  .eval-kpi,
-  .filter-card {
-    border: 1px solid var(--border-faint);
-    border-radius: var(--r-sm);
-    padding: 12px;
-    background: var(--surface-sunken);
-  }
-  .eval-kpi span,
-  .filter-card span {
-    display: block;
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 700;
-  }
-  .eval-kpi strong,
-  .filter-card strong {
-    display: block;
-    margin-top: 4px;
-    color: var(--fg-strong);
-    font: 800 22px/1 var(--font-mono);
-  }
-  .eval-kpi small,
-  .filter-card small {
-    display: block;
-    margin-top: 6px;
-    color: var(--dim);
-    line-height: 1.4;
-  }
-
-  .filter-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .chart-section {
-    margin-top: 16px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border-faint);
-  }
-  .chart-title {
-    display: flex;
-    align-items: start;
-    justify-content: space-between;
     gap: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
   }
-  .chart-title h3 {
-    margin: 3px 0 0;
-    color: var(--fg-strong);
-    font: 750 16px/1.25 var(--font-display);
+  .kpi span,
+  .eval-kpi span { color: var(--muted); font-size: 12px; }
+  .kpi strong,
+  .eval-kpi strong { display: block; margin-top: 6px; font-size: 24px; color: var(--text); }
+  .kpi small,
+  .eval-kpi small { color: var(--muted); }
+  .horizon-card { margin-bottom: 16px; }
+  .section-head,
+  .verdict-card,
+  .chart-title,
+  .file-list-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
   }
-
-  .table-scroll {
-    overflow-x: auto;
-    border: 1px solid var(--border-faint);
-    border-radius: var(--r-sm);
+  .section-head h2,
+  .verdict-card h3,
+  .chart-title h3 { margin: 4px 0; }
+  .section-head p,
+  .verdict-card p { margin: 0; color: var(--muted); }
+  .verdict-card {
+    padding: 14px;
+    margin: 14px 0;
+    border-radius: 16px;
+    border: 1px solid rgba(148,163,184,.24);
+    background: rgba(248,250,252,.72);
   }
-  .result-table {
+  .verdict-card.success { border-color: rgba(34,197,94,.35); background: rgba(240,253,244,.72); }
+  .verdict-card.warn { border-color: rgba(245,158,11,.35); background: rgba(255,251,235,.8); }
+  .verdict-card.danger { border-color: rgba(239,68,68,.35); background: rgba(254,242,242,.78); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tabs button,
+  .ghost {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 8px 14px;
+    cursor: pointer;
+  }
+  .tabs button.active { background: var(--primary); color: white; border-color: var(--primary); }
+  .workspace-grid { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 16px; }
+  .file-list { border-right: 1px solid var(--border); padding-right: 14px; max-height: 980px; overflow: auto; }
+  .file-row {
+    display: block;
     width: 100%;
-    border-collapse: collapse;
-    min-width: 760px;
-    font-size: 12px;
-  }
-  .result-table th,
-  .result-table td {
-    padding: 9px 10px;
-    border-bottom: 1px solid var(--border-faint);
     text-align: left;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 10px;
+    margin: 8px 0;
+    cursor: pointer;
   }
-  .result-table th {
-    color: var(--muted);
-    background: var(--surface-sunken);
-    font-weight: 800;
+  .file-row strong { display: block; font-size: 12px; word-break: break-all; }
+  .file-row span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+  .file-row.selected { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.14); }
+  .detail-panel { min-width: 0; }
+  .filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .filter-card,
+  .eval-kpi {
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,.72);
+    border-radius: 14px;
+    padding: 12px;
   }
-  .result-table tr:last-child td {
-    border-bottom: none;
-  }
-
-  .symbol-columns {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-  .symbol-columns h4 {
-    margin: 0 0 8px;
-    color: var(--fg-strong);
-  }
-  .symbol-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border-faint);
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  @media (max-width: 900px) {
+  .filter-card strong { display:block; font-size: 22px; margin: 4px 0; }
+  .chart-section { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: rgba(255,255,255,.62); }
+  .table-scroll { overflow: auto; margin-top: 10px; }
+  .result-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .result-table th,
+  .result-table td { border-bottom: 1px solid var(--border); padding: 8px 10px; text-align: left; white-space: nowrap; }
+  .result-table th { color: var(--muted); font-size: 12px; }
+  .best-row { background: rgba(37,99,235,.07); }
+  .positive { color: #16a34a; font-weight: 700; }
+  .negative { color: #dc2626; font-weight: 700; }
+  .diag-json { margin-top: 16px; padding: 14px; border-radius: 14px; background: #0f172a; color: #e2e8f0; overflow: auto; max-height: 420px; font-size: 12px; }
+  .empty,
+  .loading-box,
+  .error-card { padding: 18px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted); }
+  .error-card { color: var(--danger); border-color: rgba(239,68,68,.4); }
+  .pill.success { background: rgba(34,197,94,.12); color: #15803d; }
+  .pill.warn { background: rgba(245,158,11,.14); color: #b45309; }
+  .pill.danger { background: rgba(239,68,68,.12); color: #b91c1c; }
+  .pill.accent { background: rgba(37,99,235,.12); color: #1d4ed8; }
+  @media (max-width: 1000px) {
+    .workspace-grid,
+    .kpi-grid,
     .eval-kpi-grid,
-    .filter-grid,
-    .symbol-columns {
-      grid-template-columns: 1fr;
-    }
+    .filter-grid { grid-template-columns: 1fr; }
+    .file-list { border-right: 0; padding-right: 0; }
+    .section-head,
     .verdict-card,
-    .chart-title {
-      display: block;
-    }
+    .chart-title { flex-direction: column; }
   }
 </style>

@@ -21,6 +21,7 @@ QLIB_BACKTEST_DIRS = [
     PROJECT_ROOT / "finetune" / "qlib_backtests",
 ]
 FILTER_REPORT_DIRS = QLIB_BACKTEST_DIRS
+HORIZON_COMPARISON_FILE = "stom_1s_2025_full_small_horizon_comparison.json"
 EVIDENCE_DIR = PROJECT_ROOT / ".omx" / "specs" / "stom-ohlcv-finetune-research"
 SCORE_FILTER_NAMES = [
     "all_scored",
@@ -216,6 +217,140 @@ def load_filter_report_artifact(file_name: str) -> Dict[str, Any]:
         raise ValueError("Filter report artifact missing filter-search or rolling-validation payload")
     payload["source_file"] = path.name
     return payload
+
+
+def _load_json_if_exists(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _find_artifact(file_name: str, directories: List[Path]) -> Optional[Path]:
+    try:
+        return _safe_path_in_dirs(file_name, directories)
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _metric_at(payload: Dict[str, Any], *keys: str, default: float = 0.0) -> float:
+    current: Any = payload
+    for key in keys:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return _safe_float(current, default)
+
+
+def load_horizon_comparison() -> Dict[str, Any]:
+    """Return horizon-level evidence for the STOM 1s full-small checkpoint.
+
+    The evaluator writes large CSV/JSON files as runtime artifacts.  This helper
+    intentionally summarizes only the dashboard-safe evidence so the frontend can
+    compare 30/60/120/300 second horizons without loading prediction CSVs.
+    """
+
+    for directory in QLIB_BACKTEST_DIRS:
+        path = directory / HORIZON_COMPARISON_FILE
+        payload = _load_json_if_exists(path)
+        if payload and isinstance(payload.get("rows"), list):
+            rows = payload["rows"]
+            break
+    else:
+        rows = []
+        for horizon in [30, 60, 120, 300]:
+            prefix = f"stom_1s_pred{horizon}_2025_full_small_walkforward36x3x50_eval"
+            comparison_path = _find_artifact(f"{prefix}_comparison.json", PREDICTION_DIRS)
+            qlib_path = _find_artifact(f"{prefix}_kronos.qlib_topk5.json", QLIB_BACKTEST_DIRS)
+            filter_path = _find_artifact(f"{prefix}_kronos_cost25.filter_search.json", FILTER_REPORT_DIRS)
+            gate_path = _find_artifact(f"{prefix}_kronos_cost25.cost_gate.json", FILTER_REPORT_DIRS)
+            if not comparison_path:
+                continue
+            comparison = _load_json_if_exists(comparison_path) or {}
+            qlib = _load_json_if_exists(qlib_path) if qlib_path else {}
+            filters = _load_json_if_exists(filter_path) if filter_path else {}
+            gate = _load_json_if_exists(gate_path) if gate_path else {}
+            rows.append(_horizon_row(horizon, comparison, qlib or {}, filters or {}, gate or {}))
+
+    clean_rows = [_normalize_horizon_row(row) for row in rows]
+    clean_rows.sort(key=lambda row: int(row.get("horizon", 0)))
+    best_by_direction = max(clean_rows, key=lambda row: row.get("direction_accuracy", 0.0), default=None)
+    best_by_net = max(clean_rows, key=lambda row: row.get("rolling_net_return_pct", -999.0), default=None)
+    any_pass = any(bool(row.get("passes_gate")) for row in clean_rows)
+    return {
+        "rows": clean_rows,
+        "best_by_direction": best_by_direction,
+        "best_by_rolling_net": best_by_net,
+        "passes_any_gate": any_pass,
+        "decision": "expand_allowed" if any_pass else "hold_expand_200k",
+        "message": (
+            "rolling validation gate를 통과한 horizon이 있습니다."
+            if any_pass
+            else "300초가 상대적으로 가장 유망하지만 아직 rolling cost gate는 통과하지 못했습니다."
+        ),
+    }
+
+
+def _horizon_row(
+    horizon: int,
+    comparison: Dict[str, Any],
+    qlib: Dict[str, Any],
+    filters: Dict[str, Any],
+    gate: Dict[str, Any],
+) -> Dict[str, Any]:
+    metrics = comparison.get("metrics", {}) if isinstance(comparison, dict) else {}
+    kronos = metrics.get("kronos", {}) if isinstance(metrics, dict) else {}
+    random = metrics.get("random", {}) if isinstance(metrics, dict) else {}
+    qlib_metrics = qlib.get("metrics", {}) if isinstance(qlib, dict) else {}
+    best_filter = filters.get("best_filter", {}) if isinstance(filters, dict) else {}
+    target = gate.get("target_cost_summary", {}) if isinstance(gate, dict) else {}
+    return {
+        "horizon": horizon,
+        "direction_accuracy": _safe_float(kronos.get("direction_accuracy")),
+        "random_direction_accuracy": _safe_float(random.get("direction_accuracy")),
+        "direction_edge_vs_random": _safe_float(kronos.get("direction_accuracy"))
+        - _safe_float(random.get("direction_accuracy")),
+        "mape": _safe_float(kronos.get("mape")),
+        "topk_hit_rate": _metric_at(kronos, "topk", "hit_rate"),
+        "topk_gross_return_pct": _safe_float(qlib_metrics.get("avg_gross_return_pct")),
+        "topk_net_return_pct": _safe_float(qlib_metrics.get("avg_net_return_pct")),
+        "topk_cumulative_return_pct": _safe_float(qlib_metrics.get("cumulative_return_pct")),
+        "best_filter": str(best_filter.get("filter_name", "")),
+        "best_filter_net_return_pct": _safe_float(best_filter.get("avg_net_return_pct")),
+        "best_filter_hit_rate": _safe_float(best_filter.get("direction_hit_rate")),
+        "best_filter_trade_count": int(_safe_float(best_filter.get("trade_count"))),
+        "rolling_net_return_pct": _safe_float(target.get("avg_test_net_return_pct")),
+        "rolling_direction_hit_rate": _safe_float(target.get("test_direction_hit_rate_weighted")),
+        "rolling_positive_fold_rate": _safe_float(target.get("positive_test_fold_rate")),
+        "passes_gate": bool(target.get("passes_gate")),
+        "decision": str(gate.get("decision", "")),
+    }
+
+
+def _normalize_horizon_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "horizon": int(_safe_float(row.get("horizon"))),
+        "direction_accuracy": _safe_float(row.get("direction_accuracy", row.get("direction"))),
+        "random_direction_accuracy": _safe_float(row.get("random_direction_accuracy", row.get("random_direction"))),
+        "direction_edge_vs_random": _safe_float(row.get("direction_edge_vs_random", row.get("dir_edge"))),
+        "mape": _safe_float(row.get("mape")),
+        "topk_hit_rate": _safe_float(row.get("topk_hit_rate", row.get("topk_hit"))),
+        "topk_gross_return_pct": _safe_float(row.get("topk_gross_return_pct", row.get("topk_gross"))),
+        "topk_net_return_pct": _safe_float(row.get("topk_net_return_pct", row.get("topk_net"))),
+        "topk_cumulative_return_pct": _safe_float(row.get("topk_cumulative_return_pct", row.get("topk_cum"))),
+        "best_filter": str(row.get("best_filter", "")),
+        "best_filter_net_return_pct": _safe_float(row.get("best_filter_net_return_pct", row.get("best_filter_net"))),
+        "best_filter_hit_rate": _safe_float(row.get("best_filter_hit_rate", row.get("best_filter_hit"))),
+        "best_filter_trade_count": int(_safe_float(row.get("best_filter_trade_count", row.get("best_filter_trades")))),
+        "rolling_net_return_pct": _safe_float(row.get("rolling_net_return_pct", row.get("rolling_net"))),
+        "rolling_direction_hit_rate": _safe_float(row.get("rolling_direction_hit_rate", row.get("rolling_hit"))),
+        "rolling_positive_fold_rate": _safe_float(
+            row.get("rolling_positive_fold_rate", row.get("rolling_positive_fold_rate"))
+        ),
+        "passes_gate": bool(row.get("passes_gate")),
+        "decision": str(row.get("decision", "")),
+    }
 
 
 def qlib_backtest_chart_json(payload: Dict[str, Any]) -> str:
