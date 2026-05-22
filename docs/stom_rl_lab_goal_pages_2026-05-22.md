@@ -29,7 +29,7 @@
 | 1 | 설계와 기준 고정 | `stom_independent_rl_lab_plan_2026-05-22.md` | 실측 데이터, baseline, reward horizon 문서화 | 완료 |
 | 2 | DB loader / episode manifest | `stom_rl.episode_manifest` | read-only DB 검증, train/val/test episode manifest 생성 | 완료 |
 | 3 | `StomTickTradingEnv` | RL 환경 skeleton | reset/step/reward/invalid action 단위 테스트 | 완료 |
-| 4 | baseline runner | no-trade/random/momentum 등 | baseline report와 trade/equity artifact 생성 | 남음 |
+| 4 | baseline runner | no-trade/random/momentum 등 | baseline report와 trade/equity artifact 생성 | 완료 |
 | 5 | reward / cost gate | 5/10/15/25bp 비용 검증 | 25bp cost gate와 rolling validation | 남음 |
 | 6 | 1차 RL 모델 | contextual bandit 또는 DQN | 300초 reward horizon 기준 walk-forward 평가 | 남음 |
 | 7 | backend API | `/api/rl/*` | manifest/run/metric/trade/equity API smoke | 남음 |
@@ -105,6 +105,7 @@ C:\Python\64\Python3119\python.exe -m stom_rl.episode_manifest `
 | 설계 기준 | 1 | 9 | 11.1% |
 | 페이지 2 코드/검증 | 2 | 9 | 22.2% |
 | 페이지 3 환경 skeleton | 3 | 9 | 33.3% |
+| 페이지 4 baseline runner | 4 | 9 | 44.4% |
 
 ---
 
@@ -186,4 +187,58 @@ C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_trading_env.py t
 
 다음 페이지는 **페이지 4: baseline runner** 이다.
 
-페이지 2가 테스트와 커밋까지 끝나면 전체 진행률은 **22.2%**로 본다.
+---
+
+## 8. 페이지 4 완료 기록
+
+페이지 4에서는 강화학습 모델을 만들기 전에 반드시 비교해야 하는 모델 없는 기준선을 구현했다. 이 단계의 목적은 “RL이 아무 전략보다 나은가?”를 검증할 기준표를 먼저 만드는 것이다.
+
+| 항목 | 결과 |
+|---|---|
+| 구현 모듈 | `stom_rl.baselines` |
+| 실행 함수 | `run_baselines(BaselineRunConfig)` |
+| CLI | `python -m stom_rl.baselines` |
+| 정책 | `no_trade`, `random`, `buy_and_hold`, `momentum`, `mean_reversion`, `volume_filter` |
+| 기본 split | `test` |
+| 기본 비용 | 25bp |
+| 산출물 | `baseline_summary.json`, `baseline_summary.csv`, 정책별 `actions.csv`, `trades.csv`, `equity.csv`, `episodes.csv` |
+
+실제 2025 STOM manifest smoke는 test split 3개 episode로 실행했다.
+
+```powershell
+C:\Python\64\Python3119\python.exe -m stom_rl.baselines `
+  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
+  --split test `
+  --max-episodes 3 `
+  --policies no_trade,random,buy_and_hold,momentum,mean_reversion,volume_filter `
+  --output-dir webui\rl_runs\stom_1s_2025_baselines_smoke
+```
+
+대표 smoke 결과는 다음과 같다.
+
+| 정책 | episode | 거래 수 | 평균 episode net | hit rate | MDD |
+|---|---:|---:|---:|---:|---:|
+| no_trade | 3 | 0 | 0.0000% | 0.0000 | 0.0000% |
+| random | 3 | 885 | -77.2541% | 0.0124 | -98.8246% |
+| buy_and_hold | 3 | 3 | +3.3240% | 1.0000 | 0.0000% |
+| momentum | 3 | 214 | -34.1359% | 0.0421 | -71.5770% |
+| mean_reversion | 3 | 195 | -22.5387% | 0.0359 | -53.5298% |
+| volume_filter | 3 | 224 | -31.2288% | 0.0045 | -67.6145% |
+
+주의: 이 표는 전체 성과 확정이 아니라 **코드·artifact·metric 경로가 작동하는지 확인한 smoke**다. 전체 test split 기준의 엄밀한 판단은 페이지 5 cost gate에서 수행한다.
+
+검증 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_baselines.py tests\test_stom_rl_trading_env.py tests\test_stom_rl_episode_manifest.py -q
+C:\Python\64\Python3119\python.exe -m py_compile stom_rl\baselines.py stom_rl\trading_env.py stom_rl\episode_manifest.py
+```
+
+검증 결과:
+
+```text
+10 passed
+py_compile OK
+```
+
+다음 페이지는 **페이지 5: reward / cost gate** 이다. 페이지 5에서는 5/10/15/25bp 비용 시나리오와 전체 test split 기준으로 baseline이 비용 차감 후 살아남는지 검증한다.

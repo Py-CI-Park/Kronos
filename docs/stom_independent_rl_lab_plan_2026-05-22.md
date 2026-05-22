@@ -746,3 +746,69 @@ $team STOM 독립 강화학습 실험실을 병렬 구현하세요. Lane A는 DB
 | 실제 manifest smoke | OK |
 
 페이지 3 완료 후 다음 단계는 **페이지 4: baseline runner** 이다. baseline runner는 이 환경을 사용하여 no-trade, random, buy-and-hold, momentum, mean-reversion, volume/amount filter를 같은 episode 계약에서 비교해야 한다.
+
+---
+
+## 22. 2026-05-22 페이지 4 baseline runner 구현 기록
+
+페이지 4에서는 강화학습 모델이 비교해야 할 모델 없는 기준선을 구현했다. 이 단계는 수익 모델 학습이 아니라, **향후 RL 모델이 반드시 넘어야 하는 기준표와 산출물 계약을 고정하는 작업**이다.
+
+### 22.1 구현 범위
+
+| 항목 | 결정 |
+|---|---|
+| 구현 모듈 | `stom_rl.baselines` |
+| 기반 환경 | `StomTickTradingEnv` |
+| 기본 split | `test` |
+| 기본 비용 | 25bp |
+| 기본 reward horizon | 300초 |
+| 기본 산출 위치 | `webui/rl_runs/stom_1s_2025_baselines*` |
+| 커밋 대상 여부 | 런타임 산출물은 제외, 코드/테스트/문서만 커밋 |
+
+### 22.2 구현 baseline
+
+| 정책 | 목적 |
+|---|---|
+| `no_trade` | 아무것도 하지 않는 무위험 기준 |
+| `random` | 모델이 랜덤 매매보다 나은지 확인 |
+| `buy_and_hold` | 장초반 구간 단순 보유 기준 |
+| `momentum` | 최근 수익률 추종 기준 |
+| `mean_reversion` | 최근 하락 후 반등 가정 기준 |
+| `volume_filter` | 거래대금 강도 조건식 기준 |
+
+### 22.3 산출물
+
+각 정책은 다음 artifact를 생성한다.
+
+| 파일 | 설명 |
+|---|---|
+| `actions.csv` | step별 action, env reward, mark equity |
+| `trades.csv` | 체결 단위 진입/청산/순수익/강제청산 여부 |
+| `equity.csv` | 시간별 mark-to-market equity |
+| `episodes.csv` | episode별 최종 equity, 거래 수, forced exit |
+| `baseline_summary.json` | 전체 baseline 비교 summary |
+| `baseline_summary.csv` | 대시보드/분석용 summary table |
+
+### 22.4 실제 smoke 결과
+
+실제 2025 STOM test split에서 3개 episode만 사용해 경로를 검증했다. 이 결과는 성능 확정이 아니라 smoke 기준이다.
+
+| 정책 | episode | 거래 수 | 평균 episode net | hit rate | MDD |
+|---|---:|---:|---:|---:|---:|
+| `no_trade` | 3 | 0 | 0.0000% | 0.0000 | 0.0000% |
+| `random` | 3 | 885 | -77.2541% | 0.0124 | -98.8246% |
+| `buy_and_hold` | 3 | 3 | +3.3240% | 1.0000 | 0.0000% |
+| `momentum` | 3 | 214 | -34.1359% | 0.0421 | -71.5770% |
+| `mean_reversion` | 3 | 195 | -22.5387% | 0.0359 | -53.5298% |
+| `volume_filter` | 3 | 224 | -31.2288% | 0.0045 | -67.6145% |
+
+### 22.5 검증
+
+| 검증 | 결과 |
+|---|---|
+| baseline unit test | `10 passed` |
+| env/manifest 회귀 | 통과 |
+| 실제 manifest smoke | `baseline_summary.json/csv` 및 정책별 artifact 생성 |
+| `py_compile` | 통과 |
+
+다음 단계는 **페이지 5: reward / cost gate**다. 페이지 5에서는 smoke가 아니라 전체 test split 또는 제한된 검증 범위를 명시하고 5/10/15/25bp 비용별로 baseline을 비교해 “비용 차감 후 살아남는 전략이 있는가?”를 판단한다.
