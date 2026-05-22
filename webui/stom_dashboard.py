@@ -509,6 +509,106 @@ def topk_rows(df: pd.DataFrame, k: int = 20) -> List[Dict[str, Any]]:
     return latest[[col for col in columns if col in latest.columns]].to_dict(orient="records")
 
 
+def prediction_visual_payload(
+    df: pd.DataFrame,
+    window_id: Optional[int] = None,
+    max_windows: int = 500,
+    max_scatter: int = 5000,
+) -> Dict[str, Any]:
+    """Return frontend-native series for actual-vs-prediction dashboards.
+
+    Plotly JSON is still kept for the legacy dashboard, but the Svelte v2 UI uses
+    ECharts. This payload keeps the data small and explains the selected window
+    without requiring the browser to parse CSV or Plotly traces.
+    """
+
+    if df.empty:
+        return {
+            "default_window_id": None,
+            "selected_window": None,
+            "window_series": [],
+            "windows": [],
+            "return_scatter": [],
+        }
+
+    sorted_df = df.sort_values(["window_id", "target_timestamp"]).copy()
+    latest = _latest_prediction_rows(sorted_df).sort_values(["asof_timestamp", "window_id"])
+    available_windows = [int(value) for value in latest["window_id"].dropna().tolist()]
+    if window_id is None or int(window_id) not in set(available_windows):
+        # Pick the strongest positive predicted-return window first: it is the
+        # easiest default view for "why did Kronos select this?" review.
+        ranked = latest.sort_values(["pred_return_window", "window_id"], ascending=[False, True])
+        window_id = int(ranked["window_id"].iloc[0])
+
+    chart_df = sorted_df[sorted_df["window_id"] == int(window_id)].sort_values("target_timestamp")
+    selected_latest = latest[latest["window_id"] == int(window_id)]
+    selected_record = selected_latest.iloc[0].to_dict() if not selected_latest.empty else {}
+
+    def clean_ts(value: Any) -> str:
+        ts = pd.to_datetime(value, errors="coerce")
+        if pd.isna(ts):
+            return str(value)
+        return ts.isoformat()
+
+    def row_float(row: pd.Series, column: str) -> float:
+        return _safe_float(row.get(column))
+
+    window_series = [
+        {
+            "timestamp": clean_ts(row.get("target_timestamp")),
+            "actual_close": row_float(row, "actual_close"),
+            "pred_close": row_float(row, "pred_close"),
+            "error": row_float(row, "error"),
+            "abs_error": row_float(row, "abs_error"),
+        }
+        for _, row in chart_df.iterrows()
+    ]
+
+    windows = []
+    for _, row in latest.head(max(1, int(max_windows))).iterrows():
+        windows.append(
+            {
+                "window_id": int(row.get("window_id")),
+                "symbol": str(row.get("symbol", "")),
+                "session": str(row.get("session", "")),
+                "asof_timestamp": clean_ts(row.get("asof_timestamp")),
+                "pred_return_window": row_float(row, "pred_return_window"),
+                "actual_return_window": row_float(row, "actual_return_window"),
+                "direction_hit_window": int(_safe_float(row.get("direction_hit_window"))),
+            }
+        )
+
+    scatter_source = latest.sort_values(["asof_timestamp", "window_id"]).head(max(1, int(max_scatter)))
+    return_scatter = [
+        {
+            "window_id": int(row.get("window_id")),
+            "symbol": str(row.get("symbol", "")),
+            "session": str(row.get("session", "")),
+            "asof_timestamp": clean_ts(row.get("asof_timestamp")),
+            "pred_return_window": row_float(row, "pred_return_window"),
+            "actual_return_window": row_float(row, "actual_return_window"),
+            "direction_hit_window": int(_safe_float(row.get("direction_hit_window"))),
+        }
+        for _, row in scatter_source.iterrows()
+    ]
+
+    return {
+        "default_window_id": int(window_id),
+        "selected_window": {
+            "window_id": int(window_id),
+            "symbol": str(selected_record.get("symbol", "")),
+            "session": str(selected_record.get("session", "")),
+            "asof_timestamp": clean_ts(selected_record.get("asof_timestamp")),
+            "pred_return_window": _safe_float(selected_record.get("pred_return_window")),
+            "actual_return_window": _safe_float(selected_record.get("actual_return_window")),
+            "direction_hit_window": int(_safe_float(selected_record.get("direction_hit_window"))),
+        },
+        "window_series": window_series,
+        "windows": windows,
+        "return_scatter": return_scatter,
+    }
+
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         result = float(value)

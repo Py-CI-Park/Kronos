@@ -29,6 +29,7 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     recommendations = stom_dashboard.ranked_recommendations(df)
     recommendation_summary = stom_dashboard.recommendation_summary(recommendations)
     backtest_report = stom_dashboard.score_backtest_report(df)
+    visual = stom_dashboard.prediction_visual_payload(df)
     export_payload = stom_dashboard.recommendation_export_payload(df, source_file="sample.csv")
     export_csv = stom_dashboard.recommendation_export_csv(export_payload["records"])
     diagnostics = stom_dashboard.prediction_diagnostics(df)
@@ -44,6 +45,8 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     assert 0 <= recommendations[0]["kronos_score"] <= 100
     assert recommendation_summary["count"] == 1
     assert backtest_report["window_count"] == 1
+    assert visual["selected_window"]["symbol"] == "000001"
+    assert visual["window_series"][0]["actual_close"] == 101.0
     assert backtest_report["filters"][0]["label"] == "all_scored"
     assert export_payload["metadata"]["adapter_version"] == "stom-kronos-score-v1"
     assert export_payload["records"][0]["adapter_action"] == "BUY"
@@ -259,9 +262,10 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "list_filter_report_files", stom_dashboard.list_filter_report_files)
     monkeypatch.setattr(app, "load_filter_report_artifact", stom_dashboard.load_filter_report_artifact)
     monkeypatch.setattr(app, "prediction_diagnostics", stom_dashboard.prediction_diagnostics)
+    monkeypatch.setattr(app, "prediction_visual_payload", stom_dashboard.prediction_visual_payload)
 
     client = app.app.test_client()
-    page = client.get("/stom")
+    page = client.get("/v1/stom")
     assert page.status_code == 200
     assert "Kronos Score Export" in page.get_data(as_text=True)
     assert "Model Diagnostics" in page.get_data(as_text=True)
@@ -269,6 +273,7 @@ def test_flask_stom_routes_smoke(tmp_path, monkeypatch):
     assert client.get("/api/stom/qlib-backtests").status_code == 200
     assert client.get("/api/stom/filter-reports").status_code == 200
     assert client.get("/api/stom/prediction?file=sample.csv").status_code == 200
+    assert client.get("/api/stom/prediction?file=sample.csv").get_json()["visual"]["selected_window"]["symbol"] == "000001"
     rec = client.get("/api/stom/recommendations?file=sample.csv")
     assert rec.status_code == 200
     assert rec.get_json()["summary"]["count"] == 1

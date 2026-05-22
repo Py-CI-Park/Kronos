@@ -55,6 +55,7 @@ try:
             prediction_chart_json,
             prediction_diagnostics,
             prediction_metrics,
+            prediction_visual_payload,
             qlib_backtest_chart_json,
             recommendation_export_csv,
             recommendation_export_payload,
@@ -75,6 +76,7 @@ try:
             prediction_chart_json,
             prediction_diagnostics,
             prediction_metrics,
+            prediction_visual_payload,
             qlib_backtest_chart_json,
             recommendation_export_csv,
             recommendation_export_payload,
@@ -95,6 +97,7 @@ except Exception as exc:
     prediction_chart_json = None
     prediction_diagnostics = None
     prediction_metrics = None
+    prediction_visual_payload = None
     qlib_backtest_chart_json = None
     recommendation_export_csv = None
     recommendation_export_payload = None
@@ -727,6 +730,7 @@ def stom_prediction_file():
         return jsonify({
             'metrics': prediction_metrics(df),
             'chart': prediction_chart_json(df, window_id=window_id),
+            'visual': prediction_visual_payload(df, window_id=window_id) if prediction_visual_payload else {},
             'topk': topk_rows(df),
             'recommendations': recommendations,
             'recommendation_summary': recommendation_summary(recommendations) if recommendation_summary else {},
