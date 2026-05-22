@@ -880,3 +880,89 @@ $team STOM 독립 강화학습 실험실을 병렬 구현하세요. Lane A는 DB
 | `py_compile` | 통과 |
 
 다음 단계는 **페이지 6: 1차 RL 모델**이다. 추천 출발점은 300초 reward horizon, 25bp target gate 기준으로 contextual bandit 또는 단순 DQN prototype을 만든 뒤, Page 5의 `gate_summary.csv`와 동일 기준으로 모델 결과를 비교하는 것이다.
+
+---
+
+## 24. 2026-05-22 페이지 6 1차 RL 모델 구현 기록
+
+페이지 6에서는 Kronos와 완전히 분리된 첫 학습 모델을 추가했다. 이 단계의 목적은 최종 수익 모델을 확정하는 것이 아니라, **STOM episode에서 학습 → 모델 저장 → 모델 로드/사용 → 평가 artifact 생성**이 가능한 최소 학습 루프를 실제 데이터로 증명하는 것이다.
+
+### 24.1 구현 범위
+
+| 항목 | 결정 |
+|---|---|
+| 구현 모듈 | `stom_rl.contextual_bandit` |
+| 모델 | ridge regression 기반 contextual bandit |
+| 의존성 | 신규 의존성 없음, NumPy/Pandas만 사용 |
+| action | `buy` 또는 `hold` |
+| reward target | 300초 fixed-horizon round-trip net return |
+| 비용 | 25bp 기본 |
+| 평가 | Page 5와 같은 net return, trade count, hit rate, MDD, cost gate |
+| 산출 위치 | `webui/rl_runs/stom_1s_2025_contextual_bandit*` |
+
+### 24.2 사용 feature
+
+feature는 현재와 과거 정보만 사용한다. 미래 가격은 label/reward 계산에만 사용된다.
+
+| feature 그룹 | 예시 |
+|---|---|
+| 과거 수익률 | `ret_1s`, `ret_5s`, `ret_30s`, `ret_60s`, `ret_120s`, `ret_300s` |
+| 변동성/range | `range_30s`, `range_120s` |
+| 추세 이격 | `close_vs_ma_30s`, `close_vs_ma_120s` |
+| 거래 강도 | `volume_ratio_30s`, `amount_ratio_30s` |
+| 시간 위치 | `seconds_from_episode_start` |
+
+### 24.3 산출물
+
+| 파일 | 설명 |
+|---|---|
+| `config.json` | 학습/평가 설정 |
+| `model.json` | feature mean/std, weights, intercept, train summary |
+| `train_metrics.jsonl` | train sample/target/오차 기록 |
+| `eval_summary.json` | 평가 요약과 artifact 경로 |
+| `actions.csv` | 각 의사결정 시점의 예측 점수와 action |
+| `trades.csv` | 실제 진입/청산과 net return |
+| `equity_curve.csv` | 평가 equity 흐름 |
+| `episodes.csv` | episode별 최종 성과 |
+
+### 24.4 실제 smoke 결과
+
+실제 2025 STOM train 5 episode로 학습하고 test 3 episode로 평가했다.
+
+| 항목 | 값 |
+|---|---:|
+| train episode | 5 |
+| train sample | 299 |
+| train target mean | -0.6087% |
+| train target positive rate | 27.42% |
+| train RMSE | 1.3035% |
+| predicted positive rate | 11.04% |
+| eval episode | 3 |
+| eval trade count | 11 |
+| trades / episode | 3.67 |
+| avg episode net | +1.8960% |
+| compounded return | +5.7773% |
+| avg trade net | +0.5240% |
+| hit rate | 63.64% |
+| MDD | -2.6211% |
+| 25bp cost gate | 통과 |
+
+해석:
+
+1. 모델은 실제 STOM episode에서 학습되고 `model.json`으로 저장된다.
+2. 저장된 모델은 다시 로드해 예측 점수를 계산할 수 있다.
+3. 3개 episode smoke에서는 25bp 비용 후에도 양수 성과를 냈다.
+4. 그러나 같은 smoke 구간에서 단순 `buy_and_hold`가 +3.3240%였으므로, 아직 “baseline 우위”가 증명된 것은 아니다.
+5. 다음 단계에서는 이 artifact를 backend/API와 웹 대시보드에서 확인할 수 있게 연결해야 한다.
+
+### 24.5 검증
+
+| 검증 | 결과 |
+|---|---|
+| contextual bandit unit test | 통과 |
+| model save/load test | 통과 |
+| cost gate/baseline/env/manifest 회귀 | 통과 |
+| 실제 manifest smoke | `model.json`, `eval_summary.json`, `trades.csv`, `equity_curve.csv` 생성 |
+| `py_compile` | 통과 |
+
+다음 단계는 **페이지 7: backend API**다. API는 `webui/rl_runs` 아래의 baseline, cost gate, contextual bandit 산출물을 읽어 웹 대시보드에서 사용자가 강화학습 진행과 성과를 확인할 수 있게 해야 한다.

@@ -31,7 +31,7 @@
 | 3 | `StomTickTradingEnv` | RL 환경 skeleton | reset/step/reward/invalid action 단위 테스트 | 완료 |
 | 4 | baseline runner | no-trade/random/momentum 등 | baseline report와 trade/equity artifact 생성 | 완료 |
 | 5 | reward / cost gate | 5/10/15/25bp 비용 검증 | 25bp cost gate와 rolling validation | 완료 |
-| 6 | 1차 RL 모델 | contextual bandit 또는 DQN | 300초 reward horizon 기준 walk-forward 평가 | 남음 |
+| 6 | 1차 RL 모델 | contextual bandit 또는 DQN | 300초 reward horizon 기준 walk-forward 평가 | 완료 |
 | 7 | backend API | `/api/rl/*` | manifest/run/metric/trade/equity API smoke | 남음 |
 | 8 | 웹 대시보드 | `강화학습 실험실` 탭 | build + browser smoke | 남음 |
 | 9 | 통합 QA / 리뷰 | 최종 보고서 | 테스트, 코드리뷰, 확장/보류 결정 | 남음 |
@@ -107,6 +107,7 @@ C:\Python\64\Python3119\python.exe -m stom_rl.episode_manifest `
 | 페이지 3 환경 skeleton | 3 | 9 | 33.3% |
 | 페이지 4 baseline runner | 4 | 9 | 44.4% |
 | 페이지 5 reward / cost gate | 5 | 9 | 55.6% |
+| 페이지 6 1차 RL 모델 | 6 | 9 | 66.7% |
 
 ---
 
@@ -306,3 +307,72 @@ py_compile OK
 ```
 
 다음 페이지는 **페이지 6: 1차 RL 모델** 이다. 기본 추천은 바로 복잡한 PPO가 아니라 300초 reward horizon 기준 contextual bandit 또는 단순 DQN prototype으로 시작하는 것이다.
+
+---
+
+## 10. 페이지 6 완료 기록
+
+페이지 6에서는 Kronos를 사용하지 않는 첫 학습 모델을 구현했다. 복잡한 PPO/DQN으로 바로 가지 않고, 먼저 300초 horizon의 “매수할지/관망할지”를 학습하는 fixed-horizon contextual bandit을 만들었다.
+
+| 항목 | 결과 |
+|---|---|
+| 구현 모듈 | `stom_rl.contextual_bandit` |
+| 모델 종류 | ridge regression 기반 fixed-horizon contextual bandit |
+| 입력 feature | 과거 OHLCV에서 만든 수익률, range, 이동평균 이격, 거래량/거래대금 ratio |
+| action | predicted 300초 net return이 threshold보다 크면 `buy`, 아니면 `hold` |
+| reward target | 300초 후 round-trip net return |
+| 기본 비용 | 25bp |
+| 산출물 | `config.json`, `model.json`, `train_metrics.jsonl`, `eval_summary.json`, `actions.csv`, `trades.csv`, `equity_curve.csv`, `episodes.csv` |
+
+실제 2025 STOM manifest smoke는 train 5 episode, test 3 episode로 실행했다.
+
+```powershell
+C:\Python\64\Python3119\python.exe -m stom_rl.contextual_bandit `
+  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
+  --train-split train `
+  --eval-split test `
+  --max-train-episodes 5 `
+  --max-eval-episodes 3 `
+  --train-sample-stride 20 `
+  --eval-sample-stride 1 `
+  --lookback-window 300 `
+  --reward-horizon-seconds 300 `
+  --cost-bps 25 `
+  --decision-threshold-bps 0 `
+  --output-dir webui\rl_runs\stom_1s_2025_contextual_bandit_smoke
+```
+
+대표 결과는 다음과 같다.
+
+| 항목 | 값 |
+|---|---:|
+| train episode | 5 |
+| train sample | 299 |
+| train target positive rate | 27.42% |
+| eval episode | 3 |
+| eval trade count | 11 |
+| trades / episode | 3.67 |
+| avg episode net | +1.8960% |
+| compounded return | +5.7773% |
+| avg trade net | +0.5240% |
+| hit rate | 63.64% |
+| MDD | -2.6211% |
+| 25bp cost gate | 통과 |
+
+단, 같은 3개 episode smoke에서 Page 5의 `buy_and_hold`는 +3.3240%였으므로, 이 모델은 “최종 우위 모델”이 아니라 **학습·저장·사용·평가 흐름이 실제 데이터에서 작동하는 첫 prototype**으로 본다.
+
+검증 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_contextual_bandit.py tests\test_stom_rl_cost_gate.py tests\test_stom_rl_baselines.py tests\test_stom_rl_trading_env.py tests\test_stom_rl_episode_manifest.py tests\test_stom_qlib_pipeline.py -q
+C:\Python\64\Python3119\python.exe -m py_compile stom_rl\contextual_bandit.py stom_rl\cost_gate.py stom_rl\baselines.py stom_rl\trading_env.py stom_rl\episode_manifest.py
+```
+
+검증 결과:
+
+```text
+20 passed, 1 warning
+py_compile OK
+```
+
+다음 페이지는 **페이지 7: backend API** 이다. 웹 대시보드에서 RL run 목록, model summary, trade/equity/cost gate artifact를 읽으려면 API가 필요하다.
