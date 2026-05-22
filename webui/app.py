@@ -142,6 +142,28 @@ except Exception as exc:
 
 try:
     try:
+        from .rl_dashboard import (
+            list_rl_runs,
+            load_rl_cost_gate,
+            load_rl_run,
+            load_rl_table,
+        )
+    except ImportError:
+        from rl_dashboard import (
+            list_rl_runs,
+            load_rl_cost_gate,
+            load_rl_run,
+            load_rl_table,
+        )
+except Exception as exc:
+    print(f"Warning: STOM RL dashboard helpers cannot be imported ({exc})")
+    list_rl_runs = None
+    load_rl_cost_gate = None
+    load_rl_run = None
+    load_rl_table = None
+
+try:
+    try:
         from .v2 import v2_bp
     except ImportError:
         from v2 import v2_bp
@@ -673,6 +695,98 @@ def training_system():
     if query_system_status is None:
         return jsonify({'error': 'STOM training monitor helper is not available'}), 500
     return jsonify(query_system_status())
+
+
+def _rl_table_limit(default=500):
+    try:
+        limit = int(request.args.get('limit', default))
+    except (TypeError, ValueError):
+        limit = default
+    return max(0, min(limit, 5000))
+
+
+@app.route('/api/rl/runs')
+def rl_runs():
+    if list_rl_runs is None:
+        return jsonify({'error': 'STOM RL dashboard helper is not available'}), 500
+    try:
+        limit = _rl_table_limit(default=50)
+        return jsonify({'runs': list_rl_runs(limit=limit)})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rl/runs/<run_name>')
+def rl_run_detail(run_name):
+    if load_rl_run is None:
+        return jsonify({'error': 'STOM RL dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_rl_run(run_name))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+def _rl_table_response(run_name, table_name):
+    if load_rl_table is None:
+        return jsonify({'error': 'STOM RL dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_rl_table(
+                run_name,
+                table_name,
+                policy=request.args.get('policy') or None,
+                limit=_rl_table_limit(),
+            )
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rl/runs/<run_name>/actions')
+def rl_run_actions(run_name):
+    return _rl_table_response(run_name, 'actions')
+
+
+@app.route('/api/rl/runs/<run_name>/trades')
+def rl_run_trades(run_name):
+    return _rl_table_response(run_name, 'trades')
+
+
+@app.route('/api/rl/runs/<run_name>/equity')
+def rl_run_equity(run_name):
+    return _rl_table_response(run_name, 'equity')
+
+
+@app.route('/api/rl/runs/<run_name>/episodes')
+def rl_run_episodes(run_name):
+    return _rl_table_response(run_name, 'episodes')
+
+
+@app.route('/api/rl/runs/<run_name>/table/<table_name>')
+def rl_run_table(run_name, table_name):
+    return _rl_table_response(run_name, table_name)
+
+
+@app.route('/api/rl/runs/<run_name>/cost-gate')
+def rl_run_cost_gate(run_name):
+    if load_rl_cost_gate is None:
+        return jsonify({'error': 'STOM RL dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_rl_cost_gate(run_name, limit=_rl_table_limit()))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
 
 @app.route('/api/stom/summary')
 def stom_summary():

@@ -32,7 +32,7 @@
 | 4 | baseline runner | no-trade/random/momentum 등 | baseline report와 trade/equity artifact 생성 | 완료 |
 | 5 | reward / cost gate | 5/10/15/25bp 비용 검증 | 25bp cost gate와 rolling validation | 완료 |
 | 6 | 1차 RL 모델 | contextual bandit 또는 DQN | 300초 reward horizon 기준 walk-forward 평가 | 완료 |
-| 7 | backend API | `/api/rl/*` | manifest/run/metric/trade/equity API smoke | 남음 |
+| 7 | backend API | `/api/rl/*` | manifest/run/metric/trade/equity API smoke | 완료 |
 | 8 | 웹 대시보드 | `강화학습 실험실` 탭 | build + browser smoke | 남음 |
 | 9 | 통합 QA / 리뷰 | 최종 보고서 | 테스트, 코드리뷰, 확장/보류 결정 | 남음 |
 
@@ -108,6 +108,7 @@ C:\Python\64\Python3119\python.exe -m stom_rl.episode_manifest `
 | 페이지 4 baseline runner | 4 | 9 | 44.4% |
 | 페이지 5 reward / cost gate | 5 | 9 | 55.6% |
 | 페이지 6 1차 RL 모델 | 6 | 9 | 66.7% |
+| 페이지 7 backend API | 7 | 9 | 77.8% |
 
 ---
 
@@ -376,3 +377,40 @@ py_compile OK
 ```
 
 다음 페이지는 **페이지 7: backend API** 이다. 웹 대시보드에서 RL run 목록, model summary, trade/equity/cost gate artifact를 읽으려면 API가 필요하다.
+
+---
+
+## 11. 페이지 7 완료 기록
+
+페이지 7에서는 `webui/rl_runs` 아래의 강화학습 산출물을 웹 대시보드가 읽을 수 있도록 read-only 백엔드 API를 추가했다. 이 단계는 새 학습을 실행하는 API가 아니라, 이미 생성된 manifest/baseline/cost gate/model artifact를 안전하게 조회하는 API다.
+
+| 항목 | 결과 |
+|---|---|
+| 구현 helper | `webui.rl_dashboard` |
+| Flask route | `/api/rl/*` |
+| run listing | `GET /api/rl/runs` |
+| run detail | `GET /api/rl/runs/<run>` |
+| action/trade/equity/episode table | `GET /api/rl/runs/<run>/actions`, `/trades`, `/equity`, `/episodes` |
+| generic table | `GET /api/rl/runs/<run>/table/<table>` |
+| cost gate compact API | `GET /api/rl/runs/<run>/cost-gate` |
+| path safety | run/policy는 direct child name만 허용 |
+| table limit | 기본 500, 최대 5,000 row |
+
+실제 `webui/rl_runs` smoke 결과:
+
+| endpoint | 결과 |
+|---|---|
+| `/api/rl/runs?limit=10` | 200, `contextual_bandit_smoke`, `cost_gate_smoke`, `baselines_smoke`, `episode_manifest` 탐지 |
+| `/api/rl/runs/stom_1s_2025_contextual_bandit_smoke` | 200, `artifact_type=contextual_bandit` |
+| `/api/rl/runs/stom_1s_2025_contextual_bandit_smoke/trades?limit=3` | 200, 3 rows, truncated=true |
+| `/api/rl/runs/stom_1s_2025_contextual_bandit_smoke/equity?limit=3` | 200, 3 rows, truncated=true |
+| `/api/rl/runs/stom_1s_2025_cost_gate_smoke/cost-gate?limit=3` | 200, passing policy `buy_and_hold` |
+
+검증 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_dashboard_api.py tests\test_stom_rl_contextual_bandit.py tests\test_stom_rl_cost_gate.py tests\test_stom_rl_baselines.py tests\test_stom_rl_trading_env.py tests\test_stom_rl_episode_manifest.py tests\test_stom_qlib_pipeline.py tests\test_v2_route.py -q
+C:\Python\64\Python3119\python.exe -m py_compile webui\rl_dashboard.py webui\app.py stom_rl\contextual_bandit.py stom_rl\cost_gate.py stom_rl\baselines.py
+```
+
+다음 페이지는 **페이지 8: 웹 대시보드** 이다. 이제 API가 있으므로 프론트엔드에서 “강화학습 실험실” 탭을 만들어 run 목록, cost gate, 모델 성과, trade/equity를 시각화할 수 있다.

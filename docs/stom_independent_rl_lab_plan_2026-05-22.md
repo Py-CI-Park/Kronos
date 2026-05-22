@@ -966,3 +966,59 @@ feature는 현재와 과거 정보만 사용한다. 미래 가격은 label/rewar
 | `py_compile` | 통과 |
 
 다음 단계는 **페이지 7: backend API**다. API는 `webui/rl_runs` 아래의 baseline, cost gate, contextual bandit 산출물을 읽어 웹 대시보드에서 사용자가 강화학습 진행과 성과를 확인할 수 있게 해야 한다.
+
+---
+
+## 25. 2026-05-22 페이지 7 backend API 구현 기록
+
+페이지 7에서는 독립 강화학습 실험실의 런타임 산출물을 웹에서 조회할 수 있는 read-only API를 추가했다. 이 API는 학습을 시작하거나 원본 DB를 수정하지 않고, `webui/rl_runs` 아래의 재생성 가능한 artifact만 읽는다.
+
+### 25.1 구현 범위
+
+| 항목 | 결정 |
+|---|---|
+| 구현 helper | `webui.rl_dashboard` |
+| Flask 연결 | `webui.app` |
+| API prefix | `/api/rl` |
+| 대상 artifact | episode manifest, baseline, cost gate, contextual bandit |
+| 보안 원칙 | run/policy path traversal 차단, direct child만 허용 |
+| table limit | 기본 500 row, 최대 5,000 row |
+
+### 25.2 API 목록
+
+| endpoint | 설명 |
+|---|---|
+| `GET /api/rl/runs` | RL run artifact 목록 |
+| `GET /api/rl/runs/<run>` | run 상세, summary, artifact 목록, 모델 요약 |
+| `GET /api/rl/runs/<run>/actions` | action table |
+| `GET /api/rl/runs/<run>/trades` | trade table |
+| `GET /api/rl/runs/<run>/equity` | equity curve table |
+| `GET /api/rl/runs/<run>/episodes` | episode summary table |
+| `GET /api/rl/runs/<run>/table/<table>` | generic table 조회 |
+| `GET /api/rl/runs/<run>/cost-gate` | cost gate compact payload |
+
+baseline run은 정책별 subdirectory에 table이 있으므로 `?policy=buy_and_hold` 같은 query를 지원한다. policy를 생략하면 가능한 policy table을 limit 범위 안에서 합쳐 반환한다.
+
+### 25.3 실제 smoke 결과
+
+실제 런타임 산출물 기준으로 Flask test client smoke를 수행했다.
+
+| endpoint | 결과 |
+|---|---|
+| `/api/rl/runs?limit=10` | 200, 4개 RL run 탐지 |
+| `/api/rl/runs/stom_1s_2025_contextual_bandit_smoke` | 200, contextual bandit summary 반환 |
+| `/api/rl/runs/stom_1s_2025_contextual_bandit_smoke/trades?limit=3` | 200, trade rows 반환, truncated=true |
+| `/api/rl/runs/stom_1s_2025_contextual_bandit_smoke/equity?limit=3` | 200, equity rows 반환, truncated=true |
+| `/api/rl/runs/stom_1s_2025_cost_gate_smoke/cost-gate?limit=3` | 200, passing policy `buy_and_hold` 반환 |
+
+### 25.4 검증
+
+| 검증 | 결과 |
+|---|---|
+| helper list/detail/table test | 통과 |
+| Flask `/api/rl/*` route smoke | 통과 |
+| path traversal 거부 test | 통과 |
+| contextual bandit/cost gate/baseline/env/manifest 회귀 | 통과 |
+| 실제 runtime artifact smoke | 통과 |
+
+다음 단계는 **페이지 8: 웹 대시보드**다. 이제 프론트엔드에서 `/api/rl/runs`, `/api/rl/runs/<run>`, `/api/rl/runs/<run>/trades`, `/api/rl/runs/<run>/equity`, `/api/rl/runs/<run>/cost-gate`를 사용해 “강화학습 실험실” 탭을 만들 수 있다.
