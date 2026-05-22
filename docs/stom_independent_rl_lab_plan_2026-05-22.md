@@ -196,6 +196,41 @@ episode = 특정 날짜 + 거래대금 상위 N개 종목 포트폴리오
 | 테스트 기간으로 reward/feature scaler를 fit | 평가 오염 |
 | 종목별 전체 기간 통계를 현재 시점에 사용 | 미래 분포 누수 |
 
+### 6.4 STOM 데이터 자원 실측 (Kronos export 기준)
+
+기존 Kronos 파이프라인이 동일 데이터에서 만든 통계를 그대로 강화학습 환경의 episode 자원 추정치로 활용한다. 근거 파일: `finetune/qlib_exports/stom_1s_grid_pred60_2025/stom_qlib_export_report.json`
+
+| 항목 | 값 |
+|---|---:|
+| 원본 DB | `_database/stock_tick_back.db` (read-only) |
+| 적용 구간 | 2025-01-03 ~ 2025-12-30 09:00~09:30 |
+| compatible tables | 2,425 / 2,427 |
+| 2025 row 보유 tables | 1,638 |
+| sessions | 240 (train 168 / validation 36 / test 36) |
+| exported group count | 18,750 (episode 단위 후보) |
+| exported row count | 33,360,325 |
+| train rows | 23,579,043 |
+| validation rows | 4,920,437 |
+| test rows | 4,860,845 |
+
+함의:
+
+1. **episode pool 규모**: train 13,256 / val 2,764 / test 2,730 group이 그대로 RL episode 후보가 된다. baseline 충돌 없이 1차 실험이 가능한 규모다.
+2. **session split 재사용**: Kronos가 사용한 168/36/36 session split을 그대로 사용하면 후속 비교가 쉽다.
+3. **read-only 강제**: 학습 코드는 `_database/stock_tick_back.db`를 SQLite `mode=ro` URI 또는 OS read-only 권한으로만 열어야 하며, 단위 테스트로 쓰기 호출 부재를 확인한다.
+
+### 6.5 누수 방지 검증 메커니즘
+
+규칙 명시뿐 아니라 다음 자동화된 검증 단계를 1차 환경 구현에 포함한다.
+
+| 검증 | 도구 | 기대값 |
+|---|---|---|
+| observation에 미래 timestamp 없음 | unit test (`tests/test_rl_env_no_leakage.py`) | observation t에 t+1 이후 row 0건 |
+| feature scaler train fit | pipeline assertion | test set fit 호출 0건 |
+| 종목별 통계 cutoff | manifest 검사 | `as_of_ts <= current_step_ts` 100% |
+| reward에 사용된 future 가격 별도 분리 | env 내 검사 | observation 텐서와 reward 입력 텐서 dtype/source 다름 |
+| read-only DB | DB connect mock | 모든 `sqlite3.connect`가 `mode=ro` 사용 |
+
 ---
 
 ## 7. 상태 공간 설계
@@ -318,9 +353,37 @@ reward_t = realized_or_mark_to_market_return_t
 6. turnover
 7. split별 성과
 
+### 10.1 Kronos checkpoint 결과를 외부 비교군으로 활용
+
+Kronos 의존을 학습 단계에서는 끊되, **비교 기준점**으로는 기존 결과를 그대로 활용한다. 같은 STOM 2025 test split(2025-11-07 ~ 2025-12-30, 36 sessions, 비용 25bp)에서 측정된 수치를 재현 없이 baseline 표에 고정한다.
+
+근거 파일: `webui/qlib_backtests/stom_1s_2025_full_small_horizon_comparison.json`
+
+| horizon | Kronos 방향 적중률 | random 방향 적중률 | Top-K net | 최적 필터 net | rolling net | rolling 방향 | gate |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 30초 | 39.21% | 38.77% | -0.2522% | -0.0465% | -0.2398% | 32.08% | 실패 |
+| 60초 | 44.79% | 44.93% | -0.2041% | -0.0168% | -0.2043% | 39.39% | 실패 |
+| 120초 | 45.67% | 42.73% | -0.1735% | -0.0335% | -0.2903% | 49.35% | 실패 |
+| 300초 | 49.19% | 46.26% | -0.1145% | +0.0922% | -0.0052% | 44.29% | 실패 |
+
+RL 모델은 같은 split·비용 조건에서 **300초 horizon Kronos rolling net -0.0052%를 양수로 끌어올리는 것**을 1차 우위 기준으로 둔다. 즉 RL이 Kronos 모델보다 명확히 나은지 보려면 cost gate 통과 + 300초 행 대비 rolling net delta가 양수여야 한다.
+
 ---
 
 ## 11. 모델 구축 로드맵
+
+### 11.0 reward horizon 우선순위
+
+기존 Kronos 실험에서 30/60/120/300초 중 **300초가 비용 차감 후 손익분기에 가장 가까운 horizon**이었다(섹션 10.1). RL 환경의 mark-to-market 평가도 동일 단위를 1순위로 둔다.
+
+| 우선순위 | reward horizon | 이유 |
+|---:|---|---|
+| 1 | 300초 청산 또는 mark-to-market | Kronos 비교군에서 cost gate에 가장 근접 |
+| 2 | 120초 | 방향 edge +2.94%p 확보 구간 |
+| 3 | 60초 | 기존 기본 horizon이지만 random 대비 edge 없음 |
+| 후순위 | 30초 | 노이즈가 커 1차 검증에서 제외 가능 |
+
+30초는 환경 단위 시간이 1초이므로 step 단위로는 항상 측정 가능하지만, **보상/평가의 1차 horizon은 300초**로 시작한다.
 
 ### 11.1 0단계: 모델 없는 환경 검증
 
@@ -391,6 +454,12 @@ webui/rl_runs/{run_id}/
 | cost_paid_pct | 비용으로 사라진 수익 |
 | baseline_delta_pct | 기준 전략 대비 차이 |
 | pass_cost_gate | 비용 gate 통과 여부 |
+| rolling_overfit_gap_pct | train net - test net. Kronos 60초 실험에서 0.2874% 관측, RL은 0.15% 이내 목표 |
+| positive_fold_rate | rolling fold 중 net return 양수 비율. Kronos 60초 실험 0.2857, RL은 0.50 이상 목표 |
+| baseline_delta_300s_pct | 동일 split에서 Kronos 300초 rolling net (-0.0052%) 대비 차이 |
+| cost_gate_pass_at_25bp | 25bp 비용 시나리오에서 양수 net return 달성 여부 |
+| invalid_action_rate | 보유 중 재매수, 미보유 청산 등 무효 행동 비율 (1% 미만 목표) |
+| episode_completion_rate | 강제 청산 없이 종료된 episode 비율 |
 
 ---
 
@@ -537,3 +606,47 @@ $team STOM 독립 강화학습 실험실을 병렬 구현하세요. Lane A는 DB
 - 다음 구현 명령어가 명확함
 
 따라서 다음 단계는 **페이지 2: DB loader + episode manifest** 또는 **페이지 3: `StomTickTradingEnv` skeleton** 구현이다.
+
+---
+
+## 19. 2026-05-22 보완 업데이트 기록
+
+최초 작성(commit 8188284) 이후 동일 일자에 진행한 상세 검토에서 다음 항목이 보완되었다. 본문 내 해당 섹션은 모두 업데이트 완료 상태이며, 이 섹션은 변경 사항을 한 곳에서 추적하기 위한 색인이다.
+
+### 19.1 추가/보강된 섹션
+
+| 위치 | 변경 | 출처/근거 |
+|---|---|---|
+| 6.4 | STOM 데이터 자원 실측치(18,750 group / 33.36M row / 168·36·36 session) 추가 | `finetune/qlib_exports/stom_1s_grid_pred60_2025/stom_qlib_export_report.json` |
+| 6.5 | 누수 방지의 자동화 검증 메커니즘(5종 unit test) 추가 | 기존 Kronos 실험에서 rolling overfit gap 0.2874% 관측에 따른 강화 |
+| 10.1 | Kronos checkpoint horizon별 결과를 외부 비교군으로 고정 | `webui/qlib_backtests/stom_1s_2025_full_small_horizon_comparison.json` |
+| 11.0 | reward horizon 우선순위(300→120→60→30) 및 근거 추가 | 동일 horizon 비교표 |
+| 12.1 | `rolling_overfit_gap_pct`, `positive_fold_rate`, `baseline_delta_300s_pct`, `cost_gate_pass_at_25bp`, `invalid_action_rate`, `episode_completion_rate` 신규 metric 6종 추가 | Kronos 60초 rolling 실험치 0.2874%/0.2857 등 |
+
+### 19.2 보완 후에도 남는 후속 결정
+
+다음 항목은 구현 단계(페이지 2 이후)에서 결정한다. 본 문서에서는 의도적으로 결론을 내리지 않는다.
+
+1. **단위 시간 선택**: 1초봉 step을 그대로 쓰는지 또는 5초/10초 down-sampling을 쓰는지. 환경 검증 0단계 결과로 결정.
+2. **invalid action 처리**: penalty만 줄지, 행동을 강제 보정할지. baseline runner 단계에서 비교.
+3. **slippage 모델**: 고정 bp / 거래대금 비율 / 호가 기반 중 어떤 모델을 1차로 쓸지. 페이지 5 cost gate 단계에서 결정.
+4. **종목 universe 결정 규칙**: 거래대금 상위 N의 N과 컷오프 시각. 종목 universe 변화 리스크(섹션 16)와 함께 페이지 2에서 결정.
+
+### 19.3 본문에서 손대지 않은 영역
+
+다음은 검토했지만 문서 변경이 필요 없다고 판단한 항목이다.
+
+- 섹션 5 ADR 의사결정 자체: Option C(Gymnasium API + RLTrader식 매매 아이디어) 채택은 유지.
+- 섹션 13 웹 대시보드 탭 명칭(`강화학습 실험실`)과 컴포넌트명(`IndependentRLLabTab.svelte`): 변경 사유 없음.
+- 섹션 17 다음 권장 명령어 3종: 구현 단계로 진입할 때 그대로 사용 가능.
+
+### 19.4 검증
+
+문서 변경은 markdown 구조 무결성과 한글 인코딩 보존을 기준으로 확인한다.
+
+| 검증 | 결과 |
+|---|---|
+| UTF-8 한글 보존 (물음표 손상 부재) | OK |
+| 신규 섹션 헤더 레벨 일관성 | OK (`###` 하위, `##` 최상위 유지) |
+| 표 컬럼 정렬 문법 | OK |
+| 기존 섹션 번호 유지 | OK (18까지 동일, 19 신규 추가) |
