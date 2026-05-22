@@ -112,3 +112,133 @@ C:\Python\64\Python3119\python.exe finetune\qlib_stom_pipeline.py score-backtest
 2. random과 거의 같은 direction accuracy를 개선하기 위해 seed/epoch/model size 비교를 진행한다.
 3. full as-of 평가를 원하면 `max-asofs`를 3보다 크게 늘려 더 촘촘한 walk-forward 평가를 실행한다.
 4. 대시보드에서 후보를 클릭하면 해당 window 차트로 전환하는 상호작용을 추가한다.
+
+## 9. 조건식 / 비용 필터 최적화 1차 실행 결과
+
+작성일: 2026-05-22 KST
+
+위 8번의 다음 단계 중 “비용 음수 문제를 줄이기 위한 score filter / 거래대금 / 변동성 조건”을 먼저 실행했다.
+
+### 9.1 실행 명령
+
+```powershell
+$pred = 'webui\stom_predictions\stom_1s_pred60_2025_full_small_walkforward36x3x50_eval_kronos.csv'
+$prefix = 'stom_1s_pred60_2025_full_small_walkforward36x3x50_eval_kronos_cost25'
+
+C:\Python\64\Python3119\python.exe finetune\search_stom_1s_filters.py `
+  --prediction-csv $pred `
+  --output-dir webui\qlib_backtests `
+  --prefix $prefix `
+  --top-k 5 `
+  --cost-bps 15 `
+  --slippage-bps 10 `
+  --min-trades 10 `
+  --min-periods 3 `
+  --min-coverage 0.5
+
+C:\Python\64\Python3119\python.exe finetune\search_stom_1s_filters.py `
+  --prediction-csv $pred `
+  --output-dir webui\qlib_backtests `
+  --prefix $prefix `
+  --top-k 5 `
+  --cost-bps 15 `
+  --slippage-bps 10 `
+  --min-trades 10 `
+  --min-periods 3 `
+  --min-coverage 0.5 `
+  --rolling-validate `
+  --rolling-train-periods 30 `
+  --rolling-test-periods 10 `
+  --rolling-step-periods 10
+
+C:\Python\64\Python3119\python.exe finetune\search_stom_1s_filters.py `
+  --output-dir webui\qlib_backtests `
+  --prefix $prefix `
+  --gate-analysis `
+  --filter-report webui\qlib_backtests\${prefix}.filter_search.json `
+  --rolling-report webui\qlib_backtests\${prefix}.rolling_filter_validation.json `
+  --total-cost-bps-grid 5,10,15,25 `
+  --min-avg-test-net-pct 0 `
+  --min-positive-test-fold-rate 0.5 `
+  --min-improvement-net-pct 0 `
+  --min-total-test-trades 100
+```
+
+### 9.2 산출물
+
+| 종류 | 경로 |
+| --- | --- |
+| 필터 탐색 JSON | `webui/qlib_backtests/stom_1s_pred60_2025_full_small_walkforward36x3x50_eval_kronos_cost25.filter_search.json` |
+| 필터 Top20 CSV | `webui/qlib_backtests/stom_1s_pred60_2025_full_small_walkforward36x3x50_eval_kronos_cost25.filter_search_top20.csv` |
+| rolling 검증 JSON | `webui/qlib_backtests/stom_1s_pred60_2025_full_small_walkforward36x3x50_eval_kronos_cost25.rolling_filter_validation.json` |
+| cost gate JSON | `webui/qlib_backtests/stom_1s_pred60_2025_full_small_walkforward36x3x50_eval_kronos_cost25.cost_gate.json` |
+
+### 9.3 기본 Top-K 대비 최적 필터
+
+| 항목 | 기본 Top-K | 최적 필터 |
+| --- | ---: | ---: |
+| 필터 | 없음 | `ret>=0.05`, `cons>=0.5`, `amount q>=0.75` |
+| 평가 period | 108 | 56 |
+| trade 수 | 540 | 87 |
+| coverage | 100.00% | 51.85% |
+| 평균 gross return | 0.0459% | 0.1590% |
+| 평균 net return, 비용 25bp | -0.2041% | -0.0168% |
+| direction hit rate | 46.67% | 47.13% |
+| 누적수익 | -19.8646% | -1.1639% |
+
+해석:
+
+- 필터를 걸면 무조건 매수하는 기본 Top-K보다 손실은 크게 줄어든다.
+- 하지만 25bp 비용을 넣으면 평균 순수익이 아직 음수다.
+- 방향 적중률도 47.13%로 50%를 넘지 못했다.
+
+### 9.4 Rolling validation 결과
+
+| 항목 | 값 |
+| --- | ---: |
+| fold 수 | 7 |
+| 총 test trade | 66 |
+| 평균 train net return | 0.0831% |
+| 평균 test net return | -0.2043% |
+| 평균 test baseline net return | -0.1726% |
+| test 개선폭 | -0.0317% |
+| test 방향 적중률, weighted | 39.39% |
+| 양수 fold 비율 | 28.57% |
+| overfit gap | 0.2874% |
+
+Cost sensitivity:
+
+| 총 비용 | rolling test net | passes gate |
+| ---: | ---: | --- |
+| 5bp | -0.0043% | false |
+| 10bp | -0.0543% | false |
+| 15bp | -0.1043% | false |
+| 25bp | -0.2043% | false |
+
+### 9.5 결정
+
+`cost_gate.json`의 결정은 다음과 같다.
+
+| 항목 | 값 |
+| --- | --- |
+| decision | `hold_expand_200k` |
+| expand_training_allowed | `false` |
+| reason | target cost scenario failed at least one rolling profitability/stability gate |
+
+즉, 현재 checkpoint와 현재 조건식만으로는 200k / 전체 확장 학습을 바로 진행하기보다, 먼저 다음 문제를 해결하는 것이 안전하다.
+
+1. 방향 적중률이 random 수준을 넘지 못하는 문제
+2. train 구간에서 고른 필터가 test 구간에서 무너지는 과최적화 문제
+3. 1초/60초 초단기 horizon에서 25bp 비용을 이기기 어려운 문제
+4. 가격 경로 MAPE가 persistence/random보다 높은 문제
+
+### 9.6 현재 결론
+
+파인튜닝은 실패라기보다 “학습은 정상 완료됐지만 현재 설정에서는 실전 신호력이 부족한 상태”다. 모델이 CSV를 만들고, checkpoint가 정상 로드되고, 대시보드에서 실제/예측 비교까지 가능하므로 파이프라인은 동작한다. 다만 예측 품질은 아직 실전 기준을 통과하지 못했다.
+
+다음 권장 작업은 모델을 무작정 크게 돌리는 것이 아니라, 먼저 아래 중 하나를 비교 실험하는 것이다.
+
+1. horizon을 30초, 60초, 120초, 300초로 나눠 실제로 비용을 이길 수 있는 구간 찾기
+2. 방향 분류 / 등락률 회귀를 분리해 loss와 평가 지표를 목적에 맞게 조정
+3. 종목별 정규화와 장초반 이벤트성 특징을 강화
+4. rolling validation에서 통과하는 조건식만 대시보드에 “실전 후보”로 표시
