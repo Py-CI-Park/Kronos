@@ -316,10 +316,16 @@ def test_training_readiness_policy_marks_predictor_states():
         "latest_stage": {"train_stage": "predictor", "status": "completed"},
         "stages": [{"train_stage": "predictor", "status": "completed", "stage_percent": 100}],
     }
+    ok_completed_phase_payload = {
+        "status": "ok",
+        "latest_stage": {"train_stage": "predictor", "status": "ok", "phase": "completed"},
+        "stages": [{"train_stage": "predictor", "status": "ok", "phase": "completed", "stage_percent": 99.9974}],
+    }
 
     tokenizer = webapp.build_training_readiness(tokenizer_payload)
     predictor = webapp.build_training_readiness(predictor_payload)
     complete = webapp.build_training_readiness(complete_payload)
+    ok_completed_phase = webapp.build_training_readiness(ok_completed_phase_payload)
 
     assert tokenizer["level"] == "waiting"
     assert tokenizer["performance_ready"] is False
@@ -328,6 +334,8 @@ def test_training_readiness_policy_marks_predictor_states():
     assert predictor["performance_ready"] is False
     assert complete["level"] == "ready"
     assert complete["performance_ready"] is True
+    assert ok_completed_phase["level"] == "ready"
+    assert ok_completed_phase["performance_ready"] is True
 
 
 def test_training_dashboard_refresh_interval_is_configurable_and_clamped(monkeypatch):

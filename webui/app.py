@@ -224,6 +224,9 @@ def build_training_readiness(status_payload):
     def stage_status(stage):
         return str((stage or {}).get("status") or "").lower()
 
+    def stage_phase(stage):
+        return str((stage or {}).get("phase") or "").lower()
+
     def safe_percent(stage):
         try:
             return float((stage or {}).get("stage_percent") or 0)
@@ -233,7 +236,9 @@ def build_training_readiness(status_payload):
     predictor_stage = next((stage for stage in stages if stage_name(stage) == "predictor"), None)
     latest_stage_name = stage_name(latest)
     predictor_status = stage_status(predictor_stage)
+    predictor_phase = stage_phase(predictor_stage)
     complete_statuses = {"complete", "completed", "done", "finished", "success", "succeeded"}
+    complete_phases = {"complete", "completed", "done", "finished", "success", "succeeded"}
     pending_statuses = {"", "dry_run", "pending", "queued", "not_started", "waiting"}
 
     predictor_started = bool(predictor_stage) and predictor_status not in pending_statuses
@@ -241,10 +246,11 @@ def build_training_readiness(status_payload):
         bool(predictor_stage)
         and (
             predictor_status in complete_statuses
+            or predictor_phase in complete_phases
             or (
                 stage_name(predictor_stage) == "predictor"
                 and safe_percent(predictor_stage) >= 100
-                and run_status in complete_statuses
+                and (run_status in complete_statuses or run_status == "ok")
             )
         )
     )
