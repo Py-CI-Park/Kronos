@@ -703,3 +703,46 @@ $team STOM 독립 강화학습 실험실을 병렬 구현하세요. Lane A는 DB
 | unknown split episodes | 0 |
 
 생성 산출물은 `webui/rl_runs/stom_1s_2025_episode_manifest/` 아래에 기록된다. 해당 디렉터리는 런타임 대용량 산출물이므로 `.gitignore`에 추가하고 커밋 대상에서 제외한다.
+
+---
+
+## 21. 2026-05-22 페이지 3 환경 구현 기록
+
+페이지 3에서는 실제 강화학습 모델이 상호작용할 수 있는 환경 skeleton을 추가했다. 이 단계도 아직 수익 모델 학습이 아니라, **행동-보상-상태 전이 계약을 검증하는 기반 작업**이다.
+
+### 21.1 구현 범위
+
+| 항목 | 결정 |
+|---|---|
+| 환경 클래스 | `stom_rl.trading_env.StomTickTradingEnv` |
+| 입력 | 페이지 2 episode manifest |
+| API | Gymnasium 호환 `reset(seed, options)`, `step(action)` |
+| 행동 | `hold`, `buy`, `sell` |
+| 포지션 | long-only, 단일 포지션 |
+| 기본 reward horizon | 300초 |
+| observation | 과거 `lookback_window` row만 사용 |
+| 누수 방지 | observation 마지막 timestamp가 action timestamp보다 항상 이전 |
+| invalid action | penalty와 count로 기록 |
+
+### 21.2 기본 observation feature
+
+| feature | 설명 |
+|---|---|
+| open/high/low/close | 1초봉 가격 |
+| volume/amount | 거래량/거래대금 |
+| position | 현재 보유 여부 |
+| unrealized_return | 미실현 수익률 |
+| time_in_position | 포지션 유지 step 수 |
+
+### 21.3 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| reset/step shape | OK |
+| 300초 horizon timestamp | OK |
+| no future observation | OK |
+| invalid buy/sell 처리 | OK |
+| deterministic replay | OK |
+| 실제 manifest smoke | OK |
+
+페이지 3 완료 후 다음 단계는 **페이지 4: baseline runner** 이다. baseline runner는 이 환경을 사용하여 no-trade, random, buy-and-hold, momentum, mean-reversion, volume/amount filter를 같은 episode 계약에서 비교해야 한다.

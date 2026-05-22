@@ -28,7 +28,7 @@
 |---:|---|---|---|---|
 | 1 | 설계와 기준 고정 | `stom_independent_rl_lab_plan_2026-05-22.md` | 실측 데이터, baseline, reward horizon 문서화 | 완료 |
 | 2 | DB loader / episode manifest | `stom_rl.episode_manifest` | read-only DB 검증, train/val/test episode manifest 생성 | 완료 |
-| 3 | `StomTickTradingEnv` | RL 환경 skeleton | reset/step/reward/invalid action 단위 테스트 | 남음 |
+| 3 | `StomTickTradingEnv` | RL 환경 skeleton | reset/step/reward/invalid action 단위 테스트 | 완료 |
 | 4 | baseline runner | no-trade/random/momentum 등 | baseline report와 trade/equity artifact 생성 | 남음 |
 | 5 | reward / cost gate | 5/10/15/25bp 비용 검증 | 25bp cost gate와 rolling validation | 남음 |
 | 6 | 1차 RL 모델 | contextual bandit 또는 DQN | 300초 reward horizon 기준 walk-forward 평가 | 남음 |
@@ -104,6 +104,7 @@ C:\Python\64\Python3119\python.exe -m stom_rl.episode_manifest `
 |---|---:|---:|---:|
 | 설계 기준 | 1 | 9 | 11.1% |
 | 페이지 2 코드/검증 | 2 | 9 | 22.2% |
+| 페이지 3 환경 skeleton | 3 | 9 | 33.3% |
 
 ---
 
@@ -136,5 +137,53 @@ C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_episode_manifest
 ```
 
 다음 페이지는 **페이지 3: `StomTickTradingEnv`** 이다.
+
+---
+
+## 7. 페이지 3 완료 기록
+
+페이지 3에서 강화학습 모델과 baseline runner가 공통으로 사용할 단일 episode 매매 환경 skeleton을 추가했다.
+
+| 항목 | 결과 |
+|---|---|
+| 환경 클래스 | `stom_rl.trading_env.StomTickTradingEnv` |
+| API 스타일 | Gymnasium 호환 `reset()` / `step()` 반환 형식 |
+| action | `0=hold`, `1=buy`, `2=sell` |
+| 기본 reward horizon | 300초 |
+| 기본 비용 | 25bp |
+| observation shape | `[lookback_window, 9]` |
+| 기본 feature | OHLCV/amount + position/unrealized_return/time_in_position |
+| 누수 방지 | observation 마지막 timestamp < action timestamp |
+| invalid action | 보유 중 재매수, 미보유 청산을 penalty와 count로 기록 |
+| deterministic replay | 동일 seed/행동열에서 동일 observation/reward |
+
+실제 manifest smoke:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m stom_rl.trading_env `
+  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
+  --split train `
+  --episode-index 0 `
+  --lookback-window 300 `
+  --reward-horizon-seconds 300
+```
+
+대표 결과:
+
+| 항목 | 값 |
+|---|---|
+| episode | `000100_20250103` |
+| observation_shape | `[300, 9]` |
+| action_timestamp | `2025-01-03T09:05:18` |
+| horizon_timestamp | `2025-01-03T09:10:18` |
+| no_future_observation | `true` |
+
+검증 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_trading_env.py tests\test_stom_rl_episode_manifest.py -q
+```
+
+다음 페이지는 **페이지 4: baseline runner** 이다.
 
 페이지 2가 테스트와 커밋까지 끝나면 전체 진행률은 **22.2%**로 본다.
