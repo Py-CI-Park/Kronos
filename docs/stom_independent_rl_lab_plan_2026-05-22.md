@@ -812,3 +812,71 @@ $team STOM 독립 강화학습 실험실을 병렬 구현하세요. Lane A는 DB
 | `py_compile` | 통과 |
 
 다음 단계는 **페이지 5: reward / cost gate**다. 페이지 5에서는 smoke가 아니라 전체 test split 또는 제한된 검증 범위를 명시하고 5/10/15/25bp 비용별로 baseline을 비교해 “비용 차감 후 살아남는 전략이 있는가?”를 판단한다.
+
+---
+
+## 23. 2026-05-22 페이지 5 reward / cost gate 구현 기록
+
+페이지 5에서는 baseline runner 위에 비용·슬리피지·회전율·MDD·rolling validation gate를 추가했다. 이 단계는 RL 모델의 성과를 좋게 보이게 만드는 작업이 아니라, **향후 모델이 통과해야 할 현실 비용 기준을 먼저 고정하는 작업**이다.
+
+### 23.1 구현 범위
+
+| 항목 | 결정 |
+|---|---|
+| 구현 모듈 | `stom_rl.cost_gate` |
+| 기반 모듈 | `stom_rl.baselines` |
+| 기본 split | `test` |
+| 기본 비용 시나리오 | 5bp, 10bp, 15bp, 25bp |
+| 기본 target gate | 25bp |
+| rolling validation | session chunk 단위 fold |
+| 산출 위치 | `webui/rl_runs/stom_1s_2025_cost_gate*` |
+
+### 23.2 gate 판정 기준
+
+| 기준 | 기본값 | 의미 |
+|---|---:|---|
+| `min_avg_episode_net_pct` | 0.0% | 비용 차감 평균 episode 수익률이 양수여야 함 |
+| `max_drawdown_pct` | 20.0% | MDD가 -20%보다 나쁘면 실패 |
+| `max_trades_per_episode` | 50.0 | 과도한 초단타/비용 민감 전략 실패 |
+| `min_trade_count` | 1 | no-trade는 비교 기준일 뿐 gate 통과 전략이 아님 |
+| `min_positive_fold_rate` | 0.5 | rolling fold 절반 이상에서 양수여야 함 |
+
+### 23.3 산출물
+
+| 파일 | 설명 |
+|---|---|
+| `cost_gate_report.json` | 전체 설정, 비용 scenario, rolling, 최종 gate summary |
+| `scenario_summary.csv` | cost/slippage/policy별 요약 |
+| `rolling_folds.csv` | fold별 policy 성과 |
+| `gate_summary.csv` | target 25bp 기준 최종 통과 여부 |
+
+### 23.4 실제 smoke 결과
+
+실제 2025 STOM test split에서 3개 episode, 2개 rolling fold만 사용해 검증 경로를 확인했다.
+
+| 정책 | 25bp 평균 episode net | 거래/episode | hit rate | MDD | positive fold rate | gate |
+|---|---:|---:|---:|---:|---:|---|
+| `buy_and_hold` | +3.3240% | 1.00 | 1.0000 | 0.0000% | 0.5000 | 통과 |
+| `no_trade` | 0.0000% | 0.00 | 0.0000 | 0.0000% | 0.0000 | 실패 |
+| `mean_reversion` | -22.5387% | 65.00 | 0.0359 | -53.5298% | 0.0000 | 실패 |
+| `volume_filter` | -31.2288% | 74.67 | 0.0045 | -67.6145% | 0.0000 | 실패 |
+| `momentum` | -34.1359% | 71.33 | 0.0421 | -71.5770% | 0.0000 | 실패 |
+| `random` | -77.2541% | 295.00 | 0.0124 | -98.8246% | 0.0000 | 실패 |
+
+이 smoke 결과는 전체 test split에 대한 결론이 아니다. 다만 다음 사실은 확인했다.
+
+1. 비용이 올라갈수록 random/momentum/volume 계열의 과매매 전략이 빠르게 붕괴한다.
+2. 회전율 gate가 없으면 5bp에서 일시적으로 좋아 보이는 mean-reversion도 통과로 오판할 수 있다.
+3. 25bp target gate에서는 거래 수가 낮고 수익이 큰 buy-and-hold만 smoke에서 통과했다.
+4. 따라서 1차 RL 모델은 단순히 거래를 많이 하는 방향이 아니라 **낮은 회전율 + 선택적 진입 + 300초 horizon 수익**을 목표로 해야 한다.
+
+### 23.5 검증
+
+| 검증 | 결과 |
+|---|---|
+| cost gate unit test | 통과 |
+| baseline/env/manifest 회귀 | 통과 |
+| 실제 manifest smoke | `cost_gate_report.json/csv` 산출물 생성 |
+| `py_compile` | 통과 |
+
+다음 단계는 **페이지 6: 1차 RL 모델**이다. 추천 출발점은 300초 reward horizon, 25bp target gate 기준으로 contextual bandit 또는 단순 DQN prototype을 만든 뒤, Page 5의 `gate_summary.csv`와 동일 기준으로 모델 결과를 비교하는 것이다.

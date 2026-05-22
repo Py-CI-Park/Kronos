@@ -59,6 +59,8 @@ class BaselineRunConfig:
     volume_window: int = 30
     amount_multiplier: float = 1.5
     max_steps_per_episode: int = 0
+    episode_ids: Tuple[str, ...] = field(default_factory=tuple)
+    sessions: Tuple[str, ...] = field(default_factory=tuple)
     write_artifacts: bool = True
 
 
@@ -242,10 +244,18 @@ def _safe_compounded_return_pct(final_equities: Sequence[float]) -> float:
     return (exp(total_log) - 1.0) * 100.0
 
 
-def _episode_indices(total: int, max_episodes: int) -> range:
-    if max_episodes and max_episodes > 0:
-        return range(min(total, int(max_episodes)))
-    return range(total)
+def _selected_episode_indices(episodes: Sequence[Mapping[str, Any]], config: BaselineRunConfig) -> List[int]:
+    episode_ids = {str(episode_id) for episode_id in config.episode_ids}
+    sessions = {str(session) for session in config.sessions}
+    selected = [
+        idx
+        for idx, episode in enumerate(episodes)
+        if (not episode_ids or str(episode.get("episode_id")) in episode_ids)
+        and (not sessions or str(episode.get("session")) in sessions)
+    ]
+    if config.max_episodes and config.max_episodes > 0:
+        return selected[: int(config.max_episodes)]
+    return selected
 
 
 def _force_close_if_needed(
@@ -285,7 +295,7 @@ def _run_policy(policy_name: str, config: BaselineRunConfig) -> Dict[str, Any]:
         reward_mode="horizon",
     )
     probe_env = StomTickTradingEnv(env_config)
-    selected_indices = list(_episode_indices(len(probe_env.episodes), config.max_episodes))
+    selected_indices = _selected_episode_indices(probe_env.episodes, config)
 
     action_rows: List[Dict[str, Any]] = []
     equity_rows: List[Dict[str, Any]] = []
@@ -519,6 +529,10 @@ def _parse_policies(raw: str) -> Tuple[str, ...]:
     return policies
 
 
+def _parse_list_arg(raw: str) -> Tuple[str, ...]:
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
 def _parse_args(argv: Optional[Sequence[str]] = None) -> BaselineRunConfig:
     parser = argparse.ArgumentParser(description="Run STOM RL baseline strategies.")
     parser.add_argument("--manifest", default=str(DEFAULT_OUTPUT_DIR / "episode_manifest.json"))
@@ -536,6 +550,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> BaselineRunConfig:
     parser.add_argument("--volume-window", type=int, default=30)
     parser.add_argument("--amount-multiplier", type=float, default=1.5)
     parser.add_argument("--max-steps-per-episode", type=int, default=0)
+    parser.add_argument("--episode-ids", default="", help="Comma-separated episode_id filter.")
+    parser.add_argument("--sessions", default="", help="Comma-separated session filter such as 20250103,20250106.")
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
     return BaselineRunConfig(
@@ -554,6 +570,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> BaselineRunConfig:
         volume_window=args.volume_window,
         amount_multiplier=args.amount_multiplier,
         max_steps_per_episode=args.max_steps_per_episode,
+        episode_ids=_parse_list_arg(args.episode_ids),
+        sessions=_parse_list_arg(args.sessions),
         write_artifacts=not args.no_write,
     )
 

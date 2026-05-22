@@ -30,7 +30,7 @@
 | 2 | DB loader / episode manifest | `stom_rl.episode_manifest` | read-only DB 검증, train/val/test episode manifest 생성 | 완료 |
 | 3 | `StomTickTradingEnv` | RL 환경 skeleton | reset/step/reward/invalid action 단위 테스트 | 완료 |
 | 4 | baseline runner | no-trade/random/momentum 등 | baseline report와 trade/equity artifact 생성 | 완료 |
-| 5 | reward / cost gate | 5/10/15/25bp 비용 검증 | 25bp cost gate와 rolling validation | 남음 |
+| 5 | reward / cost gate | 5/10/15/25bp 비용 검증 | 25bp cost gate와 rolling validation | 완료 |
 | 6 | 1차 RL 모델 | contextual bandit 또는 DQN | 300초 reward horizon 기준 walk-forward 평가 | 남음 |
 | 7 | backend API | `/api/rl/*` | manifest/run/metric/trade/equity API smoke | 남음 |
 | 8 | 웹 대시보드 | `강화학습 실험실` 탭 | build + browser smoke | 남음 |
@@ -106,6 +106,7 @@ C:\Python\64\Python3119\python.exe -m stom_rl.episode_manifest `
 | 페이지 2 코드/검증 | 2 | 9 | 22.2% |
 | 페이지 3 환경 skeleton | 3 | 9 | 33.3% |
 | 페이지 4 baseline runner | 4 | 9 | 44.4% |
+| 페이지 5 reward / cost gate | 5 | 9 | 55.6% |
 
 ---
 
@@ -242,3 +243,66 @@ py_compile OK
 ```
 
 다음 페이지는 **페이지 5: reward / cost gate** 이다. 페이지 5에서는 5/10/15/25bp 비용 시나리오와 전체 test split 기준으로 baseline이 비용 차감 후 살아남는지 검증한다.
+
+---
+
+## 9. 페이지 5 완료 기록
+
+페이지 5에서는 강화학습 모델 학습 전에 사용할 비용 검증기를 추가했다. 이 단계의 목적은 “수익률이 좋아 보이는 전략이 실제 비용·슬리피지·회전율·MDD 조건에서도 살아남는가?”를 자동 판정하는 것이다.
+
+| 항목 | 결과 |
+|---|---|
+| 구현 모듈 | `stom_rl.cost_gate` |
+| 실행 함수 | `run_cost_gate(CostGateConfig)` |
+| CLI | `python -m stom_rl.cost_gate` |
+| 비용 시나리오 | 5bp, 10bp, 15bp, 25bp |
+| slippage 시나리오 | CLI에서 복수 지정 가능, smoke는 0bp |
+| target gate | 기본 25bp |
+| gate 조건 | net positive, MDD 한도, trades/episode 한도, 최소 거래 수, rolling positive fold rate |
+| 산출물 | `cost_gate_report.json`, `scenario_summary.csv`, `rolling_folds.csv`, `gate_summary.csv` |
+
+실제 2025 STOM manifest smoke는 test split 3개 episode, rolling 2개 fold로 실행했다.
+
+```powershell
+C:\Python\64\Python3119\python.exe -m stom_rl.cost_gate `
+  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
+  --split test `
+  --max-episodes 3 `
+  --policies no_trade,random,buy_and_hold,momentum,mean_reversion,volume_filter `
+  --cost-bps-values 5,10,15,25 `
+  --slippage-bps-values 0 `
+  --target-cost-bps 25 `
+  --rolling-sessions-per-fold 3 `
+  --rolling-max-folds 2 `
+  --rolling-max-episodes-per-fold 3 `
+  --output-dir webui\rl_runs\stom_1s_2025_cost_gate_smoke
+```
+
+대표 25bp target gate 결과는 다음과 같다.
+
+| 정책 | 평균 episode net | 거래/episode | hit rate | MDD | positive fold rate | gate |
+|---|---:|---:|---:|---:|---:|---|
+| buy_and_hold | +3.3240% | 1.00 | 1.0000 | 0.0000% | 0.5000 | 통과 |
+| no_trade | 0.0000% | 0.00 | 0.0000 | 0.0000% | 0.0000 | 실패 |
+| mean_reversion | -22.5387% | 65.00 | 0.0359 | -53.5298% | 0.0000 | 실패 |
+| volume_filter | -31.2288% | 74.67 | 0.0045 | -67.6145% | 0.0000 | 실패 |
+| momentum | -34.1359% | 71.33 | 0.0421 | -71.5770% | 0.0000 | 실패 |
+| random | -77.2541% | 295.00 | 0.0124 | -98.8246% | 0.0000 | 실패 |
+
+주의: 위 표는 smoke 범위다. `buy_and_hold`가 smoke에서 통과했더라도 전체 2,730 test episode 기준 통과를 의미하지 않는다. 다음 모델 단계에 들어가기 전에 필요하면 동일 모듈로 전체 test split 실행을 별도로 수행한다.
+
+검증 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_cost_gate.py tests\test_stom_rl_baselines.py tests\test_stom_rl_trading_env.py tests\test_stom_rl_episode_manifest.py tests\test_stom_qlib_pipeline.py -q
+C:\Python\64\Python3119\python.exe -m py_compile stom_rl\cost_gate.py stom_rl\baselines.py stom_rl\trading_env.py stom_rl\episode_manifest.py
+```
+
+검증 결과:
+
+```text
+18 passed, 1 warning
+py_compile OK
+```
+
+다음 페이지는 **페이지 6: 1차 RL 모델** 이다. 기본 추천은 바로 복잡한 PPO가 아니라 300초 reward horizon 기준 contextual bandit 또는 단순 DQN prototype으로 시작하는 것이다.
