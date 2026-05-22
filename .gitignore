@@ -61,6 +61,7 @@ webui/stom_predictions/*.csv
 webui/stom_predictions/*.json
 webui/qlib_backtests/*.json
 webui/qlib_backtests/*.csv
+webui/rl_runs/
 finetune/qlib_exports/
 finetune/qlib_backtests/
 finetune/outputs/

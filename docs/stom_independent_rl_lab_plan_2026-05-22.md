@@ -650,3 +650,56 @@ $team STOM 독립 강화학습 실험실을 병렬 구현하세요. Lane A는 DB
 | 신규 섹션 헤더 레벨 일관성 | OK (`###` 하위, `##` 최상위 유지) |
 | 표 컬럼 정렬 문법 | OK |
 | 기존 섹션 번호 유지 | OK (18까지 동일, 19 신규 추가) |
+
+---
+
+## 20. 2026-05-22 페이지 2 구현 착수 기록
+
+장기 goal을 활성화하고 페이지 2를 구현 범위로 확정했다.
+
+### 20.1 페이지 2 범위
+
+| 항목 | 결정 |
+|---|---|
+| 목적 | 모델 학습 전 episode 계약 고정 |
+| 원본 DB | `_database/stock_tick_back.db` read-only |
+| episode 기준 | 기존 2025 1초봉 Qlib CSV group |
+| split 기준 | 기존 Kronos export의 train/val/test session split 재사용 |
+| reward horizon | 300초 우선 |
+| 산출물 | episode manifest JSON/CSV, summary JSON |
+
+### 20.2 구현 파일
+
+| 파일 | 역할 |
+|---|---|
+| `stom_rl/episode_manifest.py` | read-only DB 검증과 episode manifest 생성 |
+| `tests/test_stom_rl_episode_manifest.py` | read-only, split overlap, manifest artifact 테스트 |
+| `docs/stom_rl_lab_goal_pages_2026-05-22.md` | 장기 goal 페이지별 구현 계획 |
+
+### 20.3 완료 기준
+
+페이지 2는 다음을 모두 만족해야 완료로 본다.
+
+1. `sqlite3` 연결이 `mode=ro`와 `PRAGMA query_only=ON`을 사용한다.
+2. 쓰기 probe가 실패하여 원본 DB 보호가 증명된다.
+3. train/validation/test session overlap이 0이다.
+4. manifest episode 수가 기존 export report의 group 수와 일치한다.
+5. 테스트와 실제 manifest smoke 실행이 통과한다.
+
+### 20.4 완료 결과
+
+페이지 2 구현 후 실제 smoke 실행에서 다음 결과를 확인했다.
+
+| 지표 | 결과 |
+|---|---:|
+| episode_count | 18,750 |
+| symbol_count | 1,638 |
+| session_count | 240 |
+| train episodes | 13,256 |
+| validation episodes | 2,764 |
+| test episodes | 2,730 |
+| manifest delta vs export report | 0 |
+| split overlap | 0 |
+| unknown split episodes | 0 |
+
+생성 산출물은 `webui/rl_runs/stom_1s_2025_episode_manifest/` 아래에 기록된다. 해당 디렉터리는 런타임 대용량 산출물이므로 `.gitignore`에 추가하고 커밋 대상에서 제외한다.
