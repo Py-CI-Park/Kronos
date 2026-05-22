@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,6 +15,25 @@ if str(FINETUNE_DIR) not in sys.path:
 
 from run_stom_1s_finetune import build_run, execute_run, parse_args, sample_stage_budget  # noqa: E402
 from model_source import resolve_model_source  # noqa: E402
+
+
+def _skip_if_torch_cannot_initialize() -> None:
+    if os.name == "nt" and os.environ.get("KRONOS_RUN_TORCH_TESTS") != "1":
+        pytest.skip(
+            "torch-dependent dataset test is opt-in on Windows; set KRONOS_RUN_TORCH_TESTS=1 "
+            "in a verified PyTorch environment to run it"
+        )
+    probe = subprocess.run(
+        [sys.executable, "-c", "import torch"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if probe.returncode != 0:
+        pytest.skip(
+            "torch is installed but cannot be initialized in this environment: "
+            f"{(probe.stderr or probe.stdout).strip()}"
+        )
 
 
 def test_resolve_model_source_falls_back_to_hf_identifier_for_missing_local_path():
@@ -273,7 +294,7 @@ def test_full_window_sample_stage_uses_known_full_sample_pool():
 
 
 def test_full_sequential_dataset_uses_requested_index_order(tmp_path, monkeypatch):
-    pytest.importorskip("torch")
+    _skip_if_torch_cannot_initialize()
     from dataset import QlibDataset  # noqa: E402
 
     dataset_dir = tmp_path / "processed_datasets"

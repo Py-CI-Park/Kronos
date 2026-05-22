@@ -1026,54 +1026,79 @@ baseline run은 정책별 subdirectory에 table이 있으므로 `?policy=buy_and
 
 ---
 
-## 26. 2026-05-23 ??? 8 ? ???? ?? ??
+## 26. 2026-05-23 페이지 8 웹 대시보드 구현 기록
 
-??? 8??? ?? ???? ???? ???? ??? ??? ??? ? ??? v2 ????? ?? ?? ????. ? ??? Kronos ??/?? ????? ??? ?? ?? RL ?? ????, ?? STOM DB? ??? ???? ???? ???.
+페이지 8에서는 강화학습 산출물을 사용자가 직접 확인할 수 있도록 v2 대시보드에 RL 실험실 탭을 연결했다. 이 단계는 Kronos 예측/파인튜닝 화면과 별개로 독립 RL 모델 산출물, 비용 관문, 거래 위치, STOM DB 기반 episode 정보를 해석하는 화면이다.
 
-### 26.1 ?? ??
+### 26.1 구현 파일
 
-| ?? | ?? |
+| 파일 | 역할 |
 |---|---|
-| `webui/v2_src/src/tabs/RLLabTab.svelte` | ???? ??? ??, ??/?/?? UI |
-| `webui/v2_src/src/lib/api.ts` | RL API ??? fetch wrapper ?? |
-| `webui/v2_src/src/App.svelte` | `rl-lab` ? ??? |
-| `webui/v2_src/src/layout/Sidebar.svelte` | ?? ??? `???? ???` ?? |
-| `webui/v2_src/src/layout/Header.svelte` | ?? breadcrumb ?? ?? |
-| `tests/test_stom_rl_dashboard_tab.py` | ??? ?/API/dist marker ?? ??? |
-| `webui/static/v2/dist/*` | ??? v2 ?? ??? ?? |
+| `webui/v2_src/src/tabs/RLLabTab.svelte` | 강화학습 실험실 화면, 차트/표/해석 UI |
+| `webui/v2_src/src/lib/api.ts` | RL API 호출용 fetch wrapper 추가 |
+| `webui/v2_src/src/App.svelte` | `rl-lab` 탭 등록 |
+| `webui/v2_src/src/layout/Sidebar.svelte` | 좌측 메뉴에 `강화학습 실험실` 추가 |
+| `webui/v2_src/src/layout/Header.svelte` | 현재 위치 breadcrumb 표시 보강 |
+| `tests/test_stom_rl_dashboard_tab.py` | 프론트 탭/API/dist marker 회귀 테스트 |
+| `webui/static/v2/dist/*` | 빌드된 v2 정적 파일 갱신 |
 
-### 26.2 ?? ??
+### 26.2 화면 구성
 
-| ?? | ?? |
+| 영역 | 표시 내용 |
 |---|---|
-| KPI ?? | run ?, ?? ?? ???, ?? ?, cost gate ?? ?? ?? ??? ?? |
-| Run selector | contextual bandit, cost gate, baseline, episode manifest ??? ?? |
-| Model usage flow | `model.json`? ??? ??? ?? ??? feature ?? ?? |
-| Cost gate chart/table | 25bp ?? ???? baseline/policy ?? ?? ?? |
-| Equity curve | ?? run? ???? ?? |
-| Trade chart/table | ?? ??/?? ??? ?? net/?? net ?? |
-| Artifact table | ?? ??? ??? ??? ?? ?? |
+| KPI 카드 | run 수, 평균 순수익률, 거래 수, cost gate 통과 정책 수 |
+| Run selector | contextual bandit, cost gate, baseline, episode manifest 산출물 선택 |
+| Model usage flow | `model.json`을 어디에 넣고 어떤 feature로 추론하는지 안내 |
+| Cost gate chart/table | 25bp 기준 비용 반영 후 baseline/policy 통과 여부 |
+| Equity curve | 선택 run의 누적 성과 흐름 |
+| Trade chart/table | 진입/청산 위치와 gross net/cost net 차이 |
+| Artifact table | 생성된 파일과 크기 확인 |
 
-### 26.3 ?? ??
+### 26.3 검증 결과
 
-| ?? | ?? |
+| 검증 | 결과 |
 |---|---|
-| Svelte check | 0 errors, ?? DocsTab/Forecast ?? 4? ?? |
-| Vite build | ?? |
-| Pytest | `tests/test_stom_rl_dashboard_tab.py tests/test_stom_rl_dashboard_api.py tests/test_v2_route.py` ? 8 passed |
-| Browser smoke | Playwright headless Chromium?? `/` ?? ? `rl-lab` ?? ?? |
+| Svelte check | 0 errors, 기존 DocsTab/Forecast 경고 4개만 유지 |
+| Vite build | 통과 |
+| Pytest | `tests/test_stom_rl_dashboard_tab.py tests/test_stom_rl_dashboard_api.py tests/test_v2_route.py` 총 8 passed |
+| Browser smoke | Playwright headless Chromium으로 `/` 접속 후 `rl-lab` 탭 확인 |
 | Smoke screenshot | `.omx/tmp/rl-lab-page8-smoke.png` |
 
-### 26.4 ??? ??
+### 26.4 해석 주의
 
-?? ??? ???? contextual bandit ??? smoke ???. ? ??? ??? ?? ???? ????? ???. ?? ?? QA?? ?? test split, baseline ?? ??, cost gate ???, ?? ??? ???? ?? ?? ??? ??? ? ??.
+현재 웹에 표시되는 contextual bandit 결과는 smoke 성과다. 이 수치는 플랫폼 연결과 모델 사용 흐름을 증명하기 위한 것이며 실거래 성과를 보장하지 않는다. 최종 QA에서는 full test split, baseline 대비 우위, cost gate 안정성, 자동 매매 보류 판단을 명확히 구분해야 한다.
 
-### 26.5 ?? ??
+### 26.5 다음 단계
 
-?? ??? **??? 9: ?? QA / ??**?. ?? ??? ??? ??.
+다음 페이지는 **페이지 9: 통합 QA / 리뷰**다. 권장 실행 명령은 다음과 같다.
 
 ```powershell
 omx ultragoal complete-goals
 ```
 
-??? 9??? ?? Python ???, v2 build, browser smoke? ?? ????, `ai-slop-cleaner`? code review ??? ?? ??? ??? ? ?? ?? ?? ??? ????.
+페이지 9에서는 전체 Python 테스트, v2 build, browser smoke를 다시 확인하고, `ai-slop-cleaner`와 code review 기준으로 구현 품질을 검토한 뒤 자동 매매 보류 또는 확장 판단을 문서화한다.
+
+
+---
+
+## 27. 2026-05-23 페이지 9 통합 QA / 리뷰 기록
+
+페이지 9에서는 STOM 독립 강화학습 실험실을 최종 검증 대상으로 닫았다. 상세 보고서는 `docs/stom_rl_lab_final_qa_report_2026-05-23.md`에 남겼다.
+
+### 27.1 검증 요약
+
+| 검증 | 결과 |
+|---|---|
+| 전체 pytest | 92 passed, 2 skipped, 2 warnings |
+| npm build | 통과, Svelte error 0 |
+| Python compile | 통과 |
+| Browser smoke | 통과 |
+| API smoke | 통과 |
+| path traversal probe | 400으로 차단 |
+| Code review | APPROVE / CLEAR |
+
+### 27.2 최종 판단
+
+구현 목표는 달성했다. 독립 RL 플랫폼, 데이터 manifest, trading env, baseline, cost gate, 첫 모델, API, 웹 대시보드, 최종 QA 흐름이 모두 존재한다.
+
+단, 현재 1차 contextual bandit은 smoke 모델이므로 실거래 자동화에는 아직 충분하지 않다. 다음 확장에서는 full test split 기준으로 baseline과 RL 모델을 비교하고 비용 반영 후에도 반복적으로 우위가 유지되는지 검증해야 한다.

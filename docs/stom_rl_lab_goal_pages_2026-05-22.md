@@ -33,8 +33,8 @@
 | 5 | reward / cost gate | 5/10/15/25bp 비용 검증 | 25bp cost gate와 rolling validation | 완료 |
 | 6 | 1차 RL 모델 | contextual bandit 또는 DQN | 300초 reward horizon 기준 walk-forward 평가 | 완료 |
 | 7 | backend API | `/api/rl/*` | manifest/run/metric/trade/equity API smoke | 완료 |
-| 8 | 웹 대시보드 | `강화학습 실험실` 탭 | build + browser smoke | 남음 |
-| 9 | 통합 QA / 리뷰 | 최종 보고서 | 테스트, 코드리뷰, 확장/보류 결정 | 남음 |
+| 8 | 웹 대시보드 | `강화학습 실험실` 탭 | build + browser smoke | 완료 |
+| 9 | 통합 QA / 리뷰 | 최종 보고서 | 테스트, 코드리뷰, 확장/보류 결정 | 완료 |
 
 ---
 
@@ -418,58 +418,82 @@ C:\Python\64\Python3119\python.exe -m py_compile webui\rl_dashboard.py webui\app
 
 ---
 
-## 12. ??? 8 ?? ??
+## 12. 페이지 8 완료 기록
 
-??? 8??? Page 7? `/api/rl/*` read-only API? ?? v2 ? ????? ????. ??? ???? CMD ??? ??? ? ???? ?? ???? ???? ??? ?? ???? ???.
+페이지 8에서는 Page 7의 `/api/rl/*` read-only API를 받아 v2 웹 대시보드에 연결했다. 사용자는 CMD 로그만 보지 않고 브라우저에서 강화학습 산출물, 비용 관문, 거래 기록, 모델 사용 흐름을 확인할 수 있다.
 
-| ?? | ?? |
+| 항목 | 결과 |
 |---|---|
-| ?? ? | ????/??/App shell? `rl-lab` ?? |
-| ?? ???? | `webui/v2_src/src/tabs/RLLabTab.svelte` |
-| API ?? | `/api/rl/runs`, run detail, trades, equity, episodes, cost-gate |
-| ??? | ?? ?? bar/line chart, equity curve, ??? net return chart |
-| ? | 25bp target gate, ?? ??, artifact ?? |
-| ?? ?? | smoke ??? ?? test split ?? ??? ???? ?? ?? ?? |
-| ?? ??? | `webui/static/v2/dist` ?? |
+| 화면 탭 | 사이드바/헤더/App shell에 `rl-lab` 등록 |
+| 핵심 컴포넌트 | `webui/v2_src/src/tabs/RLLabTab.svelte` |
+| API 연동 | `/api/rl/runs`, run detail, trades, equity, episodes, cost-gate |
+| 시각화 | 비용 관문 bar/line chart, equity curve, episode net return chart |
+| 표 | 25bp target gate, 거래 내역, artifact 목록 |
+| 해석 보조 | smoke 모델이 아직 test split 생산 모델이 아니라는 보수적 안내 |
+| 정적 산출물 | `webui/static/v2/dist` 갱신 |
 
-?? ? ??? ?? ??? ?? ??? ??? ??.
+웹 탭 구성은 다음과 같이 정리했다.
 
-| ?? | ?? ?? |
+| 영역 | 표시 내용 |
 |---|---|
-| Run selector | contextual bandit, cost gate, baseline, episode manifest ??? ?? |
-| ?? ?? | ?? episode net, compounded return, MDD, episode/trade/artifact ? |
-| ?? ?? | 25bp ?? baseline/policy? ?? ??, hit rate, MDD, ??/episode |
-| ?? ?? | ??/?? timestamp, ?? net, ?? net |
-| ?? ?? ?? | `model.json` feature? ?? ? ?? ?? |
+| Run selector | contextual bandit, cost gate, baseline, episode manifest 산출물 선택 |
+| 핵심 지표 | 평균 episode net, compounded return, MDD, episode/trade/artifact 수 |
+| 비용 관문 | 25bp 기준 baseline/policy별 통과 여부, hit rate, MDD, 거래/episode |
+| 거래 위치 | 진입/청산 timestamp, gross net, cost net |
+| 모델 사용 흐름 | `model.json` feature와 inference 사용 방식 안내 |
 
-?? ??:
+검증 명령:
 
 ```powershell
 npm run build
 C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_dashboard_tab.py tests\test_stom_rl_dashboard_api.py tests\test_v2_route.py -q
 ```
 
-?? ??:
+검증 결과:
 
 ```text
-svelte-check 0 errors, ?? ?? 4?
+svelte-check 0 errors, 기존 경고 4개
 vite build OK
 8 passed
 ```
 
-???? smoke:
+브라우저 smoke:
 
 ```text
 Flask test server http://127.0.0.1:5070/
 Playwright headless Chromium
-- `button[data-tab="rl-lab"]` ?? ??
-- `[data-rl-lab-tab]` ?? ??
-- `[data-rl-cost-gate-table]` ?? ??
-- run item 4? ??
-- contextual_bandit_smoke ?? ??
+- `button[data-tab="rl-lab"]` 클릭 성공
+- `[data-rl-lab-tab]` 존재 확인
+- `[data-rl-cost-gate-table]` 존재 확인
+- run item 4개 확인
+- contextual_bandit_smoke 표시 확인
 - screenshot: .omx/tmp/rl-lab-page8-smoke.png
 ```
 
-??: ??? 8? ??? smoke ???? ?? ???? ???? ? ?????. ?? ?? ??? ??? ???. ??? ??? 9?? ?? ?? ???, build, browser smoke, code review, ?? ??/?? ?? ???? ???? ??.
+주의: 페이지 8은 “웹에서 smoke 산출물을 읽고 해석할 수 있음”을 증명한다. 아직 실거래 성과를 보장하지 않는다. 다음 페이지 9에서 전체 회귀 테스트, build, browser smoke, code review, 확장 또는 보류 판단을 완료해야 한다.
 
-?? ???? **??? 9: ?? QA / ??** ??.
+다음 목표는 **페이지 9: 통합 QA / 리뷰**다.
+
+
+---
+
+## 13. 페이지 9 완료 기록
+
+페이지 9에서는 전체 구현을 최종 QA, build, browser smoke, code review, 확장/보류 판단까지 닫았다.
+
+| 항목 | 결과 |
+|---|---|
+| 최종 보고서 | `docs/stom_rl_lab_final_qa_report_2026-05-23.md` |
+| 전체 테스트 | `92 passed, 2 skipped, 2 warnings` |
+| Frontend build | `npm run build` 통과, Svelte error 0 |
+| Python compile | `stom_rl/*`, `webui/rl_dashboard.py`, `webui/app.py` 통과 |
+| Browser smoke | Playwright headless Chromium 통과 |
+| API smoke | `/api/rl/*` 주요 endpoint와 traversal probe 통과 |
+| AI slop cleaner | production masking fallback 없음, optional Torch test guard 정리 |
+| Code review | `APPROVE`, architect status `CLEAR` |
+
+최종 판단:
+
+- **구현 목표 달성**: 독립 RL 실험실, 데이터 적재/분할, 환경, baseline, 비용 관문, 첫 모델, API, 웹 대시보드가 동작한다.
+- **실거래 자동화 보류**: 현재 모델은 smoke 성과 기준이며 full test split에서 buy-and-hold 대비 우위가 아직 증명되지 않았다.
+- **다음 권장 작업**: full test split baseline/cost gate, contextual bandit 전체 학습·평가, DQN/PPO 후보 추가, transaction model 보강, leaderboard 운영.
