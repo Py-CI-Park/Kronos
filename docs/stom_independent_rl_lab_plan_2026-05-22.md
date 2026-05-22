@@ -1,0 +1,539 @@
+﻿# STOM Tick DB 독립 강화학습 실험실 설계 계획서
+
+작성일: 2026-05-22 KST
+대상 저장소: `D:\Chanil_Park\Project\Programming\Kronos`
+계획 방식: `$ralplan --deliberate` 성격의 설계 문서
+핵심 방향: **Kronos를 사용하지 않고**, 현재 존재하는 STOM tick/1초봉 DB를 이용해 독립 강화학습 기능과 웹 대시보드 탭을 구축한다.
+
+---
+
+## 1. 한 줄 결론
+
+가능하다. 다만 첫 목표는 “강화학습으로 바로 수익 보장”이 아니라, **STOM tick DB에서 비용 차감 후 실제로 baseline보다 나은 매매 행동을 학습할 수 있는지 검증하는 독립 실험실**을 만드는 것이다.
+
+추천 구조는 다음과 같다.
+
+> **Gymnasium 호환 STOM 전용 trading environment + RLTrader식 주식 매매 상태/행동/보상 아이디어 + 자체 walk-forward/cost-gate 검증 + 신규 웹 탭**
+
+---
+
+## 2. 배경과 문제 정의
+
+기존 작업에서 STOM 2025년 1초봉 데이터는 Kronos fine-tuning 파이프라인에 연결됐고, 학습/평가/대시보드까지 구축됐다. 그러나 평가 결과는 실전 신호로 바로 사용하기 어렵다.
+
+| 항목 | 현재 상태 |
+|---|---|
+| Kronos fine-tuning 파이프라인 | 정상 동작 |
+| STOM 2025 1초봉 export | 완료 |
+| 60초 방향 적중률 | 약 44.79%, random과 유사 |
+| 300초 horizon | 상대적으로 유망하지만 cost gate 미통과 |
+| 결론 | 가격 경로 예측 모델만으로는 비용 차감 후 수익성이 부족 |
+
+따라서 다음 질문으로 전환한다.
+
+> “미래 가격을 예측하는 모델”이 아니라, **주어진 상태에서 매수/관망/청산 행동을 선택해 비용 차감 후 수익을 높이는 모델**을 만들 수 있는가?
+
+이 질문은 강화학습 또는 contextual bandit 계열의 실험 대상이다.
+
+---
+
+## 3. 참고 오픈소스 검토 요약
+
+### 3.1 Gymnasium
+
+- 저장소: <https://github.com/Farama-Foundation/Gymnasium>
+- 문서: <https://gymnasium.farama.org/>
+- 역할: 강화학습 환경 API 표준
+- 핵심 API: `reset()`, `step()`, `action_space`, `observation_space`
+
+우리 프로젝트 적용 판단:
+
+| 판단 | 내용 |
+|---|---|
+| 채택 수준 | 핵심 기반으로 채택 권장 |
+| 이유 | Stable-Baselines3, RLlib 등과 연결하기 쉬움 |
+| 한계 | 주식/체결/수수료/슬리피지는 직접 구현해야 함 |
+| 적용 방식 | `StomTickTradingEnv`를 Gymnasium 호환 형태로 설계 |
+
+### 3.2 RLTrader
+
+- 저장소: <https://github.com/quantylab/rltrader>
+- 역할: 한국 주식 강화학습 예제/학습 프로젝트
+- 장점: 주식 매매의 행동, 포트폴리오, 보상 구조 아이디어가 있음
+- 한계: 오래된 의존성, 최신 Gymnasium 표준 아님, STOM 초단위 tick/1초봉 구조와 직접 맞지 않음
+
+우리 프로젝트 적용 판단:
+
+| 판단 | 내용 |
+|---|---|
+| 채택 수준 | 코드 이식보다 설계 아이디어 참고 |
+| 참고할 점 | 매수/매도/관망, 보유 비율, 거래비용, 포트폴리오 상태 |
+| 피할 점 | 구버전 학습 루프를 그대로 가져오기 |
+| 적용 방식 | Gymnasium API 안에 RLTrader식 상태/행동/보상 아이디어를 흡수 |
+
+---
+
+## 4. RALPLAN-DR 요약
+
+### 4.1 원칙
+
+1. **Kronos와 완전 분리**
+   Kronos tokenizer, predictor, fine-tuning loop, checkpoint에 의존하지 않는다.
+
+2. **수익성은 비용 차감 후 판단**
+   수수료, 세금, 슬리피지, 과매매 패널티를 반영한 net return을 1급 지표로 둔다.
+
+3. **미래 데이터 누수 금지**
+   상태값에는 현재와 과거 정보만 사용한다. 미래 수익률은 보상/평가에만 사용한다.
+
+4. **baseline보다 못하면 실패**
+   random, no-trade, buy-and-hold, momentum, mean-reversion보다 나아야 다음 단계로 간다.
+
+5. **재현 가능한 실험 우선**
+   seed, config, 데이터 범위, artifact, report를 모두 남긴다.
+
+### 4.2 Top decision drivers
+
+| 순위 | 의사결정 기준 | 이유 |
+|---:|---|---|
+| 1 | STOM tick/1초봉 DB를 직접 읽는 환경 | Kronos 비의존 목표의 핵심 |
+| 2 | 거래비용·슬리피지·체결 제약 반영 | 초단기 데이터에서는 비용이 성과를 크게 좌우 |
+| 3 | 웹 대시보드 해석 가능성 | 사용자가 학습/성과/리스크를 직접 확인해야 함 |
+
+### 4.3 선택지 비교
+
+#### Option A. Gymnasium-compatible custom environment
+
+| 항목 | 내용 |
+|---|---|
+| 설명 | STOM 전용 환경을 Gymnasium 표준 API로 직접 구현 |
+| 장점 | 표준 알고리즘 연결 쉬움, 테스트/재현성 좋음, 확장성 높음 |
+| 단점 | 주식 체결/비용/보상은 직접 구현 필요 |
+| 판단 | 단독으로도 가능하지만 도메인 설계 참고가 필요 |
+
+#### Option B. RLTrader 스타일 자체 루프
+
+| 항목 | 내용 |
+|---|---|
+| 설명 | RLTrader처럼 주식 매매 전용 학습 루프를 직접 구성 |
+| 장점 | 주식 매매 맥락 이해가 쉽고 빠른 프로토타입 가능 |
+| 단점 | 최신 RL 생태계와 호환성 낮음, 유지보수 위험 |
+| 판단 | 그대로 이식은 비추천 |
+
+#### Option C. 하이브리드: Gymnasium API + RLTrader식 매매 아이디어
+
+| 항목 | 내용 |
+|---|---|
+| 설명 | 외부 알고리즘 호환은 Gymnasium, 상태/행동/보상은 STOM/RLTrader식으로 설계 |
+| 장점 | 표준성과 주식 도메인 적합성 균형 |
+| 단점 | 경계와 artifact schema를 명확히 해야 함 |
+| 판단 | **추천안** |
+
+---
+
+## 5. ADR: 추천 결정
+
+### Decision
+
+**Option C를 채택한다.**
+
+STOM 강화학습 실험실은 Gymnasium 호환 custom environment로 만들고, RLTrader에서 얻은 주식 매매 상태/행동/포트폴리오 아이디어를 STOM tick/1초봉 데이터 구조에 맞게 재설계한다.
+
+### Drivers
+
+- Kronos와 독립된 새 기능이어야 한다.
+- 장기적으로 DQN/PPO/A2C/RLlib/Stable-Baselines3 계열을 붙일 수 있어야 한다.
+- 실전 수익성 판단은 비용 차감 후 walk-forward로 해야 한다.
+
+### Alternatives considered
+
+| 대안 | 기각/보류 이유 |
+|---|---|
+| FinRL/TensorTrade 전체 도입 | 무겁고 STOM 초단위 구조에 맞추려면 오히려 복잡해질 수 있음 |
+| RLTrader 직접 이식 | 오래된 의존성과 비표준 루프 때문에 유지보수 위험 |
+| 순수 자체 구현만 사용 | 외부 RL 알고리즘 생태계와 연결성이 떨어짐 |
+
+### Consequences
+
+- 1차 구현은 모델보다 환경/보상/검증을 먼저 만든다.
+- 새 의존성 `gymnasium`은 실제 구현 단계에서 도입 후보로 둔다. 단, 초기에는 의존성 추가 없이 Gymnasium식 인터페이스만 맞추는 방식도 가능하다.
+- Stable-Baselines3는 바로 필수는 아니다. baseline 검증 이후 도입한다.
+
+---
+
+## 6. 데이터 범위와 계약
+
+### 6.1 원본 데이터
+
+| 항목 | 계획 |
+|---|---|
+| 원본 | STOM tick DB / 1초봉 DB |
+| 읽기 방식 | 원본 DB 수정 금지, read-only |
+| 우선 범위 | 2025년 09:00~09:30 1초봉부터 시작 |
+| 확장 범위 | 전체 연도, 전체 tick, 여러 시간대 |
+| 종목 universe | 매일 달라질 수 있음. 종목 고정 모델이 아니라 날짜-종목 episode로 처리 |
+
+### 6.2 데이터 단위
+
+초기 구현은 다음 단위가 안전하다.
+
+```text
+episode = 특정 날짜 + 특정 종목 + 09:00~09:30 1초봉 구간
+```
+
+이후 확장:
+
+```text
+episode = 특정 날짜 + 거래대금 상위 N개 종목 포트폴리오
+```
+
+### 6.3 누수 방지 규칙
+
+| 금지 | 이유 |
+|---|---|
+| 미래 30/60/300초 수익률을 observation에 포함 | 정답 누수 |
+| 하루 전체 거래대금 순위를 현재 시점 feature로 사용 | 미래 체결량 포함 가능 |
+| 테스트 기간으로 reward/feature scaler를 fit | 평가 오염 |
+| 종목별 전체 기간 통계를 현재 시점에 사용 | 미래 분포 누수 |
+
+---
+
+## 7. 상태 공간 설계
+
+### 7.1 1차 observation 후보
+
+| 그룹 | 변수 예시 | 설명 |
+|---|---|---|
+| 가격 | open, high, low, close | 1초봉 OHLC |
+| 거래 | volume, amount | 거래량/거래대금 |
+| 수익률 | ret_1s, ret_5s, ret_30s, ret_60s | 과거 수익률만 사용 |
+| 변동성 | rolling_std_30s, high_low_range_30s | 최근 변동성 |
+| 거래 강도 | volume_z_30s, amount_z_30s | 최근 평균 대비 강도 |
+| 캔들 구조 | body_ratio, upper_shadow, lower_shadow | 순간 매수/매도 압력 proxy |
+| 시간 | seconds_from_open, minute_bucket | 장초반 시간 위치 |
+| 포지션 | position, entry_price, unrealized_pnl | 현재 보유 상태 |
+| 리스크 | drawdown, trade_count, time_in_position | 과매매/손실 관리 |
+
+### 7.2 observation shape
+
+초기 권장:
+
+```text
+lookback_window = 60~300초
+feature_count = 20~40개
+observation = [lookback_window, feature_count]
+```
+
+초기에는 300초 lookback이 무겁다면 60초/120초부터 시작하고, 이후 300초로 확장한다.
+
+---
+
+## 8. 행동 공간 설계
+
+### 8.1 1차 단순 행동
+
+```text
+0 = 관망 / 유지
+1 = 매수 또는 롱 진입
+2 = 청산
+```
+
+국내 주식 현물 기준에서는 공매도 없이 롱 전용이 현실적이다.
+
+### 8.2 2차 확장 행동
+
+```text
+0 = 현금 0%
+1 = 보유 25%
+2 = 보유 50%
+3 = 보유 100%
+```
+
+이 방식은 position target 방식이라 PPO/A2C와 연결하기 쉽다.
+
+### 8.3 3차 포트폴리오 행동
+
+여러 종목 동시 선택은 후순위다. 초기에는 단일 종목 episode에서 환경과 보상 검증을 완료한 뒤 확장한다.
+
+---
+
+## 9. 보상 함수 설계
+
+### 9.1 기본 보상
+
+```text
+reward_t = realized_or_mark_to_market_return_t
+         - transaction_cost_t
+         - slippage_t
+         - turnover_penalty_t
+         - drawdown_penalty_t
+         - invalid_action_penalty_t
+```
+
+### 9.2 보상 구성 요소
+
+| 항목 | 설명 |
+|---|---|
+| realized_or_mark_to_market_return | 보유 중 평가손익 또는 청산 손익 |
+| transaction_cost | 수수료/세금/기타 비용 |
+| slippage | 체결 가격 불리함 |
+| turnover_penalty | 너무 잦은 매매 억제 |
+| drawdown_penalty | 큰 손실과 급격한 낙폭 억제 |
+| invalid_action_penalty | 보유 중 재매수, 미보유 청산 등 이상 행동 억제 |
+
+### 9.3 추천 비용 기본값
+
+초기 문서/실험에서는 보수적으로 여러 비용 시나리오를 병렬 계산한다.
+
+| 시나리오 | 총 비용 가정 |
+|---|---:|
+| 낙관 | 5bp |
+| 중립 | 10~15bp |
+| 보수 | 25bp |
+
+기존 Kronos 평가에서 25bp 비용이 성과를 크게 악화시켰으므로, RL에서도 25bp cost gate를 반드시 포함한다.
+
+---
+
+## 10. Baseline 비교군
+
+강화학습 모델은 다음보다 좋아야 한다.
+
+| baseline | 목적 |
+|---|---|
+| no-trade | 아무것도 하지 않는 기준 |
+| random | 모델이 랜덤보다 나은지 확인 |
+| buy-and-hold | 장초반 구간 단순 보유 대비 |
+| simple momentum | 최근 상승 종목을 따라가는 규칙 |
+| mean reversion | 급등/급락 후 되돌림 규칙 |
+| volume/amount filter | 거래대금/거래량 조건식 기반 규칙 |
+
+보고서는 반드시 다음을 분리한다.
+
+1. 비용 미차감 gross return
+2. 비용 차감 net return
+3. 거래 수
+4. 승률
+5. MDD
+6. turnover
+7. split별 성과
+
+---
+
+## 11. 모델 구축 로드맵
+
+### 11.1 0단계: 모델 없는 환경 검증
+
+가장 먼저 환경이 맞는지 확인한다.
+
+- `reset()`이 같은 seed에서 같은 episode를 반환하는가?
+- `step()`이 포지션/현금/수익률을 정확히 갱신하는가?
+- 수수료/슬리피지가 제대로 차감되는가?
+- 미래 데이터를 observation에 넣지 않는가?
+
+### 11.2 1단계: 규칙 기반 baseline
+
+강화학습 이전에 규칙 전략으로 시장에 edge가 있는지 확인한다.
+
+### 11.3 2단계: Contextual Bandit
+
+초기 RL 후보로 가장 현실적이다.
+
+| 장점 | 이유 |
+|---|---|
+| 단순 | 각 시점의 행동 선택 문제로 시작 가능 |
+| 과최적화 위험 낮음 | 긴 episode credit assignment 부담이 적음 |
+| 대시보드 설명 쉬움 | 어떤 feature에서 어떤 행동을 골랐는지 해석 가능 |
+
+### 11.4 3단계: DQN
+
+행동이 관망/매수/청산처럼 discrete일 때 적합하다.
+
+### 11.5 4단계: PPO/A2C
+
+position target 방식으로 확장할 때 적합하다.
+
+### 11.6 5단계: 다종목 포트폴리오 RL
+
+단일 종목에서 비용 차감 후 baseline 우위를 확인한 뒤 진행한다.
+
+---
+
+## 12. 실험 산출물 schema
+
+각 실험은 최소한 아래 파일을 남긴다.
+
+```text
+webui/rl_runs/{run_id}/
+  config.json
+  data_manifest.json
+  train_metrics.jsonl
+  eval_summary.json
+  walk_forward_splits.json
+  trades.csv
+  equity_curve.csv
+  actions.csv
+  risk_report.json
+  artifacts_manifest.json
+```
+
+### 12.1 핵심 metric
+
+| 지표 | 설명 |
+|---|---|
+| total_net_return_pct | 비용 차감 총수익률 |
+| period_return | 기간 기준 성과 |
+| max_drawdown_pct | 최대 낙폭 |
+| hit_rate | 거래 승률 |
+| avg_trade_return_pct | 거래당 평균 수익률 |
+| trade_count | 거래 수 |
+| turnover | 회전율 |
+| cost_paid_pct | 비용으로 사라진 수익 |
+| baseline_delta_pct | 기준 전략 대비 차이 |
+| pass_cost_gate | 비용 gate 통과 여부 |
+
+---
+
+## 13. 웹 대시보드 신규 탭 설계
+
+탭 이름 후보:
+
+```text
+강화학습 실험실
+```
+
+내부 컴포넌트명 후보:
+
+```text
+IndependentRLLabTab.svelte
+```
+
+### 13.1 화면 구성
+
+| 섹션 | 내용 |
+|---|---|
+| 실험 개요 | run id, 데이터 범위, 종목 수, row 수, 모델 종류 |
+| 데이터 계약 | 사용 feature, lookback, episode 정의, 누수 체크 결과 |
+| 학습 진행 | episode, step, reward, loss, ETA, GPU/CPU 상태 |
+| 성과 요약 | net return, MDD, 승률, 거래 수, baseline 대비 |
+| 그래프 | reward curve, equity curve, drawdown curve |
+| 거래 위치 | 실제 가격 차트 위 매수/청산 마커 |
+| baseline 비교 | no-trade/random/momentum/mean-reversion 대비 |
+| cost gate | 5/10/15/25bp 비용 시나리오 결과 |
+| artifact | config/report/trades/actions 다운로드 또는 링크 |
+| 경고 | overfit, high turnover, low trade count, leakage risk |
+
+### 13.2 API 후보
+
+| endpoint | 역할 |
+|---|---|
+| `GET /api/rl/runs` | 실험 목록 |
+| `GET /api/rl/runs/{run_id}` | 실험 상세 |
+| `GET /api/rl/runs/{run_id}/metrics` | 학습 곡선 |
+| `GET /api/rl/runs/{run_id}/equity` | 수익곡선 |
+| `GET /api/rl/runs/{run_id}/trades` | 거래 내역 |
+| `GET /api/rl/runs/{run_id}/baseline-comparison` | baseline 비교 |
+| `GET /api/rl/runs/{run_id}/cost-gate` | 비용 gate |
+
+---
+
+## 14. 성공 기준
+
+### 14.1 1차 성공 기준: 플랫폼 구축
+
+| 기준 | 통과 조건 |
+|---|---|
+| DB read-only loader | 원본 DB 수정 없이 episode 생성 |
+| 환경 reset/step | deterministic test 통과 |
+| 보상 계산 | 수수료/슬리피지/포지션 갱신 test 통과 |
+| baseline runner | 최소 4개 baseline 실행 |
+| artifact 생성 | config, metrics, trades, equity 저장 |
+| 대시보드 | 새 탭에서 run 결과 확인 |
+
+### 14.2 2차 성공 기준: 모델 유효성
+
+| 기준 | 통과 조건 |
+|---|---|
+| walk-forward | train/val/test 시간 분리 |
+| leakage check | 미래 데이터 누수 없음 |
+| net return | 비용 차감 후 baseline 2개 이상 대비 우위 |
+| MDD | 허용 기준 이하 |
+| turnover | 과매매 경고 기준 이하 |
+| stability | split별 성과가 한 구간에만 몰리지 않음 |
+
+### 14.3 3차 성공 기준: 확장 승인
+
+다음 조건을 모두 만족할 때만 전체 연도/전체 tick/포트폴리오 RL로 확장한다.
+
+1. 25bp 비용 기준에서 rolling net return이 양수
+2. random/no-trade/momentum 대비 유의미한 우위
+3. trade count가 너무 적지 않음
+4. 과최적화 gap이 과도하지 않음
+5. 대시보드에서 사용자가 거래 위치와 손익을 확인 가능
+
+---
+
+## 15. 구현 페이지별 단계
+
+| 페이지 | 단계 | 목표 | 완료 기준 |
+|---:|---|---|---|
+| 1 | 설계/문서 | 상태·행동·보상·검증 기준 고정 | 본 문서 커밋 |
+| 2 | DB loader | STOM tick/1초봉 episode manifest 생성 | row/session/symbol 통계 report |
+| 3 | Env | `StomTickTradingEnv` reset/step 구현 | unit test 통과 |
+| 4 | Baseline | no-trade/random/momentum/mean-reversion 실행 | baseline report 생성 |
+| 5 | Reward/cost gate | 비용/슬리피지/turnover/MDD 계산 | cost gate report 생성 |
+| 6 | 1차 모델 | contextual bandit 또는 DQN prototype | walk-forward eval report |
+| 7 | Backend API | RL run artifact API | pytest/API smoke 통과 |
+| 8 | Web tab | `강화학습 실험실` 탭 | build + browser smoke 통과 |
+| 9 | Review | 성과/위험/확장 판단 | 확장/보류 결정 문서화 |
+
+현재 이 문서는 **페이지 1 완료**에 해당한다.
+
+---
+
+## 16. 예상 리스크와 완화책
+
+| 리스크 | 설명 | 완화책 |
+|---|---|---|
+| 강화학습 과최적화 | 과거 데이터에서만 수익 | strict walk-forward, unseen date 검증 |
+| 거래비용 압박 | 초단기 수익이 비용에 잠식 | 25bp gate, 거래 횟수 penalty |
+| 데이터 누수 | 미래 통계가 feature에 섞임 | feature builder 테스트, scaler split 분리 |
+| 종목 universe 변화 | 매일 종목이 달라짐 | episode를 날짜-종목 단위로 분리 |
+| 모델 해석 어려움 | 왜 매수했는지 알기 어려움 | action attribution, feature snapshot 저장 |
+| 속도 문제 | tick 전체 학습 시간이 김 | 1초봉/2025 subset → 전체 확장 |
+
+---
+
+## 17. 다음 권장 OMX 명령어
+
+### 17.1 구현 전 확정 검토
+
+```text
+$ralplan --deliberate STOM 독립 강화학습 실험실 1차 구현 범위를 확정한다. 범위는 DB loader, Gymnasium 호환 StomTickTradingEnv, baseline runner, cost gate report, 웹 대시보드 탭 skeleton까지로 제한한다.
+```
+
+### 17.2 바로 구현 진행
+
+```text
+$ralph feature/stom-rl-lab 브랜치에서 STOM tick DB 기반 독립 강화학습 실험실 1차 구현을 진행하세요. 1차 범위는 DB loader, Gymnasium 호환 인터페이스의 StomTickTradingEnv, no-trade/random/momentum/mean-reversion baseline, cost-gate report, 웹 대시보드 '강화학습 실험실' 탭 skeleton, 테스트와 문서 업데이트입니다.
+```
+
+### 17.3 병렬 구현이 필요할 때
+
+```text
+$team STOM 독립 강화학습 실험실을 병렬 구현하세요. Lane A는 DB loader/env/test, Lane B는 baseline/cost-gate/evaluator, Lane C는 backend API/dashboard tab, Leader는 통합 검증과 문서/커밋 관리를 담당합니다.
+```
+
+---
+
+## 18. 이번 문서의 stop condition
+
+이 문서는 구현이 아니라 방향 고정 문서다. 완료 조건은 다음이다.
+
+- Kronos 비의존 강화학습 방향이 명확함
+- Gymnasium과 RLTrader의 역할이 구분됨
+- 상태/행동/보상/비용/검증 기준이 문서화됨
+- 새 웹 탭과 artifact/API 구조가 제안됨
+- 다음 구현 명령어가 명확함
+
+따라서 다음 단계는 **페이지 2: DB loader + episode manifest** 또는 **페이지 3: `StomTickTradingEnv` skeleton** 구현이다.
