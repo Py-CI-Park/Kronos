@@ -1,8 +1,8 @@
 # STOM 강화학습 성과 모델 고도화 페이지 계획
 
-작성일: 2026-05-23 KST  
-브랜치: `feature/stom-rl-lab`  
-OMX 계획: `.omx/ultragoal/goals.json`  
+작성일: 2026-05-23 KST
+브랜치: `feature/stom-rl-lab`
+OMX 계획: `.omx/ultragoal/goals.json`
 목표: **STOM tick/back data로 smoke가 아닌 full test split 기준 강화학습 성과를 검증하고, 실제 사용 가능한 모델 후보와 대시보드 비교 체계를 만든다.**
 
 ---
@@ -95,16 +95,16 @@ OMX 계획: `.omx/ultragoal/goals.json`
 | 페이지 | 이름 | 목표 | 완료 기준 | 상태 |
 |---:|---|---|---|---|
 | 1 | 성과 기준 재정의 | smoke/full 구분, 성공 기준, 오픈소스 참고 원칙 문서화 | 본 문서 작성, 검증, 커밋 | 완료 |
-| 2 | full baseline/cost gate | test split 전체 baseline과 비용 관문 실행 | full artifact 생성, 요약 수치 확보 | 남음 |
+| 2 | full baseline/cost gate | test split 전체 baseline과 비용 관문 실행 | full artifact 생성, 요약 수치 확보 | 완료 |
 | 3 | contextual bandit full eval | train 기반 모델을 test split 대규모로 평가 | baseline 대비 성과 산출 | 남음 |
 | 4 | leaderboard artifact | baseline/RL/cost gate 결과 통합 | JSON/CSV leaderboard 생성 | 남음 |
 | 5 | dashboard leaderboard | 웹에서 smoke/full 및 모델별 성과 비교 | build/browser smoke 통과 | 남음 |
 | 6 | DQN/PPO 확장 설계 | SB3/Gymnasium 확장 여부 판단 | dependency/리스크/구현안 문서화 | 남음 |
 | 7 | 최종 리뷰 | QA, code review, 사용/보류 판단 | 최종 보고서와 checkpoint | 남음 |
 
-현재 진행률: **1 / 7 = 14.3%**
+현재 진행률: **2 / 7 = 28.6%**
 
-`█░░░░░░ 14.3%`
+`██░░░░░ 28.6%`
 
 ---
 
@@ -154,3 +154,89 @@ C:\Python\64\Python3119\python.exe -m stom_rl.cost_gate `
 3. 비용과 drawdown을 반영한다.
 4. 웹 대시보드에서 모델별로 비교한다.
 5. 성과가 부족하면 “왜 부족한지”를 지표로 문서화한다.
+
+---
+
+## 8. 페이지 2 완료 기록: full baseline/cost gate
+
+### 8.1 진행 내용
+
+처음에는 기존 dense baseline runner를 full test split에 직접 실행했다.
+
+```powershell
+C:\Python\64\Python3119\python.exe -m stom_rl.baselines `
+  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
+  --output-dir webui\rl_runs\stom_1s_2025_baselines_full_test `
+  --split test `
+  --max-episodes 0 `
+  --cost-bps 25 `
+  --slippage-bps 0
+```
+
+하지만 이 runner는 action/equity row를 전부 저장하는 구조라 full test split에서는 30분 이상 지나도 완료되지 않았다. 이는 모델 문제가 아니라 **대규모 검증용 runner 구조 문제**다.
+
+따라서 새 의존성 없이 `stom_rl.leaderboard`를 추가했다. 이 runner는 같은 long-only policy 의미를 유지하되, full test split에서는 summary artifact를 우선 생성한다.
+
+| 파일 | 목적 |
+|---|---|
+| `stom_rl/leaderboard.py` | full test split 요약 전용 baseline/cost leaderboard |
+| `tests/test_stom_rl_leaderboard.py` | compact leaderboard 회귀 테스트 |
+| `webui/rl_runs/stom_1s_2025_baseline_leaderboard_full_test/*` | 실행 결과 artifact, gitignore 대상 |
+
+### 8.2 full test 실행 명령
+
+```powershell
+C:\Python\64\Python3119\python.exe -m stom_rl.leaderboard `
+  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
+  --output-dir webui\rl_runs\stom_1s_2025_baseline_leaderboard_full_test `
+  --split test `
+  --max-episodes 0 `
+  --cost-bps-values 5,10,15,25 `
+  --slippage-bps-values 0 `
+  --target-cost-bps 25 `
+  --sample-trade-limit 1000
+```
+
+실행 시간: **약 9분 18초**
+대상: **test split 전체 2,730 episodes**
+scenario: **6 policies × 4 cost levels = 24 rows**
+
+### 8.3 25bp 기준 결과
+
+| 순위 | policy | 평균 episode net % | 거래 수 | 거래/episode | hit rate | MDD % | positive session rate |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | buy_and_hold | 0.5126 | 2,730 | 1.00 | 0.4934 | -50.7280 | 0.8611 |
+| 2 | no_trade | 0.0000 | 0 | 0.00 | 0.0000 | 0.0000 | 0.0000 |
+| 3 | mean_reversion | -23.2925 | 170,868 | 62.59 | 0.0287 | -47.7542 | 0.0000 |
+| 4 | volume_filter | -26.1600 | 167,923 | 61.51 | 0.0178 | -49.7977 | 0.0000 |
+| 5 | momentum | -27.9136 | 164,944 | 60.42 | 0.0337 | -62.5398 | 0.0000 |
+| 6 | random | -77.0568 | 806,047 | 295.26 | 0.0107 | -81.8887 | 0.0000 |
+
+### 8.4 해석
+
+현재 full test split 기준으로는 **buy-and-hold가 가장 강한 baseline**이다.
+momentum, mean_reversion, volume_filter는 거래 횟수가 너무 많고 25bp 비용에서 크게 무너졌다.
+따라서 다음 RL 모델은 단순히 양수 수익을 내는 것이 아니라, **25bp 비용 후 buy-and-hold를 이겨야 한다.**
+
+주의할 점:
+
+- buy-and-hold의 평균 episode net은 양수지만 MDD가 크다.
+- no-trade는 수익은 없지만 MDD가 0이라 리스크 기준 baseline으로 중요하다.
+- 다음 contextual bandit full eval은 최소한 no-trade보다 낫고, 가능하면 buy-and-hold 대비 우위를 보여야 한다.
+
+### 8.5 검증
+
+```powershell
+C:\Python\64\Python3119\python.exe -m pytest `
+  tests\test_stom_rl_leaderboard.py `
+  tests\test_stom_rl_baselines.py `
+  tests\test_stom_rl_cost_gate.py -q
+```
+
+결과:
+
+```text
+6 passed
+```
+
+다음 페이지는 **페이지 3: contextual bandit full eval**이다.
