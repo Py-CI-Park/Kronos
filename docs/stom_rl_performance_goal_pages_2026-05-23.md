@@ -99,18 +99,18 @@ OMX 계획: `.omx/ultragoal/goals.json`
 | 3 | contextual bandit full eval | train 기반 모델을 test split 대규모로 평가 | baseline 대비 성과 산출 | 완료 |
 | 4 | leaderboard artifact | baseline/RL/cost gate 결과 통합 | JSON/CSV leaderboard 생성 | 완료 |
 | 5 | dashboard leaderboard | 웹에서 smoke/full 및 모델별 성과 비교 | API/프론트 build 검증 통과 | 완료 |
-| 6 | DQN/PPO 확장 설계 | SB3/Gymnasium 확장 여부 판단 | dependency/리스크/구현안 문서화 | 남음 |
+| 6 | DQN/PPO 확장 설계 | SB3/Gymnasium 확장 여부 판단 | dependency/리스크/구현안 문서화 | 완료 |
 | 7 | 최종 리뷰 | QA, code review, 사용/보류 판단 | 최종 보고서와 checkpoint | 남음 |
 
-현재 진행률: **5 / 7 = 71.4%**
+현재 진행률: **6 / 7 = 85.7%**
 
-`█████░░ 71.4%`
+`██████░ 85.7%`
 
 ---
 
 ## 6. 바로 다음 실행 후보
 
-페이지 5까지 완료되어 이제 웹에서 full test 성과 리더보드를 볼 수 있다. 다음은 **페이지 6: DQN/PPO 확장 설계**다.
+페이지 6까지 완료되어 DQN/PPO 확장 방향과 dependency 판단이 문서화되었다. 다음은 **페이지 7: 최종 리뷰/QA/사용 판단**이다.
 
 권장 명령:
 
@@ -120,14 +120,14 @@ omx ultragoal complete-goals
 
 현재 Codex thread에는 이전 완료 goal이 남아 있어 OMX ultragoal ledger의 `G001-p001` 완료 reconciliation은 blocked 상태로 기록된다. 실제 작업은 이 브랜치의 한국어 Lore 커밋으로 계속 진행한다.
 
-페이지 6의 우선 검토 내용:
+페이지 7의 우선 검토 내용:
 
-1. Gymnasium/SB3를 새 dependency로 추가할지, 현재 의존성 없이 내부 DQN/PPO 설계를 먼저 문서화할지 판단한다.
-2. 현재 `StomTickTradingEnv`가 DQN/PPO가 요구하는 observation/action/reward 계약을 만족하는지 확인한다.
-3. buy-and-hold를 이기지 못한 contextual bandit의 한계를 기준으로 sequence/position/risk-aware 모델 필요성을 정리한다.
-4. 대규모 학습 비용, GPU 필요성, overfitting/거래비용 리스크를 먼저 문서화한다.
+1. Python 회귀 테스트와 프론트 빌드를 다시 실행한다.
+2. Flask API smoke로 핵심 대시보드 endpoint를 확인한다.
+3. 현재 모델을 실제 사용 가능한지, 연구 보류인지 최종 판단한다.
+4. 남은 리스크와 다음 명령어를 최종 보고서에 고정한다.
 
-주의: 지금 단계의 목적은 무작정 더 복잡한 모델을 돌리는 것이 아니라, **전체 test split 리더보드에서 buy-and-hold를 이길 수 있는 구조인지**를 먼저 판단하는 것이다.
+주의: 최종 리뷰의 목적은 “코드가 돌아간다”가 아니라, **현재 모델을 실거래 후보로 볼 수 있는지**를 지표 기준으로 닫는 것이다.
 
 ---
 
@@ -464,3 +464,47 @@ GET /api/rl/runs/stom_1s_2025_performance_leaderboard_full_test/table/leaderboar
 ### 11.5 다음 단계
 
 다음 페이지는 **페이지 6: DQN/PPO 확장 설계**다. 지금까지의 지표상 contextual bandit은 no-trade보다 낫지만 buy-and-hold를 이기지 못했다. 그러므로 다음 단계에서는 단순 회귀형 bandit보다 position 상태, sequence, 리스크 제어, 거래비용을 더 잘 다룰 수 있는 DQN/PPO 계열이 필요한지 판단한다.
+
+---
+
+## 12. 페이지 6 완료 기록: DQN/PPO 확장 설계
+
+### 12.1 진행 내용
+
+페이지 6에서는 현재 STOM 강화학습 환경이 DQN/PPO로 확장 가능한지 검토하고, 새 dependency 추가 전 필요한 계약과 리스크를 문서화했다.
+
+상세 문서:
+
+- `docs/stom_rl_dqn_ppo_extension_design_2026-05-23.md`
+
+### 12.2 공식 가이드 기준
+
+| 자료 | 반영 내용 |
+|---|---|
+| Gymnasium Env API | `reset`, `step`, `terminated`, `truncated`, `observation_space`, `action_space` 계약 확인 |
+| Stable-Baselines3 custom env | custom env는 Gymnasium interface와 `check_env` 검증 필요 |
+| Stable-Baselines3 DQN/PPO 정책 문서 | DQN/PPO smoke에는 우선 `MlpPolicy`와 flatten observation을 검토 |
+
+### 12.3 판단 결과
+
+| 항목 | 판단 |
+|---|---|
+| DQN 적용 | 가능. action이 `hold/buy/sell` discrete 구조다. |
+| PPO 적용 | 가능. 다만 sample 비용이 커서 DQN 이후 후순위다. |
+| 현재 env 그대로 SB3 사용 | 불완전. 실제 `gymnasium.Env` 상속과 `gymnasium.spaces` adapter가 필요하다. |
+| 새 dependency 추가 | 사용자 명시 승인 전까지 보류한다. |
+| 다음 구현 후보 | `stom_rl/gym_adapter.py` + `check_env` + DQN smoke |
+
+### 12.4 핵심 결론
+
+현재 contextual bandit은 full test split에서 no-trade보다 낫지만 buy-and-hold를 이기지 못했다. DQN/PPO는 이 한계를 개선할 수 있는 후보지만, 실거래 성과를 보장하지 않는다. 다음 구현 단계는 무작정 장시간 학습이 아니라 **Gymnasium adapter와 DQN smoke 검증**이어야 한다.
+
+### 12.5 검증
+
+```powershell
+C:\Python\64\Python3119\python.exe -m py_compile stom_rl\trading_env.py stom_rl\contextual_bandit.py stom_rl\performance_leaderboard.py
+```
+
+결과: py_compile 통과.
+
+다음 페이지는 **페이지 7: 최종 리뷰/QA/사용 판단**이다.
