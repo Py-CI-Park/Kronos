@@ -100,17 +100,17 @@ OMX 계획: `.omx/ultragoal/goals.json`
 | 4 | leaderboard artifact | baseline/RL/cost gate 결과 통합 | JSON/CSV leaderboard 생성 | 완료 |
 | 5 | dashboard leaderboard | 웹에서 smoke/full 및 모델별 성과 비교 | API/프론트 build 검증 통과 | 완료 |
 | 6 | DQN/PPO 확장 설계 | SB3/Gymnasium 확장 여부 판단 | dependency/리스크/구현안 문서화 | 완료 |
-| 7 | 최종 리뷰 | QA, code review, 사용/보류 판단 | 최종 보고서와 checkpoint | 남음 |
+| 7 | 최종 리뷰 | QA, code review, 사용/보류 판단 | 최종 보고서와 QA 증거 확보 | 완료 |
 
-현재 진행률: **6 / 7 = 85.7%**
+현재 진행률: **7 / 7 = 100%**
 
-`██████░ 85.7%`
+`███████ 100%`
 
 ---
 
 ## 6. 바로 다음 실행 후보
 
-페이지 6까지 완료되어 DQN/PPO 확장 방향과 dependency 판단이 문서화되었다. 다음은 **페이지 7: 최종 리뷰/QA/사용 판단**이다.
+페이지 7까지 완료되어 전체 QA와 최종 사용/보류 판단이 문서화되었다. 이번 7페이지 목표는 종료한다.
 
 권장 명령:
 
@@ -120,14 +120,14 @@ omx ultragoal complete-goals
 
 현재 Codex thread에는 이전 완료 goal이 남아 있어 OMX ultragoal ledger의 `G001-p001` 완료 reconciliation은 blocked 상태로 기록된다. 실제 작업은 이 브랜치의 한국어 Lore 커밋으로 계속 진행한다.
 
-페이지 7의 우선 검토 내용:
+완료 증거:
 
-1. Python 회귀 테스트와 프론트 빌드를 다시 실행한다.
-2. Flask API smoke로 핵심 대시보드 endpoint를 확인한다.
-3. 현재 모델을 실제 사용 가능한지, 연구 보류인지 최종 판단한다.
-4. 남은 리스크와 다음 명령어를 최종 보고서에 고정한다.
+1. Python 전체 회귀 테스트: `94 passed, 2 skipped`
+2. 프론트 빌드: `svelte-check 0 errors`, `vite build completed`
+3. Flask API smoke: `/`, `/api/rl/runs`, performance leaderboard detail/table, `/api/training/status` 모두 200
+4. 최종 보고서: `docs/stom_rl_final_review_2026-05-23.md`
 
-주의: 최종 리뷰의 목적은 “코드가 돌아간다”가 아니라, **현재 모델을 실거래 후보로 볼 수 있는지**를 지표 기준으로 닫는 것이다.
+주의: 현재 플랫폼은 연구/검증용으로 사용할 수 있지만, contextual bandit 모델은 buy-and-hold와 25bp cost gate를 이기지 못해 실거래 후보가 아니다.
 
 ---
 
@@ -508,3 +508,40 @@ C:\Python\64\Python3119\python.exe -m py_compile stom_rl\trading_env.py stom_rl\
 결과: py_compile 통과.
 
 다음 페이지는 **페이지 7: 최종 리뷰/QA/사용 판단**이다.
+
+---
+
+## 13. 페이지 7 완료 기록: 최종 리뷰/QA/사용 판단
+
+### 13.1 진행 내용
+
+페이지 7에서는 지금까지 구축한 강화학습 성과 모델 고도화 흐름을 전체 검증하고, 현재 모델을 실제 사용할 수 있는지 최종 판단했다.
+
+상세 문서:
+
+- `docs/stom_rl_final_review_2026-05-23.md`
+
+### 13.2 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| Python 전체 테스트 | `94 passed, 2 skipped, 2 warnings` |
+| 프론트 빌드 | `svelte-check 0 errors`, `vite build completed` |
+| Flask API smoke | 핵심 endpoint 모두 200 |
+| 최종 성과 판단 | contextual bandit은 watch, 실거래 보류 |
+
+### 13.3 최종 판단
+
+| 용도 | 판단 |
+|---|---|
+| 연구/검증 플랫폼 | 사용 가능 |
+| STOM 2025 1초봉 RL 실험 | 사용 가능 |
+| 웹 대시보드 성과 비교 | 사용 가능 |
+| 현재 contextual bandit 실거래 | 보류 |
+| 다음 모델 개발 기반 | 사용 가능 |
+
+최종 결론:
+
+**플랫폼 구축 목표는 달성했다. 모델 수익성 목표는 아직 달성하지 못했다.**
+
+다음 목표를 새로 잡는다면 `Gymnasium adapter + check_env + DQN smoke`부터 시작한다.
