@@ -50,6 +50,8 @@ def test_rl_lab_tab_uses_read_only_rl_api_contracts():
         "data-rl-trade-table",
         "Kronos 비의존",
         "성과 리더보드",
+        "sb3_smoke",
+        "DQN/PPO",
         "25bp cost gate",
     ]:
         assert marker in tab

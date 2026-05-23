@@ -176,7 +176,7 @@ export interface SystemResponse {
 
 export interface RlRunRecord {
   name: string;
-  artifact_type: 'contextual_bandit' | 'cost_gate' | 'baseline' | 'episode_manifest' | string;
+  artifact_type: 'contextual_bandit' | 'sb3_smoke' | 'cost_gate' | 'baseline' | 'episode_manifest' | string;
   modified_at?: string;
   summary?: Record<string, any>;
   policies?: string[];

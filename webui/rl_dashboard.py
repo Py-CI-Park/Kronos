@@ -20,6 +20,7 @@ MAX_TABLE_LIMIT = 5000
 
 ARTIFACT_SIGNATURES = (
     ("performance_leaderboard", "performance_leaderboard.json"),
+    ("sb3_smoke", "sb3_smoke_summary.json"),
     ("contextual_bandit", "eval_summary.json"),
     ("cost_gate", "cost_gate_report.json"),
     ("baseline", "baseline_summary.json"),
@@ -53,7 +54,7 @@ ROOT_TABLE_CANDIDATES = {
     "trades": ("trades.csv",),
     "equity": ("equity_curve.csv", "equity.csv"),
     "episodes": ("episodes.csv",),
-    "summary": ("baseline_summary.csv", "gate_summary.csv"),
+    "summary": ("sb3_smoke_summary.csv", "baseline_summary.csv", "gate_summary.csv"),
     "manifest": ("episode_manifest.csv",),
     "scenario": ("scenario_summary.csv",),
     "rolling": ("rolling_folds.csv",),
@@ -123,6 +124,22 @@ def _find_json_summary(run_dir: Path, artifact_type: str) -> Dict[str, Any]:
     if artifact_type == "performance_leaderboard":
         payload = _read_json(run_dir / "performance_leaderboard.json")
         return dict(payload.get("summary", {}))
+    if artifact_type == "sb3_smoke":
+        payload = _read_json(run_dir / "sb3_smoke_summary.json")
+        summary = dict(payload.get("summary", {}))
+        models = payload.get("models", [])
+        best_model = summary.get("best_model")
+        selected_model = next((row for row in models if row.get("model") == best_model), models[0] if models else {})
+        for key in (
+            "avg_episode_net_return_pct",
+            "trade_count",
+            "cost_bps",
+            "slippage_bps",
+            "passes_cost_gate",
+        ):
+            if key in selected_model:
+                summary.setdefault(key, selected_model[key])
+        return summary
     if artifact_type == "contextual_bandit":
         payload = _read_json(run_dir / "eval_summary.json")
         return dict(payload.get("eval_summary", payload.get("summary", {})))
@@ -214,6 +231,16 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
     }
     if artifact_type == "performance_leaderboard":
         payload["detail"] = _read_json(run_dir / "performance_leaderboard.json")
+    elif artifact_type == "sb3_smoke":
+        payload["detail"] = _read_json(run_dir / "sb3_smoke_summary.json")
+        models = payload["detail"].get("models", [])
+        best_model = payload["summary"].get("best_model")
+        selected_model = next((row for row in models if row.get("model") == best_model), models[0] if models else {})
+        payload["model"] = {
+            "model_type": f"stable_baselines3_{selected_model.get('algorithm', 'sb3')}",
+            "feature_columns": payload["summary"].get("feature_columns", []),
+            "train_summary": selected_model,
+        }
     elif artifact_type == "contextual_bandit":
         payload["detail"] = _read_json(run_dir / "eval_summary.json")
         model_path = run_dir / "model.json"

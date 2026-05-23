@@ -32,6 +32,7 @@
       runs = payload?.runs ?? [];
       const preferred =
         runs.find((run) => run.artifact_type === 'performance_leaderboard') ??
+        runs.find((run) => run.artifact_type === 'sb3_smoke') ??
         runs.find((run) => run.artifact_type === 'contextual_bandit') ??
         runs.find((run) => run.artifact_type === 'cost_gate') ??
         runs[0];
@@ -94,7 +95,8 @@
   });
   const modelFeatures = $derived(selectedRun?.model?.feature_columns ?? []);
   const artifactCount = $derived(selectedRun?.artifacts?.length ?? 0);
-  const hasModel = $derived(selectedRun?.artifact_type === 'contextual_bandit');
+  const isSb3Smoke = $derived(selectedRun?.artifact_type === 'sb3_smoke');
+  const hasModel = $derived(selectedRun?.artifact_type === 'contextual_bandit' || isSb3Smoke);
   const hasLeaderboard = $derived(selectedRun?.artifact_type === 'performance_leaderboard' || leaderboardRows.length > 0);
   const selectedNetPct = $derived(
     selectedSummary.avg_episode_net_return_pct ??
@@ -317,6 +319,7 @@
 
   function typeLabel(type: string | undefined): string {
     if (type === 'performance_leaderboard') return '성과 리더보드';
+    if (type === 'sb3_smoke') return 'SB3 smoke';
     if (type === 'contextual_bandit') return '1차 RL 모델';
     if (type === 'cost_gate') return '비용 관문';
     if (type === 'baseline') return 'Baseline';
@@ -326,6 +329,7 @@
 
   function typeTone(type: string | undefined): string {
     if (type === 'performance_leaderboard') return 'success';
+    if (type === 'sb3_smoke') return 'accent';
     if (type === 'contextual_bandit') return 'accent';
     if (type === 'cost_gate') return 'success';
     if (type === 'baseline') return 'info';
@@ -381,7 +385,7 @@
   </div>
   <h1 class="text-h2" style="margin-top:8px">강화학습 실험실</h1>
   <p class="text-muted" style="margin-top:6px">
-    STOM tick/back 데이터로 생성한 episode, baseline, 비용 관문, 1차 contextual bandit, 통합 성과 리더보드를 한 화면에서 비교합니다.
+    STOM tick/back 데이터로 생성한 episode, baseline, 비용 관문, contextual bandit, DQN/PPO SB3 smoke, 통합 성과 리더보드를 한 화면에서 비교합니다.
     이 탭은 학습 산출물을 읽기 전용으로 시각화하며, 실제 매매 투입 전에는 전체 test split과 rolling 검증을 추가로 통과해야 합니다.
   </p>
 </section>
@@ -401,7 +405,7 @@
 {:else if !runs.length}
   <section class="empty">
     <strong>아직 표시할 강화학습 산출물이 없습니다.</strong>
-    <span>먼저 episode manifest, baseline, cost gate, 1차 모델 smoke 또는 전체 학습을 실행하세요.</span>
+    <span>먼저 episode manifest, baseline, cost gate, contextual bandit 또는 DQN/PPO SB3 smoke 학습을 실행하세요.</span>
   </section>
 {:else}
   <section class="rl-kpi-grid">
@@ -516,10 +520,14 @@
             <div class="model-note">
               <div>
                 <div class="card-eyebrow">MODEL USAGE FLOW</div>
-                <strong>{selectedRun.model?.model_type ?? 'contextual bandit'}</strong>
+                <strong>{selectedRun.model?.model_type ?? (isSb3Smoke ? 'Stable-Baselines3 smoke' : 'contextual bandit')}</strong>
                 <p class="text-caption">
-                  저장된 `model.json`을 다시 로드해 test episode에 적용한 결과입니다. 현재는 수익 가능성 확인용 smoke이며,
-                  buy-and-hold와 전체 test split을 이긴 최종 모델이라는 뜻은 아닙니다.
+                  {#if isSb3Smoke}
+                    Gymnasium check_env를 통과한 STOM env에서 DQN/PPO를 짧게 학습하고 test episode에 적용한 smoke 결과입니다.
+                  {:else}
+                    저장된 `model.json`을 다시 로드해 test episode에 적용한 결과입니다.
+                  {/if}
+                  현재는 수익 가능성 확인용 smoke이며, buy-and-hold와 전체 test split을 이긴 최종 모델이라는 뜻은 아닙니다.
                 </p>
               </div>
               <span class="pill accent">feature {fmt.int(modelFeatures.length)}</span>
@@ -541,7 +549,7 @@
                 <div class="card-eyebrow">PERFORMANCE LEADERBOARD</div>
                 <strong>full test split 기준 모델/정책 비교표</strong>
                 <p class="text-caption">
-                  buy-and-hold, no-trade, 단순 매매 baseline과 RL 모델을 같은 25bp 비용 기준으로 정렬합니다.
+                  buy-and-hold, no-trade, 단순 매매 baseline과 contextual bandit/DQN/PPO RL 모델을 같은 25bp 비용 기준으로 정렬합니다.
                   현재 RL 모델은 watch 상태이며, buy-and-hold를 이기거나 cost gate를 통과해야 실사용 후보가 됩니다.
                 </p>
               </div>

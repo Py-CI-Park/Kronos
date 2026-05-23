@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, ClassVar, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -93,7 +93,7 @@ class BoxSpace:
 class StomTickTradingEnv:
     """Long-only STOM trading environment backed by an episode manifest."""
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[Dict[str, Any]] = {"render_modes": []}
 
     def __init__(self, config: Optional[StomTickTradingEnvConfig] = None, **overrides: Any):
         if config is not None and overrides:

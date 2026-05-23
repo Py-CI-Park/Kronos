@@ -7,7 +7,7 @@ import csv
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 DEFAULT_BASELINE_REPORT = (
@@ -16,6 +16,7 @@ DEFAULT_BASELINE_REPORT = (
 DEFAULT_CONTEXTUAL_BANDIT_REPORT = (
     Path("webui") / "rl_runs" / "stom_1s_2025_contextual_bandit_full_test" / "eval_summary.json"
 )
+DEFAULT_SB3_SMOKE_REPORT = Path("webui") / "rl_runs" / "stom_1s_2025_sb3_smoke" / "sb3_smoke_summary.json"
 DEFAULT_OUTPUT_DIR = Path("webui") / "rl_runs" / "stom_1s_2025_performance_leaderboard_full_test"
 
 
@@ -23,6 +24,7 @@ DEFAULT_OUTPUT_DIR = Path("webui") / "rl_runs" / "stom_1s_2025_performance_leade
 class PerformanceLeaderboardConfig:
     baseline_report: str = str(DEFAULT_BASELINE_REPORT)
     contextual_bandit_report: str = str(DEFAULT_CONTEXTUAL_BANDIT_REPORT)
+    sb3_smoke_reports: Tuple[str, ...] = (str(DEFAULT_SB3_SMOKE_REPORT),)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     target_cost_bps: float = 25.0
     target_slippage_bps: float = 0.0
@@ -87,6 +89,7 @@ def _baseline_rows(payload: Mapping[str, Any], config: PerformanceLeaderboardCon
                 "max_drawdown_pct": _float_or_zero(row.get("max_drawdown_pct")),
                 "positive_session_rate": _float_or_zero(row.get("positive_session_rate")),
                 "passes_cost_gate": False,
+                "is_smoke": False,
             }
         )
     return normalized
@@ -113,7 +116,43 @@ def _contextual_bandit_row(payload: Mapping[str, Any], config: PerformanceLeader
         "max_drawdown_pct": _float_or_zero(summary.get("max_drawdown_pct")),
         "positive_session_rate": None,
         "passes_cost_gate": _bool_value(summary.get("passes_cost_gate")),
+        "is_smoke": False,
     }
+
+
+def _sb3_smoke_rows(
+    payload: Mapping[str, Any],
+    report_path: Path,
+    config: PerformanceLeaderboardConfig,
+) -> List[Dict[str, Any]]:
+    rows = payload.get("models") or payload.get("model_summaries") or []
+    normalized = []
+    for row in rows:
+        algorithm = str(row.get("algorithm") or row.get("model") or "sb3")
+        normalized.append(
+            {
+                "source": "rl_model",
+                "run_name": report_path.parent.name,
+                "model": str(row.get("model") or f"{algorithm}_smoke"),
+                "policy": str(row.get("policy") or f"stable_baselines3_{algorithm}"),
+                "split": str(row.get("eval_split") or row.get("split") or "test"),
+                "cost_bps": _float_or_zero(row.get("cost_bps", config.target_cost_bps)),
+                "slippage_bps": _float_or_zero(row.get("slippage_bps", config.target_slippage_bps)),
+                "episode_count": int(_float_or_zero(row.get("episode_count"))),
+                "trade_count": int(_float_or_zero(row.get("trade_count"))),
+                "trades_per_episode": _float_or_zero(row.get("trades_per_episode")),
+                "avg_episode_net_return_pct": _float_or_zero(row.get("avg_episode_net_return_pct")),
+                "median_episode_net_return_pct": _float_or_zero(row.get("median_episode_net_return_pct")),
+                "compounded_return_pct": _float_or_zero(row.get("compounded_return_pct")),
+                "avg_trade_net_return_pct": _float_or_zero(row.get("avg_trade_net_return_pct")),
+                "hit_rate": _float_or_zero(row.get("hit_rate")),
+                "max_drawdown_pct": _float_or_zero(row.get("max_drawdown_pct")),
+                "positive_session_rate": None,
+                "passes_cost_gate": _bool_value(row.get("passes_cost_gate")),
+                "is_smoke": _bool_value(row.get("is_smoke", True)),
+            }
+        )
+    return normalized
 
 
 def _decision(row: Mapping[str, Any], *, no_trade_return: float, buy_and_hold_return: float) -> Dict[str, Any]:
@@ -127,10 +166,10 @@ def _decision(row: Mapping[str, Any], *, no_trade_return: float, buy_and_hold_re
         reason = "비교 기준선"
     elif beats_buy_and_hold and passes_cost_gate:
         label = "candidate"
-        reason = "25bp 비용 후 buy-and-hold와 cost gate를 모두 통과"
+        reason = "25bp 비용 기준에서 buy-and-hold와 cost gate를 모두 통과"
     elif beats_no_trade:
         label = "watch"
-        reason = "no-trade보다 낫지만 buy-and-hold 또는 cost gate 기준 미달"
+        reason = "no-trade보다 낫지만 buy-and-hold 또는 cost gate 기준은 미달"
     else:
         label = "hold"
         reason = "비용 반영 후 no-trade 기준도 충분히 넘지 못함"
@@ -149,6 +188,13 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
     baseline_payload = _read_json(Path(config.baseline_report))
     contextual_payload = _read_json(Path(config.contextual_bandit_report))
     rows = _baseline_rows(baseline_payload, config) + [_contextual_bandit_row(contextual_payload, config)]
+    missing_optional_reports = []
+    for raw_report_path in config.sb3_smoke_reports:
+        report_path = Path(raw_report_path)
+        if not report_path.is_file():
+            missing_optional_reports.append(str(report_path))
+            continue
+        rows.extend(_sb3_smoke_rows(_read_json(report_path), report_path, config))
 
     no_trade_return = next(
         (_float_or_zero(row.get("avg_episode_net_return_pct")) for row in rows if row.get("policy") == "no_trade"),
@@ -185,6 +231,10 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
             "rl_models_passing_cost_gate": [
                 row["model"] for row in model_rows if row.get("passes_cost_gate")
             ],
+            "rl_smoke_models": [
+                row["model"] for row in model_rows if row.get("is_smoke")
+            ],
+            "missing_optional_reports": missing_optional_reports,
         },
         "leaderboard": rows,
         "artifacts": {
@@ -219,6 +269,7 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
                 "max_drawdown_pct",
                 "positive_session_rate",
                 "passes_cost_gate",
+                "is_smoke",
                 "beats_no_trade",
                 "beats_buy_and_hold",
                 "usability",
@@ -232,6 +283,11 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> PerformanceLeaderboardC
     parser = argparse.ArgumentParser(description="Aggregate STOM RL full-test performance leaderboard artifacts.")
     parser.add_argument("--baseline-report", default=str(DEFAULT_BASELINE_REPORT))
     parser.add_argument("--contextual-bandit-report", default=str(DEFAULT_CONTEXTUAL_BANDIT_REPORT))
+    parser.add_argument(
+        "--sb3-smoke-reports",
+        default=str(DEFAULT_SB3_SMOKE_REPORT),
+        help="Comma-separated optional SB3 smoke summary JSON paths. Missing files are skipped.",
+    )
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--target-cost-bps", type=float, default=25.0)
     parser.add_argument("--target-slippage-bps", type=float, default=0.0)
@@ -240,6 +296,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> PerformanceLeaderboardC
     return PerformanceLeaderboardConfig(
         baseline_report=args.baseline_report,
         contextual_bandit_report=args.contextual_bandit_report,
+        sb3_smoke_reports=tuple(part.strip() for part in args.sb3_smoke_reports.split(",") if part.strip()),
         output_dir=args.output_dir,
         target_cost_bps=args.target_cost_bps,
         target_slippage_bps=args.target_slippage_bps,
