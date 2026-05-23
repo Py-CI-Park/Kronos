@@ -96,15 +96,15 @@ OMX 계획: `.omx/ultragoal/goals.json`
 |---:|---|---|---|---|
 | 1 | 성과 기준 재정의 | smoke/full 구분, 성공 기준, 오픈소스 참고 원칙 문서화 | 본 문서 작성, 검증, 커밋 | 완료 |
 | 2 | full baseline/cost gate | test split 전체 baseline과 비용 관문 실행 | full artifact 생성, 요약 수치 확보 | 완료 |
-| 3 | contextual bandit full eval | train 기반 모델을 test split 대규모로 평가 | baseline 대비 성과 산출 | 남음 |
+| 3 | contextual bandit full eval | train 기반 모델을 test split 대규모로 평가 | baseline 대비 성과 산출 | 완료 |
 | 4 | leaderboard artifact | baseline/RL/cost gate 결과 통합 | JSON/CSV leaderboard 생성 | 남음 |
 | 5 | dashboard leaderboard | 웹에서 smoke/full 및 모델별 성과 비교 | build/browser smoke 통과 | 남음 |
 | 6 | DQN/PPO 확장 설계 | SB3/Gymnasium 확장 여부 판단 | dependency/리스크/구현안 문서화 | 남음 |
 | 7 | 최종 리뷰 | QA, code review, 사용/보류 판단 | 최종 보고서와 checkpoint | 남음 |
 
-현재 진행률: **2 / 7 = 28.6%**
+현재 진행률: **3 / 7 = 42.9%**
 
-`██░░░░░ 28.6%`
+`███░░░░ 42.9%`
 
 ---
 
@@ -240,3 +240,108 @@ C:\Python\64\Python3119\python.exe -m pytest `
 ```
 
 다음 페이지는 **페이지 3: contextual bandit full eval**이다.
+
+---
+
+## 9. 페이지 3 완료 기록: contextual bandit full eval
+
+### 9.1 진행 내용
+
+페이지 3에서는 1차 강화학습 모델인 contextual bandit을 smoke가 아닌 full test split으로 평가했다.
+
+실행 명령:
+
+```powershell
+C:\Python\64\Python3119\python.exe -m stom_rl.contextual_bandit `
+  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
+  --output-dir webui\rl_runs\stom_1s_2025_contextual_bandit_full_test `
+  --train-split train `
+  --eval-split test `
+  --max-train-episodes 0 `
+  --max-eval-episodes 0 `
+  --train-sample-stride 10 `
+  --eval-sample-stride 5 `
+  --cost-bps 25 `
+  --slippage-bps 0
+```
+
+실행 시간: **약 35분 7초**
+
+### 9.2 학습 데이터 규모
+
+| 항목 | 값 |
+|---|---:|
+| train episode | 13,256 |
+| train sample | 1,568,450 |
+| skipped episode | 0 |
+| target mean % | -0.3280 |
+| target median % | -0.4994 |
+| target positive rate | 30.84% |
+| ridge alpha | 1.0 |
+| train RMSE % | 1.6746 |
+| predicted positive rate | 1.45% |
+
+해석:
+
+- train target 자체가 평균/중앙값 모두 음수다.
+- 25bp 비용 기준에서 양수 target 비율이 30.84%에 불과하다.
+- 모델은 보수적으로 1.45% 구간만 매수 후보로 판단했다.
+
+### 9.3 full test 평가 결과
+
+| 항목 | contextual bandit |
+|---|---:|
+| eval split | test |
+| episode | 2,730 |
+| action count | 591,472 |
+| trade count | 971 |
+| trades/episode | 0.356 |
+| avg episode net % | 0.1254 |
+| median episode net % | 0.0000 |
+| compounded return % | 1,410.0169 |
+| avg trade net % | 0.3539 |
+| hit rate | 47.99% |
+| max drawdown % | -51.5892 |
+| 25bp cost gate | false |
+
+### 9.4 baseline 대비
+
+25bp 비용 기준 full test split에서 주요 결과는 다음과 같다.
+
+| 모델/정책 | 평균 episode net % | 거래 수 | 거래/episode | hit rate | MDD % | 판단 |
+|---|---:|---:|---:|---:|---:|---|
+| buy_and_hold | 0.5126 | 2,730 | 1.000 | 49.34% | -50.7280 | 현재 최강 baseline |
+| contextual_bandit | 0.1254 | 971 | 0.356 | 47.99% | -51.5892 | no-trade보다 좋지만 buy-and-hold 미달 |
+| no_trade | 0.0000 | 0 | 0.000 | 0.00% | 0.0000 | 리스크 기준선 |
+| mean_reversion | -23.2925 | 170,868 | 62.589 | 2.87% | -47.7542 | 부적합 |
+| volume_filter | -26.1600 | 167,923 | 61.510 | 1.78% | -49.7977 | 부적합 |
+| momentum | -27.9136 | 164,944 | 60.419 | 3.37% | -62.5398 | 부적합 |
+| random | -77.0568 | 806,047 | 295.255 | 1.07% | -81.8887 | 부적합 |
+
+### 9.5 결론
+
+contextual bandit full eval은 **학습과 평가가 정상 완료**되었다. 그러나 실사용 후보로는 아직 부족하다.
+
+| 질문 | 답 |
+|---|---|
+| no-trade보다 좋은가? | 예 |
+| 과도한 단순 매매 전략보다 좋은가? | 예 |
+| buy-and-hold보다 좋은가? | 아니오 |
+| 25bp cost gate를 통과했는가? | 아니오 |
+| 바로 실거래 후보인가? | 아니오, 보류 |
+
+핵심 원인:
+
+1. train target 분포가 비용 후 음수로 치우쳐 있다.
+2. 단순 ridge contextual bandit은 sequence/position/리스크 상태를 충분히 학습하지 못한다.
+3. 평균 수익은 양수지만 MDD가 buy-and-hold보다 더 나쁘다.
+4. 25bp 비용 후 buy-and-hold 대비 우위를 만들지 못했다.
+
+### 9.6 다음 단계
+
+다음 페이지는 **페이지 4: leaderboard artifact**다.
+
+목표:
+
+- baseline leaderboard와 contextual bandit 결과를 하나의 JSON/CSV로 통합한다.
+- 웹 대시보드에서 smoke/full, baseline/RL, cost gate 통과 여부를 한눈에 비교할 수 있도록 준비한다.
