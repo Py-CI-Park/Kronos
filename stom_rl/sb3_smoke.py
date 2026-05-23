@@ -15,6 +15,7 @@ import numpy as np
 
 from .baselines import AccountState
 from .episode_manifest import DEFAULT_OUTPUT_DIR
+from .rl_events import RlLiveEventWriter, summarize_live_event_file
 from .sb3_adapter import StomTickTradingGymEnv, make_sb3_env
 
 
@@ -50,6 +51,8 @@ class Sb3SmokeConfig:
     min_avg_episode_net_pct: float = 0.0
     max_drawdown_pct: float = 20.0
     write_artifacts: bool = True
+    write_live_events: bool = True
+    live_event_sample_interval: int = 1
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -124,8 +127,59 @@ def _bounded_batch_size(value: int, *, upper: int) -> int:
     return max(2, min(int(value), int(upper)))
 
 
-def _train_model(algorithm: str, config: Sb3SmokeConfig):
+def _train_model(algorithm: str, config: Sb3SmokeConfig, event_writer: Optional[RlLiveEventWriter] = None):
     DQN, PPO, _ = _sb3_imports()
+    from stable_baselines3.common.callbacks import BaseCallback
+
+    class LiveEventCallback(BaseCallback):
+        def __init__(self, writer: Optional[RlLiveEventWriter], *, algorithm: str, sample_interval: int):
+            super().__init__(verbose=0)
+            self.writer = writer
+            self.algorithm = algorithm
+            self.sample_interval = max(1, int(sample_interval))
+
+        def _on_step(self) -> bool:
+            if self.writer is None or self.num_timesteps % self.sample_interval:
+                return True
+            rewards = self.locals.get("rewards")
+            actions = self.locals.get("actions")
+            infos = self.locals.get("infos")
+            rewards = rewards if rewards is not None else []
+            actions = actions if actions is not None else []
+            infos = infos if infos is not None else []
+            reward = rewards[0] if len(rewards) else None
+            action = actions[0] if len(actions) else None
+            info = dict(infos[0]) if len(infos) else {}
+            action_value: Optional[int]
+            if action is None:
+                action_value = None
+            elif hasattr(action, "item"):
+                action_value = int(action.item())
+            else:
+                action_array = np.asarray(action)
+                action_value = int(action_array.item()) if action_array.size else None
+            self.writer.write_step(
+                algorithm=self.algorithm,
+                phase="train",
+                global_step=int(self.num_timesteps),
+                episode_id=info.get("episode_id"),
+                timestamp=info.get("action_timestamp"),
+                price=info.get("close"),
+                action=action_value,
+                reward=float(reward) if reward is not None else None,
+                position=info.get("position_after"),
+                equity=None,
+                exploration=getattr(self.model, "exploration_rate", None),
+                info={
+                    "event": info.get("event"),
+                    "split": info.get("split"),
+                    "current_idx": info.get("current_idx"),
+                    "invalid_action": info.get("invalid_action"),
+                    "trade_count": info.get("trade_count"),
+                },
+            )
+            return True
+
     env = _make_env(config, split=config.train_split)
     policy_kwargs = {"net_arch": [64, 32]}
     try:
@@ -163,7 +217,15 @@ def _train_model(algorithm: str, config: Sb3SmokeConfig):
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
         started = time.perf_counter()
-        model.learn(total_timesteps=int(config.total_timesteps), progress_bar=False)
+        model.learn(
+            total_timesteps=int(config.total_timesteps),
+            progress_bar=False,
+            callback=LiveEventCallback(
+                event_writer,
+                algorithm=algorithm,
+                sample_interval=config.live_event_sample_interval,
+            ),
+        )
         elapsed = time.perf_counter() - started
         if getattr(model, "env", None) is not None:
             model.env.close()
@@ -237,7 +299,12 @@ def _summarize_model(
     }
 
 
-def _evaluate_model(model: Any, algorithm: str, config: Sb3SmokeConfig) -> Dict[str, Any]:
+def _evaluate_model(
+    model: Any,
+    algorithm: str,
+    config: Sb3SmokeConfig,
+    event_writer: Optional[RlLiveEventWriter] = None,
+) -> Dict[str, Any]:
     probe_env = _make_env(config, split=config.eval_split)
     eval_episode_count = len(probe_env.raw_env.episodes)
     probe_env.close()
@@ -281,25 +348,44 @@ def _evaluate_model(model: Any, algorithm: str, config: Sb3SmokeConfig) -> Dict[
                 trade_rows.append(trade)
             mark_equity = account.mark_equity(price)
             episode_equity_curve.append(mark_equity)
-            action_rows.append(
-                {
-                    "model": f"{algorithm}_smoke",
-                    "algorithm": algorithm,
-                    "policy": policy_name,
-                    "episode_id": info["episode_id"],
-                    "symbol": info["symbol"],
-                    "session": info["session"],
-                    "step_idx": info["current_idx"],
-                    "timestamp": timestamp,
-                    "price": price,
-                    "action": action_int,
-                    "action_name": step_info.get("action_name"),
-                    "position_after": account.position,
-                    "env_reward": reward,
-                    "mark_equity": mark_equity,
-                    "invalid_action": step_info.get("invalid_action"),
-                }
-            )
+            action_row = {
+                "model": f"{algorithm}_smoke",
+                "algorithm": algorithm,
+                "policy": policy_name,
+                "episode_id": info["episode_id"],
+                "symbol": info["symbol"],
+                "session": info["session"],
+                "step_idx": info["current_idx"],
+                "timestamp": timestamp,
+                "price": price,
+                "action": action_int,
+                "action_name": step_info.get("action_name"),
+                "position_after": account.position,
+                "env_reward": reward,
+                "mark_equity": mark_equity,
+                "invalid_action": step_info.get("invalid_action"),
+            }
+            action_rows.append(action_row)
+            if event_writer is not None:
+                event_writer.write_step(
+                    algorithm=algorithm,
+                    phase="eval",
+                    global_step=len(action_rows),
+                    episode=episode_index,
+                    episode_id=str(info["episode_id"]),
+                    timestamp=timestamp,
+                    price=price,
+                    action=action_int,
+                    reward=float(reward),
+                    position=account.position,
+                    equity=mark_equity,
+                    info={
+                        "symbol": info["symbol"],
+                        "session": info["session"],
+                        "step_idx": info["current_idx"],
+                        "invalid_action": step_info.get("invalid_action"),
+                    },
+                )
             equity_rows.append(
                 {
                     "model": f"{algorithm}_smoke",
@@ -372,10 +458,15 @@ def run_sb3_smoke(config: Sb3SmokeConfig) -> Dict[str, Any]:
     all_equity: List[Dict[str, Any]] = []
     all_episodes: List[Dict[str, Any]] = []
     model_files: Dict[str, str] = {}
+    event_writer: Optional[RlLiveEventWriter] = None
+    live_events_path = output_dir / "rl_live_events.jsonl"
+    if config.write_artifacts and config.write_live_events:
+        event_writer = RlLiveEventWriter(live_events_path, run_id=output_dir.name)
+        event_writer.reset()
 
     for algorithm in algorithms:
-        model, elapsed = _train_model(algorithm, config)
-        evaluation = _evaluate_model(model, algorithm, config)
+        model, elapsed = _train_model(algorithm, config, event_writer=event_writer)
+        evaluation = _evaluate_model(model, algorithm, config, event_writer=event_writer)
         summary = _summarize_model(
             algorithm=algorithm,
             config=config,
@@ -396,7 +487,7 @@ def run_sb3_smoke(config: Sb3SmokeConfig) -> Dict[str, Any]:
             model_files[algorithm] = str(model_path)
 
     ranking = sorted(model_summaries, key=lambda row: float(row["avg_episode_net_return_pct"]), reverse=True)
-    payload = {
+    payload: Dict[str, Any] = {
         "mode": "stom_rl_sb3_smoke",
         "config": asdict(config),
         "runtime": runtime,
@@ -421,8 +512,16 @@ def run_sb3_smoke(config: Sb3SmokeConfig) -> Dict[str, Any]:
             "equity_csv": str(output_dir / "equity.csv"),
             "episodes_csv": str(output_dir / "episodes.csv"),
             "model_files": model_files,
+            "live_events_jsonl": str(live_events_path),
+            "live_summary_json": str(output_dir / "rl_live_summary.json"),
         },
     }
+    if config.write_artifacts and config.write_live_events:
+        live_summary = summarize_live_event_file(live_events_path)
+        payload["live_events"] = live_summary
+        payload["summary"]["live_event_count"] = live_summary["event_count"]
+        payload["summary"]["live_event_phases"] = live_summary["phases"]
+        _write_json(output_dir / "rl_live_summary.json", live_summary)
     if config.write_artifacts:
         _write_json(output_dir / "sb3_smoke_summary.json", payload)
         _write_csv(
@@ -531,6 +630,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> Sb3SmokeConfig:
     parser.add_argument("--slippage-bps", type=float, default=0.0)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--no-live-events", action="store_true")
+    parser.add_argument("--live-event-sample-interval", type=int, default=1)
     args = parser.parse_args(argv)
     return Sb3SmokeConfig(
         manifest_path=args.manifest,
@@ -548,6 +649,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> Sb3SmokeConfig:
         slippage_bps=args.slippage_bps,
         device=args.device,
         write_artifacts=not args.no_write,
+        write_live_events=not args.no_live_events,
+        live_event_sample_interval=args.live_event_sample_interval,
     )
 
 

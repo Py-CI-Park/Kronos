@@ -187,6 +187,32 @@ def _write_rl_fixture(root: Path) -> None:
         "model,algorithm,episode_id,net_return_pct",
         ["dqn_smoke,dqn,000001_20250103,0.3"],
     )
+    (sb3 / "rl_live_events.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "schema_version": "stom_rl_live_event.v1",
+                        "run_id": "sb3_smoke_run",
+                        "algorithm": "dqn",
+                        "phase": "eval",
+                        "global_step": 1,
+                        "action": 1,
+                        "action_name": "buy",
+                        "reward": 0.1,
+                        "position": 1,
+                        "equity": 1.003,
+                    }
+                )
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (sb3 / "rl_live_summary.json").write_text(
+        json.dumps({"schema_version": "stom_rl_live_event.v1", "event_count": 1, "phases": {"eval": 1}}),
+        encoding="utf-8-sig",
+    )
 
 
 def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
@@ -202,6 +228,7 @@ def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     leaderboard_rows = rl_dashboard.load_rl_table("leaderboard_run", "leaderboard", limit=5)
     sb3_detail = rl_dashboard.load_rl_run("sb3_smoke_run")
     sb3_summary = rl_dashboard.load_rl_table("sb3_smoke_run", "summary", limit=5)
+    sb3_events = rl_dashboard.load_rl_events("sb3_smoke_run", limit=5)
     cost_gate = rl_dashboard.load_rl_cost_gate("cost_gate_run", limit=5)
 
     assert {"bandit_run", "cost_gate_run", "baseline_run", "leaderboard_run", "sb3_smoke_run"}.issubset(names)
@@ -214,7 +241,9 @@ def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     assert leaderboard_rows["rows"][1]["model"] == "contextual_bandit"
     assert sb3_detail["artifact_type"] == "sb3_smoke"
     assert sb3_detail["model"]["model_type"] == "stable_baselines3_dqn"
+    assert sb3_detail["summary"]["live_event_count"] == 1
     assert sb3_summary["rows"][0]["model"] == "dqn_smoke"
+    assert sb3_events["rows"][0]["action_name"] == "buy"
     assert cost_gate["summary"]["passing_policies"] == ["buy_and_hold"]
     assert cost_gate["gate"]["rows"][0]["passes_cost_gate"] is True
 
@@ -264,6 +293,10 @@ def test_flask_rl_routes_smoke(tmp_path, monkeypatch):
     sb3 = client.get("/api/rl/runs/sb3_smoke_run")
     assert sb3.status_code == 200
     assert sb3.get_json()["artifact_type"] == "sb3_smoke"
+
+    events = client.get("/api/rl/runs/sb3_smoke_run/events")
+    assert events.status_code == 200
+    assert events.get_json()["rows"][0]["phase"] == "eval"
 
     bad = client.get("/api/rl/runs/..%5Csecret")
     assert bad.status_code in {400, 404}

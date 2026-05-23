@@ -213,6 +213,18 @@ export interface RlTableResponse {
   policies?: string[];
 }
 
+
+export interface RlLiveEventsResponse {
+  run?: string;
+  artifact_type?: string;
+  table?: string;
+  source_file?: string | null;
+  rows: Array<Record<string, any>>;
+  row_count?: number;
+  truncated?: boolean;
+  message?: string;
+}
+
 export interface RlCostGateResponse {
   run?: string;
   artifact_type?: string;
@@ -248,6 +260,8 @@ export const api = {
     fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/equity?limit=${limit}`),
   rlEpisodes: (run: string, limit: number = 500) =>
     fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/episodes?limit=${limit}`),
+  rlEvents: (run: string, limit: number = 500) =>
+    fetchJson<RlLiveEventsResponse>(`/api/rl/runs/${encodeURIComponent(run)}/events?limit=${limit}`),
   rlTable: (run: string, table: string, limit: number = 500) =>
     fetchJson<RlTableResponse>(
       `/api/rl/runs/${encodeURIComponent(run)}/table/${encodeURIComponent(table)}?limit=${limit}`

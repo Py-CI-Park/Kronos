@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type RlCostGateResponse, type RlRunDetail, type RlRunRecord } from '$lib/api';
+  import { api, type RlCostGateResponse, type RlLiveEventsResponse, type RlRunDetail, type RlRunRecord } from '$lib/api';
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
 
-  type DetailView = 'overview' | 'leaderboard' | 'trades' | 'artifacts';
+  type DetailView = 'overview' | 'live' | 'leaderboard' | 'trades' | 'artifacts';
 
   let runs = $state<RlRunRecord[]>([]);
   let selectedName = $state('');
@@ -15,6 +15,8 @@
   let trades = $state<Array<Record<string, any>>>([]);
   let equity = $state<Array<Record<string, any>>>([]);
   let episodes = $state<Array<Record<string, any>>>([]);
+  let liveEvents = $state<Array<Record<string, any>>>([]);
+  let liveEventPayload = $state<RlLiveEventsResponse | null>(null);
   let view = $state<DetailView>('overview');
   let loading = $state(false);
   let detailLoading = $state(false);
@@ -55,24 +57,29 @@
     trades = [];
     equity = [];
     episodes = [];
+    liveEvents = [];
+    liveEventPayload = null;
     selectedRun = null;
     try {
       const detail = await api.rlRun(name);
       selectedRun = detail;
 
-      const [leaderboardPayload, tradePayload, equityPayload, episodePayload] = await Promise.all([
+      const [leaderboardPayload, tradePayload, equityPayload, episodePayload, eventPayload] = await Promise.all([
         detail?.artifact_type === 'performance_leaderboard'
           ? api.rlTable(name, 'leaderboard', 200)
           : Promise.resolve(null),
         api.rlTrades(name, 120),
         api.rlEquity(name, 360),
         api.rlEpisodes(name, 120),
+        api.rlEvents(name, 500),
       ]);
       const detailLeaderboard = detail?.detail?.leaderboard;
       leaderboard = leaderboardPayload?.rows ?? (Array.isArray(detailLeaderboard) ? detailLeaderboard : []);
       trades = tradePayload?.rows ?? [];
       equity = equityPayload?.rows ?? [];
       episodes = episodePayload?.rows ?? [];
+      liveEventPayload = eventPayload;
+      liveEvents = eventPayload?.rows ?? [];
 
       const gateRun = detail?.artifact_type === 'cost_gate'
         ? name
@@ -94,6 +101,15 @@
     return leaderboard.length ? leaderboard : Array.isArray(detailLeaderboard) ? detailLeaderboard : [];
   });
   const modelFeatures = $derived(selectedRun?.model?.feature_columns ?? []);
+  const latestLiveEvent = $derived(liveEvents.at(-1) ?? null);
+  const liveActionCounts = $derived.by(() => {
+    const counts: Record<string, number> = { hold: 0, buy: 0, sell: 0 };
+    for (const row of liveEvents) {
+      const label = String(row.action_name ?? row.action ?? 'unknown');
+      counts[label] = (counts[label] ?? 0) + 1;
+    }
+    return counts;
+  });
   const artifactCount = $derived(selectedRun?.artifacts?.length ?? 0);
   const isSb3Smoke = $derived(selectedRun?.artifact_type === 'sb3_smoke');
   const hasModel = $derived(selectedRun?.artifact_type === 'contextual_bandit' || isSb3Smoke);
@@ -144,6 +160,73 @@
           data: rows.map((row: any) => (Number(row.equity ?? 1) - 1) * 100),
           lineStyle: { color: '#0f766e', width: 2.6 },
           areaStyle: { color: 'rgba(20,184,166,.12)' },
+        },
+      ],
+    };
+  });
+
+
+  const liveRewardChartOption = $derived.by(() => {
+    const rows = liveEvents.slice(-240);
+    if (!rows.length) return {};
+    return {
+      backgroundColor: 'transparent',
+      grid: { left: 54, right: 24, top: 34, bottom: 42 },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: any) => {
+          const p = Array.isArray(params) ? params[0] : params;
+          const row = rows[p?.dataIndex ?? 0] ?? {};
+          return [
+            `<strong>${row.phase ?? 'event'} #${row.global_step ?? '-'}</strong>`,
+            row.timestamp ? `time ${String(row.timestamp).slice(0, 19)}` : '',
+            `action ${row.action_name ?? row.action ?? '-'}`,
+            `reward ${num(row.reward, 6)}`,
+            row.equity != null ? `equity ${num(row.equity, 5)}` : '',
+          ].filter(Boolean).join('<br/>');
+        },
+      },
+      xAxis: {
+        type: 'category',
+        data: rows.map((row: any, idx: number) => String(row.global_step ?? idx + 1)),
+        axisLabel: { color: '#64748b' },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'reward',
+        scale: true,
+        axisLabel: { color: '#64748b' },
+        splitLine: { lineStyle: { color: 'rgba(148,163,184,.22)' } },
+      },
+      series: [
+        {
+          name: 'Reward',
+          type: 'line',
+          smooth: 0.2,
+          symbol: 'none',
+          data: rows.map((row: any) => Number(row.reward ?? 0)),
+          lineStyle: { color: '#7c3aed', width: 2.4 },
+          areaStyle: { color: 'rgba(124,58,237,.12)' },
+        },
+      ],
+    };
+  });
+
+  const liveActionChartOption = $derived.by(() => {
+    const labels = Object.keys(liveActionCounts);
+    if (!labels.length) return {};
+    return {
+      backgroundColor: 'transparent',
+      grid: { left: 42, right: 20, top: 28, bottom: 34 },
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'category', data: labels, axisLabel: { color: '#64748b' } },
+      yAxis: { type: 'value', axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.22)' } } },
+      series: [
+        {
+          name: 'Actions',
+          type: 'bar',
+          data: labels.map((label) => liveActionCounts[label]),
+          itemStyle: { color: '#2563eb', borderRadius: [5, 5, 0, 0] },
         },
       ],
     };
@@ -654,6 +737,114 @@
             </table>
           </div>
         </section>
+
+      {:else if view === 'live'}
+        <section class="card" data-rl-live-safety>
+          <div class="card-header">
+            <div>
+              <div class="card-eyebrow">REALTIME RL EVENTS</div>
+              <div class="card-title">SB3 ?? ??? ???</div>
+            </div>
+            <span class="pill warn">??? ??</span>
+          </div>
+          <p class="text-caption">
+            ? ??? historical replay / smoke / short training ???? JSONL artifact?? ?? ??????.
+            ?? ?? ???? ????? ???? ????.
+          </p>
+          <div class="summary-grid">
+            <div>
+              <span>Events</span>
+              <strong>{fmt.int(liveEventPayload?.row_count ?? liveEvents.length)}</strong>
+            </div>
+            <div>
+              <span>Latest phase</span>
+              <strong>{latestLiveEvent?.phase ?? '-'}</strong>
+            </div>
+            <div>
+              <span>Latest action</span>
+              <strong>{latestLiveEvent?.action_name ?? latestLiveEvent?.action ?? '-'}</strong>
+            </div>
+            <div>
+              <span>Latest equity</span>
+              <strong>{latestLiveEvent?.equity != null ? num(latestLiveEvent.equity, 5) : '-'}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="chart-grid">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-eyebrow">REWARD STREAM</div>
+                <div class="card-title">step reward tail</div>
+              </div>
+              <span class="pill">rows {fmt.int(liveEvents.length)}</span>
+            </div>
+            {#if liveEvents.length}
+              <EChartsRenderer option={liveRewardChartOption} height="320px" />
+            {:else}
+              <div class="empty">live event log? ?? ????. SB3 smoke? ?? ???? ?????.</div>
+            {/if}
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-eyebrow">ACTION DISTRIBUTION</div>
+                <div class="card-title">hold / buy / sell</div>
+              </div>
+              <span class="pill accent">JSONL</span>
+            </div>
+            {#if liveEvents.length}
+              <EChartsRenderer option={liveActionChartOption} height="320px" />
+            {:else}
+              <div class="empty">??? action ???? ????.</div>
+            {/if}
+          </div>
+        </section>
+
+        <section class="card" data-rl-live-events-table>
+          <div class="card-header">
+            <div>
+              <div class="card-eyebrow">EVENT LOG</div>
+              <div class="card-title">?? ???? ???</div>
+            </div>
+            <span class="text-caption">source: {liveEventPayload?.source_file ?? 'none'}</span>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th class="num">step</th>
+                  <th>phase</th>
+                  <th>algorithm</th>
+                  <th>time</th>
+                  <th>action</th>
+                  <th class="num">reward</th>
+                  <th class="num">equity</th>
+                  <th class="num">position</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each liveEvents.slice(-80).reverse() as row}
+                  <tr>
+                    <td class="num">{fmt.int(row.global_step ?? 0)}</td>
+                    <td><span class="pill {row.phase === 'eval' ? 'success' : 'accent'}">{row.phase ?? '-'}</span></td>
+                    <td class="mono">{row.algorithm ?? '-'}</td>
+                    <td class="mono">{row.timestamp ? String(row.timestamp).slice(11, 19) : '-'}</td>
+                    <td>{row.action_name ?? row.action ?? '-'}</td>
+                    <td class="num">{num(row.reward, 6)}</td>
+                    <td class="num">{row.equity != null ? num(row.equity, 5) : '-'}</td>
+                    <td class="num">{row.position ?? '-'}</td>
+                  </tr>
+                {/each}
+                {#if !liveEvents.length}
+                  <tr><td colspan="8" class="text-muted">??? live event row? ????.</td></tr>
+                {/if}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
       {:else if view === 'leaderboard'}
         <section class="card" data-rl-leaderboard-table>
           <div class="card-header">

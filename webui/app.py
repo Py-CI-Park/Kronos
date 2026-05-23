@@ -1,6 +1,6 @@
 import os
+import re as _re
 import pandas as pd
-import numpy as np
 import json
 import plotly.graph_objects as go
 import plotly.utils
@@ -145,6 +145,7 @@ try:
         from .rl_dashboard import (
             list_rl_runs,
             load_rl_cost_gate,
+            load_rl_events,
             load_rl_run,
             load_rl_table,
         )
@@ -152,6 +153,7 @@ try:
         from rl_dashboard import (
             list_rl_runs,
             load_rl_cost_gate,
+            load_rl_events,
             load_rl_run,
             load_rl_table,
         )
@@ -159,6 +161,7 @@ except Exception as exc:
     print(f"Warning: STOM RL dashboard helpers cannot be imported ({exc})")
     list_rl_runs = None
     load_rl_cost_gate = None
+    load_rl_events = None
     load_rl_run = None
     load_rl_table = None
 
@@ -775,6 +778,21 @@ def rl_run_table(run_name, table_name):
     return _rl_table_response(run_name, table_name)
 
 
+
+
+@app.route('/api/rl/runs/<run_name>/events')
+def rl_run_events(run_name):
+    if load_rl_events is None:
+        return jsonify({'error': 'STOM RL dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_rl_events(run_name, limit=_rl_table_limit()))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
 @app.route('/api/rl/runs/<run_name>/cost-gate')
 def rl_run_cost_gate(run_name):
     if load_rl_cost_gate is None:
@@ -1328,7 +1346,6 @@ def get_model_status():
 # ──────────────────────────────────────────────────────────────────
 # /api/docs/* — wiki 마크다운 read-only 서빙
 # ──────────────────────────────────────────────────────────────────
-import re as _re
 
 _DOCS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'docs', 'wiki'))
 

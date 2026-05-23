@@ -47,6 +47,10 @@ TABLE_ALIASES = {
     "leaderboard": "leaderboard",
     "performance": "leaderboard",
     "performance_leaderboard": "leaderboard",
+    "event": "events",
+    "events": "events",
+    "live": "events",
+    "live_events": "events",
 }
 
 ROOT_TABLE_CANDIDATES = {
@@ -61,6 +65,9 @@ ROOT_TABLE_CANDIDATES = {
     "gate": ("gate_summary.csv",),
     "leaderboard": ("performance_leaderboard.csv", "leaderboard.csv"),
 }
+
+LIVE_EVENT_FILE_NAMES = ("rl_live_events.jsonl", "live_events.jsonl", "events.jsonl")
+LIVE_SUMMARY_FILE_NAMES = ("rl_live_summary.json", "live_summary.json")
 
 
 def _safe_direct_child_name(name: str, *, label: str) -> str:
@@ -127,6 +134,18 @@ def _find_json_summary(run_dir: Path, artifact_type: str) -> Dict[str, Any]:
     if artifact_type == "sb3_smoke":
         payload = _read_json(run_dir / "sb3_smoke_summary.json")
         summary = dict(payload.get("summary", {}))
+        live_summary = payload.get("live_events")
+        if isinstance(live_summary, dict):
+            summary.setdefault("live_event_count", live_summary.get("event_count"))
+            summary.setdefault("live_event_phases", live_summary.get("phases"))
+        else:
+            for file_name in LIVE_SUMMARY_FILE_NAMES:
+                summary_path = run_dir / file_name
+                if summary_path.is_file():
+                    file_summary = _read_json(summary_path)
+                    summary.setdefault("live_event_count", file_summary.get("event_count"))
+                    summary.setdefault("live_event_phases", file_summary.get("phases"))
+                    break
         models = payload.get("models", [])
         best_model = summary.get("best_model")
         selected_model = next((row for row in models if row.get("model") == best_model), models[0] if models else {})
@@ -233,6 +252,15 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
         payload["detail"] = _read_json(run_dir / "performance_leaderboard.json")
     elif artifact_type == "sb3_smoke":
         payload["detail"] = _read_json(run_dir / "sb3_smoke_summary.json")
+        live_summary = payload["detail"].get("live_events")
+        if not isinstance(live_summary, dict):
+            for file_name in LIVE_SUMMARY_FILE_NAMES:
+                summary_path = run_dir / file_name
+                if summary_path.is_file():
+                    live_summary = _read_json(summary_path)
+                    break
+        if isinstance(live_summary, dict):
+            payload["live_events"] = live_summary
         models = payload["detail"].get("models", [])
         best_model = payload["summary"].get("best_model")
         selected_model = next((row for row in models if row.get("model") == best_model), models[0] if models else {})
@@ -260,6 +288,36 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
         manifest = _read_json(run_dir / "episode_manifest.json")
         payload["detail"] = {"summary": manifest.get("summary", {}), "episode_sample": manifest.get("episodes", [])[:10]}
     return payload
+
+
+def _live_events_path(run_dir: Path) -> Optional[Path]:
+    for file_name in LIVE_EVENT_FILE_NAMES:
+        path = run_dir / file_name
+        if path.is_file():
+            return path
+    return None
+
+
+def _read_jsonl_rows(path: Path, *, limit: int) -> Tuple[List[Dict[str, Any]], bool]:
+    limit = max(0, min(int(limit), MAX_TABLE_LIMIT))
+    if limit == 0:
+        return [], False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    truncated = len(lines) > limit
+    rows: List[Dict[str, Any]] = []
+    for line in reversed(lines):
+        if len(rows) >= limit:
+            break
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    rows.reverse()
+    return rows, truncated
 
 
 def _normalize_table(table_name: str) -> str:
@@ -299,6 +357,32 @@ def load_rl_table(run_name: str, table_name: str, *, policy: Optional[str] = Non
     table = _normalize_table(table_name)
     limit = max(0, min(int(limit), MAX_TABLE_LIMIT))
 
+    if table == "events":
+        path = _live_events_path(run_dir)
+        if path is None:
+            return {
+                "run": run_name,
+                "artifact_type": artifact_type,
+                "table": table,
+                "policy": policy,
+                "source_file": None,
+                "rows": [],
+                "row_count": 0,
+                "truncated": False,
+                "message": "live event log is not available for this run",
+            }
+        rows, truncated = _read_jsonl_rows(path, limit=limit)
+        return {
+            "run": run_name,
+            "artifact_type": artifact_type,
+            "table": table,
+            "policy": policy,
+            "source_file": path.name,
+            "rows": rows,
+            "row_count": len(rows),
+            "truncated": truncated,
+        }
+
     if artifact_type == "baseline" and table in {"actions", "trades", "equity", "episodes"}:
         payload = _read_policy_table(run_dir, table, policy, limit)
         payload.update({"run": run_name, "artifact_type": artifact_type, "table": table, "policy": policy})
@@ -337,3 +421,9 @@ def load_rl_cost_gate(run_name: str, *, limit: int = 500) -> Dict[str, Any]:
         "scenario": load_rl_table(run_name, "scenario", limit=limit),
         "rolling": load_rl_table(run_name, "rolling", limit=limit),
     }
+
+
+def load_rl_events(run_name: str, *, limit: int = 500) -> Dict[str, Any]:
+    """Load realtime RL JSONL event tail for a run."""
+
+    return load_rl_table(run_name, "events", limit=limit)

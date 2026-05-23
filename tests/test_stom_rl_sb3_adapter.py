@@ -126,5 +126,10 @@ print(json.dumps({{"passed": payload["check_env"]["passed"], "algorithms": [row[
     assert payload["passed"] is True
     assert set(payload["algorithms"]) == {"dqn", "ppo"}
     assert (tmp_path / "sb3_out" / "sb3_smoke_summary.json").is_file()
+    assert (tmp_path / "sb3_out" / "rl_live_events.jsonl").is_file()
+    assert (tmp_path / "sb3_out" / "rl_live_summary.json").is_file()
+    summary = json.loads((tmp_path / "sb3_out" / "sb3_smoke_summary.json").read_text(encoding="utf-8-sig"))
+    assert summary["summary"]["live_event_count"] > 0
+    assert "eval" in summary["summary"]["live_event_phases"]
     assert (tmp_path / "sb3_out" / "dqn_model.zip").is_file()
     assert (tmp_path / "sb3_out" / "ppo_model.zip").is_file()
