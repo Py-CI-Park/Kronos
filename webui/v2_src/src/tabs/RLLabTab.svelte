@@ -4,13 +4,14 @@
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
 
-  type DetailView = 'overview' | 'trades' | 'artifacts';
+  type DetailView = 'overview' | 'leaderboard' | 'trades' | 'artifacts';
 
   let runs = $state<RlRunRecord[]>([]);
   let selectedName = $state('');
   let selectedRun = $state<RlRunDetail | null>(null);
   let costGate = $state<RlCostGateResponse | null>(null);
   let costGateRunName = $state('');
+  let leaderboard = $state<Array<Record<string, any>>>([]);
   let trades = $state<Array<Record<string, any>>>([]);
   let equity = $state<Array<Record<string, any>>>([]);
   let episodes = $state<Array<Record<string, any>>>([]);
@@ -30,6 +31,7 @@
       const payload = await api.rlRuns(30);
       runs = payload?.runs ?? [];
       const preferred =
+        runs.find((run) => run.artifact_type === 'performance_leaderboard') ??
         runs.find((run) => run.artifact_type === 'contextual_bandit') ??
         runs.find((run) => run.artifact_type === 'cost_gate') ??
         runs[0];
@@ -48,6 +50,7 @@
     selectedName = name;
     detailLoading = true;
     error = null;
+    leaderboard = [];
     trades = [];
     equity = [];
     episodes = [];
@@ -56,11 +59,16 @@
       const detail = await api.rlRun(name);
       selectedRun = detail;
 
-      const [tradePayload, equityPayload, episodePayload] = await Promise.all([
+      const [leaderboardPayload, tradePayload, equityPayload, episodePayload] = await Promise.all([
+        detail?.artifact_type === 'performance_leaderboard'
+          ? api.rlTable(name, 'leaderboard', 200)
+          : Promise.resolve(null),
         api.rlTrades(name, 120),
         api.rlEquity(name, 360),
         api.rlEpisodes(name, 120),
       ]);
+      const detailLeaderboard = detail?.detail?.leaderboard;
+      leaderboard = leaderboardPayload?.rows ?? (Array.isArray(detailLeaderboard) ? detailLeaderboard : []);
       trades = tradePayload?.rows ?? [];
       equity = equityPayload?.rows ?? [];
       episodes = episodePayload?.rows ?? [];
@@ -80,9 +88,19 @@
   const selectedSummary = $derived(selectedRun?.summary ?? {});
   const gateRows = $derived<any[]>(costGate?.gate?.rows ?? selectedRun?.summary?.gate_rows ?? selectedRun?.detail?.summary?.gate_rows ?? []);
   const passingGateRows = $derived(gateRows.filter((row: any) => Boolean(row?.passes_cost_gate)));
+  const leaderboardRows = $derived.by(() => {
+    const detailLeaderboard = selectedRun?.detail?.leaderboard;
+    return leaderboard.length ? leaderboard : Array.isArray(detailLeaderboard) ? detailLeaderboard : [];
+  });
   const modelFeatures = $derived(selectedRun?.model?.feature_columns ?? []);
   const artifactCount = $derived(selectedRun?.artifacts?.length ?? 0);
   const hasModel = $derived(selectedRun?.artifact_type === 'contextual_bandit');
+  const hasLeaderboard = $derived(selectedRun?.artifact_type === 'performance_leaderboard' || leaderboardRows.length > 0);
+  const selectedNetPct = $derived(
+    selectedSummary.avg_episode_net_return_pct ??
+      selectedSummary.buy_and_hold_avg_episode_net_return_pct ??
+      selectedSummary.no_trade_avg_episode_net_return_pct
+  );
 
   const equityChartOption = $derived.by(() => {
     const rows = equity;
@@ -229,7 +247,76 @@
     };
   });
 
+  const leaderboardChartOption = $derived.by(() => {
+    const rows = leaderboardRows.slice(0, 12);
+    if (!rows.length) return {};
+    return {
+      backgroundColor: 'transparent',
+      grid: { left: 58, right: 28, top: 48, bottom: 54 },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: any) => {
+          const items = Array.isArray(params) ? params : [params];
+          const row = rows[items[0]?.dataIndex ?? 0] ?? {};
+          return [
+            `<strong>#${row.rank ?? '-'} ${row.model ?? row.policy ?? '-'}</strong>`,
+            row.source ? `구분 ${row.source}` : '',
+            `평균 net ${pct(row.avg_episode_net_return_pct, 3)}`,
+            `MDD ${pct(row.max_drawdown_pct, 2)}`,
+            `거래 ${fmt.int(row.trade_count ?? 0)}건`,
+            row.usability ? `판정 ${row.usability}` : '',
+          ].filter(Boolean).join('<br/>');
+        },
+      },
+      legend: { top: 0, textStyle: { color: 'inherit' } },
+      xAxis: {
+        type: 'category',
+        data: rows.map((row: any) => String(row.model ?? row.policy ?? '-')),
+        axisLabel: { color: '#64748b', rotate: rows.length > 5 ? 24 : 0 },
+      },
+      yAxis: [
+        {
+          type: 'value',
+          name: '수익/MDD %',
+          axisLabel: { formatter: '{value}%', color: '#64748b' },
+          splitLine: { lineStyle: { color: 'rgba(148,163,184,.22)' } },
+        },
+        {
+          type: 'value',
+          name: '거래/episode',
+          axisLabel: { color: '#64748b' },
+        },
+      ],
+      series: [
+        {
+          name: '평균 episode net',
+          type: 'bar',
+          data: rows.map((row: any) => Number(row.avg_episode_net_return_pct ?? 0)),
+          itemStyle: {
+            color: (p: any) => rows[p.dataIndex]?.source === 'rl_model' ? '#2563eb' : '#0f766e',
+            borderRadius: [5, 5, 0, 0],
+          },
+        },
+        {
+          name: 'MDD',
+          type: 'bar',
+          data: rows.map((row: any) => Number(row.max_drawdown_pct ?? 0)),
+          itemStyle: { color: '#ef4444', borderRadius: [5, 5, 0, 0] },
+        },
+        {
+          name: '거래/episode',
+          type: 'line',
+          yAxisIndex: 1,
+          data: rows.map((row: any) => Number(row.trades_per_episode ?? 0)),
+          lineStyle: { color: '#f59e0b', width: 2.4 },
+          symbolSize: 7,
+        },
+      ],
+    };
+  });
+
   function typeLabel(type: string | undefined): string {
+    if (type === 'performance_leaderboard') return '성과 리더보드';
     if (type === 'contextual_bandit') return '1차 RL 모델';
     if (type === 'cost_gate') return '비용 관문';
     if (type === 'baseline') return 'Baseline';
@@ -238,6 +325,7 @@
   }
 
   function typeTone(type: string | undefined): string {
+    if (type === 'performance_leaderboard') return 'success';
     if (type === 'contextual_bandit') return 'accent';
     if (type === 'cost_gate') return 'success';
     if (type === 'baseline') return 'info';
@@ -293,7 +381,7 @@
   </div>
   <h1 class="text-h2" style="margin-top:8px">강화학습 실험실</h1>
   <p class="text-muted" style="margin-top:6px">
-    STOM tick/back 데이터로 생성한 episode, baseline, 비용 관문, 1차 contextual bandit 산출물을 한 화면에서 비교합니다.
+    STOM tick/back 데이터로 생성한 episode, baseline, 비용 관문, 1차 contextual bandit, 통합 성과 리더보드를 한 화면에서 비교합니다.
     이 탭은 학습 산출물을 읽기 전용으로 시각화하며, 실제 매매 투입 전에는 전체 test split과 rolling 검증을 추가로 통과해야 합니다.
   </p>
 </section>
@@ -330,13 +418,19 @@
         <span class="metric-label">선택 모델</span>
         <span class="pill {typeTone(selectedRun?.artifact_type)}">{typeLabel(selectedRun?.artifact_type)}</span>
       </div>
-      <div><span class="metric-value">{pct(selectedSummary.avg_episode_net_return_pct, 2)}</span></div>
-      <div class="metric-foot">평균 episode net · smoke 기준</div>
+      <div><span class="metric-value">{pct(selectedNetPct, 2)}</span></div>
+      <div class="metric-foot">
+        {#if selectedRun?.artifact_type === 'performance_leaderboard'}
+          best {selectedSummary.best_policy ?? '-'} · RL {selectedSummary.best_rl_usability ?? '-'}
+        {:else}
+          평균 episode net · 선택 run 기준
+        {/if}
+      </div>
     </div>
     <div class="metric">
       <div class="metric-head">
         <span class="metric-label">거래 수</span>
-        <span class="pill">cost {num(selectedSummary.cost_bps, 0)}bp</span>
+        <span class="pill">cost {num(selectedSummary.cost_bps ?? selectedSummary.target_cost_bps, 0)}bp</span>
       </div>
       <div><span class="metric-value">{fmt.int(selectedSummary.trade_count ?? trades.length)}</span><span class="metric-unit">건</span></div>
       <div class="metric-foot">hit rate {ratioPct(selectedSummary.hit_rate, 1)}</div>
@@ -441,12 +535,26 @@
               </div>
             {/if}
           {/if}
+          {#if hasLeaderboard}
+            <div class="model-note leaderboard-note">
+              <div>
+                <div class="card-eyebrow">PERFORMANCE LEADERBOARD</div>
+                <strong>full test split 기준 모델/정책 비교표</strong>
+                <p class="text-caption">
+                  buy-and-hold, no-trade, 단순 매매 baseline과 RL 모델을 같은 25bp 비용 기준으로 정렬합니다.
+                  현재 RL 모델은 watch 상태이며, buy-and-hold를 이기거나 cost gate를 통과해야 실사용 후보가 됩니다.
+                </p>
+              </div>
+              <span class="pill success">rows {fmt.int(leaderboardRows.length)}</span>
+            </div>
+          {/if}
         {/if}
       </section>
 
       <section class="row" style="gap:10px;flex-wrap:wrap">
         <div class="tabs" data-tab-group="rl-lab">
           <button data-active={view === 'overview' ? 'true' : 'false'} onclick={() => (view = 'overview')}>성과 개요</button>
+          <button data-active={view === 'leaderboard' ? 'true' : 'false'} onclick={() => (view = 'leaderboard')}>리더보드</button>
           <button data-active={view === 'trades' ? 'true' : 'false'} onclick={() => (view = 'trades')}>거래/자산곡선</button>
           <button data-active={view === 'artifacts' ? 'true' : 'false'} onclick={() => (view = 'artifacts')}>아티팩트</button>
         </div>
@@ -454,6 +562,19 @@
       </section>
 
       {#if view === 'overview'}
+        {#if leaderboardRows.length}
+          <section class="card" data-rl-leaderboard-chart>
+            <div class="card-header">
+              <div>
+                <div class="card-eyebrow">FULL TEST LEADERBOARD</div>
+                <div class="card-title">모델/정책별 비용 후 성과 비교</div>
+              </div>
+              <span class="pill success">best {selectedSummary.best_policy ?? leaderboardRows[0]?.model ?? '-'}</span>
+            </div>
+            <EChartsRenderer option={leaderboardChartOption} height="330px" />
+          </section>
+        {/if}
+
         <section class="chart-grid">
           <div class="card">
             <div class="card-header">
@@ -520,6 +641,62 @@
                 {/each}
                 {#if !gateRows.length}
                   <tr><td colspan="6" class="text-muted">표시할 gate row가 없습니다.</td></tr>
+                {/if}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {:else if view === 'leaderboard'}
+        <section class="card" data-rl-leaderboard-table>
+          <div class="card-header">
+            <div>
+              <div class="card-eyebrow">MODEL PERFORMANCE</div>
+              <div class="card-title">full test split 성과 리더보드</div>
+            </div>
+            <span class="text-caption">source: {selectedName}</span>
+          </div>
+          {#if leaderboardRows.length}
+            <EChartsRenderer option={leaderboardChartOption} height="330px" />
+          {:else}
+            <div class="empty">성과 리더보드 row가 없습니다.</div>
+          {/if}
+          <div class="table-wrap leaderboard-table">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th class="num">순위</th>
+                  <th>구분</th>
+                  <th>모델/정책</th>
+                  <th class="num">평균 net</th>
+                  <th class="num">MDD</th>
+                  <th class="num">거래</th>
+                  <th class="num">거래/episode</th>
+                  <th>buy&hold</th>
+                  <th>cost gate</th>
+                  <th>판정</th>
+                  <th>근거</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each leaderboardRows as row}
+                  <tr>
+                    <td class="num">{fmt.int(row.rank)}</td>
+                    <td><span class="pill {row.source === 'rl_model' ? 'accent' : 'info'}">{row.source ?? '-'}</span></td>
+                    <td class="mono">{row.model ?? row.policy ?? '-'}</td>
+                    <td class="num {Number(row.avg_episode_net_return_pct ?? 0) >= 0 ? 'positive' : 'negative'}">
+                      {pct(row.avg_episode_net_return_pct, 3)}
+                    </td>
+                    <td class="num negative">{pct(row.max_drawdown_pct, 2)}</td>
+                    <td class="num">{fmt.int(row.trade_count ?? 0)}</td>
+                    <td class="num">{num(row.trades_per_episode, 3)}</td>
+                    <td><span class="pill {row.beats_buy_and_hold ? 'success' : 'warn'}">{boolLabel(row.beats_buy_and_hold)}</span></td>
+                    <td><span class="pill {row.passes_cost_gate ? 'success' : 'warn'}">{boolLabel(row.passes_cost_gate)}</span></td>
+                    <td><span class="pill {row.usability === 'candidate' ? 'success' : row.usability === 'watch' ? 'accent' : 'info'}">{row.usability ?? '-'}</span></td>
+                    <td class="wrap">{row.decision_reason ?? '-'}</td>
+                  </tr>
+                {/each}
+                {#if !leaderboardRows.length}
+                  <tr><td colspan="11" class="text-muted">표시할 leaderboard row가 없습니다.</td></tr>
                 {/if}
               </tbody>
             </table>
@@ -720,6 +897,11 @@
     margin-top: 6px;
     line-height: 1.55;
   }
+  .leaderboard-note {
+    margin-top: 12px;
+    background: linear-gradient(135deg, rgba(22, 163, 74, .10), var(--surface));
+    border-color: rgba(22, 163, 74, .22);
+  }
   .feature-cloud {
     display: flex;
     flex-wrap: wrap;
@@ -742,6 +924,13 @@
     overflow: auto;
     border: 1px solid var(--border-faint);
     border-radius: var(--r-md);
+  }
+  .leaderboard-table {
+    margin-top: 14px;
+  }
+  .wrap {
+    min-width: 180px;
+    white-space: normal;
   }
   .positive {
     color: var(--success) !important;

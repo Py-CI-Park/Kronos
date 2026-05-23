@@ -248,6 +248,10 @@ export const api = {
     fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/equity?limit=${limit}`),
   rlEpisodes: (run: string, limit: number = 500) =>
     fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/episodes?limit=${limit}`),
+  rlTable: (run: string, table: string, limit: number = 500) =>
+    fetchJson<RlTableResponse>(
+      `/api/rl/runs/${encodeURIComponent(run)}/table/${encodeURIComponent(table)}?limit=${limit}`
+    ),
   rlCostGate: (run: string, limit: number = 500) =>
     fetchJson<RlCostGateResponse>(`/api/rl/runs/${encodeURIComponent(run)}/cost-gate?limit=${limit}`),
 };

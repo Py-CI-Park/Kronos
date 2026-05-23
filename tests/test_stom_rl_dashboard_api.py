@@ -111,6 +111,45 @@ def _write_rl_fixture(root: Path) -> None:
         ["buy_and_hold,000001_20250103,1.1"],
     )
 
+    leaderboard = root / "leaderboard_run"
+    leaderboard.mkdir()
+    (leaderboard / "performance_leaderboard.json").write_text(
+        json.dumps(
+            {
+                "mode": "stom_rl_performance_leaderboard",
+                "summary": {
+                    "row_count": 2,
+                    "best_policy": "buy_and_hold",
+                    "best_rl_model": "contextual_bandit",
+                    "best_rl_usability": "watch",
+                    "target_cost_bps": 25,
+                },
+                "leaderboard": [
+                    {
+                        "rank": 1,
+                        "source": "baseline",
+                        "model": "buy_and_hold",
+                        "avg_episode_net_return_pct": 1.2,
+                        "passes_cost_gate": False,
+                    },
+                    {
+                        "rank": 2,
+                        "source": "rl_model",
+                        "model": "contextual_bandit",
+                        "avg_episode_net_return_pct": 0.4,
+                        "passes_cost_gate": False,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+    _write_csv(
+        leaderboard / "performance_leaderboard.csv",
+        "rank,source,model,avg_episode_net_return_pct,passes_cost_gate",
+        ["1,baseline,buy_and_hold,1.2,False", "2,rl_model,contextual_bandit,0.4,False"],
+    )
+
 
 def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     _write_rl_fixture(tmp_path)
@@ -121,13 +160,18 @@ def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     detail = rl_dashboard.load_rl_run("bandit_run")
     trades = rl_dashboard.load_rl_table("bandit_run", "trades", limit=5)
     baseline_trades = rl_dashboard.load_rl_table("baseline_run", "trades", policy="buy_and_hold", limit=5)
+    leaderboard_detail = rl_dashboard.load_rl_run("leaderboard_run")
+    leaderboard_rows = rl_dashboard.load_rl_table("leaderboard_run", "leaderboard", limit=5)
     cost_gate = rl_dashboard.load_rl_cost_gate("cost_gate_run", limit=5)
 
-    assert {"bandit_run", "cost_gate_run", "baseline_run"}.issubset(names)
+    assert {"bandit_run", "cost_gate_run", "baseline_run", "leaderboard_run"}.issubset(names)
     assert detail["artifact_type"] == "contextual_bandit"
     assert detail["model"]["model_type"] == "stom_fixed_horizon_contextual_bandit_ridge"
     assert trades["rows"][0]["net_return_pct"] == 1.5
     assert baseline_trades["rows"][0]["policy"] == "buy_and_hold"
+    assert leaderboard_detail["artifact_type"] == "performance_leaderboard"
+    assert leaderboard_detail["summary"]["best_policy"] == "buy_and_hold"
+    assert leaderboard_rows["rows"][1]["model"] == "contextual_bandit"
     assert cost_gate["summary"]["passing_policies"] == ["buy_and_hold"]
     assert cost_gate["gate"]["rows"][0]["passes_cost_gate"] is True
 
@@ -169,6 +213,10 @@ def test_flask_rl_routes_smoke(tmp_path, monkeypatch):
     cost_gate = client.get("/api/rl/runs/cost_gate_run/cost-gate")
     assert cost_gate.status_code == 200
     assert cost_gate.get_json()["summary"]["best_policy_at_target_cost"] == "buy_and_hold"
+
+    leaderboard = client.get("/api/rl/runs/leaderboard_run/table/leaderboard")
+    assert leaderboard.status_code == 200
+    assert leaderboard.get_json()["rows"][0]["model"] == "buy_and_hold"
 
     bad = client.get("/api/rl/runs/..%5Csecret")
     assert bad.status_code in {400, 404}

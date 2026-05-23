@@ -34,17 +34,22 @@ def test_rl_lab_tab_uses_read_only_rl_api_contracts():
         "rlTrades",
         "rlEquity",
         "rlEpisodes",
+        "rlTable",
         "rlCostGate",
     ]:
         assert marker in api
 
     for marker in [
+        "leaderboardChartOption",
         "costGateChartOption",
         "equityChartOption",
         "tradeChartOption",
+        "data-rl-leaderboard-table",
+        "data-rl-leaderboard-chart",
         "data-rl-cost-gate-table",
         "data-rl-trade-table",
         "Kronos 비의존",
+        "성과 리더보드",
         "25bp cost gate",
     ]:
         assert marker in tab

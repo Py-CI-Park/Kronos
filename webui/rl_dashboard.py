@@ -19,6 +19,7 @@ MAX_TABLE_LIMIT = 5000
 
 
 ARTIFACT_SIGNATURES = (
+    ("performance_leaderboard", "performance_leaderboard.json"),
     ("contextual_bandit", "eval_summary.json"),
     ("cost_gate", "cost_gate_report.json"),
     ("baseline", "baseline_summary.json"),
@@ -42,6 +43,9 @@ TABLE_ALIASES = {
     "folds": "rolling",
     "gate": "gate",
     "cost_gate": "gate",
+    "leaderboard": "leaderboard",
+    "performance": "leaderboard",
+    "performance_leaderboard": "leaderboard",
 }
 
 ROOT_TABLE_CANDIDATES = {
@@ -54,6 +58,7 @@ ROOT_TABLE_CANDIDATES = {
     "scenario": ("scenario_summary.csv",),
     "rolling": ("rolling_folds.csv",),
     "gate": ("gate_summary.csv",),
+    "leaderboard": ("performance_leaderboard.csv", "leaderboard.csv"),
 }
 
 
@@ -115,6 +120,9 @@ def _detect_artifact_type(run_dir: Path) -> str:
 
 
 def _find_json_summary(run_dir: Path, artifact_type: str) -> Dict[str, Any]:
+    if artifact_type == "performance_leaderboard":
+        payload = _read_json(run_dir / "performance_leaderboard.json")
+        return dict(payload.get("summary", {}))
     if artifact_type == "contextual_bandit":
         payload = _read_json(run_dir / "eval_summary.json")
         return dict(payload.get("eval_summary", payload.get("summary", {})))
@@ -204,7 +212,9 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
         **_run_record(run_dir),
         "artifacts": _artifact_files(run_dir),
     }
-    if artifact_type == "contextual_bandit":
+    if artifact_type == "performance_leaderboard":
+        payload["detail"] = _read_json(run_dir / "performance_leaderboard.json")
+    elif artifact_type == "contextual_bandit":
         payload["detail"] = _read_json(run_dir / "eval_summary.json")
         model_path = run_dir / "model.json"
         if model_path.is_file():

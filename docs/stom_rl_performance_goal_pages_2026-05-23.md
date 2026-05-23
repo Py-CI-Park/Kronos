@@ -98,19 +98,19 @@ OMX 계획: `.omx/ultragoal/goals.json`
 | 2 | full baseline/cost gate | test split 전체 baseline과 비용 관문 실행 | full artifact 생성, 요약 수치 확보 | 완료 |
 | 3 | contextual bandit full eval | train 기반 모델을 test split 대규모로 평가 | baseline 대비 성과 산출 | 완료 |
 | 4 | leaderboard artifact | baseline/RL/cost gate 결과 통합 | JSON/CSV leaderboard 생성 | 완료 |
-| 5 | dashboard leaderboard | 웹에서 smoke/full 및 모델별 성과 비교 | build/browser smoke 통과 | 남음 |
+| 5 | dashboard leaderboard | 웹에서 smoke/full 및 모델별 성과 비교 | API/프론트 build 검증 통과 | 완료 |
 | 6 | DQN/PPO 확장 설계 | SB3/Gymnasium 확장 여부 판단 | dependency/리스크/구현안 문서화 | 남음 |
 | 7 | 최종 리뷰 | QA, code review, 사용/보류 판단 | 최종 보고서와 checkpoint | 남음 |
 
-현재 진행률: **4 / 7 = 57.1%**
+현재 진행률: **5 / 7 = 71.4%**
 
-`████░░░ 57.1%`
+`█████░░ 71.4%`
 
 ---
 
 ## 6. 바로 다음 실행 후보
 
-페이지 2에서는 기존 smoke run이 아니라 test split 전체 episode 기준 baseline/cost gate를 실행한다.
+페이지 5까지 완료되어 이제 웹에서 full test 성과 리더보드를 볼 수 있다. 다음은 **페이지 6: DQN/PPO 확장 설계**다.
 
 권장 명령:
 
@@ -118,28 +118,16 @@ OMX 계획: `.omx/ultragoal/goals.json`
 omx ultragoal complete-goals
 ```
 
-페이지 2 내부에서 우선 실행할 실제 후보 명령은 다음과 같다.
+현재 Codex thread에는 이전 완료 goal이 남아 있어 OMX ultragoal ledger의 `G001-p001` 완료 reconciliation은 blocked 상태로 기록된다. 실제 작업은 이 브랜치의 한국어 Lore 커밋으로 계속 진행한다.
 
-```powershell
-C:\Python\64\Python3119\python.exe -m stom_rl.baselines `
-  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
-  --output-dir webui\rl_runs\stom_1s_2025_baselines_full_test `
-  --split test `
-  --max-episodes 0 `
-  --cost-bps 25 `
-  --slippage-bps 0
+페이지 6의 우선 검토 내용:
 
-C:\Python\64\Python3119\python.exe -m stom_rl.cost_gate `
-  --manifest webui\rl_runs\stom_1s_2025_episode_manifest\episode_manifest.json `
-  --output-dir webui\rl_runs\stom_1s_2025_cost_gate_full_test `
-  --split test `
-  --max-episodes 0 `
-  --cost-bps-values 5,10,15,25 `
-  --slippage-bps-values 0 `
-  --target-cost-bps 25
-```
+1. Gymnasium/SB3를 새 dependency로 추가할지, 현재 의존성 없이 내부 DQN/PPO 설계를 먼저 문서화할지 판단한다.
+2. 현재 `StomTickTradingEnv`가 DQN/PPO가 요구하는 observation/action/reward 계약을 만족하는지 확인한다.
+3. buy-and-hold를 이기지 못한 contextual bandit의 한계를 기준으로 sequence/position/risk-aware 모델 필요성을 정리한다.
+4. 대규모 학습 비용, GPU 필요성, overfitting/거래비용 리스크를 먼저 문서화한다.
 
-주의: full test split은 2,730 episode 전체를 사용하므로 smoke보다 시간이 더 걸린다. 하지만 이 단계가 있어야 “실제 성과가 있는 모델인가?”를 말할 수 있다.
+주의: 지금 단계의 목적은 무작정 더 복잡한 모델을 돌리는 것이 아니라, **전체 test split 리더보드에서 buy-and-hold를 이길 수 있는 구조인지**를 먼저 판단하는 것이다.
 
 ---
 
@@ -413,3 +401,66 @@ py_compile 통과
 ```
 
 다음 페이지는 **페이지 5: dashboard leaderboard**다. 이제 `performance_leaderboard.json/csv`를 웹 강화학습 실험실에서 보여주면 사용자가 모델별 성과와 실사용 판단을 한눈에 볼 수 있다.
+
+---
+
+## 11. 페이지 5 완료 기록: dashboard leaderboard
+
+### 11.1 진행 내용
+
+페이지 5에서는 페이지 4에서 생성한 `performance_leaderboard.json/csv`를 웹 강화학습 실험실에서 직접 비교할 수 있도록 연결했다.
+
+| 파일 | 변경 내용 |
+|---|---|
+| `webui/rl_dashboard.py` | `performance_leaderboard` artifact 감지, summary/detail 로딩, `leaderboard` CSV table alias 추가 |
+| `webui/v2_src/src/lib/api.ts` | `/api/rl/runs/{run}/table/{table}` generic table helper 추가 |
+| `webui/v2_src/src/tabs/RLLabTab.svelte` | 성과 리더보드 우선 선택, 리더보드 탭/차트/표 추가, performance run의 trades/equity 미존재 상황 안전 처리 |
+| `tests/test_stom_rl_dashboard_api.py` | performance leaderboard fixture와 Flask API smoke 추가 |
+| `tests/test_stom_rl_dashboard_tab.py` | 프론트 API/리더보드 마커 회귀 테스트 추가 |
+
+### 11.2 웹에서 보이는 핵심 정보
+
+| 화면 요소 | 목적 |
+|---|---|
+| 성과 리더보드 run 우선 선택 | 사용자가 가장 중요한 전체 비교 결과를 먼저 보도록 함 |
+| 리더보드 차트 | 평균 episode net, MDD, 거래/episode를 동시에 비교 |
+| 리더보드 표 | rank, source, model/policy, buy-and-hold 우위 여부, cost gate 통과 여부, usability, 판단 근거 표시 |
+| 선택 모델 KPI | performance run에서는 best policy와 RL usability를 함께 표시 |
+
+### 11.3 현재 full test leaderboard 결론
+
+| 항목 | 결과 |
+|---|---|
+| best policy | buy_and_hold |
+| best RL model | contextual_bandit |
+| best RL usability | watch |
+| RL이 buy-and-hold를 이겼는가 | 아니오 |
+| RL이 25bp cost gate를 통과했는가 | 아니오 |
+
+따라서 현재 모델은 “학습/평가/대시보드 비교는 정상 작동”하지만, “실거래 후보”가 아니라 **추가 연구/개선 대상**이다.
+
+### 11.4 검증
+
+```powershell
+C:\Python\64\Python3119\python.exe -m pytest tests\test_stom_rl_dashboard_api.py tests\test_stom_rl_dashboard_tab.py tests\test_stom_rl_performance_leaderboard.py -q
+npm run build
+```
+
+결과:
+
+```text
+7 passed
+svelte-check 0 errors, 4 existing warnings
+vite build completed
+```
+
+추가 API smoke:
+
+```text
+GET /api/rl/runs/stom_1s_2025_performance_leaderboard_full_test -> 200
+GET /api/rl/runs/stom_1s_2025_performance_leaderboard_full_test/table/leaderboard?limit=3 -> 200
+```
+
+### 11.5 다음 단계
+
+다음 페이지는 **페이지 6: DQN/PPO 확장 설계**다. 지금까지의 지표상 contextual bandit은 no-trade보다 낫지만 buy-and-hold를 이기지 못했다. 그러므로 다음 단계에서는 단순 회귀형 bandit보다 position 상태, sequence, 리스크 제어, 거래비용을 더 잘 다룰 수 있는 DQN/PPO 계열이 필요한지 판단한다.
