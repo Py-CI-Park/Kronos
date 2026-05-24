@@ -93,6 +93,8 @@ def _resolve_sb3_reports(config: PerformanceLeaderboardConfig) -> Tuple[Tuple[st
 
 
 def _sb3_model_name(row: Mapping[str, Any]) -> str:
+    if _bool_value(row.get("eval_only")):
+        return str(row.get("model"))
     algorithm = str(row.get("algorithm") or row.get("model") or "sb3").lower()
     explicit = str(row.get("model") or f"{algorithm}_smoke")
     timesteps = int(_float_or_zero(row.get("training_timesteps")))
@@ -178,6 +180,7 @@ def _sb3_smoke_rows(
     for row in rows:
         algorithm = str(row.get("algorithm") or row.get("model") or "sb3")
         run_category = _sb3_run_category(row)
+        eval_only = _bool_value(row.get("eval_only"))
         normalized.append(
             {
                 "source": "rl_model",
@@ -201,7 +204,11 @@ def _sb3_smoke_rows(
                 "max_drawdown_pct": _float_or_zero(row.get("max_drawdown_pct")),
                 "positive_session_rate": None,
                 "passes_cost_gate": _bool_value(row.get("passes_cost_gate")),
-                "is_smoke": run_category == "smoke",
+                "is_smoke": (run_category == "smoke") and not eval_only,
+                "eval_only": eval_only,
+                "source_run": row.get("source_run"),
+                "source_model": row.get("source_model"),
+                "eval_episode_count": int(_float_or_zero(row.get("eval_episode_count"))),
             }
         )
     return normalized
@@ -268,7 +275,9 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
     sb3_training_rows = [
         row
         for row in model_rows
-        if not row.get("is_smoke") and int(_float_or_zero(row.get("training_timesteps"))) > 0
+        if not row.get("is_smoke")
+        and not row.get("eval_only")
+        and int(_float_or_zero(row.get("training_timesteps"))) > 0
     ]
     best_model = model_rows[0] if model_rows else None
     payload = {
@@ -295,6 +304,9 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
             ],
             "rl_smoke_models": [
                 row["model"] for row in model_rows if row.get("is_smoke")
+            ],
+            "rl_eval_only_models": [
+                row["model"] for row in model_rows if row.get("eval_only")
             ],
             "rl_training_models": [
                 row["model"] for row in sb3_training_rows
@@ -342,6 +354,9 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
                 "positive_session_rate",
                 "passes_cost_gate",
                 "is_smoke",
+                "eval_only",
+                "source_run",
+                "source_model",
                 "beats_no_trade",
                 "beats_buy_and_hold",
                 "usability",

@@ -264,6 +264,11 @@ def _summarize_model(
     trade_rows: Sequence[Mapping[str, Any]],
     aggregate_equity_curve: Sequence[float],
     training_elapsed_seconds: float,
+    model_name: Optional[str] = None,
+    eval_only: bool = False,
+    source_run: Optional[str] = None,
+    source_model: Optional[str] = None,
+    is_smoke: Optional[bool] = None,
 ) -> Dict[str, Any]:
     returns = np.asarray([float(row["episode_return_pct"]) for row in episode_rows], dtype=np.float64)
     final_equities = [float(row["final_equity"]) for row in episode_rows]
@@ -271,21 +276,23 @@ def _summarize_model(
     avg_net = float(np.mean(returns)) if len(returns) else 0.0
     max_dd = _max_drawdown_pct(aggregate_equity_curve)
     trade_count = len(trade_rows)
+    episode_count = len(episode_rows)
     passes_cost_gate = bool(
         avg_net > float(config.min_avg_episode_net_pct)
         and max_dd >= -abs(float(config.max_drawdown_pct))
         and trade_count >= int(config.min_trade_count)
     )
-    return {
+    resolved_is_smoke = bool(is_smoke) if is_smoke is not None else True
+    summary: Dict[str, Any] = {
         "algorithm": algorithm,
-        "model": f"{algorithm}_smoke",
+        "model": str(model_name) if model_name is not None else f"{algorithm}_smoke",
         "policy": f"stable_baselines3_{algorithm}",
         "eval_split": config.eval_split,
         "training_timesteps": int(config.total_timesteps),
         "training_elapsed_seconds": float(training_elapsed_seconds),
-        "episode_count": len(episode_rows),
+        "episode_count": episode_count,
         "trade_count": trade_count,
-        "trades_per_episode": float(trade_count / len(episode_rows)) if episode_rows else 0.0,
+        "trades_per_episode": float(trade_count / episode_count) if episode_rows else 0.0,
         "avg_episode_net_return_pct": avg_net,
         "median_episode_net_return_pct": float(np.median(returns)) if len(returns) else 0.0,
         "compounded_return_pct": _safe_compounded_return_pct(final_equities),
@@ -293,10 +300,16 @@ def _summarize_model(
         "hit_rate": float(np.mean(trade_returns > 0.0)) if len(trade_returns) else 0.0,
         "max_drawdown_pct": max_dd,
         "passes_cost_gate": passes_cost_gate,
-        "is_smoke": True,
+        "is_smoke": resolved_is_smoke,
+        "eval_only": bool(eval_only),
+        "source_run": source_run,
+        "source_model": source_model,
         "cost_bps": float(config.cost_bps),
         "slippage_bps": float(config.slippage_bps),
     }
+    if eval_only:
+        summary["eval_episode_count"] = episode_count
+    return summary
 
 
 def _evaluate_model(
@@ -545,6 +558,9 @@ def run_sb3_smoke(config: Sb3SmokeConfig) -> Dict[str, Any]:
                 "max_drawdown_pct",
                 "passes_cost_gate",
                 "is_smoke",
+                "eval_only",
+                "source_run",
+                "source_model",
                 "cost_bps",
                 "slippage_bps",
             ],
