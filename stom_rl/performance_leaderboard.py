@@ -17,6 +17,8 @@ DEFAULT_CONTEXTUAL_BANDIT_REPORT = (
     Path("webui") / "rl_runs" / "stom_1s_2025_contextual_bandit_full_test" / "eval_summary.json"
 )
 DEFAULT_SB3_SMOKE_REPORT = Path("webui") / "rl_runs" / "stom_1s_2025_sb3_smoke" / "sb3_smoke_summary.json"
+DEFAULT_RL_RUNS_DIR = Path("webui") / "rl_runs"
+AUTO_SB3_REPORTS = "__auto__"
 DEFAULT_OUTPUT_DIR = Path("webui") / "rl_runs" / "stom_1s_2025_performance_leaderboard_full_test"
 
 
@@ -24,7 +26,8 @@ DEFAULT_OUTPUT_DIR = Path("webui") / "rl_runs" / "stom_1s_2025_performance_leade
 class PerformanceLeaderboardConfig:
     baseline_report: str = str(DEFAULT_BASELINE_REPORT)
     contextual_bandit_report: str = str(DEFAULT_CONTEXTUAL_BANDIT_REPORT)
-    sb3_smoke_reports: Tuple[str, ...] = (str(DEFAULT_SB3_SMOKE_REPORT),)
+    sb3_smoke_reports: Tuple[str, ...] = (AUTO_SB3_REPORTS,)
+    sb3_report_root: str = str(DEFAULT_RL_RUNS_DIR)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     target_cost_bps: float = 25.0
     target_slippage_bps: float = 0.0
@@ -63,6 +66,51 @@ def _bool_value(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"true", "1", "yes", "y"}
     return bool(value)
+
+
+def discover_sb3_summary_reports(root: Path = DEFAULT_RL_RUNS_DIR) -> Tuple[str, ...]:
+    """Discover SB3 smoke/mini/short training summaries under the RL run root."""
+
+    if not root.is_dir():
+        return (str(DEFAULT_SB3_SMOKE_REPORT),) if DEFAULT_SB3_SMOKE_REPORT.is_file() else ()
+    reports = sorted(
+        {
+            path
+            for path in root.glob("stom_1s_2025_sb3*/sb3_smoke_summary.json")
+            if path.is_file()
+        },
+        key=lambda path: (path.parent.name, path.name),
+    )
+    return tuple(str(path) for path in reports)
+
+
+def _resolve_sb3_reports(config: PerformanceLeaderboardConfig) -> Tuple[Tuple[str, ...], str]:
+    raw_reports = tuple(part.strip() for part in config.sb3_smoke_reports if str(part).strip())
+    if any(part.lower() in {AUTO_SB3_REPORTS, "auto", "*"} for part in raw_reports):
+        reports = discover_sb3_summary_reports(Path(config.sb3_report_root))
+        return reports, "auto"
+    return raw_reports, "explicit"
+
+
+def _sb3_model_name(row: Mapping[str, Any]) -> str:
+    algorithm = str(row.get("algorithm") or row.get("model") or "sb3").lower()
+    explicit = str(row.get("model") or f"{algorithm}_smoke")
+    timesteps = int(_float_or_zero(row.get("training_timesteps")))
+    if timesteps >= 1000:
+        suffix = f"{timesteps // 1000}k" if timesteps % 1000 == 0 else str(timesteps)
+        return f"{algorithm}_{suffix}"
+    return explicit
+
+
+def _sb3_run_category(row: Mapping[str, Any]) -> str:
+    timesteps = int(_float_or_zero(row.get("training_timesteps")))
+    if timesteps <= 1000:
+        return "smoke"
+    if timesteps <= 10_000:
+        return "mini"
+    if timesteps <= 100_000:
+        return "short"
+    return "long"
 
 
 def _baseline_rows(payload: Mapping[str, Any], config: PerformanceLeaderboardConfig) -> List[Dict[str, Any]]:
@@ -129,13 +177,17 @@ def _sb3_smoke_rows(
     normalized = []
     for row in rows:
         algorithm = str(row.get("algorithm") or row.get("model") or "sb3")
+        run_category = _sb3_run_category(row)
         normalized.append(
             {
                 "source": "rl_model",
                 "run_name": report_path.parent.name,
-                "model": str(row.get("model") or f"{algorithm}_smoke"),
+                "model": _sb3_model_name(row),
+                "base_model": str(row.get("model") or f"{algorithm}_smoke"),
                 "policy": str(row.get("policy") or f"stable_baselines3_{algorithm}"),
                 "split": str(row.get("eval_split") or row.get("split") or "test"),
+                "training_timesteps": int(_float_or_zero(row.get("training_timesteps"))),
+                "run_category": run_category,
                 "cost_bps": _float_or_zero(row.get("cost_bps", config.target_cost_bps)),
                 "slippage_bps": _float_or_zero(row.get("slippage_bps", config.target_slippage_bps)),
                 "episode_count": int(_float_or_zero(row.get("episode_count"))),
@@ -149,7 +201,7 @@ def _sb3_smoke_rows(
                 "max_drawdown_pct": _float_or_zero(row.get("max_drawdown_pct")),
                 "positive_session_rate": None,
                 "passes_cost_gate": _bool_value(row.get("passes_cost_gate")),
-                "is_smoke": _bool_value(row.get("is_smoke", True)),
+                "is_smoke": run_category == "smoke",
             }
         )
     return normalized
@@ -189,7 +241,8 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
     contextual_payload = _read_json(Path(config.contextual_bandit_report))
     rows = _baseline_rows(baseline_payload, config) + [_contextual_bandit_row(contextual_payload, config)]
     missing_optional_reports = []
-    for raw_report_path in config.sb3_smoke_reports:
+    sb3_report_paths, sb3_report_source = _resolve_sb3_reports(config)
+    for raw_report_path in sb3_report_paths:
         report_path = Path(raw_report_path)
         if not report_path.is_file():
             missing_optional_reports.append(str(report_path))
@@ -212,10 +265,19 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
         row["rank"] = rank
 
     model_rows = [row for row in rows if row.get("source") == "rl_model"]
+    sb3_training_rows = [
+        row
+        for row in model_rows
+        if not row.get("is_smoke") and int(_float_or_zero(row.get("training_timesteps"))) > 0
+    ]
     best_model = model_rows[0] if model_rows else None
     payload = {
         "mode": "stom_rl_performance_leaderboard",
-        "config": asdict(config),
+        "config": {
+            **asdict(config),
+            "sb3_smoke_reports": list(sb3_report_paths),
+            "sb3_smoke_reports_source": sb3_report_source,
+        },
         "summary": {
             "row_count": len(rows),
             "target_cost_bps": config.target_cost_bps,
@@ -234,6 +296,13 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
             "rl_smoke_models": [
                 row["model"] for row in model_rows if row.get("is_smoke")
             ],
+            "rl_training_models": [
+                row["model"] for row in sb3_training_rows
+            ],
+            "max_sb3_training_timesteps": max(
+                [int(_float_or_zero(row.get("training_timesteps"))) for row in model_rows],
+                default=0,
+            ),
             "missing_optional_reports": missing_optional_reports,
         },
         "leaderboard": rows,
@@ -254,8 +323,11 @@ def build_performance_leaderboard(config: PerformanceLeaderboardConfig) -> Dict[
                 "source",
                 "run_name",
                 "model",
+                "base_model",
                 "policy",
                 "split",
+                "training_timesteps",
+                "run_category",
                 "cost_bps",
                 "slippage_bps",
                 "episode_count",
@@ -285,9 +357,13 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> PerformanceLeaderboardC
     parser.add_argument("--contextual-bandit-report", default=str(DEFAULT_CONTEXTUAL_BANDIT_REPORT))
     parser.add_argument(
         "--sb3-smoke-reports",
-        default=str(DEFAULT_SB3_SMOKE_REPORT),
-        help="Comma-separated optional SB3 smoke summary JSON paths. Missing files are skipped.",
+        default="auto",
+        help=(
+            "Comma-separated optional SB3 summary JSON paths. "
+            "Use 'auto' to discover webui/rl_runs/stom_1s_2025_sb3*/sb3_smoke_summary.json."
+        ),
     )
+    parser.add_argument("--sb3-report-root", default=str(DEFAULT_RL_RUNS_DIR))
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--target-cost-bps", type=float, default=25.0)
     parser.add_argument("--target-slippage-bps", type=float, default=0.0)
@@ -297,6 +373,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> PerformanceLeaderboardC
         baseline_report=args.baseline_report,
         contextual_bandit_report=args.contextual_bandit_report,
         sb3_smoke_reports=tuple(part.strip() for part in args.sb3_smoke_reports.split(",") if part.strip()),
+        sb3_report_root=args.sb3_report_root,
         output_dir=args.output_dir,
         target_cost_bps=args.target_cost_bps,
         target_slippage_bps=args.target_slippage_bps,

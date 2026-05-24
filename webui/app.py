@@ -146,6 +146,7 @@ try:
             list_rl_runs,
             load_rl_cost_gate,
             load_rl_events,
+            load_rl_progress,
             load_rl_run,
             load_rl_table,
         )
@@ -154,6 +155,7 @@ try:
             list_rl_runs,
             load_rl_cost_gate,
             load_rl_events,
+            load_rl_progress,
             load_rl_run,
             load_rl_table,
         )
@@ -162,6 +164,7 @@ except Exception as exc:
     list_rl_runs = None
     load_rl_cost_gate = None
     load_rl_events = None
+    load_rl_progress = None
     load_rl_run = None
     load_rl_table = None
 
@@ -715,6 +718,16 @@ def rl_runs():
     try:
         limit = _rl_table_limit(default=50)
         return jsonify({'runs': list_rl_runs(limit=limit)})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rl/progress')
+def rl_progress():
+    if load_rl_progress is None:
+        return jsonify({'error': 'STOM RL dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_rl_progress())
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 

@@ -298,5 +298,9 @@ def test_flask_rl_routes_smoke(tmp_path, monkeypatch):
     assert events.status_code == 200
     assert events.get_json()["rows"][0]["phase"] == "eval"
 
+    progress = client.get("/api/rl/progress")
+    assert progress.status_code == 200
+    assert progress.get_json()["mode"] == "stom_rl_page_progress"
+
     bad = client.get("/api/rl/runs/..%5Csecret")
     assert bad.status_code in {400, 404}

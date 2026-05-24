@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type RlCostGateResponse, type RlLiveEventsResponse, type RlRunDetail, type RlRunRecord } from '$lib/api';
+  import {
+    api,
+    type RlCostGateResponse,
+    type RlLiveEventsResponse,
+    type RlProgressResponse,
+    type RlRunDetail,
+    type RlRunRecord,
+  } from '$lib/api';
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
 
@@ -17,6 +24,7 @@
   let episodes = $state<Array<Record<string, any>>>([]);
   let liveEvents = $state<Array<Record<string, any>>>([]);
   let liveEventPayload = $state<RlLiveEventsResponse | null>(null);
+  let rlProgress = $state<RlProgressResponse | null>(null);
   let view = $state<DetailView>('overview');
   let loading = $state(false);
   let detailLoading = $state(false);
@@ -30,7 +38,11 @@
     loading = true;
     error = null;
     try {
-      const payload = await api.rlRuns(30);
+      const [payload, progressPayload] = await Promise.all([
+        api.rlRuns(30),
+        api.rlProgress(),
+      ]);
+      rlProgress = progressPayload;
       runs = payload?.runs ?? [];
       const preferred =
         runs.find((run) => run.artifact_type === 'performance_leaderboard') ??
@@ -94,6 +106,8 @@
   }
 
   const selectedSummary = $derived(selectedRun?.summary ?? {});
+  const pageProgressRows = $derived(rlProgress?.pages ?? []);
+  const overallProgressPct = $derived(rlProgress?.overall_progress_pct ?? 0);
   const gateRows = $derived<any[]>(costGate?.gate?.rows ?? selectedRun?.summary?.gate_rows ?? selectedRun?.detail?.summary?.gate_rows ?? []);
   const passingGateRows = $derived(gateRows.filter((row: any) => Boolean(row?.passes_cost_gate)));
   const leaderboardRows = $derived.by(() => {
@@ -478,6 +492,57 @@
     <div class="card-title">강화학습 대시보드 조회 실패</div>
     <p class="text-muted">{error}</p>
     <button type="button" class="btn sm" onclick={() => void loadDashboard()}>다시 불러오기</button>
+  </section>
+{/if}
+
+{#if pageProgressRows.length}
+  <section class="card" data-rl-page-progress>
+    <div class="card-header">
+      <div>
+        <div class="card-eyebrow">PAGE COMPLETION</div>
+        <div class="card-title">전체/페이지별 진행률</div>
+      </div>
+      <span class="pill {overallProgressPct === 100 ? 'success' : 'warn'}">{fmt.int(overallProgressPct)}%</span>
+    </div>
+    <div style="height:10px;border-radius:999px;background:rgba(148,163,184,.18);overflow:hidden;margin:8px 0 14px">
+      <div
+        style={`height:100%;width:${Math.max(0, Math.min(100, overallProgressPct))}%;background:linear-gradient(90deg,#14b8a6,#2563eb);`}
+      ></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>페이지</th>
+            <th>진행률</th>
+            <th>상태</th>
+            <th>완료 기준</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each pageProgressRows as page}
+            <tr>
+              <td><strong>{page.page}</strong></td>
+              <td>{fmt.int(page.progress_pct)}%</td>
+              <td>
+                <span class="pill {page.progress_pct === 100 ? 'success' : 'warn'}">
+                  {page.progress_pct === 100 ? '완료' : '진행 중'}
+                </span>
+              </td>
+              <td>
+                <div class="row" style="gap:6px;flex-wrap:wrap">
+                  {#each page.criteria ?? [] as criterion}
+                    <span class="pill {criterion.passed ? 'success' : 'warn'}" title={criterion.evidence ?? ''}>
+                      {criterion.passed ? '✓' : '!'} {criterion.label}
+                    </span>
+                  {/each}
+                </div>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   </section>
 {/if}
 

@@ -234,6 +234,27 @@ export interface RlCostGateResponse {
   rolling?: RlTableResponse;
 }
 
+export interface RlProgressCriterion {
+  label: string;
+  passed: boolean;
+  evidence?: string;
+}
+
+export interface RlProgressPage {
+  page: string;
+  progress_pct: number;
+  status: 'complete' | 'in_progress' | string;
+  criteria?: RlProgressCriterion[];
+}
+
+export interface RlProgressResponse {
+  mode?: string;
+  overall_progress_pct: number;
+  status: 'complete' | 'in_progress' | string;
+  pages: RlProgressPage[];
+  evidence?: Record<string, any>;
+}
+
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
     const r = await fetch(url);
@@ -251,6 +272,7 @@ export const api = {
   gpu: () => fetchJson<GpuResponse>('/api/training/gpu'),
   system: () => fetchJson<SystemResponse>('/api/training/system'),
   rlRuns: (limit: number = 20) => fetchJson<RlRunsResponse>(`/api/rl/runs?limit=${limit}`),
+  rlProgress: () => fetchJson<RlProgressResponse>('/api/rl/progress'),
   rlRun: (run: string) => fetchJson<RlRunDetail>(`/api/rl/runs/${encodeURIComponent(run)}`),
   rlActions: (run: string, limit: number = 500) =>
     fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/actions?limit=${limit}`),
