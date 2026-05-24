@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     api,
     type RlCostGateResponse,
@@ -29,6 +29,16 @@
   let loading = $state(false);
   let detailLoading = $state(false);
   let error = $state<string | null>(null);
+
+  // Realtime / replay state for the live event stream.
+  let liveMode = $state<'off' | 'follow' | 'replay'>('off');
+  let liveAllEvents = $state<Array<Record<string, any>>>([]);
+  let replayIndex = $state(0);
+  let liveTimer: ReturnType<typeof setInterval> | null = null;
+  const REPLAY_STEP = 8;
+
+  // Page-progress card is collapsed by default so model/live content leads.
+  let progressOpen = $state(false);
 
   onMount(() => {
     void loadDashboard();
@@ -69,11 +79,15 @@
     selectedName = name;
     detailLoading = true;
     error = null;
+    clearLiveTimer();
+    liveMode = 'off';
+    replayIndex = 0;
     leaderboard = [];
     trades = [];
     equity = [];
     episodes = [];
     liveEvents = [];
+    liveAllEvents = [];
     liveEventPayload = null;
     selectedRun = null;
     try {
@@ -101,6 +115,7 @@
       episodes = episodePayload?.rows ?? [];
       liveEventPayload = eventPayload;
       liveEvents = eventPayload?.rows ?? [];
+      liveAllEvents = eventPayload?.rows ?? [];
 
       const gateRun = detail?.artifact_type === 'cost_gate'
         ? name
@@ -113,6 +128,58 @@
       detailLoading = false;
     }
   }
+
+  function clearLiveTimer(): void {
+    if (liveTimer != null) {
+      clearInterval(liveTimer);
+      liveTimer = null;
+    }
+  }
+
+  function stopLive(): void {
+    clearLiveTimer();
+    liveMode = 'off';
+    liveEvents = liveAllEvents;
+  }
+
+  // Replay: reveal recorded events in time order so a finished run animates
+  // like a live training session.
+  function startReplay(): void {
+    clearLiveTimer();
+    if (!liveAllEvents.length) return;
+    view = 'live';
+    liveMode = 'replay';
+    replayIndex = Math.min(REPLAY_STEP * 2, liveAllEvents.length);
+    liveEvents = liveAllEvents.slice(0, replayIndex);
+    liveTimer = setInterval(() => {
+      replayIndex = Math.min(liveAllEvents.length, replayIndex + REPLAY_STEP);
+      liveEvents = liveAllEvents.slice(0, replayIndex);
+      if (replayIndex >= liveAllEvents.length) clearLiveTimer();
+    }, 700);
+  }
+
+  // Follow: poll the JSONL tail of an in-progress run every 1.5s.
+  async function refreshLiveEvents(): Promise<void> {
+    if (!selectedName) return;
+    try {
+      const payload = await api.rlEvents(selectedName, 1000);
+      liveAllEvents = payload?.rows ?? [];
+      liveEventPayload = payload;
+      if (liveMode !== 'replay') liveEvents = liveAllEvents;
+    } catch {
+      // keep last good events on a transient poll failure
+    }
+  }
+
+  async function startFollow(): Promise<void> {
+    clearLiveTimer();
+    liveMode = 'follow';
+    view = 'live';
+    await refreshLiveEvents();
+    liveTimer = setInterval(() => void refreshLiveEvents(), 1500);
+  }
+
+  onDestroy(() => clearLiveTimer());
 
   const selectedSummary = $derived(selectedRun?.summary ?? {});
   const pageProgressRows = $derived(rlProgress?.pages ?? []);
@@ -488,6 +555,9 @@
     <span class="pill accent"><span class="dot"></span>STOM 1초봉 read-only</span>
     <span class="pill info"><span class="dot"></span>/api/rl/*</span>
     <span class="pill {passingGateRows.length ? 'success' : 'warn'}"><span class="dot"></span>25bp cost gate</span>
+    {#if rlProgress}
+      <span class="pill {overallProgressPct === 100 ? 'success' : 'warn'}"><span class="dot"></span>플랫폼 {fmt.int(overallProgressPct)}% · 실전 후보</span>
+    {/if}
   </div>
   <h1 class="text-h2" style="margin-top:8px">강화학습 실험실</h1>
   <p class="text-muted" style="margin-top:6px">
@@ -506,19 +576,23 @@
 
 {#if pageProgressRows.length}
   <section class="card" data-rl-page-progress>
-    <div class="card-header">
+    <button type="button" class="progress-toggle" onclick={() => (progressOpen = !progressOpen)} aria-expanded={progressOpen}>
       <div>
         <div class="card-eyebrow">PAGE COMPLETION</div>
-        <div class="card-title">전체/페이지별 진행률</div>
+        <div class="card-title">전체/페이지별 진행률 <span class="chevron">{progressOpen ? '▾' : '▸'}</span></div>
       </div>
       <span class="pill {overallProgressPct === 100 ? 'success' : 'warn'}">{fmt.int(overallProgressPct)}%</span>
-    </div>
-    <div style="height:10px;border-radius:999px;background:rgba(148,163,184,.18);overflow:hidden;margin:8px 0 14px">
+    </button>
+    <div style="height:10px;border-radius:999px;background:rgba(148,163,184,.18);overflow:hidden;margin:8px 0 4px">
       <div
         style={`height:100%;width:${Math.max(0, Math.min(100, overallProgressPct))}%;background:linear-gradient(90deg,#14b8a6,#2563eb);`}
       ></div>
     </div>
-    <div class="table-wrap">
+    {#if !progressOpen}
+      <div class="text-caption" style="margin-top:6px">6개 페이지 모두 완료 · 자세히 보려면 펼치기</div>
+    {/if}
+    {#if progressOpen}
+    <div class="table-wrap" style="margin-top:12px">
       <table>
         <thead>
           <tr>
@@ -552,6 +626,7 @@
         </tbody>
       </table>
     </div>
+    {/if}
   </section>
 {/if}
 
@@ -718,10 +793,11 @@
 
       <section class="row" style="gap:10px;flex-wrap:wrap">
         <div class="tabs" data-tab-group="rl-lab">
-          <button data-active={view === 'overview' ? 'true' : 'false'} onclick={() => (view = 'overview')}>성과 개요</button>
-          <button data-active={view === 'leaderboard' ? 'true' : 'false'} onclick={() => (view = 'leaderboard')}>리더보드</button>
-          <button data-active={view === 'trades' ? 'true' : 'false'} onclick={() => (view = 'trades')}>거래/자산곡선</button>
-          <button data-active={view === 'artifacts' ? 'true' : 'false'} onclick={() => (view = 'artifacts')}>아티팩트</button>
+          <button data-active={view === 'overview' ? 'true' : 'false'} onclick={() => (view = 'overview')}>📊 성과 개요</button>
+          <button data-active={view === 'live' ? 'true' : 'false'} onclick={() => (view = 'live')}>🎥 실시간 이벤트</button>
+          <button data-active={view === 'leaderboard' ? 'true' : 'false'} onclick={() => (view = 'leaderboard')}>🏆 리더보드</button>
+          <button data-active={view === 'trades' ? 'true' : 'false'} onclick={() => (view = 'trades')}>💹 거래/자산곡선</button>
+          <button data-active={view === 'artifacts' ? 'true' : 'false'} onclick={() => (view = 'artifacts')}>📦 아티팩트</button>
         </div>
         <span class="text-caption" style="margin-left:auto">선택 run 기준 · 표시는 최대 120~360행</span>
       </section>
@@ -817,14 +893,31 @@
           <div class="card-header">
             <div>
               <div class="card-eyebrow">REALTIME RL EVENTS</div>
-              <div class="card-title">SB3 ?? ??? ???</div>
+              <div class="card-title">SB3 학습 이벤트 스트림</div>
             </div>
-            <span class="pill warn">??? ??</span>
+            <div class="row live-controls" style="gap:8px;flex-wrap:wrap;align-items:center">
+              {#if liveMode !== 'off'}
+                <span class="pill success live-badge"><span class="dot"></span>{liveMode === 'follow' ? 'LIVE' : 'REPLAY'}</span>
+              {/if}
+              <button type="button" class="btn sm {liveMode === 'follow' ? '' : 'ghost'}" onclick={() => void startFollow()} title="진행 중 학습 run의 이벤트를 1.5초마다 따라갑니다">● 라이브</button>
+              <button type="button" class="btn sm {liveMode === 'replay' ? '' : 'ghost'}" onclick={() => startReplay()} disabled={!liveAllEvents.length} title="기록된 이벤트를 시간순으로 재생합니다">▶ 재생</button>
+              <button type="button" class="btn sm ghost" onclick={() => stopLive()} disabled={liveMode === 'off'}>■ 정지</button>
+              <span class="pill warn">실주문 아님</span>
+            </div>
           </div>
           <p class="text-caption">
-            ? ??? historical replay / smoke / short training ???? JSONL artifact?? ?? ??????.
-            ?? ?? ???? ????? ???? ????.
+            이 화면은 historical replay / smoke / short training 결과를 JSONL artifact에서 읽어 보여줍니다.
+            실제 시장 주문이나 자동매매와는 연결되어 있지 않습니다.
+            <strong>라이브</strong>는 진행 중 run을 따라가고, <strong>재생</strong>은 기록된 이벤트를 영상처럼 순차 표시합니다.
           </p>
+          {#if liveMode === 'replay' && liveAllEvents.length}
+            <div class="replay-bar">
+              <div class="replay-track">
+                <div class="replay-fill" style={`width:${Math.round((replayIndex / liveAllEvents.length) * 100)}%`}></div>
+              </div>
+              <span class="text-caption">{fmt.int(replayIndex)} / {fmt.int(liveAllEvents.length)} step</span>
+            </div>
+          {/if}
           <div class="summary-grid">
             <div>
               <span>Events</span>
@@ -857,7 +950,7 @@
             {#if liveEvents.length}
               <EChartsRenderer option={liveRewardChartOption} height="320px" />
             {:else}
-              <div class="empty">live event log? ?? ????. SB3 smoke? ?? ???? ?????.</div>
+              <div class="empty">live event log가 아직 없습니다. SB3 smoke를 먼저 실행하세요.</div>
             {/if}
           </div>
           <div class="card">
@@ -871,7 +964,7 @@
             {#if liveEvents.length}
               <EChartsRenderer option={liveActionChartOption} height="320px" />
             {:else}
-              <div class="empty">??? action ???? ????.</div>
+              <div class="empty">표시할 action 데이터가 없습니다.</div>
             {/if}
           </div>
         </section>
@@ -880,7 +973,7 @@
           <div class="card-header">
             <div>
               <div class="card-eyebrow">EVENT LOG</div>
-              <div class="card-title">?? ???? ???</div>
+              <div class="card-title">스텝 이벤트 로그</div>
             </div>
             <span class="text-caption">source: {liveEventPayload?.source_file ?? 'none'}</span>
           </div>
@@ -912,7 +1005,7 @@
                   </tr>
                 {/each}
                 {#if !liveEvents.length}
-                  <tr><td colspan="8" class="text-muted">??? live event row? ????.</td></tr>
+                  <tr><td colspan="8" class="text-muted">표시할 live event row가 없습니다.</td></tr>
                 {/if}
               </tbody>
             </table>
@@ -1241,6 +1334,51 @@
   .error-card {
     border-color: var(--danger-soft);
     background: var(--danger-soft);
+  }
+  .progress-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    color: inherit;
+  }
+  .progress-toggle:hover .card-title {
+    color: var(--accent);
+  }
+  .chevron {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .live-badge .dot {
+    animation: live-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes live-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+  }
+  .replay-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .replay-track {
+    flex: 1;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.2);
+    overflow: hidden;
+  }
+  .replay-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #7c3aed, #2563eb);
+    transition: width 0.3s linear;
   }
   @media (max-width: 1180px) {
     .rl-kpi-grid,

@@ -28,7 +28,6 @@
       label: '분석',
       items: [
         { id: 'stom', label: '예측 진단', icon: 'pulse', badge: null },
-        { id: 'rl-lab', label: '강화학습 실험실', icon: 'rocket', badge: 'RL' },
         { id: 'artifacts', label: '아티팩트 & 모델', icon: 'package', badge: null },
         { id: 'history', label: '기록 & 런', icon: 'history', badge: null },
       ],
@@ -44,6 +43,12 @@
       label: '도움말',
       items: [
         { id: 'docs', label: '문서 · Wiki', icon: 'file', badge: null },
+      ],
+    },
+    {
+      label: '실험실',
+      items: [
+        { id: 'rl-lab', label: '강화학습 실험실', icon: 'rocket', badge: 'RL' },
       ],
     },
   ];
