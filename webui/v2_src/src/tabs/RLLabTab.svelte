@@ -44,9 +44,13 @@
       ]);
       rlProgress = progressPayload;
       runs = payload?.runs ?? [];
+      const sb3Runs = runs
+        .filter((run) => run.artifact_type === 'sb3_smoke')
+        .sort((a, b) => Number(b.summary?.max_training_timesteps ?? b.summary?.training_timesteps ?? 0) - Number(a.summary?.max_training_timesteps ?? a.summary?.training_timesteps ?? 0));
       const preferred =
+        sb3Runs.find((run) => run.name.includes('50k')) ??
+        sb3Runs[0] ??
         runs.find((run) => run.artifact_type === 'performance_leaderboard') ??
-        runs.find((run) => run.artifact_type === 'sb3_smoke') ??
         runs.find((run) => run.artifact_type === 'contextual_bandit') ??
         runs.find((run) => run.artifact_type === 'cost_gate') ??
         runs[0];
@@ -75,6 +79,11 @@
     try {
       const detail = await api.rlRun(name);
       selectedRun = detail;
+      if (detail?.artifact_type === 'sb3_smoke') {
+        view = 'live';
+      } else if (detail?.artifact_type === 'performance_leaderboard') {
+        view = 'leaderboard';
+      }
 
       const [leaderboardPayload, tradePayload, equityPayload, episodePayload, eventPayload] = await Promise.all([
         detail?.artifact_type === 'performance_leaderboard'

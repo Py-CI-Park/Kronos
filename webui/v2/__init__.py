@@ -39,6 +39,13 @@ def v2_training_alias():
     return _serve_v2_shell()
 
 
+@v2_bp.route('/rl')
+@v2_bp.route('/rl-lab')
+def v2_rl_lab_alias():
+    """Serve the v2 shell for direct RL Lab / deep-learning dashboard bookmarks."""
+    return _serve_v2_shell()
+
+
 @v2_bp.route('/v2')
 def v2_legacy_redirect():
     """기존 북마크/링크 호환용 영구 리다이렉트."""

@@ -15,7 +15,19 @@
   import { activeTab, sidebarCollapsed } from '$lib/stores';
   import { installPollingWatcher, startPolling } from '$lib/polling';
 
+  function routeTab(): string | null {
+    if (typeof window === 'undefined') return null;
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    if (requested) return requested;
+    const path = window.location.pathname.replace(/\/+$/, '');
+    if (path === '/rl' || path === '/rl-lab') return 'rl-lab';
+    if (path === '/training' || path === '/dashboard') return 'live-training';
+    return null;
+  }
+
   onMount(() => {
+    const requestedTab = routeTab();
+    if (requestedTab) activeTab.set(requestedTab);
     installPollingWatcher();
     startPolling();
   });

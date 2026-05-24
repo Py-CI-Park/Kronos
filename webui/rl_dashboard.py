@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 
-RL_RUN_ROOTS = [Path(__file__).resolve().parent / "rl_runs"]
+REPO_ROOT = Path(__file__).resolve().parents[1]
+WEBUI_ROOT = Path(__file__).resolve().parent
+RL_RUN_ROOTS = [WEBUI_ROOT / "rl_runs"]
 MAX_TABLE_LIMIT = 5000
 
 
@@ -90,6 +92,13 @@ def _read_json(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def _repo_path(path: str | Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate
+    return REPO_ROOT / candidate
+
+
 def _coerce_scalar(value: str) -> Any:
     if value == "":
         return None
@@ -162,6 +171,10 @@ def _find_json_summary(run_dir: Path, artifact_type: str) -> Dict[str, Any]:
         models = payload.get("models", [])
         best_model = summary.get("best_model")
         selected_model = next((row for row in models if row.get("model") == best_model), models[0] if models else {})
+        summary.setdefault(
+            "max_training_timesteps",
+            max((_int_or_zero(row.get("training_timesteps")) for row in models), default=0),
+        )
         for key in (
             "avg_episode_net_return_pct",
             "trade_count",
@@ -472,7 +485,7 @@ def _has_model_file(detail: Optional[Mapping[str, Any]], algorithm: str) -> bool
         return False
     model_files = detail.get("detail", {}).get("artifacts", {}).get("model_files", {})
     path = model_files.get(algorithm) if isinstance(model_files, dict) else None
-    return bool(path and Path(path).is_file())
+    return bool(path and _repo_path(str(path)).is_file())
 
 
 def load_rl_progress() -> Dict[str, Any]:
@@ -499,8 +512,8 @@ def load_rl_progress() -> Dict[str, Any]:
             leaderboard_rows = []
     leaderboard_models = {str(row.get("model")) for row in leaderboard_rows}
 
-    docs_ready = Path("docs/stom_rl_realtime_learning_dashboard_implementation_2026-05-23.md").is_file()
-    completion_doc_ready = Path("docs/stom_rl_page100_completion_report_2026-05-24.md").is_file()
+    docs_ready = _repo_path("docs/stom_rl_realtime_learning_dashboard_implementation_2026-05-23.md").is_file()
+    completion_doc_ready = _repo_path("docs/stom_rl_page100_completion_report_2026-05-24.md").is_file()
 
     page_specs = [
         (
