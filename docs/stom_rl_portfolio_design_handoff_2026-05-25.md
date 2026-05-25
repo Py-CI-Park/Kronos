@@ -263,3 +263,99 @@ rl_runs는 gitignore, 조건식은 eval 금지·AST 화이트리스트 파서.
 다만 현재 단일 종목·9변수·기간민감 상태에서 바로 포트폴리오로 점프하면 검증이 불가능하므로,
 **단계 1(feature 확장)부터 쌓아 4(PortfolioEnv)로 확장**하는 경로를 권장한다.
 조건식 문법·변수는 `docs/reference/stom_ai_agent/`를 단일 진실 공급원으로 삼는다.
+
+---
+
+## 10. 부록 A — 단계(페이지)별 상세 실행 계획
+
+> 각 단계를 독립된 "페이지"로 보고, 목표 · 입력/출력 · 신규/수정 파일 · 작업 체크리스트 · 데이터/스키마 · 완료 기준 · 테스트 · 예상 규모 · 위험을 정의한다. 페이지마다 `pytest`/`ruff`를 통과하고 한글 git commit으로 닫는다.
+
+### 페이지 1 — Feature 확장 (단일 종목 신호 강화)
+
+- **목표**: 현재 9개 feature에 수급·호가 변수를 더해 단일 종목 RL의 정보량을 늘린다.
+- **입력 → 출력**: STOM DB/qlib export → 확장 feature가 포함된 episode CSV → `trading_env` 관측.
+- **추가할 feature (목표 +8, 총 ~17개)**:
+
+  | feature | 정의 | 그룹 |
+  |---|---|---|
+  | `호가불균형` | 매수총잔량 / (매수총잔량+매도총잔량) | 호가 |
+  | `호가스프레드` | (매도호가1−매수호가1) / 호가단위 | 호가 |
+  | `체결강도` | 매수수량/매도수량×100 (0~500) | 수급 |
+  | `체결강도평균대비` | 체결강도 / 체결강도평균(N) | 수급 |
+  | `초당매수수량`, `초당매도수량` | 1초 누적 매수/매도 수량 | 수급 |
+  | `순매수수량` | 초당매수수량 − 초당매도수량 | 수급 |
+  | `거래대금각도` | 당일거래대금 기울기(0~90) | 모멘텀 |
+
+- **신규/수정 파일**:
+  - 수정: export 파이프라인(`finetune/`의 qlib export 코드) — DB의 추가 컬럼을 CSV로 내보내기.
+  - 수정: `stom_rl/trading_env.py` — `BASE_MARKET_COLUMNS`/`feature_columns`에 신규 컬럼 추가 + 정규화 처리(스케일이 큰 잔량/금액은 비율·로그·z-score).
+  - 수정: `stom_rl/episode_manifest.py` — 신규 컬럼 존재 검증.
+- **작업 체크리스트**: ① export에 컬럼 추가 → ② env feature 확장 + 정규화 → ③ 결측/이상치 처리 → ④ check_env 통과 → ⑤ 50k 재학습 → ⑥ 100ep eval-only + walk-forward로 기존 9-feature 모델과 비교.
+- **완료 기준**: 확장 feature 모델이 walk-forward folds_positive·평균 net에서 기존 대비 **개선**(또는 개선 없음을 데이터로 확인).
+- **테스트**: `tests/test_stom_rl_trading_env.py`에 신규 feature 차원·정규화 단위 테스트 추가.
+- **예상 규모**: 중소 (export 재실행 시간 포함). **위험**: 잔량/금액 스케일 정규화 실패 시 학습 불안정 → 비율화 우선.
+
+### 페이지 2 — 자본금 + 포지션 사이징
+
+- **목표**: 정규화 equity(1.0)를 **실제 자본금(현금+평가액)** 으로 일반화하고, 0/1 포지션을 비중으로 확장.
+- **신규/수정 파일**:
+  - 수정: `stom_rl/baselines.py` `AccountState` — `cash`, `holdings_value`, `nav` 필드 추가. `apply_action(action, weight)` 로 비중 매수/부분 매도 지원.
+  - 수정: `stom_rl/trading_env.py` — action_space `Discrete(3)` → `Discrete(N)`(예: 0=hold, 1=25%, 2=50%, 3=100% 매수, 4=전량매도) 또는 비중 Box. 상태에 `cash_ratio`, `position_weight` 추가.
+- **데이터/스키마**: `nav = cash + Σ(보유수량 × 현재가)`, 거래 시 `cost = 거래금액 × (cost_bps/10000)`.
+- **완료 기준**: 단일 종목에서 초기자본 ₩N → NAV 곡선이 정상 추적되고, 비중 행동이 회계와 일치(단위 테스트).
+- **테스트**: `tests/test_stom_rl_account_sizing.py` — 매수/부분매도/전량매도 후 cash·nav·position_weight 일치 검증.
+- **예상 규모**: 중. **위험**: 부분 매도 평단가·실현손익 회계 버그 → 단위 테스트로 고정.
+
+### 페이지 3 — 조건식 스크리너 (후보 종목 생성)
+
+- **목표**: STOM 매수 조건식을 DB에 적용해 **시점별 매수 후보 종목 리스트**를 산출한다.
+- **신규 파일**: `stom_rl/condition_screener.py`
+  - `SafeExpr` — `ast` 기반 화이트리스트 평가기(`forbidden.md` 준수: `import/exec/eval/open/compile/__` 금지, 화이트리스트 변수·연산자만 허용).
+  - `load_strategy(path)` — `docs/reference/stom_ai_agent/` 형식의 매수전략 텍스트 파싱.
+  - `screen(db, strategy, at_time)` → 조건 통과 종목코드 리스트 + 그 시점 feature.
+- **데이터/스키마**: 입력=STOM DB 종목별 1초 테이블, 시점(시분초). 출력=`{timestamp, [종목코드...], feature_table}`.
+- **완료 기준**: WideV1/V2 조건식을 특정 일자에 적용 → 후보 리스트가 재현 가능하고, 금지 토큰은 거부됨.
+- **테스트**: `tests/test_stom_rl_condition_screener.py` — ① 화이트리스트 외 이름/금지 토큰 거부 ② 예제 조건식이 알려진 종목을 통과/차단.
+- **예상 규모**: 중. **위험**: `eval` 유혹 → 반드시 AST 파서. DB 29.7GB 풀스캔 비용 → 시점/종목 인덱스로 제한.
+
+### 페이지 4 — PortfolioEnv + RL (핵심 재설계)
+
+- **목표**: 자본금으로 조건식 후보 중 여러 종목을 동시 매매하며 NAV를 키우는 환경.
+- **신규 파일**: `stom_rl/portfolio_env.py`, 학습 러너 `stom_rl/portfolio_train.py`.
+  - **상태**: `[현금비율, 보유종목별(수익률·보유시간·비중), 후보종목별 feature]` (고정 슬롯 K개로 패딩).
+  - **행동**: 후보 슬롯별 매수 비중 + 보유 슬롯별 매도(동적청산 변수 활용). 초기엔 단순화(매 step 후보 1개 매수/보유 1개 매도).
+  - **보상**: `Δnav − 비용`. 종료 시 NAV 기준.
+  - **제약**: 현금 한도, 동시 보유 ≤5~10, 종목당 비중 상한.
+- **완료 기준**: 소수 종목(≤5) 동시 보유 학습/평가가 돌고, NAV 곡선·거래 로그·live event가 생성됨.
+- **테스트**: `tests/test_stom_rl_portfolio_env.py` — 회계 보존(현금+평가액=nav), 제약 위반 방지, check_env(가능 시).
+- **예상 규모**: **대**. **위험**: 행동공간·신용할당 → 조건식으로 후보 축소 + 단순 사이징부터, 점진 확대.
+
+### 페이지 5 — 포트폴리오 walk-forward 검증
+
+- **목표**: 포트폴리오 NAV를 기간 분할로 검증해 과적합/레짐 의존을 판별.
+- **신규/수정 파일**: `stom_rl/portfolio_walk_forward.py`(기존 `walk_forward.py` 패턴 재사용) + 기준선(buy&hold, 동일가중, 무거래).
+- **완료 기준**: 여러 기간에서 일관되게 기준선 초과 + 비용·MDD 게이트 통과(또는 미달을 데이터로 확인).
+- **테스트**: fold 분할·기준선 계산 단위 테스트.
+- **예상 규모**: 중.
+
+### 페이지 6 — Risk gate + Paper replay
+
+- **목표**: 실전 직전 안전장치와 read-only 시뮬레이션.
+- **신규 파일**: `stom_rl/risk_gate.py`(Max DD·연속손실·일일거래한도·종목당 비중상한), `stom_rl/paper_replay.py`(실주문 없는 시점별 재생).
+- **완료 기준**: 위험 한도 내에서만 매매, paper replay가 과거 데이터로 NAV를 재현.
+- **테스트**: gate 트리거 단위 테스트.
+- **예상 규모**: 중.
+
+### 대시보드 반영 (각 페이지 공통, 선택)
+
+- 포트폴리오 run도 `webui/rl_runs/`에 sb3 형식 또는 신규 artifact로 남기면 RL Lab 화면 run 목록에 노출된다.
+- 전용 뷰(포트폴리오 NAV·보유종목·후보)는 `webui/v2_src/src/`만 수정 → `npm run build`, `/api/*` 신규 금지, SSR marker 보존 원칙 준수.
+
+### 의존 관계 요약
+
+```
+페이지1(feature) ─┐
+페이지2(자본/사이징) ─┼─→ 페이지4(PortfolioEnv) ─→ 페이지5(검증) ─→ 페이지6(risk/paper)
+페이지3(조건식 스크리너) ─┘
+```
+페이지 1·2·3은 비교적 독립적이라 병행 가능하고, 4는 1·2·3을 모두 입력으로 받는다.
