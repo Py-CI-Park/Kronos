@@ -317,12 +317,17 @@ def _evaluate_model(
     algorithm: str,
     config: Sb3SmokeConfig,
     event_writer: Optional[RlLiveEventWriter] = None,
+    episode_indices: Optional[Sequence[int]] = None,
 ) -> Dict[str, Any]:
-    probe_env = _make_env(config, split=config.eval_split)
-    eval_episode_count = len(probe_env.raw_env.episodes)
-    probe_env.close()
-    if config.max_eval_episodes and config.max_eval_episodes > 0:
-        eval_episode_count = min(eval_episode_count, int(config.max_eval_episodes))
+    if episode_indices is None:
+        probe_env = _make_env(config, split=config.eval_split)
+        eval_episode_count = len(probe_env.raw_env.episodes)
+        probe_env.close()
+        if config.max_eval_episodes and config.max_eval_episodes > 0:
+            eval_episode_count = min(eval_episode_count, int(config.max_eval_episodes))
+        evaluation_indices: Sequence[int] = range(eval_episode_count)
+    else:
+        evaluation_indices = list(episode_indices)
 
     action_rows: List[Dict[str, Any]] = []
     equity_rows: List[Dict[str, Any]] = []
@@ -331,7 +336,7 @@ def _evaluate_model(
     aggregate_equity_curve = [1.0]
     policy_name = f"stable_baselines3_{algorithm}"
 
-    for episode_index in range(eval_episode_count):
+    for episode_index in evaluation_indices:
         env = _make_env(config, split=config.eval_split, episode_index=episode_index)
         observation, info = env.reset(seed=config.seed + episode_index)
         raw_env = env.raw_env
