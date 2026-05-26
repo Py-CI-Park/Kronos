@@ -401,6 +401,53 @@
     };
   });
 
+  // Portfolio NAV stream: the live event ``equity`` is the run's NAV, so the
+  // follow/replay view animates the NAV curve as steps arrive.
+  const liveEquityChartOption = $derived.by(() => {
+    const rows = liveEvents.slice(-240).filter((row: any) => row.equity != null);
+    if (!rows.length) return {};
+    return {
+      backgroundColor: 'transparent',
+      grid: { left: 70, right: 24, top: 34, bottom: 42 },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: any) => {
+          const p = Array.isArray(params) ? params[0] : params;
+          const row = rows[p?.dataIndex ?? 0] ?? {};
+          return [
+            `<strong>step #${row.global_step ?? '-'}</strong>`,
+            row.timestamp ? `time ${String(row.timestamp).slice(0, 19)}` : '',
+            `NAV ${num(row.equity, 0)}`,
+            row.position != null ? `positions ${row.position}` : '',
+          ].filter(Boolean).join('<br/>');
+        },
+      },
+      xAxis: {
+        type: 'category',
+        data: rows.map((row: any, idx: number) => String(row.global_step ?? idx + 1)),
+        axisLabel: { color: '#64748b' },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'NAV',
+        scale: true,
+        axisLabel: { color: '#64748b' },
+        splitLine: { lineStyle: { color: 'rgba(148,163,184,.22)' } },
+      },
+      series: [
+        {
+          name: 'NAV',
+          type: 'line',
+          smooth: 0.2,
+          symbol: 'none',
+          data: rows.map((row: any) => Number(row.equity ?? 0)),
+          lineStyle: { color: '#0ea5e9', width: 2.4 },
+          areaStyle: { color: 'rgba(14,165,233,.12)' },
+        },
+      ],
+    };
+  });
+
   const liveActionChartOption = $derived.by(() => {
     const labels = Object.keys(liveActionCounts);
     if (!labels.length) return {};
@@ -997,7 +1044,7 @@
           <div class="card-header">
             <div>
               <div class="card-eyebrow">REALTIME RL EVENTS</div>
-              <div class="card-title">SB3 학습 이벤트 스트림</div>
+              <div class="card-title">{isPortfolio ? '포트폴리오 NAV 스트림' : 'SB3 학습 이벤트 스트림'}</div>
             </div>
             <div class="row live-controls" style="gap:8px;flex-wrap:wrap;align-items:center">
               {#if liveMode !== 'off'}
@@ -1036,8 +1083,8 @@
               <strong>{latestLiveEvent?.action_name ?? latestLiveEvent?.action ?? '-'}</strong>
             </div>
             <div>
-              <span>Latest equity</span>
-              <strong>{latestLiveEvent?.equity != null ? num(latestLiveEvent.equity, 5) : '-'}</strong>
+              <span>{isPortfolio ? 'Latest NAV' : 'Latest equity'}</span>
+              <strong>{latestLiveEvent?.equity != null ? num(latestLiveEvent.equity, isPortfolio ? 0 : 5) : '-'}</strong>
             </div>
           </div>
         </section>
@@ -1046,15 +1093,15 @@
           <div class="card">
             <div class="card-header">
               <div>
-                <div class="card-eyebrow">REWARD STREAM</div>
-                <div class="card-title">step reward tail</div>
+                <div class="card-eyebrow">{isPortfolio ? 'NAV STREAM' : 'REWARD STREAM'}</div>
+                <div class="card-title">{isPortfolio ? 'step별 NAV tail' : 'step reward tail'}</div>
               </div>
               <span class="pill">rows {fmt.int(liveEvents.length)}</span>
             </div>
             {#if liveEvents.length}
-              <EChartsRenderer option={liveRewardChartOption} height="320px" />
+              <EChartsRenderer option={isPortfolio ? liveEquityChartOption : liveRewardChartOption} height="320px" />
             {:else}
-              <div class="empty">live event log가 아직 없습니다. SB3 smoke를 먼저 실행하세요.</div>
+              <div class="empty">live event log가 아직 없습니다. {isPortfolio ? '포트폴리오 train/publish를' : 'SB3 smoke를'} 먼저 실행하세요.</div>
             {/if}
           </div>
           <div class="card">
@@ -1091,8 +1138,8 @@
                   <th>time</th>
                   <th>action</th>
                   <th class="num">reward</th>
-                  <th class="num">equity</th>
-                  <th class="num">position</th>
+                  <th class="num">{isPortfolio ? 'NAV' : 'equity'}</th>
+                  <th class="num">{isPortfolio ? '보유종목' : 'position'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1104,7 +1151,7 @@
                     <td class="mono">{row.timestamp ? String(row.timestamp).slice(11, 19) : '-'}</td>
                     <td>{row.action_name ?? row.action ?? '-'}</td>
                     <td class="num">{num(row.reward, 6)}</td>
-                    <td class="num">{row.equity != null ? num(row.equity, 5) : '-'}</td>
+                    <td class="num">{row.equity != null ? num(row.equity, isPortfolio ? 0 : 5) : '-'}</td>
                     <td class="num">{row.position ?? '-'}</td>
                   </tr>
                 {/each}

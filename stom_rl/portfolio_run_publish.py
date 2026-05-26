@@ -103,6 +103,18 @@ def publish_portfolio_run(
     # Train smoke trades (Page 10) — gives the trades table a real source.
     copied["trades_csv"] = _copy_if_exists(Path(train_dir) / "trades.csv", output_dir / "trades.csv")
 
+    # Live step events (Page 14) — the train smoke now emits per-step
+    # ``rl_live_events.jsonl`` (NAV mapped to equity) so the dashboard's
+    # realtime follow/replay view streams the portfolio run like a live
+    # training session.  The existing ``/table/events`` route serves whichever
+    # of these files is present, so copying them is all the wiring needed.
+    copied["live_events_jsonl"] = _copy_if_exists(
+        Path(train_dir) / "rl_live_events.jsonl", output_dir / "rl_live_events.jsonl"
+    )
+    copied["live_summary_json"] = _copy_if_exists(
+        Path(train_dir) / "rl_live_summary.json", output_dir / "rl_live_summary.json"
+    )
+
     walk_forward_summary: Dict[str, Any] = {}
     if wf_report_path.is_file():
         try:

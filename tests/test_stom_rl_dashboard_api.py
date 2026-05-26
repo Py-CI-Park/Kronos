@@ -305,6 +305,31 @@ def _write_portfolio_fixture(root: Path) -> None:
         "timestamp,symbol,passed,rank_score",
         ["2025-07-09T09:00:05,000100,True,96.1"],
     )
+    # Live step events (portfolio NAV stream) published by Page 14 so the
+    # dashboard's realtime follow/replay view streams the portfolio run.
+    (portfolio / "rl_live_events.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "run_id": "portfolio_paper_run",
+                    "algorithm": "portfolio",
+                    "phase": "train",
+                    "global_step": step,
+                    "action": 1 if step == 1 else 0,
+                    "action_name": "buy" if step == 1 else "hold",
+                    "reward": 0.0019 if step == 1 else -0.0105,
+                    "equity": 1000000.0 if step == 1 else 989504.0,
+                    "position": float(step),
+                    "timestamp": f"2025-07-09T09:00:0{step}",
+                    "schema_version": "stom_rl_live_event.v1",
+                    "info": {"nav": 1000000.0 if step == 1 else 989504.0, "cash": 500000.0},
+                }
+            )
+            for step in (1, 2)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_rl_dashboard_serves_portfolio_paper_run(tmp_path, monkeypatch):
@@ -349,6 +374,28 @@ def test_flask_serves_portfolio_paper_tables(tmp_path, monkeypatch):
     folds = client.get("/api/rl/runs/portfolio_paper_run/table/portfolio_folds")
     assert folds.status_code == 200
     assert folds.get_json()["rows"][0]["policy"] == "no_trade"
+
+
+def test_portfolio_paper_run_serves_live_events(tmp_path, monkeypatch):
+    """A published portfolio run exposes its NAV stream through the existing
+    ``/table/events`` route so the dashboard's follow/replay view is non-empty."""
+
+    _write_portfolio_fixture(tmp_path)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    events = rl_dashboard.load_rl_table("portfolio_paper_run", "events", limit=50)
+    assert len(events["rows"]) == 2
+    last = events["rows"][-1]
+    assert last["algorithm"] == "portfolio"
+    assert last["phase"] == "train"
+    assert last["equity"] == 989504.0  # NAV mapped to equity
+
+    client = flask_app.test_client()
+    response = client.get("/api/rl/runs/portfolio_paper_run/table/events")
+    assert response.status_code == 200
+    rows = response.get_json()["rows"]
+    assert rows and all(row["algorithm"] == "portfolio" for row in rows)
+    assert any(row.get("equity") for row in rows)
 
 
 def test_rl_dashboard_rejects_path_traversal(tmp_path, monkeypatch):
