@@ -11,7 +11,7 @@
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
 
-  type DetailView = 'overview' | 'live' | 'leaderboard' | 'trades' | 'artifacts';
+  type DetailView = 'overview' | 'live' | 'leaderboard' | 'trades' | 'portfolio' | 'artifacts';
 
   let runs = $state<RlRunRecord[]>([]);
   let selectedName = $state('');
@@ -24,6 +24,10 @@
   let episodes = $state<Array<Record<string, any>>>([]);
   let liveEvents = $state<Array<Record<string, any>>>([]);
   let liveEventPayload = $state<RlLiveEventsResponse | null>(null);
+  // Portfolio run (Page 10/11/12) tables.
+  let portfolioNav = $state<Array<Record<string, any>>>([]);
+  let portfolioDecisions = $state<Array<Record<string, any>>>([]);
+  let portfolioFolds = $state<Array<Record<string, any>>>([]);
   let rlProgress = $state<RlProgressResponse | null>(null);
   let view = $state<DetailView>('overview');
   let loading = $state(false);
@@ -89,6 +93,9 @@
     liveEvents = [];
     liveAllEvents = [];
     liveEventPayload = null;
+    portfolioNav = [];
+    portfolioDecisions = [];
+    portfolioFolds = [];
     selectedRun = null;
     try {
       const detail = await api.rlRun(name);
@@ -97,6 +104,19 @@
         view = 'live';
       } else if (detail?.artifact_type === 'performance_leaderboard') {
         view = 'leaderboard';
+      } else if (detail?.artifact_type === 'portfolio_paper') {
+        view = 'portfolio';
+      }
+
+      if (detail?.artifact_type === 'portfolio_paper') {
+        const [navPayload, decisionPayload, foldPayload] = await Promise.all([
+          api.rlNav(name, 600),
+          api.rlDecisions(name, 300),
+          api.rlPortfolioFolds(name, 200),
+        ]);
+        portfolioNav = navPayload?.rows ?? [];
+        portfolioDecisions = decisionPayload?.rows ?? [];
+        portfolioFolds = foldPayload?.rows ?? [];
       }
 
       const [leaderboardPayload, tradePayload, equityPayload, episodePayload, eventPayload] = await Promise.all([
@@ -202,6 +222,21 @@
   });
   const artifactCount = $derived(selectedRun?.artifacts?.length ?? 0);
   const isSb3Smoke = $derived(selectedRun?.artifact_type === 'sb3_smoke');
+  const isPortfolio = $derived(selectedRun?.artifact_type === 'portfolio_paper');
+  const portfolioWalkForward = $derived<Record<string, any>>(selectedRun?.detail?.walk_forward_summary ?? {});
+  const portfolioRiskReasons = $derived<Record<string, number>>(selectedRun?.detail?.risk_trigger_reasons ?? {});
+  const portfolioFinalNav = $derived(
+    portfolioNav.at(-1)?.nav ?? selectedSummary.final_nav ?? null
+  );
+  const portfolioInitialNav = $derived(
+    portfolioNav[0]?.nav ?? selectedRun?.detail?.config?.initial_cash ?? null
+  );
+  const portfolioReturnPct = $derived.by(() => {
+    const init = Number(portfolioInitialNav);
+    const final = Number(portfolioFinalNav);
+    if (!Number.isFinite(init) || init === 0 || !Number.isFinite(final)) return null;
+    return ((final - init) / init) * 100;
+  });
   const hasModel = $derived(selectedRun?.artifact_type === 'contextual_bandit' || isSb3Smoke);
   const hasLeaderboard = $derived(selectedRun?.artifact_type === 'performance_leaderboard' || leaderboardRows.length > 0);
   const selectedNetPct = $derived(
@@ -255,6 +290,70 @@
     };
   });
 
+
+  const portfolioNavChartOption = $derived.by(() => {
+    const rows = portfolioNav;
+    if (!rows.length) return {};
+    return {
+      backgroundColor: 'transparent',
+      grid: { left: 64, right: 52, top: 40, bottom: 44 },
+      legend: { top: 0, textStyle: { color: 'inherit' } },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: any) => {
+          const items = Array.isArray(params) ? params : [params];
+          const row = rows[items[0]?.dataIndex ?? 0] ?? {};
+          return [
+            `<strong>step ${row.step ?? '-'}</strong>`,
+            row.timestamp ? `시각 ${String(row.timestamp).slice(0, 19)}` : '',
+            `NAV ${num(row.nav, 0)}`,
+            row.cash != null ? `현금 ${num(row.cash, 0)}` : '',
+            row.position_count != null ? `보유 ${row.position_count}` : '',
+          ].filter(Boolean).join('<br/>');
+        },
+      },
+      xAxis: {
+        type: 'category',
+        data: rows.map((row: any, idx: number) => (row.timestamp ? String(row.timestamp).slice(11, 19) : String(idx + 1))),
+        axisLabel: { color: '#64748b' },
+      },
+      yAxis: [
+        {
+          type: 'value',
+          name: 'NAV',
+          scale: true,
+          axisLabel: { color: '#64748b' },
+          splitLine: { lineStyle: { color: 'rgba(148,163,184,.22)' } },
+        },
+        {
+          type: 'value',
+          name: '보유 종목',
+          min: 0,
+          axisLabel: { color: '#64748b' },
+        },
+      ],
+      series: [
+        {
+          name: 'NAV',
+          type: 'line',
+          smooth: 0.25,
+          symbol: 'none',
+          data: rows.map((row: any) => Number(row.nav ?? 0)),
+          lineStyle: { color: '#0f766e', width: 2.6 },
+          areaStyle: { color: 'rgba(20,184,166,.12)' },
+        },
+        {
+          name: '보유 종목',
+          type: 'line',
+          step: 'end',
+          yAxisIndex: 1,
+          symbol: 'none',
+          data: rows.map((row: any) => Number(row.position_count ?? 0)),
+          lineStyle: { color: '#2563eb', width: 1.8, type: 'dashed' },
+        },
+      ],
+    };
+  });
 
   const liveRewardChartOption = $derived.by(() => {
     const rows = liveEvents.slice(-240);
@@ -497,6 +596,7 @@
     if (type === 'cost_gate') return '비용 관문';
     if (type === 'baseline') return 'Baseline';
     if (type === 'episode_manifest') return 'Episode manifest';
+    if (type === 'portfolio_paper') return '포트폴리오 페이퍼';
     return type ?? 'unknown';
   }
 
@@ -506,6 +606,7 @@
     if (type === 'contextual_bandit') return 'accent';
     if (type === 'cost_gate') return 'success';
     if (type === 'baseline') return 'info';
+    if (type === 'portfolio_paper') return 'accent';
     return '';
   }
 
@@ -796,6 +897,9 @@
           <button data-active={view === 'overview' ? 'true' : 'false'} onclick={() => (view = 'overview')}>📊 성과 개요</button>
           <button data-active={view === 'live' ? 'true' : 'false'} onclick={() => (view = 'live')}>🎥 실시간 이벤트</button>
           <button data-active={view === 'leaderboard' ? 'true' : 'false'} onclick={() => (view = 'leaderboard')}>🏆 리더보드</button>
+          {#if isPortfolio}
+            <button data-active={view === 'portfolio' ? 'true' : 'false'} onclick={() => (view = 'portfolio')}>📈 포트폴리오</button>
+          {/if}
           <button data-active={view === 'trades' ? 'true' : 'false'} onclick={() => (view = 'trades')}>💹 거래/자산곡선</button>
           <button data-active={view === 'artifacts' ? 'true' : 'false'} onclick={() => (view = 'artifacts')}>📦 아티팩트</button>
         </div>
@@ -1063,6 +1167,158 @@
                 {/each}
                 {#if !leaderboardRows.length}
                   <tr><td colspan="11" class="text-muted">표시할 leaderboard row가 없습니다.</td></tr>
+                {/if}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {:else if view === 'portfolio'}
+        <section class="card" data-rl-portfolio-summary>
+          <div class="card-header">
+            <div>
+              <div class="card-eyebrow">PORTFOLIO PAPER REPLAY</div>
+              <div class="card-title">멀티심볼 포트폴리오 read-only 페이퍼 리플레이</div>
+            </div>
+            <span class="pill warn">실주문 아님</span>
+          </div>
+          <p class="text-caption">
+            Page 10 학습 스모크, Page 11 확장창 walk-forward, Page 12 read-only 페이퍼 리플레이가 만든 실제 산출물(NAV 곡선, 체결, 후보,
+            리스크/차단 로그, fold 요약)을 한 화면에서 봅니다. 이 화면은 주문/체결 API와 연결되어 있지 않습니다.
+          </p>
+          <div class="summary-grid">
+            <div>
+              <span>최종 NAV</span>
+              <strong>{portfolioFinalNav != null ? num(portfolioFinalNav, 0) : '—'}</strong>
+            </div>
+            <div>
+              <span>리플레이 수익률</span>
+              <strong class={Number(portfolioReturnPct ?? 0) >= 0 ? 'positive' : 'negative'}>
+                {portfolioReturnPct != null ? pct(portfolioReturnPct, 3) : '—'}
+              </strong>
+            </div>
+            <div>
+              <span>체결 수</span>
+              <strong>{fmt.int(selectedSummary.trade_count ?? trades.length)}</strong>
+            </div>
+            <div>
+              <span>리스크 차단</span>
+              <strong>{fmt.int(selectedSummary.risk_trigger_count ?? selectedSummary.blocked_action_count ?? 0)}</strong>
+            </div>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
+            <span class="pill info">스텝 {fmt.int(selectedSummary.steps ?? portfolioNav.length)}</span>
+            <span class="pill">cost {num(selectedSummary.cost_bps, 0)}bp</span>
+            <span class="pill">최대 보유 {fmt.int(selectedSummary.max_positions ?? 0)}</span>
+            <span class="pill {selectedSummary.order_write_path ? 'warn' : 'success'}">
+              주문 경로 {selectedSummary.order_write_path ? '활성' : '차단'}
+            </span>
+            {#if portfolioWalkForward.n_folds != null}
+              <span class="pill accent">walk-forward {fmt.int(portfolioWalkForward.n_folds)} fold</span>
+            {/if}
+            {#if portfolioWalkForward.holdout}
+              <span class="pill info" title={String(portfolioWalkForward.holdout)}>holdout {String(portfolioWalkForward.holdout).slice(0, 28)}</span>
+            {/if}
+          </div>
+          {#if Object.keys(portfolioRiskReasons).length}
+            <div class="feature-cloud" style="margin-top:12px">
+              {#each Object.entries(portfolioRiskReasons) as [reason, count]}
+                <span>{reason} · {fmt.int(count as number)}</span>
+              {/each}
+            </div>
+          {/if}
+        </section>
+
+        <section class="card" data-rl-portfolio-nav-chart>
+          <div class="card-header">
+            <div>
+              <div class="card-eyebrow">NAV CURVE</div>
+              <div class="card-title">포트폴리오 NAV / 보유 종목 추이</div>
+            </div>
+            <span class="pill">rows {fmt.int(portfolioNav.length)}</span>
+          </div>
+          {#if portfolioNav.length}
+            <EChartsRenderer option={portfolioNavChartOption} height="340px" />
+          {:else}
+            <div class="empty">NAV 곡선 데이터가 없습니다. Page 12 페이퍼 리플레이를 먼저 실행하세요.</div>
+          {/if}
+        </section>
+
+        <section class="card" data-rl-portfolio-folds-table>
+          <div class="card-header">
+            <div>
+              <div class="card-eyebrow">WALK-FORWARD FOLDS</div>
+              <div class="card-title">확장창 fold별 정책 성과</div>
+            </div>
+            <span class="text-caption">best {portfolioWalkForward.best_policy_by_return ?? '-'}</span>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th class="num">fold</th>
+                  <th>정책</th>
+                  <th class="num">최종 NAV</th>
+                  <th class="num">수익률</th>
+                  <th class="num">MDD</th>
+                  <th class="num">거래</th>
+                  <th>test 구간</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each portfolioFolds as row}
+                  <tr>
+                    <td class="num">{fmt.int(row.fold_index ?? 0)}</td>
+                    <td class="mono">{row.policy ?? '-'}</td>
+                    <td class="num">{num(row.final_nav, 0)}</td>
+                    <td class="num {Number(row.return_pct ?? 0) >= 0 ? 'positive' : 'negative'}">{pct(row.return_pct, 3)}</td>
+                    <td class="num negative">{pct(row.max_drawdown_pct, 3)}</td>
+                    <td class="num">{fmt.int(row.trade_count ?? 0)}</td>
+                    <td class="mono">{String(row.test_start ?? '-').slice(11, 19)}–{String(row.test_end ?? '-').slice(11, 19)}</td>
+                  </tr>
+                {/each}
+                {#if !portfolioFolds.length}
+                  <tr><td colspan="7" class="text-muted">표시할 fold row가 없습니다.</td></tr>
+                {/if}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" data-rl-portfolio-decisions-table>
+          <div class="card-header">
+            <div>
+              <div class="card-eyebrow">DECISIONS / POSITIONS</div>
+              <div class="card-title">스텝별 의사결정 · 차단 로그</div>
+            </div>
+            <span class="text-caption">read-only 페이퍼 결정</span>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>time</th>
+                  <th>종목</th>
+                  <th>제안</th>
+                  <th>실행</th>
+                  <th>차단</th>
+                  <th>사유</th>
+                  <th class="num">NAV</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each portfolioDecisions.slice(0, 80) as row}
+                  <tr>
+                    <td class="mono">{row.timestamp ? String(row.timestamp).slice(11, 19) : '-'}</td>
+                    <td class="mono">{row.symbol ?? '-'}</td>
+                    <td>{row.action_type ?? row.proposed_action ?? '-'}</td>
+                    <td>{row.executed_action ?? '-'}</td>
+                    <td><span class="pill {String(row.blocked) === 'True' || row.blocked === true ? 'warn' : 'success'}">{String(row.blocked) === 'True' || row.blocked === true ? '차단' : '통과'}</span></td>
+                    <td class="wrap">{row.blocked_reason || row.env_blocked_reason || '-'}</td>
+                    <td class="num">{num(row.nav_after, 0)}</td>
+                  </tr>
+                {/each}
+                {#if !portfolioDecisions.length}
+                  <tr><td colspan="7" class="text-muted">표시할 decision row가 없습니다.</td></tr>
                 {/if}
               </tbody>
             </table>

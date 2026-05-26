@@ -21,6 +21,7 @@ MAX_TABLE_LIMIT = 5000
 
 
 ARTIFACT_SIGNATURES = (
+    ("portfolio_paper", "portfolio_paper_summary.json"),
     ("performance_leaderboard", "performance_leaderboard.json"),
     ("sb3_smoke", "sb3_smoke_summary.json"),
     ("contextual_bandit", "eval_summary.json"),
@@ -49,6 +50,16 @@ TABLE_ALIASES = {
     "leaderboard": "leaderboard",
     "performance": "leaderboard",
     "performance_leaderboard": "leaderboard",
+    "nav": "nav",
+    "nav_curve": "nav",
+    "decision": "decisions",
+    "decisions": "decisions",
+    "position": "decisions",
+    "positions": "decisions",
+    "candidate": "candidates",
+    "candidates": "candidates",
+    "portfolio_fold": "portfolio_folds",
+    "portfolio_folds": "portfolio_folds",
     "event": "events",
     "events": "events",
     "live": "events",
@@ -66,6 +77,10 @@ ROOT_TABLE_CANDIDATES = {
     "rolling": ("rolling_folds.csv",),
     "gate": ("gate_summary.csv",),
     "leaderboard": ("performance_leaderboard.csv", "leaderboard.csv"),
+    "nav": ("nav.csv",),
+    "decisions": ("decisions.csv",),
+    "candidates": ("candidates.csv",),
+    "portfolio_folds": ("portfolio_walk_forward_folds.csv",),
 }
 
 LIVE_EVENT_FILE_NAMES = ("rl_live_events.jsonl", "live_events.jsonl", "events.jsonl")
@@ -150,6 +165,15 @@ def _detect_artifact_type(run_dir: Path) -> str:
 
 
 def _find_json_summary(run_dir: Path, artifact_type: str) -> Dict[str, Any]:
+    if artifact_type == "portfolio_paper":
+        payload = _read_json(run_dir / "portfolio_paper_summary.json")
+        summary = dict(payload.get("summary", {}))
+        config = payload.get("config", {})
+        if isinstance(config, dict):
+            summary.setdefault("cost_bps", config.get("cost_bps"))
+            summary.setdefault("max_positions", config.get("max_positions"))
+            summary.setdefault("top_k_candidates", config.get("top_k_candidates"))
+        return summary
     if artifact_type == "performance_leaderboard":
         payload = _read_json(run_dir / "performance_leaderboard.json")
         return dict(payload.get("summary", {}))
@@ -274,7 +298,25 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
         **_run_record(run_dir),
         "artifacts": _artifact_files(run_dir),
     }
-    if artifact_type == "performance_leaderboard":
+    if artifact_type == "portfolio_paper":
+        signature = _read_json(run_dir / "portfolio_paper_summary.json")
+        wf_report_path = run_dir / "portfolio_walk_forward_report.json"
+        walk_forward = _read_json(wf_report_path) if wf_report_path.is_file() else {}
+        risk_path = run_dir / "risk_triggers.json"
+        risk_payload = _read_json(risk_path) if risk_path.is_file() else {}
+        risk_triggers = risk_payload.get("risk_triggers", []) if isinstance(risk_payload, dict) else []
+        risk_reasons: Dict[str, int] = {}
+        for trigger in risk_triggers if isinstance(risk_triggers, list) else []:
+            reason = str(trigger.get("reason", "unknown")) if isinstance(trigger, Mapping) else "unknown"
+            risk_reasons[reason] = risk_reasons.get(reason, 0) + 1
+        payload["detail"] = {
+            "summary": signature.get("summary", {}),
+            "config": signature.get("config", {}),
+            "walk_forward_summary": walk_forward.get("summary", signature.get("walk_forward_summary", {})),
+            "risk_trigger_reasons": risk_reasons,
+            "risk_trigger_sample": risk_triggers[:20] if isinstance(risk_triggers, list) else [],
+        }
+    elif artifact_type == "performance_leaderboard":
         payload["detail"] = _read_json(run_dir / "performance_leaderboard.json")
     elif artifact_type == "sb3_smoke":
         payload["detail"] = _read_json(run_dir / "sb3_smoke_summary.json")

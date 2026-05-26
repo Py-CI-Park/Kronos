@@ -248,6 +248,109 @@ def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     assert cost_gate["gate"]["rows"][0]["passes_cost_gate"] is True
 
 
+def _write_portfolio_fixture(root: Path) -> None:
+    portfolio = root / "portfolio_paper_run"
+    portfolio.mkdir()
+    (portfolio / "portfolio_paper_summary.json").write_text(
+        json.dumps(
+            {
+                "mode": "stom_rl_portfolio_paper_run",
+                "run_name": "portfolio_paper_run",
+                "config": {"cost_bps": 25.0, "max_positions": 2, "top_k_candidates": 3},
+                "summary": {
+                    "read_only": True,
+                    "steps": 3,
+                    "final_nav": 989504.0,
+                    "trade_count": 2,
+                    "risk_trigger_count": 1,
+                    "order_write_path": False,
+                },
+                "walk_forward_summary": {"n_folds": 1, "best_policy_by_return": "no_trade"},
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+    (portfolio / "portfolio_walk_forward_report.json").write_text(
+        json.dumps(
+            {"mode": "stom_rl_portfolio_walk_forward", "summary": {"n_folds": 1, "best_policy_by_return": "no_trade"}}
+        ),
+        encoding="utf-8-sig",
+    )
+    (portfolio / "risk_triggers.json").write_text(
+        json.dumps({"risk_triggers": [{"timestamp": "2025-07-09T09:01:22", "reason": "consecutive_losses"}]}),
+        encoding="utf-8-sig",
+    )
+    _write_csv(
+        portfolio / "nav.csv",
+        "timestamp,step,nav,cash,position_count",
+        ["2025-07-09T09:00:05,0,1000000.0,1000000.0,0", "2025-07-09T09:00:25,1,989504.0,498906.0,2"],
+    )
+    _write_csv(
+        portfolio / "decisions.csv",
+        "timestamp,proposed_action,executed_action,action_type,symbol,blocked,blocked_reason,nav_after",
+        ["2025-07-09T09:00:05,1,1,buy,100,False,,999375.0"],
+    )
+    _write_csv(
+        portfolio / "trades.csv",
+        "timestamp,symbol,side,price,quantity,realized_pnl",
+        ["2025-07-09T09:00:05,100,buy,106100.0,2.35,0.0"],
+    )
+    _write_csv(
+        portfolio / "portfolio_walk_forward_folds.csv",
+        "fold_index,policy,final_nav,return_pct,max_drawdown_pct,trade_count,test_start,test_end",
+        ["0,no_trade,1000000.0,0.0,0.0,0,2025-07-09T09:10:30,2025-07-09T09:13:55"],
+    )
+    _write_csv(
+        portfolio / "candidates.csv",
+        "timestamp,symbol,passed,rank_score",
+        ["2025-07-09T09:00:05,000100,True,96.1"],
+    )
+
+
+def test_rl_dashboard_serves_portfolio_paper_run(tmp_path, monkeypatch):
+    _write_portfolio_fixture(tmp_path)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    runs = rl_dashboard.list_rl_runs(limit=10)
+    types = {run["name"]: run["artifact_type"] for run in runs}
+    assert types.get("portfolio_paper_run") == "portfolio_paper"
+
+    detail = rl_dashboard.load_rl_run("portfolio_paper_run")
+    assert detail["artifact_type"] == "portfolio_paper"
+    assert detail["summary"]["final_nav"] == 989504.0
+    assert detail["detail"]["walk_forward_summary"]["n_folds"] == 1
+    assert detail["detail"]["risk_trigger_reasons"]["consecutive_losses"] == 1
+
+    nav = rl_dashboard.load_rl_table("portfolio_paper_run", "nav", limit=10)
+    assert nav["rows"][-1]["nav"] == 989504.0
+    decisions = rl_dashboard.load_rl_table("portfolio_paper_run", "decisions", limit=10)
+    assert decisions["rows"][0]["action_type"] == "buy"
+    folds = rl_dashboard.load_rl_table("portfolio_paper_run", "portfolio_folds", limit=10)
+    assert folds["rows"][0]["policy"] == "no_trade"
+
+
+def test_flask_serves_portfolio_paper_tables(tmp_path, monkeypatch):
+    _write_portfolio_fixture(tmp_path)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    client = flask_app.test_client()
+
+    runs = client.get("/api/rl/runs")
+    assert runs.status_code == 200
+    assert any(
+        run["name"] == "portfolio_paper_run" and run["artifact_type"] == "portfolio_paper"
+        for run in runs.get_json()["runs"]
+    )
+
+    nav = client.get("/api/rl/runs/portfolio_paper_run/table/nav")
+    assert nav.status_code == 200
+    assert nav.get_json()["rows"][-1]["nav"] == 989504.0
+
+    folds = client.get("/api/rl/runs/portfolio_paper_run/table/portfolio_folds")
+    assert folds.status_code == 200
+    assert folds.get_json()["rows"][0]["policy"] == "no_trade"
+
+
 def test_rl_dashboard_rejects_path_traversal(tmp_path, monkeypatch):
     _write_rl_fixture(tmp_path)
     monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])

@@ -176,7 +176,14 @@ export interface SystemResponse {
 
 export interface RlRunRecord {
   name: string;
-  artifact_type: 'contextual_bandit' | 'sb3_smoke' | 'cost_gate' | 'baseline' | 'episode_manifest' | string;
+  artifact_type:
+    | 'contextual_bandit'
+    | 'sb3_smoke'
+    | 'cost_gate'
+    | 'baseline'
+    | 'episode_manifest'
+    | 'portfolio_paper'
+    | string;
   modified_at?: string;
   summary?: Record<string, any>;
   policies?: string[];
@@ -290,4 +297,17 @@ export const api = {
     ),
   rlCostGate: (run: string, limit: number = 500) =>
     fetchJson<RlCostGateResponse>(`/api/rl/runs/${encodeURIComponent(run)}/cost-gate?limit=${limit}`),
+  // Portfolio (Page 10/11/12) tables are served through the existing /table/<name> route.
+  rlNav: (run: string, limit: number = 500) =>
+    fetchJson<RlTableResponse>(
+      `/api/rl/runs/${encodeURIComponent(run)}/table/nav?limit=${limit}`
+    ),
+  rlDecisions: (run: string, limit: number = 500) =>
+    fetchJson<RlTableResponse>(
+      `/api/rl/runs/${encodeURIComponent(run)}/table/decisions?limit=${limit}`
+    ),
+  rlPortfolioFolds: (run: string, limit: number = 500) =>
+    fetchJson<RlTableResponse>(
+      `/api/rl/runs/${encodeURIComponent(run)}/table/portfolio_folds?limit=${limit}`
+    ),
 };
