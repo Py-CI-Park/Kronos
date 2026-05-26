@@ -15,7 +15,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from math import exp, log
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd

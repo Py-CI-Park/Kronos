@@ -62,6 +62,8 @@ class StomTickTradingEnvConfig:
     invalid_action_penalty: float = 0.001
     reward_mode: str = "horizon"
     normalize_observation: bool = True
+    feature_columns: Optional[Tuple[str, ...]] = None
+    feature_schema_mode: str = "compat"
 
 
 class DiscreteSpace:
@@ -101,6 +103,8 @@ class StomTickTradingEnv:
         self.config = config or StomTickTradingEnvConfig(**overrides)
         if self.config.reward_mode not in {"horizon", "mark_to_market"}:
             raise ValueError("reward_mode must be one of: horizon, mark_to_market")
+        if self.config.feature_schema_mode not in {"compat", "strict"}:
+            raise ValueError("feature_schema_mode must be one of: compat, strict")
         if self.config.lookback_window <= 0:
             raise ValueError("lookback_window must be positive")
         if self.config.reward_horizon_seconds <= 0:
@@ -115,7 +119,10 @@ class StomTickTradingEnv:
         if not self.episodes:
             raise ValueError(f"No episodes found for split={self.config.split!r}")
 
-        self.feature_columns = BASE_MARKET_COLUMNS + POSITION_FEATURE_COLUMNS
+        self.market_feature_columns = list(self.config.feature_columns or tuple(BASE_MARKET_COLUMNS))
+        self.feature_columns = self.market_feature_columns + [
+            column for column in POSITION_FEATURE_COLUMNS if column not in self.market_feature_columns
+        ]
         self.action_space = DiscreteSpace(3)
         self.observation_space = BoxSpace((self.config.lookback_window, len(self.feature_columns)))
         self._rng = np.random.default_rng(self.config.seed)
@@ -280,9 +287,15 @@ class StomTickTradingEnv:
         frame = frame.copy()
         frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
         frame = frame.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
-        for column in BASE_MARKET_COLUMNS:
+        optional_missing = sorted(set(self.market_feature_columns) - set(frame.columns) - set(BASE_MARKET_COLUMNS))
+        if optional_missing and self.config.feature_schema_mode == "strict":
+            raise ValueError(f"Episode CSV missing configured feature columns: {optional_missing}")
+        numeric_columns = list(dict.fromkeys([*BASE_MARKET_COLUMNS, *self.market_feature_columns]))
+        for column in numeric_columns:
+            if column not in frame.columns:
+                frame[column] = 0.0
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
-        frame[BASE_MARKET_COLUMNS] = frame[BASE_MARKET_COLUMNS].ffill().bfill()
+        frame[numeric_columns] = frame[numeric_columns].ffill().bfill().fillna(0.0)
         frame = frame.dropna(subset=BASE_MARKET_COLUMNS)
         frame = frame[frame["close"] > 0].reset_index(drop=True)
         if frame.empty:
@@ -313,7 +326,7 @@ class StomTickTradingEnv:
         end = self.current_idx
         if start < 0:
             raise RuntimeError("current_idx is smaller than lookback_window.")
-        window = self.frame.iloc[start:end][BASE_MARKET_COLUMNS].copy().reset_index(drop=True)
+        window = self.frame.iloc[start:end][self.market_feature_columns].copy().reset_index(drop=True)
         window["position"] = float(self.position)
         window["unrealized_return"] = self._unrealized_return()
         window["time_in_position"] = self._time_in_position()
@@ -323,7 +336,7 @@ class StomTickTradingEnv:
         obs = self._observation_frame().to_numpy(dtype=np.float32)
         if not self.config.normalize_observation:
             return obs
-        market_width = len(BASE_MARKET_COLUMNS)
+        market_width = len(self.market_feature_columns)
         market = obs[:, :market_width]
         mean = market.mean(axis=0)
         std = market.std(axis=0)

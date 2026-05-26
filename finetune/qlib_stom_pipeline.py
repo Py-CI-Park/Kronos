@@ -23,7 +23,7 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -50,6 +50,56 @@ SUPPORTED_FREQS = {"1s", "1min"}
 SUPPORTED_SPLIT_STRATEGIES = {"session", "group"}
 PYQLIB_PROVIDER_UNSUPPORTED_FREQS = {"1s"}
 ExportItem = Tuple[str, str, pd.Timestamp, pd.Timestamp, pd.DataFrame]
+STOM_RL_CANONICAL_FEATURES = [
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+    "trade_strength",
+    "buy_qty_1s",
+    "sell_qty_1s",
+    "net_buy_qty_1s",
+    "bid_ask_imbalance",
+    "spread_ticks",
+    "amount_delta",
+    "turnover_rate",
+]
+STOM_RL_FEATURE_MAPPING: Dict[str, Dict[str, Any]] = {
+    "trade_strength": {
+        "source_columns": ["체결강도", "trade_strength"],
+        "formula": "numeric fill 0, clipped to [0, 500]",
+    },
+    "buy_qty_1s": {
+        "source_columns": ["초당매수수량", "buy_qty_1s", "buy_qty"],
+        "formula": "numeric fill 0",
+    },
+    "sell_qty_1s": {
+        "source_columns": ["초당매도수량", "sell_qty_1s", "sell_qty"],
+        "formula": "numeric fill 0",
+    },
+    "net_buy_qty_1s": {
+        "source_columns": ["buy_qty_1s", "sell_qty_1s"],
+        "formula": "buy_qty_1s - sell_qty_1s",
+    },
+    "bid_ask_imbalance": {
+        "source_columns": ["매수총잔량", "매도총잔량", "bid_qty_1", "ask_qty_1"],
+        "formula": "bid / max(bid + ask, eps)",
+    },
+    "spread_ticks": {
+        "source_columns": ["매도호가1", "매수호가1", "ask_price_1", "bid_price_1"],
+        "formula": "(ask1 - bid1) / tick_size, fallback tick_size=1",
+    },
+    "amount_delta": {
+        "source_columns": ["amount", "거래대금", "초당거래대금"],
+        "formula": "group/session first-difference, first row 0",
+    },
+    "turnover_rate": {
+        "source_columns": ["회전율", "turnover_rate"],
+        "formula": "numeric fill 0",
+    },
+}
 
 
 @dataclass
@@ -85,6 +135,60 @@ def _instrument_key(symbol: Any, session: Any) -> str:
     """Use symbol+session as an instrument key to prevent cross-session windows."""
 
     return f"KR{_clean_symbol(symbol)}_{str(session)}"
+
+
+def _first_present(frame: pd.DataFrame, candidates: Sequence[str]) -> Optional[str]:
+    for candidate in candidates:
+        if candidate in frame.columns:
+            return candidate
+    return None
+
+
+def _numeric_or_zero(frame: pd.DataFrame, candidates: Sequence[str]) -> pd.Series:
+    column = _first_present(frame, candidates)
+    if column is None:
+        return pd.Series(np.zeros(len(frame)), index=frame.index, dtype="float64")
+    return pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
+
+
+def build_stom_rl_feature_frame(frame: pd.DataFrame, tick_size: float = 1.0) -> pd.DataFrame:
+    """Return a deterministic canonical feature frame for STOM RL.
+
+    The legacy Qlib export keeps ``QLIB_CSV_FIELDS`` unchanged.  This helper is
+    an opt-in portfolio/RL feature expansion layer used by tests, future export
+    commands, and handoff documentation.
+    """
+
+    if frame.empty:
+        return pd.DataFrame(columns=STOM_RL_CANONICAL_FEATURES)
+    out = frame.copy()
+    for column in ["open", "high", "low", "close", "volume", "amount"]:
+        out[column] = pd.to_numeric(out.get(column, 0.0), errors="coerce").fillna(0.0)
+
+    out["trade_strength"] = _numeric_or_zero(out, ["체결강도", "trade_strength"]).clip(0.0, 500.0)
+    out["buy_qty_1s"] = _numeric_or_zero(out, ["초당매수수량", "buy_qty_1s", "buy_qty"])
+    out["sell_qty_1s"] = _numeric_or_zero(out, ["초당매도수량", "sell_qty_1s", "sell_qty"])
+    out["net_buy_qty_1s"] = out["buy_qty_1s"] - out["sell_qty_1s"]
+
+    bid = _numeric_or_zero(out, ["매수총잔량", "bid_qty_1", "bid_qty"])
+    ask = _numeric_or_zero(out, ["매도총잔량", "ask_qty_1", "ask_qty"])
+    out["bid_ask_imbalance"] = bid / np.maximum(bid + ask, 1e-9)
+
+    bid_price = _numeric_or_zero(out, ["매수호가1", "bid_price_1", "bid_price"])
+    ask_price = _numeric_or_zero(out, ["매도호가1", "ask_price_1", "ask_price"])
+    missing_quote = (bid_price <= 0) | (ask_price <= 0)
+    bid_price = bid_price.mask(missing_quote, out["close"])
+    ask_price = ask_price.mask(missing_quote, out["close"])
+    out["spread_ticks"] = (ask_price - bid_price).clip(lower=0.0) / max(float(tick_size), 1e-9)
+
+    group_keys = [column for column in ["symbol", "session"] if column in out.columns]
+    if group_keys:
+        out["amount_delta"] = out.groupby(group_keys, sort=False)["amount"].diff().fillna(0.0)
+    else:
+        out["amount_delta"] = out["amount"].diff().fillna(0.0)
+    out["turnover_rate"] = _numeric_or_zero(out, ["회전율", "turnover_rate"])
+
+    return out[STOM_RL_CANONICAL_FEATURES].replace([np.inf, -np.inf], 0.0).fillna(0.0)
 
 
 def _validate_ratios(train_ratio: float, val_ratio: float, test_ratio: float) -> None:
