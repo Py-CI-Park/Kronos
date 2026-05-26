@@ -67,6 +67,31 @@ def _proposed_action(env: PortfolioEnv, info: Mapping[str, Any]) -> int:
     return ACTION_HOLD
 
 
+def _action_target(env: PortfolioEnv, info: Mapping[str, Any], action: int) -> Dict[str, Any]:
+    """Resolve the symbol/slot a proposed ``action`` would touch.
+
+    Read-only: looks up the current-bar candidate frame (buy) or the held
+    symbols (sell) without mutating any state.  Returns ``slot`` and best-effort
+    ``symbol`` so blocked-action reason codes carry both.
+    """
+
+    decoded = env.decode_action(action)
+    action_type = str(decoded["type"])
+    slot = decoded.get("slot")
+    symbol = ""
+    if action_type == "buy" and slot is not None:
+        candidates = env._current_candidates()
+        if int(slot) < len(candidates):
+            symbol = str(candidates.iloc[int(slot)]["symbol"])
+    elif action_type == "sell" and slot is not None:
+        # ``info["positions"]`` is a list of position dicts already sorted by
+        # symbol, matching the env's slot ordering (``_holding_symbols()``).
+        holdings = [str(p["symbol"]) for p in info.get("positions", []) if "symbol" in p]
+        if int(slot) < len(holdings):
+            symbol = holdings[int(slot)]
+    return {"action_type": action_type, "slot": slot, "symbol": symbol}
+
+
 def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
     if not config.read_only:
         raise ValueError("Paper replay must run with read_only=True; write-mode order routing is not implemented.")
@@ -96,6 +121,7 @@ def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
     risk_state = RiskState(peak_nav=float(info["nav"]), last_nav=float(info["nav"]))
     decisions: List[Dict[str, Any]] = []
     risk_triggers: List[Dict[str, Any]] = []
+    blocked_actions: List[Dict[str, Any]] = []
     terminated = False
     truncated = False
     steps = 0
@@ -103,6 +129,7 @@ def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
         if config.max_steps and steps >= int(config.max_steps):
             break
         proposed = _proposed_action(env, info)
+        target = _action_target(env, info, proposed)
         decoded = env.decode_action(proposed)
         action_type = str(decoded["type"])
         proposed_weight = float(env.config.buy_fraction) if action_type == "buy" else 0.0
@@ -113,8 +140,23 @@ def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
             proposed_weight=proposed_weight,
             state=risk_state,
         )
-        action = proposed if risk["allowed"] else ACTION_HOLD
-        if not risk["allowed"]:
+        # A pure HOLD never routes an order, so the risk gate's portfolio-level
+        # blocks (drawdown / consecutive_losses) only count as *blocked actions*
+        # when an order (buy/sell) was actually proposed.
+        risk_blocked = (not risk["allowed"]) and action_type != "hold"
+        action = ACTION_HOLD if risk_blocked else proposed
+        if risk_blocked:
+            blocked = {
+                "timestamp": info["timestamp"],
+                "source": "risk_gate",
+                "proposed_action": proposed,
+                "action_type": action_type,
+                "slot": target["slot"],
+                "symbol": target["symbol"],
+                "reason": risk["reason"],
+                "risk_state": risk["state"],
+            }
+            blocked_actions.append(blocked)
             risk_triggers.append(
                 {
                     "timestamp": info["timestamp"],
@@ -124,17 +166,38 @@ def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
                 }
             )
         nav_before = float(info["nav"])
+        invalid_before = len(env.invalid_actions)
         _, reward, terminated, truncated, next_info = env.step(action)
         traded = int(next_info["trade_count"]) > int(info["trade_count"])
         gate.update_after_step(risk_state, nav_before=nav_before, nav_after=float(next_info["nav"]), traded=traded)
+        # The env masks structurally invalid orders (padding slot, already held,
+        # unfillable / no T+1).  Surface those as blocked actions too, with the
+        # current risk state attached so every blocked row carries one.
+        env_blocked = not risk_blocked and len(env.invalid_actions) > invalid_before
+        env_reason = next_info.get("blocked_reason", "") if env_blocked else ""
+        if env_blocked:
+            blocked_actions.append(
+                {
+                    "timestamp": info["timestamp"],
+                    "source": "env_mask",
+                    "proposed_action": proposed,
+                    "action_type": action_type,
+                    "slot": target["slot"],
+                    "symbol": target["symbol"],
+                    "reason": env_reason,
+                    "risk_state": dict(risk["state"]),
+                }
+            )
         decisions.append(
             {
                 "timestamp": info["timestamp"],
                 "proposed_action": proposed,
                 "executed_action": action,
                 "action_type": action_type,
-                "blocked": not risk["allowed"],
-                "blocked_reason": risk["reason"],
+                "symbol": target["symbol"],
+                "blocked": risk_blocked or env_blocked,
+                "blocked_source": "risk_gate" if risk_blocked else ("env_mask" if env_blocked else ""),
+                "blocked_reason": risk["reason"] if risk_blocked else env_reason,
                 "env_blocked_reason": next_info.get("blocked_reason", ""),
                 "reward": float(reward),
                 "nav_after": float(next_info["nav"]),
@@ -153,7 +216,9 @@ def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
             "steps": steps,
             "final_nav": float(info["nav"]),
             "trade_count": int(info["trade_count"]),
-            "blocked_action_count": len(risk_triggers) + len(env.invalid_actions),
+            "blocked_action_count": len(blocked_actions),
+            "risk_blocked_count": sum(1 for b in blocked_actions if b["source"] == "risk_gate"),
+            "env_blocked_count": sum(1 for b in blocked_actions if b["source"] == "env_mask"),
             "risk_trigger_count": len(risk_triggers),
             "order_write_path": False,
         },
@@ -163,6 +228,7 @@ def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
             "decisions_csv": str(output_dir / "decisions.csv"),
             "nav_csv": str(output_dir / "nav.csv"),
             "risk_triggers_json": str(output_dir / "risk_triggers.json"),
+            "blocked_actions_json": str(output_dir / "blocked_actions.json"),
         },
     }
     if config.write_artifacts:
@@ -175,7 +241,9 @@ def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
                 "proposed_action",
                 "executed_action",
                 "action_type",
+                "symbol",
                 "blocked",
+                "blocked_source",
                 "blocked_reason",
                 "env_blocked_reason",
                 "reward",
@@ -185,6 +253,7 @@ def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
         )
         _write_csv(output_dir / "nav.csv", env.nav_log, ["timestamp", "step", "nav", "cash", "position_count"])
         _write_json(output_dir / "risk_triggers.json", {"risk_triggers": risk_triggers, "env_blocked_actions": env.invalid_actions})
+        _write_json(output_dir / "blocked_actions.json", {"blocked_actions": blocked_actions})
     return payload
 
 
