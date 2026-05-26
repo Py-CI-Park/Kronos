@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from .accounting import FLOAT_TOLERANCE, PortfolioAccount
+from .symbol_norm import normalize_symbol_series, read_candidates_csv
 from .trading_env import BoxSpace, DiscreteSpace
 
 
@@ -293,7 +294,7 @@ class PortfolioEnv:
     def _load_candidates(self, candidates: Optional[pd.DataFrame]) -> pd.DataFrame:
         if candidates is None:
             if self.config.candidate_path:
-                candidates = pd.read_csv(self.config.candidate_path, encoding="utf-8-sig")
+                candidates = read_candidates_csv(self.config.candidate_path)
             else:
                 candidates = synthetic_candidates()
         required = {"timestamp", "symbol", "rank_score", "price"}
@@ -302,7 +303,11 @@ class PortfolioEnv:
             raise ValueError(f"Portfolio candidates missing required columns: {missing}")
         frame = candidates.copy()
         frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
-        frame["symbol"] = frame["symbol"].astype(str)
+        # Canonical symbol form (6-digit zero-pad for all-digit Korean codes;
+        # non-numeric synthetic symbols left unchanged) so the holding key,
+        # sell-lookup and mask all match regardless of whether candidates came
+        # from a CSV (int-stripped) or in-memory.
+        frame["symbol"] = normalize_symbol_series(frame["symbol"])
         frame["rank_score"] = pd.to_numeric(frame["rank_score"], errors="coerce").fillna(0.0)
         frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
         # T+1 fill contract (Page 9/10): `price` is the decision-bar close at T;

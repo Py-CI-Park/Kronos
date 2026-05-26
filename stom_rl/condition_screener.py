@@ -35,6 +35,8 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 import pandas as pd
 
+from stom_rl.symbol_norm import read_candidates_csv
+
 
 DEFAULT_ALLOWED_FUNCTIONS: Dict[str, Callable[..., float]] = {
     "abs": abs,
@@ -386,7 +388,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parse_args(argv)
     rules = load_rules(Path(args.rules))
     if args.input_csv:
-        frame = pd.read_csv(args.input_csv, encoding="utf-8-sig")
+        frame = read_candidates_csv(args.input_csv)
         candidates = screen_frame(frame, rules)
     elif args.db and args.table:
         candidates = screen_sqlite_table(Path(args.db), args.table, rules, limit=args.limit)

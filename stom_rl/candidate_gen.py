@@ -39,6 +39,7 @@ from stom_rl.condition_screener import (
     write_candidates,
 )
 from stom_rl.panel_join import build_panel_from_db
+from stom_rl.symbol_norm import read_candidates_csv
 
 
 def generate_candidates(
@@ -126,7 +127,7 @@ def write_topk_report(path: Path, report: pd.DataFrame) -> None:
 def _load_panel(input_csv: Optional[str]) -> pd.DataFrame:
     if not input_csv:
         raise ValueError("--input-csv is required when --db is not given")
-    return pd.read_csv(input_csv, encoding="utf-8-sig")
+    return read_candidates_csv(input_csv)
 
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:

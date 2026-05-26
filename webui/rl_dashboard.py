@@ -122,6 +122,10 @@ def _coerce_scalar(value: str) -> Any:
         return True
     if lowered == "false":
         return False
+    # Preserve zero-padded codes (e.g. Korean stock symbol ``000250``) as strings:
+    # coercing to int would strip the leading zeros and display ``250``.
+    if len(value) > 1 and value[0] == "0" and value.isdigit():
+        return value
     try:
         if any(ch in value for ch in (".", "e", "E")):
             return float(value)

@@ -14,9 +14,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-import pandas as pd
-
 from .portfolio_env import ACTION_HOLD, PortfolioEnv, PortfolioEnvConfig
+from .symbol_norm import read_candidates_csv
 
 
 DEFAULT_PORTFOLIO_TRAIN_OUTPUT_DIR = Path("webui") / "rl_runs" / "stom_portfolio_smoke"
@@ -65,7 +64,7 @@ def _deterministic_action(env: PortfolioEnv, info: Mapping[str, Any]) -> int:
 def run_portfolio_smoke(config: PortfolioTrainConfig) -> Dict[str, Any]:
     candidates = None
     if config.candidate_path:
-        candidates = pd.read_csv(config.candidate_path, encoding="utf-8-sig")
+        candidates = read_candidates_csv(config.candidate_path)
     env = PortfolioEnv(
         PortfolioEnvConfig(
             candidate_path=config.candidate_path,

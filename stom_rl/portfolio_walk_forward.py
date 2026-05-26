@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from .portfolio_env import ACTION_HOLD, PortfolioEnv, PortfolioEnvConfig, synthetic_candidates
+from .symbol_norm import read_candidates_csv
 
 
 DEFAULT_PORTFOLIO_WALK_FORWARD_OUTPUT_DIR = Path("webui") / "rl_runs" / "stom_portfolio_walk_forward"
@@ -78,7 +79,7 @@ def _write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequen
 
 def _load_candidates(path: Optional[str]) -> pd.DataFrame:
     if path:
-        frame = pd.read_csv(path, encoding="utf-8-sig")
+        frame = read_candidates_csv(path)
     else:
         frame = synthetic_candidates()
     frame = frame.copy()

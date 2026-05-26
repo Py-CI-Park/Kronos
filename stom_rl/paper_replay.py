@@ -13,10 +13,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-import pandas as pd
-
 from .portfolio_env import ACTION_HOLD, PortfolioEnv, PortfolioEnvConfig
 from .risk_gate import RiskGate, RiskGateConfig, RiskState
+from .symbol_norm import read_candidates_csv
 
 
 DEFAULT_PAPER_REPLAY_OUTPUT_DIR = Path("webui") / "rl_runs" / "stom_portfolio_paper_replay"
@@ -95,7 +94,7 @@ def _action_target(env: PortfolioEnv, info: Mapping[str, Any], action: int) -> D
 def run_paper_replay(config: PaperReplayConfig) -> Dict[str, Any]:
     if not config.read_only:
         raise ValueError("Paper replay must run with read_only=True; write-mode order routing is not implemented.")
-    candidates = pd.read_csv(config.candidate_path, encoding="utf-8-sig") if config.candidate_path else None
+    candidates = read_candidates_csv(config.candidate_path) if config.candidate_path else None
     env = PortfolioEnv(
         PortfolioEnvConfig(
             candidate_path=config.candidate_path,
