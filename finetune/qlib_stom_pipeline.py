@@ -39,6 +39,7 @@ if str(FINETUNE_CSV_DIR) not in sys.path:
 from stom_tick_dataset import (  # noqa: E402
     DEFAULT_GROUP_COLUMNS,
     connect_readonly,
+    get_table_columns,
     list_stock_tables,
     read_stom_table_as_kline,
 )
@@ -189,6 +190,295 @@ def build_stom_rl_feature_frame(frame: pd.DataFrame, tick_size: float = 1.0) -> 
     out["turnover_rate"] = _numeric_or_zero(out, ["회전율", "turnover_rate"])
 
     return out[STOM_RL_CANONICAL_FEATURES].replace([np.inf, -np.inf], 0.0).fillna(0.0)
+
+
+# ---------------------------------------------------------------------------
+# STOM RL feature export (Page 7) — opt-in, non-invasive path.
+#
+# The legacy ``export`` subcommand and ``QLIB_CSV_FIELDS`` stay unchanged so
+# existing Kronos/Qlib consumers are not affected.  This path reads ONE symbol
+# table for a small time window, decodes the source column names, maps them to
+# the inputs of :func:`build_stom_rl_feature_frame`, and emits the 14 canonical
+# RL features plus a missing/scale report.  It never performs a full DB scan.
+# ---------------------------------------------------------------------------
+
+# DB-source columns required to compute the 14 canonical RL features.  Korean
+# names are stored as UTF-8 in the STOM tick DB and are returned correctly by
+# sqlite3's default ``text_factory`` (no cp949 round-trip needed for this DB).
+STOM_RL_SOURCE_COLUMNS: Dict[str, List[str]] = {
+    "timestamp": ["index", "timestamps", "timestamp"],
+    "close": ["현재가", "종가", "close"],
+    "open": ["시가", "open"],
+    "high": ["고가", "high"],
+    "low": ["저가", "low"],
+    "buy_qty_1s": ["초당매수수량"],
+    "sell_qty_1s": ["초당매도수량"],
+    "체결강도": ["체결강도"],
+    "amount": ["초당거래대금", "거래대금", "당일거래대금"],
+    "회전율": ["회전율"],
+    "매수총잔량": ["매수총잔량"],
+    "매도총잔량": ["매도총잔량"],
+    "매수호가1": ["매수호가1"],
+    "매도호가1": ["매도호가1"],
+}
+
+
+def _sqlite_quote_ident(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _decode_table_columns(conn: Any, table_name: str) -> List[str]:
+    """Return source column names, retrying with explicit decoding if needed.
+
+    The STOM tick DB stores Korean column names as UTF-8, which sqlite3 decodes
+    correctly by default.  As a defensive fallback (other dumps may differ) we
+    re-read the raw bytes and try utf-8 then cp949 when the default names look
+    corrupted (contain the Unicode replacement character).
+    """
+
+    names = get_table_columns(conn, table_name)
+    if not any("�" in str(name) for name in names):
+        return list(names)
+
+    raw_factory = conn.text_factory
+    try:
+        conn.text_factory = bytes
+        raw_rows = conn.execute(
+            f"PRAGMA table_info({_sqlite_quote_ident(table_name)})"
+        ).fetchall()
+    finally:
+        conn.text_factory = raw_factory
+
+    decoded: List[str] = []
+    for row in raw_rows:
+        raw_name = row[1]
+        if isinstance(raw_name, bytes):
+            for encoding in ("utf-8", "cp949"):
+                try:
+                    decoded.append(raw_name.decode(encoding))
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                decoded.append(raw_name.decode("utf-8", errors="replace"))
+        else:
+            decoded.append(str(raw_name))
+    return decoded
+
+
+def _resolve_source_column(columns: Sequence[str], candidates: Sequence[str]) -> Optional[str]:
+    column_set = set(columns)
+    for candidate in candidates:
+        if candidate in column_set:
+            return candidate
+    return None
+
+
+def read_stom_table_rl_source(
+    conn: Any,
+    table_name: str,
+    session: Optional[str] = None,
+    time_start: str = "090000",
+    time_end: str = "093000",
+    max_rows: int = 0,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Read ONE STOM symbol table window into RL feature-builder input columns.
+
+    Returns a frame carrying ``symbol``/``session``/``timestamp`` plus the
+    DB-named source columns expected by :func:`build_stom_rl_feature_frame`.
+    The query is bounded by the time window (and optional ``max_rows``) so it
+    never scans the whole table — full-DB scans are out of scope for Page 7.
+    """
+
+    source_columns = _decode_table_columns(conn, table_name)
+    encoding_ok = not any("�" in str(name) for name in source_columns)
+    resolved: Dict[str, Optional[str]] = {
+        target: _resolve_source_column(source_columns, candidates)
+        for target, candidates in STOM_RL_SOURCE_COLUMNS.items()
+    }
+    timestamp_col = resolved.get("timestamp")
+    close_col = resolved.get("close")
+    if not timestamp_col or not close_col:
+        missing = [k for k in ("timestamp", "close") if not resolved.get(k)]
+        raise ValueError(f"Table {table_name} is missing required columns: {missing}")
+
+    selected = sorted({col for col in resolved.values() if col})
+    select_clause = ", ".join(_sqlite_quote_ident(col) for col in selected)
+    order_col = _sqlite_quote_ident(timestamp_col)
+    where_clauses = []
+    params: List[Any] = []
+    if session:
+        if len(session) != 8 or not session.isdigit():
+            raise ValueError(f"session must be YYYYMMDD, got: {session}")
+        prefix_expr = f"substr(CAST({order_col} AS TEXT), 1, 8)"
+        where_clauses.append(f"{prefix_expr} = ?")
+        params.append(session)
+    where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    limit_sql = ""
+    if max_rows and max_rows > 0:
+        # Bound the read defensively even before the in-pandas time filter.
+        limit_sql = f" LIMIT {int(max_rows) * 4 + 4096}"
+    query = (
+        f"SELECT {select_clause} FROM {_sqlite_quote_ident(table_name)}"
+        f"{where_sql} ORDER BY {order_col}{limit_sql}"
+    )
+    raw = pd.read_sql_query(query, conn, params=params)
+
+    timestamps = pd.to_datetime(
+        pd.to_numeric(raw[timestamp_col], errors="coerce").astype("Int64").astype(str),
+        format="%Y%m%d%H%M%S",
+        errors="coerce",
+    )
+    frame = pd.DataFrame({"timestamp": timestamps})
+    frame["symbol"] = _clean_symbol(table_name)
+
+    close = pd.to_numeric(raw[close_col], errors="coerce")
+    frame["close"] = close
+    for ohlc in ("open", "high", "low"):
+        col = resolved.get(ohlc)
+        frame[ohlc] = pd.to_numeric(raw[col], errors="coerce") if col else close
+
+    buy_col = resolved.get("buy_qty_1s")
+    sell_col = resolved.get("sell_qty_1s")
+    buy_qty = pd.to_numeric(raw[buy_col], errors="coerce").fillna(0.0) if buy_col else pd.Series(0.0, index=raw.index)
+    sell_qty = pd.to_numeric(raw[sell_col], errors="coerce").fillna(0.0) if sell_col else pd.Series(0.0, index=raw.index)
+    frame["초당매수수량"] = buy_qty
+    frame["초당매도수량"] = sell_qty
+    frame["volume"] = buy_qty + sell_qty
+
+    amount_col = resolved.get("amount")
+    frame["amount"] = pd.to_numeric(raw[amount_col], errors="coerce").fillna(0.0) if amount_col else frame["volume"] * close.fillna(0.0)
+
+    for passthrough in ("체결강도", "회전율", "매수총잔량", "매도총잔량", "매수호가1", "매도호가1"):
+        col = resolved.get(passthrough)
+        if col:
+            frame[passthrough] = pd.to_numeric(raw[col], errors="coerce")
+
+    frame = frame.dropna(subset=["timestamp", "open", "high", "low", "close"])
+    frame = frame[(frame[["open", "high", "low", "close"]] > 0).all(axis=1)]
+
+    hhmmss = frame["timestamp"].dt.strftime("%H%M%S")
+    if time_start:
+        frame = frame[hhmmss >= time_start]
+    if time_end:
+        frame = frame[hhmmss <= time_end]
+    frame["session"] = frame["timestamp"].dt.strftime("%Y%m%d")
+    frame = frame.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
+    if max_rows and max_rows > 0:
+        frame = frame.head(max_rows)
+    frame = frame.reset_index(drop=True)
+
+    report = {
+        "table": table_name,
+        "symbol": _clean_symbol(table_name),
+        "source_column_count": len(source_columns),
+        "column_encoding": "utf-8" if encoding_ok else "decoded-fallback",
+        "encoding_confirmed": bool(encoding_ok),
+        "resolved_source_columns": {k: v for k, v in resolved.items()},
+        "unresolved_targets": [k for k, v in resolved.items() if v is None],
+        "row_count": int(len(frame)),
+    }
+    return frame, report
+
+
+def _missing_scale_report(features: pd.DataFrame) -> Dict[str, Any]:
+    column_stats: Dict[str, Any] = {}
+    total = int(len(features))
+    has_nan = False
+    has_inf = False
+    for column in features.columns:
+        series = pd.to_numeric(features[column], errors="coerce")
+        null_count = int(series.isna().sum())
+        inf_count = int(np.isinf(series.to_numpy(dtype="float64", na_value=np.nan)).sum())
+        has_nan = has_nan or null_count > 0
+        has_inf = has_inf or inf_count > 0
+        finite = series.replace([np.inf, -np.inf], np.nan).dropna()
+        column_stats[column] = {
+            "null_rate": (null_count / total) if total else 0.0,
+            "null_count": null_count,
+            "inf_count": inf_count,
+            "min": float(finite.min()) if not finite.empty else None,
+            "max": float(finite.max()) if not finite.empty else None,
+            "mean": float(finite.mean()) if not finite.empty else None,
+        }
+    return {
+        "row_count": total,
+        "feature_count": int(features.shape[1]),
+        "has_nan": has_nan,
+        "has_inf": has_inf,
+        "nan_inf_clean": (not has_nan) and (not has_inf),
+        "columns": column_stats,
+    }
+
+
+def export_stom_rl_features(
+    db_path: os.PathLike | str,
+    output_dir: os.PathLike | str,
+    table: str,
+    session: Optional[str] = None,
+    time_start: str = "090000",
+    time_end: str = "093000",
+    max_rows: int = 0,
+    tick_size: float = 1.0,
+) -> Dict[str, Any]:
+    """Export the 14 canonical STOM RL features for ONE symbol/time window.
+
+    Writes ``<symbol>_rl_features.csv`` (the 14 canonical features plus
+    ``timestamp``/``symbol``/``session`` keys) and a missing/scale report JSON.
+    The legacy Qlib export and ``QLIB_CSV_FIELDS`` are left untouched.
+    """
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    conn = connect_readonly(db_path)
+    try:
+        source_frame, source_report = read_stom_table_rl_source(
+            conn,
+            table,
+            session=session,
+            time_start=time_start,
+            time_end=time_end,
+            max_rows=max_rows,
+        )
+    finally:
+        conn.close()
+
+    if source_frame.empty:
+        raise ValueError(
+            f"No rows for table={table} session={session} window={time_start}-{time_end}. "
+            "Widen the time window or pick a session with data."
+        )
+
+    features = build_stom_rl_feature_frame(source_frame, tick_size=tick_size)
+    keyed = pd.concat(
+        [source_frame[["timestamp", "symbol", "session"]].reset_index(drop=True), features.reset_index(drop=True)],
+        axis=1,
+    )
+    csv_name = f"{source_report['symbol']}_rl_features.csv"
+    csv_path = out_dir / csv_name
+    keyed.to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+    scale_report = _missing_scale_report(features)
+    report = {
+        "mode": "stom_rl_feature_export",
+        "db_path": str(db_path),
+        "output_dir": str(out_dir),
+        "csv_path": str(csv_path),
+        "canonical_features": list(STOM_RL_CANONICAL_FEATURES),
+        "config": {
+            "table": table,
+            "session": session,
+            "time_start": time_start,
+            "time_end": time_end,
+            "max_rows": max_rows,
+            "tick_size": tick_size,
+        },
+        "source": source_report,
+        "scale": scale_report,
+    }
+    _write_json(out_dir / "stom_rl_feature_report.json", report)
+    return report
 
 
 def _validate_ratios(train_ratio: float, val_ratio: float, test_ratio: float) -> None:
@@ -908,6 +1198,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     export.add_argument("--val-ratio", type=float, default=0.15)
     export.add_argument("--test-ratio", type=float, default=0.15)
 
+    export_rl = sub.add_parser(
+        "export-stom-rl",
+        help="Export the 14 canonical STOM RL features for one symbol/time window (non-invasive, no full DB scan)",
+    )
+    export_rl.add_argument("--db", required=True)
+    export_rl.add_argument("--output-dir", required=True)
+    export_rl.add_argument("--table", required=True, help="Single symbol table name, e.g. 000020")
+    export_rl.add_argument("--session", default=None, help="Optional YYYYMMDD session filter.")
+    export_rl.add_argument("--time-start", default="090000")
+    export_rl.add_argument("--time-end", default="093000")
+    export_rl.add_argument("--max-rows", type=int, default=0, help="Cap rows after filtering. 0 means keep all.")
+    export_rl.add_argument("--tick-size", type=float, default=1.0)
+
     backtest = sub.add_parser("score-backtest", help="Run Qlib-style Top-K backtest from Kronos prediction CSV")
     backtest.add_argument("--prediction-csv", required=True)
     backtest.add_argument("--output-dir", default="webui/qlib_backtests")
@@ -960,6 +1263,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 val_ratio=args.val_ratio,
                 test_ratio=args.test_ratio,
             )
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "export-stom-rl":
+        report = export_stom_rl_features(
+            db_path=args.db,
+            output_dir=args.output_dir,
+            table=args.table,
+            session=args.session,
+            time_start=args.time_start,
+            time_end=args.time_end,
+            max_rows=args.max_rows,
+            tick_size=args.tick_size,
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
