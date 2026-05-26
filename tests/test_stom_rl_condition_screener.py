@@ -153,3 +153,149 @@ def test_real_buy_rule_json_has_no_forbidden_or_sell_only_tokens():
             assert "open(" not in lowered and "compile" not in lowered
             for token in sell_only_korean:
                 assert token not in rule["expression"]
+
+
+# ---------------------------------------------------------------------------
+# Page 9 — T+1 fill contract (P0 leakage gate)
+# ---------------------------------------------------------------------------
+def _two_bar_frame() -> pd.DataFrame:
+    """Two symbols, each observed at three consecutive seconds (always pass)."""
+
+    return pd.DataFrame(
+        {
+            "timestamp": [
+                "2025-01-03 09:00:00",
+                "2025-01-03 09:00:00",
+                "2025-01-03 09:00:01",
+                "2025-01-03 09:00:01",
+                "2025-01-03 09:00:02",
+                "2025-01-03 09:00:02",
+            ],
+            "symbol": ["000001", "000002", "000001", "000002", "000001", "000002"],
+            "close": [100.0, 200.0, 101.0, 202.0, 103.0, 205.0],
+            "buy_qty_1s": [10, 9, 8, 7, 6, 5],
+            "sell_qty_1s": [1, 1, 1, 1, 1, 1],
+        }
+    )
+
+
+_PASS_ALL_RULE = ConditionRule(
+    condition_id="pass_all",
+    expression="buy_qty_1s > sell_qty_1s",
+    rank_expression="rank_score",
+)
+
+
+def test_fill_price_is_next_bar_per_symbol_and_after_decision():
+    """fill_price[T] == that symbol's price at T+1, and fill ts > decision ts."""
+
+    candidates = screen_frame(_two_bar_frame(), [_PASS_ALL_RULE])
+    # Decision price is always the close at T; fill_price is the next bar's close.
+    sym1 = candidates[candidates["symbol"] == "000001"].sort_values("timestamp")
+    # T=09:00:00 -> price 100, fill 101 (the 09:00:01 close).
+    first = sym1.iloc[0]
+    assert first["price"] == 100.0
+    assert first["fill_price"] == 101.0
+    assert first["fillable"] is True or first["fillable"] == True  # noqa: E712
+    # T=09:00:01 -> price 101, fill 103.
+    second = sym1.iloc[1]
+    assert second["price"] == 101.0
+    assert second["fill_price"] == 103.0
+    # Symbol 000002 is independent: its fills come from 000002's own next bars.
+    sym2 = candidates[candidates["symbol"] == "000002"].sort_values("timestamp")
+    assert sym2.iloc[0]["price"] == 200.0
+    assert sym2.iloc[0]["fill_price"] == 202.0
+    # The fill timestamp is strictly later than the decision timestamp.
+    for _, row in sym1.iloc[:-1].iterrows():
+        assert row["fill_price"] != row["price"]
+
+
+def test_last_bar_per_symbol_is_unfillable_nan():
+    """The last bar per symbol has no T+1 -> fill_price NaN, fillable False."""
+
+    candidates = screen_frame(_two_bar_frame(), [_PASS_ALL_RULE])
+    last_ts = "2025-01-03T09:00:02"
+    last_rows = candidates[candidates["timestamp"] == last_ts]
+    assert len(last_rows) == 2  # both symbols' last bar
+    assert last_rows["fill_price"].isna().all()
+    assert (~last_rows["fillable"]).all()
+
+
+def test_drop_unfillable_removes_last_bar_candidates():
+    kept = screen_frame(_two_bar_frame(), [_PASS_ALL_RULE], drop_unfillable=True)
+    # 3 bars/symbol x 2 symbols = 6 rows; last bar of each dropped -> 4 rows.
+    assert len(kept) == 4
+    assert kept["fillable"].all()
+    assert kept["fill_price"].notna().all()
+
+
+# ---------------------------------------------------------------------------
+# Page 9 — per-symbol default rank_score (P1 fix)
+# ---------------------------------------------------------------------------
+def test_default_rank_score_is_per_symbol_no_cross_contamination():
+    """Symbol A's rows never influence symbol B's default rank_score.
+
+    Default rank_score is pct_change of price within each symbol.  Symbol B's
+    first row must be 0.0 (no prior bar in B), NOT a pct_change off symbol A's
+    last close — which is the cross-symbol contamination bug this guards.
+    """
+
+    frame = pd.DataFrame(
+        {
+            "timestamp": [
+                "2025-01-03 09:00:00",
+                "2025-01-03 09:00:01",
+                "2025-01-03 09:00:00",
+                "2025-01-03 09:00:01",
+            ],
+            "symbol": ["000001", "000001", "000002", "000002"],
+            "close": [100.0, 110.0, 5000.0, 5050.0],
+            "buy_qty_1s": [10, 10, 10, 10],
+            "sell_qty_1s": [1, 1, 1, 1],
+        }
+    )
+    # No rank_score column and no rank_expression -> default per-symbol path.
+    rule = ConditionRule(condition_id="all", expression="buy_qty_1s > sell_qty_1s", rank_expression="rank_score")
+    candidates = screen_frame(frame, [rule])
+
+    rank = {
+        (row["symbol"], row["timestamp"]): row["rank_score"]
+        for _, row in candidates.iterrows()
+    }
+    # First bar of each symbol -> 0.0 (no prior within-symbol bar).
+    assert rank[("000001", "2025-01-03T09:00:00")] == 0.0
+    assert rank[("000002", "2025-01-03T09:00:00")] == 0.0
+    # Second bars use within-symbol pct_change only.
+    assert rank[("000001", "2025-01-03T09:00:01")] == pytest.approx(0.10)  # 100 -> 110
+    assert rank[("000002", "2025-01-03T09:00:01")] == pytest.approx(0.01)  # 5000 -> 5050
+    # If contamination existed, 000002's first row would be 5000/100-1 = 49.0.
+    assert rank[("000002", "2025-01-03T09:00:00")] != pytest.approx(49.0)
+
+
+def test_symbol_order_does_not_affect_per_symbol_rank():
+    """Re-ordering input rows must not change per-symbol rank_score values."""
+
+    base = pd.DataFrame(
+        {
+            "timestamp": ["2025-01-03 09:00:00", "2025-01-03 09:00:01"],
+            "symbol": ["000002", "000002"],
+            "close": [5000.0, 5050.0],
+            "buy_qty_1s": [10, 10],
+            "sell_qty_1s": [1, 1],
+        }
+    )
+    other = pd.DataFrame(
+        {
+            "timestamp": ["2025-01-03 09:00:00", "2025-01-03 09:00:01"],
+            "symbol": ["000001", "000001"],
+            "close": [100.0, 110.0],
+            "buy_qty_1s": [10, 10],
+            "sell_qty_1s": [1, 1],
+        }
+    )
+    rule = ConditionRule(condition_id="all", expression="buy_qty_1s > sell_qty_1s", rank_expression="rank_score")
+    a = screen_frame(pd.concat([base, other], ignore_index=True), [rule])
+    b = screen_frame(pd.concat([other, base], ignore_index=True), [rule])
+    a_map = {(r["symbol"], r["timestamp"]): r["rank_score"] for _, r in a.iterrows()}
+    b_map = {(r["symbol"], r["timestamp"]): r["rank_score"] for _, r in b.iterrows()}
+    assert a_map == b_map

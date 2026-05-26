@@ -1,9 +1,27 @@
 """Safe condition screener for portfolio candidate generation.
 
 The screener turns STOM feature rows into a deterministic candidate schema:
-``timestamp, symbol, condition_id, passed, rank_score, price, feature...``.
-Condition expressions are parsed with ``ast`` and interpreted from a whitelist;
-there is no dynamic code execution path.
+``timestamp, symbol, condition_id, passed, rank_score, price, fill_price,
+feature...``.  Condition expressions are parsed with ``ast`` and interpreted
+from a whitelist; there is no dynamic code execution path.
+
+candidate.price time contract (Page 9, P0 leakage gate — defined once here so
+Page 10/11/12 reuse it)
+-----------------------------------------------------------------------------
+* The decision / feature row is the **bar close at decision time T**.  Column
+  ``price`` therefore always carries the close observed *at* ``T`` (point-in-time
+  correct: no future value participates in the decision).
+* **Fill must occur at the NEXT bar (T+1)**, never at the decision bar.  Column
+  ``fill_price`` carries the symbol's next-available-bar price on the panel grid
+  (the close at the very next timestamp at which that symbol is observed).
+* The **last bar per symbol has no T+1** and therefore ``fill_price`` is ``NaN``;
+  such a candidate is *unfillable* (``fillable == False``).  Callers either drop
+  or flag these rows — they can never be executed because there is no future bar
+  to fill against.
+
+This contract is the blocking guarantee against decision/fill collapse
+(look-ahead): ``fill_price`` is strictly drawn from a timestamp *after* the
+decision timestamp ``T``.
 """
 
 import argparse
@@ -195,31 +213,82 @@ def _price_column(frame: pd.DataFrame) -> str:
     raise ValueError("candidate source requires price/close column")
 
 
+_EMPTY_CANDIDATE_COLUMNS = [
+    "timestamp",
+    "symbol",
+    "condition_id",
+    "passed",
+    "rank_score",
+    "price",
+    "fill_price",
+    "fillable",
+]
+
+
 def screen_frame(
     frame: pd.DataFrame,
     rules: Sequence[ConditionRule],
     *,
     feature_columns: Optional[Sequence[str]] = None,
     strategy_side: str = "buy",
+    drop_unfillable: bool = False,
 ) -> pd.DataFrame:
-    """Apply safe rules to a feature frame and return portfolio candidates."""
+    """Apply safe rules to a feature frame and return portfolio candidates.
+
+    Output schema: ``timestamp, symbol, condition_id, passed, rank_score, price,
+    fill_price, fillable, feature_*``.
+
+    * ``price`` is the decision-bar close at ``T`` (point-in-time correct).
+    * ``fill_price`` is that symbol's *next* observed bar price (T+1) on the input
+      grid — the T+1 fill contract documented in the module docstring.  The last
+      bar per symbol has no T+1 → ``fill_price`` is ``NaN`` and ``fillable`` is
+      ``False``.
+    * ``rank_score`` default (when no ``rank_score`` column and no explicit
+      ``rank_expression``) is computed **per symbol** (groupby) to avoid
+      cross-symbol contamination at symbol boundaries; rules that supply an
+      explicit ``rank_expression`` are evaluated as-is per row.
+
+    With ``drop_unfillable=True`` the last-bar (unfillable) candidates are
+    removed from the result instead of flagged.
+    """
 
     if frame.empty:
-        return pd.DataFrame(
-            columns=["timestamp", "symbol", "condition_id", "passed", "rank_score", "price"]
-        )
+        return pd.DataFrame(columns=_EMPTY_CANDIDATE_COLUMNS)
     timestamp_col = _timestamp_column(frame)
     symbol_col = _symbol_column(frame)
     price_col = _price_column(frame)
     numeric = frame.copy()
     numeric[timestamp_col] = pd.to_datetime(numeric[timestamp_col], errors="coerce")
-    numeric = numeric.dropna(subset=[timestamp_col]).sort_values([timestamp_col, symbol_col]).reset_index(drop=True)
+    numeric = (
+        numeric.dropna(subset=[timestamp_col])
+        .sort_values([symbol_col, timestamp_col], kind="mergesort")
+        .reset_index(drop=True)
+    )
+
+    # T+1 fill contract: per symbol, fill_price = the NEXT bar's price.  Sorting
+    # by (symbol, timestamp) then shifting -1 within each symbol group gives the
+    # strictly-later bar; the last bar per symbol shifts to NaN (unfillable).
+    price_numeric = pd.to_numeric(numeric[price_col], errors="coerce")
+    numeric["fill_price"] = price_numeric.groupby(numeric[symbol_col]).shift(-1)
+    numeric["fillable"] = numeric["fill_price"].notna()
+
     all_names = set(numeric.columns)
-    if "rank_score" not in all_names:
-        numeric["rank_score"] = pd.to_numeric(numeric[price_col], errors="coerce").pct_change().fillna(0.0)
+    has_rank_column = "rank_score" in all_names
+    if not has_rank_column:
+        # Per-symbol default rank_score (P1 fix): pct_change within each symbol so
+        # symbol A's first row is never a pct_change off symbol B's last row.
+        numeric["rank_score"] = (
+            price_numeric.groupby(numeric[symbol_col])
+            .pct_change(fill_method=None)
+            .fillna(0.0)
+        )
         all_names.add("rank_score")
 
-    features = list(feature_columns or [col for col in numeric.columns if col not in {timestamp_col, symbol_col}])
+    # The screening loop is driven in (timestamp, symbol) order for stable output.
+    numeric = numeric.sort_values([timestamp_col, symbol_col], kind="mergesort").reset_index(drop=True)
+
+    reserved = {timestamp_col, symbol_col, "fill_price", "fillable"}
+    features = list(feature_columns or [col for col in numeric.columns if col not in reserved])
     rows: List[Dict[str, Any]] = []
     for rule in rules:
         condition = SafeExpression(rule.expression, allowed_names=all_names)
@@ -232,6 +301,10 @@ def screen_frame(
             if not passed:
                 continue
             rank_score = float(ranker.calculate(context))
+            fill_value = context.get("fill_price")
+            fillable = bool(pd.notna(fill_value))
+            if drop_unfillable and not fillable:
+                continue
             row = {
                 "timestamp": pd.Timestamp(context[timestamp_col]).isoformat(),
                 "symbol": str(context[symbol_col]),
@@ -239,9 +312,11 @@ def screen_frame(
                 "passed": True,
                 "rank_score": rank_score,
                 "price": float(context[price_col]),
+                "fill_price": float(fill_value) if fillable else float("nan"),
+                "fillable": fillable,
             }
             for column in features:
-                if column in context and column not in {timestamp_col, symbol_col}:
+                if column in context and column not in reserved:
                     value = context[column]
                     try:
                         row[f"feature_{column}"] = float(value)
@@ -251,7 +326,7 @@ def screen_frame(
 
     candidates = pd.DataFrame(rows)
     if candidates.empty:
-        return pd.DataFrame(columns=["timestamp", "symbol", "condition_id", "passed", "rank_score", "price"])
+        return pd.DataFrame(columns=_EMPTY_CANDIDATE_COLUMNS)
     return candidates.sort_values(["timestamp", "rank_score", "symbol"], ascending=[True, False, True]).reset_index(drop=True)
 
 
