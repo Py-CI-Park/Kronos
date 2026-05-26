@@ -12,6 +12,7 @@ logged with reason codes and penalized instead of silently mutating the action.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import asdict, dataclass
 from typing import Any, ClassVar, Dict, List, Mapping, Optional, Tuple
 
@@ -32,6 +33,19 @@ def _float_or_zero(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _as_bool(value: Any) -> bool:
+    """Coerce CSV/JSON truthy markers (``True``/``"true"``/``1``) to ``bool``."""
+
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(value)
 
 
 @dataclass(frozen=True)
@@ -169,25 +183,35 @@ class PortfolioEnv:
         decoded = self.decode_action(action)
 
         if not invalid and action != ACTION_HOLD:
+            # T+1 fill contract: the decision uses the close at T (observation /
+            # `prices_before`), but the order fills at the next-bar `fill_price`.
             if decoded["type"] == "buy":
                 row = candidates.iloc[int(decoded["slot"])]
                 symbol = str(row["symbol"])
-                price = float(row["price"])
+                # The mask only enables fillable buy slots, so a real T+1 price
+                # exists; guard with the decision price purely as a type floor.
+                fill_price = self._fill_price_for(symbol, row)
+                if fill_price is None:
+                    fill_price = float(row["price"])
                 max_notional = float(self.account.cash or 0.0) / (1.0 + self.account.cost_pct)
                 notional = min(nav_before * float(self.config.buy_fraction), max_notional)
                 fill = self.account.buy(
                     symbol=symbol,
-                    price=price,
+                    price=fill_price,
                     notional=notional,
                     timestamp=self._timestamp().isoformat(),
                 )
             elif decoded["type"] == "sell":
                 holdings = self._holding_symbols()
                 symbol = holdings[int(decoded["slot"])]
-                price = float(prices_before[symbol])
+                fill_price = self._fill_price_for(symbol, self._candidate_row_for(symbol, candidates))
+                if fill_price is None:
+                    # No T+1 available for the held symbol at this bar; fall back
+                    # to the latest mark so we never fabricate a future price.
+                    fill_price = float(prices_before[symbol])
                 fill = self.account.sell(
                     symbol=symbol,
-                    price=price,
+                    price=fill_price,
                     timestamp=self._timestamp().isoformat(),
                 )
             if fill:
@@ -253,8 +277,12 @@ class PortfolioEnv:
         buy_cash = float(self.account.cash or 0.0) > FLOAT_TOLERANCE
         for slot in range(self.config.top_k_candidates):
             if slot < len(candidates):
-                symbol = str(candidates.iloc[slot]["symbol"])
-                if can_add_position and buy_cash and symbol not in self.account.positions:
+                row = candidates.iloc[slot]
+                symbol = str(row["symbol"])
+                # Only enable a buy slot that has a real T+1 fill price; an
+                # unfillable candidate (last bar, no next bar) cannot execute.
+                fillable = self._fill_price_for(symbol, row) is not None
+                if can_add_position and buy_cash and fillable and symbol not in self.account.positions:
                     mask[1 + slot] = 1
         holdings = self._holding_symbols()
         sell_offset = 1 + self.config.top_k_candidates
@@ -277,6 +305,30 @@ class PortfolioEnv:
         frame["symbol"] = frame["symbol"].astype(str)
         frame["rank_score"] = pd.to_numeric(frame["rank_score"], errors="coerce").fillna(0.0)
         frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
+        # T+1 fill contract (Page 9/10): `price` is the decision-bar close at T;
+        # trades fill at `fill_price` (the next-bar close).  Real candidate CSVs
+        # carry `fill_price`/`fillable`; legacy/synthetic frames lack them, so we
+        # fall back to `price` with a one-time warning and mark every row fillable
+        # to preserve backward compatibility (no lookahead is introduced because
+        # the synthetic fixture has no T+1 distinction).
+        if "fill_price" in frame.columns:
+            frame["fill_price"] = pd.to_numeric(frame["fill_price"], errors="coerce")
+            if "fillable" in frame.columns:
+                frame["fillable"] = frame["fillable"].map(_as_bool).astype(bool)
+            else:
+                frame["fillable"] = frame["fill_price"].notna()
+            # Unfillable rows have no real T+1 price; never fabricate one.
+            frame.loc[~frame["fillable"], "fill_price"] = np.nan
+        else:
+            warnings.warn(
+                "Portfolio candidates lack a 'fill_price' column; falling back to "
+                "decision-bar 'price' for fills (no T+1 contract). Provide a Page 9 "
+                "candidate CSV with 'fill_price' for the real T+1 fill timing.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            frame["fill_price"] = frame["price"]
+            frame["fillable"] = frame["price"] > 0
         frame = frame.dropna(subset=["timestamp", "symbol", "price"])
         frame = frame[frame["price"] > 0].sort_values(["timestamp", "rank_score", "symbol"], ascending=[True, False, True])
         if frame.empty:
@@ -300,6 +352,35 @@ class PortfolioEnv:
         rows = self.candidates[self.candidates["timestamp"] == timestamp]
         return rows.sort_values(["rank_score", "symbol"], ascending=[False, True]).head(self.config.top_k_candidates).reset_index(drop=True)
 
+    def _candidate_row_for(self, symbol: str, candidates: pd.DataFrame) -> Optional[pd.Series]:
+        """Return the current-timestamp candidate row for ``symbol`` if present."""
+
+        if candidates.empty:
+            return None
+        matches = candidates[candidates["symbol"].astype(str) == str(symbol)]
+        if matches.empty:
+            return None
+        return matches.iloc[0]
+
+    def _fill_price_for(self, symbol: str, row: Optional[pd.Series]) -> Optional[float]:
+        """T+1 fill price for ``symbol`` from a candidate ``row``.
+
+        Returns the row's ``fill_price`` when present and fillable, otherwise
+        ``None`` so callers can fall back to a mark price without fabricating a
+        future bar.
+        """
+
+        del symbol  # kept for call-site readability; lookup is row-scoped
+        if row is None:
+            return None
+        if "fillable" in row.index and not _as_bool(row.get("fillable", True)):
+            return None
+        fill_value = row.get("fill_price") if "fill_price" in row.index else None
+        if fill_value is None or pd.isna(fill_value):
+            return None
+        fill_price = float(fill_value)
+        return fill_price if fill_price > 0 else None
+
     def _update_last_prices(self, candidates: pd.DataFrame) -> None:
         for _, row in candidates.iterrows():
             self.last_prices[str(row["symbol"])] = float(row["price"])
@@ -321,13 +402,16 @@ class PortfolioEnv:
             slot = int(decoded["slot"])
             if slot >= len(candidates):
                 return "candidate_padding_slot"
-            symbol = str(candidates.iloc[slot]["symbol"])
+            row = candidates.iloc[slot]
+            symbol = str(row["symbol"])
             if symbol in self.account.positions:
                 return "already_holding_symbol"
             if len(self.account.positions) >= self.config.max_positions:
                 return "max_positions_reached"
             if float(self.account.cash or 0.0) <= FLOAT_TOLERANCE:
                 return "insufficient_cash"
+            if self._fill_price_for(symbol, row) is None:
+                return "unfillable_no_t1"
         if decoded["type"] == "sell":
             slot = int(decoded["slot"])
             if slot >= len(self._holding_symbols()):
