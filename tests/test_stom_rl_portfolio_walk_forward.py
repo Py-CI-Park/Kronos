@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 
 from stom_rl.portfolio_walk_forward import (
+    COST_AWARE_MIN_HOLD_STEPS,
     PortfolioWalkForwardConfig,
+    _fit_cost_aware_policy,
     build_expanding_window_folds,
     run_portfolio_walk_forward,
 )
@@ -92,6 +94,7 @@ def test_baseline_metrics_are_populated(tmp_path):
         "buy_and_hold",
         "rule_baseline",
         "rl_baseline",
+        "cost_aware",
     }
     # Each fold period exposes explicit train/test ranges.
     for period in payload["fold_periods"]:
@@ -173,6 +176,65 @@ def test_leakage_canary_detects_forward_looking_corruption(tmp_path):
     corrupt_returns = _policy_returns(corrupt, "rl_baseline")
     # Performance changes (collapses/inflates) under forward-looking corruption.
     assert clean_returns != corrupt_returns
+
+
+def test_cost_aware_policy_fits_on_train_and_freezes_params(tmp_path):
+    """The cost-aware policy is genuinely FIT on TRAIN, then frozen for TEST.
+
+    The fold report carries the frozen (rank_score threshold, min-hold) params
+    on every cost_aware row, and the fitted min-hold is drawn from the bounded
+    TRAIN tuning grid.  This proves a real fit happened on train (not a no-op)
+    before the disjoint, strictly-later TEST eval.
+    """
+
+    payload = run_portfolio_walk_forward(_config(tmp_path))
+    cost_rows = [row for row in payload["folds"] if row["policy"] == "cost_aware"]
+    assert cost_rows, "cost_aware policy must appear in the fold report"
+    for row in cost_rows:
+        # Frozen params are present and concrete on every held-out fold.
+        assert row["fitted_score_threshold"] != ""
+        assert int(row["fitted_min_hold_steps"]) in COST_AWARE_MIN_HOLD_STEPS
+        # Costed metrics are still reported (honest comparison vs baselines).
+        assert row["cost_bps"] == 25.0
+        assert row["total_cost"] >= 0.0
+
+
+def test_cost_aware_fit_uses_only_train_segment_no_test_leakage(tmp_path):
+    """Fitting only sees TRAIN: perturbing the TEST tail must not change the fit.
+
+    We build two frames identical on the TRAIN portion but differing on the
+    last (latest) timestamp — which falls in a fold's TEST segment.  Because
+    ``_fit_cost_aware_policy`` is handed only the train_frame, the frozen params
+    of the *earliest* fold (whose train excludes the perturbed tail) must be
+    byte-identical.  Any change would mean the fitter peeked at TEST data.
+    """
+
+    frame = _holdout_candidates(n_steps=12)
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"])
+    folds = build_expanding_window_folds(frame, n_folds=3)
+    fold0 = folds[0]
+    config = _config(tmp_path)
+
+    # Perturb only rows strictly later than fold0's train (i.e. its TEST/future).
+    train_max = max(pd.Timestamp(ts) for ts in fold0.train_frame["timestamp"].unique())
+    perturbed = frame.copy()
+    later = perturbed["timestamp"] > train_max
+    assert later.any(), "fixture must have rows later than fold0 train"
+    perturbed.loc[later, "rank_score"] = perturbed.loc[later, "rank_score"] + 1000.0
+    perturbed.loc[later, "price"] = perturbed.loc[later, "price"] * 3.0
+
+    perturbed_folds = build_expanding_window_folds(perturbed, n_folds=3)
+    perturbed_fold0 = perturbed_folds[0]
+    # fold0's TRAIN is untouched by a TEST-only perturbation.
+    pd.testing.assert_frame_equal(
+        fold0.train_frame.reset_index(drop=True),
+        perturbed_fold0.train_frame.reset_index(drop=True),
+    )
+
+    fit_clean = _fit_cost_aware_policy(fold0.train_frame, config, fold0.fold_index)
+    fit_perturbed = _fit_cost_aware_policy(perturbed_fold0.train_frame, config, perturbed_fold0.fold_index)
+    # Same TRAIN ⇒ identical frozen params, regardless of the future TEST tail.
+    assert fit_clean.frozen_params == fit_perturbed.frozen_params
 
 
 def test_too_few_timestamps_raises(tmp_path):

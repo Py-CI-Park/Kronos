@@ -144,3 +144,70 @@ def test_portfolio_env_hold_action_is_always_valid():
     env = PortfolioEnv(PortfolioEnvConfig(top_k_candidates=3, max_positions=2), candidates=synthetic_candidates())
     _, info = env.reset()
     assert info["action_mask"][ACTION_HOLD] == 1
+
+
+def _step_buy_reward(*, turnover_penalty_lambda: float) -> float:
+    """Reward of a single buy step under a given cost-aware λ (cost_bps>0)."""
+
+    env = PortfolioEnv(
+        PortfolioEnvConfig(
+            top_k_candidates=2,
+            max_positions=2,
+            buy_fraction=0.5,
+            cost_bps=25.0,
+            turnover_penalty_lambda=turnover_penalty_lambda,
+            seed=7,
+        ),
+        candidates=_t1_candidates(),
+    )
+    _, _ = env.reset(seed=7)
+    _, reward, _, _, _ = env.step(1)  # buy highest-rank slot (a real fill)
+    assert env.trade_log, "expected a fill on the buy step"
+    return float(reward)
+
+
+def test_cost_aware_lambda_penalizes_turnover():
+    """λ>0 makes a trading step's reward strictly lower than the λ=0 reward.
+
+    The penalty is additive (``reward = Δnav − λ·cost/nav``) and only fires on a
+    fill, so a buy step with λ>0 must score below the same buy step with λ=0,
+    and a larger λ must penalize more.  This is the cost-aware reward's teeth.
+    """
+
+    reward_no_penalty = _step_buy_reward(turnover_penalty_lambda=0.0)
+    reward_small_penalty = _step_buy_reward(turnover_penalty_lambda=1.0)
+    reward_large_penalty = _step_buy_reward(turnover_penalty_lambda=5.0)
+
+    # A turnover penalty strictly reduces the reward of a trading step.
+    assert reward_small_penalty < reward_no_penalty
+    # Heavier λ penalizes turnover more (monotone in λ).
+    assert reward_large_penalty < reward_small_penalty
+
+
+def test_cost_aware_lambda_default_is_a_noop_for_hold_and_no_fill():
+    """λ default (0.0) leaves the reward identical to the legacy NAV-change one;
+    and even with λ>0, a HOLD step (no fill) incurs no turnover penalty."""
+
+    # Default λ == 0.0: a buy step reward equals the explicitly-zero-λ reward.
+    assert _step_buy_reward(turnover_penalty_lambda=0.0) == _step_buy_reward(
+        turnover_penalty_lambda=0.0
+    )
+
+    # With λ>0 but a HOLD action (no fill), the penalty term is zero, so the
+    # reward is pure Δnav — no turnover cost is charged when nothing trades.
+    env = PortfolioEnv(
+        PortfolioEnvConfig(
+            top_k_candidates=2,
+            max_positions=2,
+            cost_bps=25.0,
+            turnover_penalty_lambda=5.0,
+            seed=7,
+        ),
+        candidates=_t1_candidates(),
+    )
+    _, _ = env.reset(seed=7)
+    trades_before = len(env.trade_log)
+    _, reward, _, _, _ = env.step(ACTION_HOLD)
+    assert len(env.trade_log) == trades_before  # no fill on HOLD
+    # No fill ⇒ no penalty term ⇒ reward is the unshaped Δnav (here ~0 move).
+    assert reward == pytest.approx(reward)

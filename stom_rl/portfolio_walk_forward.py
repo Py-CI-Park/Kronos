@@ -19,7 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -32,7 +32,28 @@ from .symbol_norm import read_candidates_csv
 
 DEFAULT_PORTFOLIO_WALK_FORWARD_OUTPUT_DIR = Path("webui") / "rl_runs" / "stom_portfolio_walk_forward"
 # "rl_baseline" is the deterministic RL stand-in (no trained model yet).
-DEFAULT_BASELINES = ("no_trade", "equal_weight_candidate", "buy_and_hold", "rule_baseline", "rl_baseline")
+# "cost_aware" is the Page 17 cost-aware policy: parameters (rank_score
+# threshold + min-hold) are *fit on the TRAIN segment* and frozen for the
+# disjoint, strictly-later TEST eval (see ``_fit_cost_aware_policy``).
+DEFAULT_BASELINES = (
+    "no_trade",
+    "equal_weight_candidate",
+    "buy_and_hold",
+    "rule_baseline",
+    "rl_baseline",
+    "cost_aware",
+)
+
+# Bounded TRAIN tuning grid for the cost-aware policy (no open-ended search).
+# ``score_quantile``: only buy a candidate whose rank_score is at/above this
+# quantile of the TRAIN rank_score distribution (higher ⇒ more selective).
+# ``min_hold_steps``: suppress churn by forbidding a sell for N steps post-buy.
+COST_AWARE_SCORE_QUANTILES: Tuple[float, ...] = (0.0, 0.5, 0.75, 0.9)
+COST_AWARE_MIN_HOLD_STEPS: Tuple[int, ...] = (1, 2, 4, 8)
+# Turnover-penalty λ used *only* while scoring TRAIN candidates so the tuner
+# prefers low-churn params; the held-out TEST eval reports the unshaped costed
+# return (no λ) so the comparison table stays honest vs the other baselines.
+COST_AWARE_TRAIN_LAMBDA: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -48,6 +69,11 @@ class PortfolioWalkForwardConfig:
     initial_cash: float = 1_000_000.0
     cost_bps: float = 25.0
     slippage_bps: float = 0.0
+    # Turnover-cost penalty λ threaded into the env reward (Page 17).  Default
+    # ``0.0`` ⇒ legacy NAV-change reward.  The cost-aware tuner overrides this
+    # to ``COST_AWARE_TRAIN_LAMBDA`` *for TRAIN scoring only*; the held-out TEST
+    # eval always runs with λ unchanged from this config (kept 0 for honesty).
+    turnover_penalty_lambda: float = 0.0
     write_artifacts: bool = True
 
 
@@ -158,6 +184,7 @@ def _make_env(candidates: pd.DataFrame, config: PortfolioWalkForwardConfig, fold
             initial_cash=config.initial_cash,
             cost_bps=config.cost_bps,
             slippage_bps=config.slippage_bps,
+            turnover_penalty_lambda=config.turnover_penalty_lambda,
             seed=config.seed + fold_index,
         ),
         candidates=candidates,
@@ -192,6 +219,155 @@ def _action_for_policy(policy: str, env: PortfolioEnv, info: Mapping[str, Any]) 
     return ACTION_HOLD
 
 
+class _CostAwarePolicy:
+    """Selective, low-churn policy with TRAIN-fit, frozen parameters.
+
+    The policy only buys a candidate whose ``rank_score`` is at/above a fitted
+    ``score_threshold`` (an absolute score derived from a TRAIN-segment quantile)
+    and refuses to sell a holding until it has been held ``min_hold_steps`` bars,
+    directly attacking the turnover-cost loss Page 14 identified.  Both params
+    are *fit on the TRAIN segment only* (:func:`_fit_cost_aware_policy`) and
+    frozen here, so applying the callable to the disjoint, strictly-later TEST
+    segment introduces no leakage.  The callable is stateful across a single
+    episode (it tracks per-symbol entry steps); it is re-instantiated per eval.
+    """
+
+    def __init__(self, score_threshold: float, min_hold_steps: int) -> None:
+        self.score_threshold = float(score_threshold)
+        self.min_hold_steps = int(min_hold_steps)
+        self._entry_step: Dict[str, int] = {}
+
+    def __call__(self, env: PortfolioEnv, info: Mapping[str, Any]) -> int:
+        mask = list(info["action_mask"])
+        step = int(info["current_step"])
+        sell_offset = 1 + env.config.top_k_candidates
+        candidates = env._current_candidates()  # noqa: SLF001 - read-only view of current bar
+        held = set(env.account.positions)
+        # Forget entry steps for symbols no longer held (closed elsewhere).
+        for symbol in list(self._entry_step):
+            if symbol not in held:
+                self._entry_step.pop(symbol, None)
+
+        # 1) Sell only holdings that have satisfied the min-hold (anti-churn).
+        holdings = sorted(held)
+        for slot in range(min(len(holdings), env.config.max_positions)):
+            action = sell_offset + slot
+            if not mask[action]:
+                continue
+            symbol = holdings[slot]
+            entered = self._entry_step.get(symbol, step)
+            if step - entered >= self.min_hold_steps:
+                self._entry_step.pop(symbol, None)
+                return action
+
+        # 2) Buy the best fillable candidate whose rank_score clears the
+        #    fitted threshold (selective entry suppresses low-conviction churn).
+        for slot in range(1, sell_offset):
+            if not mask[slot]:
+                continue
+            cand_idx = slot - 1
+            if cand_idx >= len(candidates):
+                continue
+            row = candidates.iloc[cand_idx]
+            if float(row["rank_score"]) >= self.score_threshold:
+                self._entry_step[str(row["symbol"])] = step
+                return slot
+        return ACTION_HOLD
+
+
+def _score_quantile_threshold(train_frame: pd.DataFrame, quantile: float) -> float:
+    scores = pd.to_numeric(train_frame.get("rank_score"), errors="coerce").dropna()
+    if scores.empty:
+        return float("-inf")  # no scores ⇒ threshold never blocks
+    return float(scores.quantile(float(quantile)))
+
+
+def _score_train_params(
+    *,
+    score_threshold: float,
+    min_hold_steps: int,
+    train_frame: pd.DataFrame,
+    config: PortfolioWalkForwardConfig,
+    fold_index: int,
+) -> float:
+    """Cost-adjusted TRAIN return for one (threshold, min_hold) candidate.
+
+    Runs the cost-aware policy on the TRAIN segment with a turnover-penalty λ so
+    the tuner prefers params that trade only when worth the cost.  Returns the
+    final-NAV return percent (higher is better); used purely to *rank* params.
+    """
+
+    train_config = replace(
+        config,
+        turnover_penalty_lambda=COST_AWARE_TRAIN_LAMBDA,
+        write_artifacts=False,
+    )
+    env = _make_env(train_frame, train_config, fold_index)
+    _, info = env.reset(seed=config.seed + fold_index)
+    policy = _CostAwarePolicy(score_threshold, min_hold_steps)
+    terminated = False
+    truncated = False
+    steps = 0
+    while not (terminated or truncated):
+        if config.max_steps_per_fold and steps >= int(config.max_steps_per_fold):
+            break
+        action = policy(env, info)
+        _, _, terminated, truncated, info = env.step(action)
+        steps += 1
+    final_nav = float(info["nav"])
+    return (final_nav / float(config.initial_cash) - 1.0) * 100.0
+
+
+def _fit_cost_aware_policy(
+    train_frame: pd.DataFrame,
+    config: PortfolioWalkForwardConfig,
+    fold_index: int,
+) -> PolicyFn:
+    """Grid-search the cost-aware policy params on the TRAIN segment only.
+
+    Iterates the bounded ``(score_quantile × min_hold)`` grid, scoring each on
+    the TRAIN segment with a turnover penalty, and freezes the best-scoring
+    params.  The returned callable applies those frozen params; the surrounding
+    holdout machinery then evaluates it on the disjoint, strictly-later TEST
+    segment with *no* further fitting (no leakage).  Ties break deterministically
+    toward the more selective / longer-hold (lower-churn) configuration.
+    """
+
+    best_key: Optional[Tuple[float, int, int]] = None
+    best_threshold = float("-inf")
+    best_min_hold = COST_AWARE_MIN_HOLD_STEPS[0]
+    for quantile in COST_AWARE_SCORE_QUANTILES:
+        threshold = _score_quantile_threshold(train_frame, quantile)
+        for min_hold in COST_AWARE_MIN_HOLD_STEPS:
+            train_return = _score_train_params(
+                score_threshold=threshold,
+                min_hold_steps=min_hold,
+                train_frame=train_frame,
+                config=config,
+                fold_index=fold_index,
+            )
+            # Maximise TRAIN cost-adjusted return; on ties prefer higher
+            # quantile then longer hold (both reduce turnover) for determinism.
+            key = (round(train_return, 10), float(quantile), int(min_hold))
+            if best_key is None or key > best_key:
+                best_key = key
+                best_threshold = threshold
+                best_min_hold = min_hold
+
+    frozen = _CostAwarePolicy(best_threshold, best_min_hold)
+
+    def _policy(env: PortfolioEnv, info: Mapping[str, Any]) -> int:
+        return frozen(env, info)
+
+    # Re-instantiate per eval episode so per-symbol entry-step state is fresh
+    # (the holdout eval runs one episode; a fresh policy avoids stale state).
+    _policy.frozen_params = {  # type: ignore[attr-defined]
+        "score_threshold": float(best_threshold),
+        "min_hold_steps": int(best_min_hold),
+    }
+    return _policy
+
+
 def _fit_policy(
     policy: str,
     train_frame: pd.DataFrame,
@@ -201,11 +377,15 @@ def _fit_policy(
     """Fit/prepare a policy on the TRAIN segment, returning a callable.
 
     The deterministic stand-in and the rule baselines have no learnable state,
-    so fitting is a no-op that simply closes over the policy name.  This is the
-    single seam a trained model would replace: fit on ``train_frame`` here and
-    return a callable that maps observations to actions, while the surrounding
-    holdout machinery (disjoint, strictly-later TEST eval) stays unchanged.
+    so fitting is a no-op that simply closes over the policy name.  The
+    ``cost_aware`` policy *does* fit: its (rank_score threshold, min-hold) params
+    are grid-searched on ``train_frame`` only and frozen, then evaluated on the
+    disjoint, strictly-later TEST segment.  Either way the surrounding holdout
+    machinery is unchanged — this is the single seam a trained model replaces.
     """
+
+    if policy == "cost_aware":
+        return _fit_cost_aware_policy(train_frame, config, fold_index)
 
     del train_frame, config, fold_index  # train segment is the future seam
 
@@ -304,12 +484,21 @@ def run_portfolio_walk_forward(config: PortfolioWalkForwardConfig) -> Dict[str, 
                 policy=policy,
                 config=config,
             )
+            # Expose the TRAIN-fit params for the cost-aware policy so the fold
+            # report shows exactly what was frozen before the held-out eval.
+            fitted = getattr(policy_fn, "frozen_params", None)
             rows.append(
                 {
                     "train_start": fold.train_start,
                     "train_end": fold.train_end,
                     "test_start": fold.test_start,
                     "test_end": fold.test_end,
+                    "fitted_score_threshold": (
+                        float(fitted["score_threshold"]) if fitted else ""
+                    ),
+                    "fitted_min_hold_steps": (
+                        int(fitted["min_hold_steps"]) if fitted else ""
+                    ),
                     **metrics,
                 }
             )
@@ -363,6 +552,8 @@ def run_portfolio_walk_forward(config: PortfolioWalkForwardConfig) -> Dict[str, 
                 "cost_bps",
                 "invalid_action_count",
                 "total_reward",
+                "fitted_score_threshold",
+                "fitted_min_hold_steps",
             ],
         )
     return payload
@@ -389,6 +580,14 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> PortfolioWalkForwardCon
     parser.add_argument("--initial-cash", type=float, default=1_000_000.0)
     parser.add_argument("--cost-bps", type=float, default=25.0)
     parser.add_argument("--slippage-bps", type=float, default=0.0)
+    parser.add_argument(
+        "--turnover-penalty-lambda",
+        type=float,
+        default=0.0,
+        help="Additive turnover-cost penalty λ in the env reward (0 = legacy). "
+        "The cost-aware policy overrides this for TRAIN tuning only; held-out "
+        "TEST eval uses this value (keep 0 for an honest costed comparison).",
+    )
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
     return PortfolioWalkForwardConfig(
@@ -403,6 +602,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> PortfolioWalkForwardCon
         initial_cash=args.initial_cash,
         cost_bps=args.cost_bps,
         slippage_bps=args.slippage_bps,
+        turnover_penalty_lambda=args.turnover_penalty_lambda,
         write_artifacts=not args.no_write,
     )
 

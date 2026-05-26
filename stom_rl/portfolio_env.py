@@ -59,6 +59,12 @@ class PortfolioEnvConfig:
     cost_bps: float = 25.0
     slippage_bps: float = 0.0
     invalid_action_penalty: float = 0.001
+    # Cost-aware reward shaping (Page 17 / track B): when ``> 0`` the per-step
+    # reward gets an *additive* turnover-cost penalty so a learned/tuned policy
+    # is taught to trade only when the move is worth its execution cost.  The
+    # default ``0.0`` is a strict no-op, so the legacy NAV-change reward (and
+    # every existing test) is unchanged.  See ``step`` for the exact formula.
+    turnover_penalty_lambda: float = 0.0
     seed: int = 100
     feature_columns: Optional[Tuple[str, ...]] = None
 
@@ -234,6 +240,16 @@ class PortfolioEnv:
         nav_after = self.account.nav(prices_after)
         self.peak_nav = max(self.peak_nav, nav_after)
         reward = (nav_after - nav_before) / max(nav_before, FLOAT_TOLERANCE)
+        # Cost-aware reward shaping (opt-in, ``turnover_penalty_lambda > 0``):
+        #   reward = Δnav_pct − λ · (execution_cost_this_step / nav_before)
+        # The execution cost is the broker cost already booked on this step's
+        # fill (T+1 fill ``cost`` from the account), normalised to the same
+        # NAV-fraction scale as the Δnav reward so λ is unit-free.  HOLD / no
+        # fill incurs no penalty.  λ == 0 leaves the legacy reward untouched.
+        turnover_lambda = float(self.config.turnover_penalty_lambda)
+        if turnover_lambda > 0.0 and fill is not None:
+            fill_cost = float(getattr(fill, "cost", 0.0) or 0.0)
+            reward -= turnover_lambda * (fill_cost / max(nav_before, FLOAT_TOLERANCE))
         if invalid:
             reward -= float(self.config.invalid_action_penalty)
         info = self._info(
