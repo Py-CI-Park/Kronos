@@ -43,6 +43,20 @@ import numpy as np
 
 from .portfolio_env import ACTION_HOLD, PortfolioEnv
 from .portfolio_sb3_adapter import PortfolioSb3GymEnv, make_portfolio_sb3_env
+from .rl_events import RlLiveEventWriter, summarize_live_event_file
+
+
+# Live-event semantics for the SB3 *training loop* (Story A): the trainer streams
+# per-rollout telemetry into the SAME ``rl_live_events.jsonl`` schema the
+# deterministic ``portfolio_train`` smoke emits, so the dashboard's realtime
+# follow/replay view watches the model learn.  ``algorithm`` is the per-algorithm
+# label the dashboard groups by; ``phase`` is always "train" for this stream.
+PORTFOLIO_TRAIN_LIVE_ALGORITHM = {"ppo": "portfolio_ppo", "dqn": "portfolio_dqn"}
+PORTFOLIO_TRAIN_LIVE_PHASE = "train"
+# Dashboard signature file written into the train run dir so the existing
+# ``iter_run_dirs``/``_detect_artifact_type`` recognises the directory as a run
+# and serves the ``rl_live_events.jsonl`` through ``/table/events``.
+SB3_SMOKE_SIGNATURE_FILE = "sb3_smoke_summary.json"
 
 
 # Stage-B trigger threshold (Section 1 Decision, Option C "penalty-PPO-first"):
@@ -82,6 +96,12 @@ class PortfolioSb3TrainConfig:
     dqn_batch_size: int = 64
     max_eval_steps: int = 64
     write_artifacts: bool = True
+    # Story A: stream per-rollout training telemetry into ``rl_live_events.jsonl``
+    # so the dashboard can watch the model learn in real time.  Default-on, but
+    # write-only (a pure side-effect): the callback never touches the env, RNG, or
+    # the gradient step, so determinism (V4) is preserved.  Events are only written
+    # when this flag is on AND ``write_artifacts`` yields a real output path.
+    write_training_events: bool = True
 
 
 # --------------------------------------------------------------------------- #
@@ -135,6 +155,106 @@ def _bounded(value: int, *, lo: int, hi: int) -> int:
     return max(lo, min(int(value), hi))
 
 
+def _make_training_callback(
+    algorithm: str,
+    *,
+    event_writer: RlLiveEventWriter,
+) -> Any:
+    """Build an SB3 ``BaseCallback`` that streams per-rollout training telemetry.
+
+    Story A (NET-NEW): ``model.learn`` runs silently by default.  This callback
+    reads the rollout stats SB3 already maintains and appends one ``RlLiveEvent``
+    per rollout (and a final flush at training end) so the dashboard's realtime
+    follow/replay view watches the model learn — the "watch it learn" experience.
+
+    Stats emitted per event:
+      * ``global_step`` = ``self.num_timesteps`` (monotonic across rollouts).
+      * ``reward``      = mean episode reward over ``ep_info_buffer`` (the rolling
+        window SB3 logs as ``rollout/ep_rew_mean``); falls back to the latest
+        logged value, then 0.0 if no episode has finished yet.
+      * ``loss``        = the most recent ``train/loss`` (PPO) /
+        ``train/loss``-equivalent from ``logger.name_to_value`` if the optimiser
+        has stepped, else ``None`` (first rollout hasn't trained yet).
+      * ``equity``      = OMITTED — no cheap mid-train NAV is available without a
+        full eval rollout, which would perturb determinism; left ``None``.
+      * ``info``        = ``{timesteps, iterations, ep_count}`` for context.
+
+    The callback is WRITE-ONLY: it never reads/writes the env, RNG, or gradient,
+    so a fixed seed still reproduces eval metrics (determinism V4 preserved).
+    """
+
+    from stable_baselines3.common.callbacks import BaseCallback
+
+    live_algorithm = PORTFOLIO_TRAIN_LIVE_ALGORITHM.get(
+        algorithm.lower(), f"portfolio_{algorithm.lower()}"
+    )
+
+    class RlLiveEventTrainingCallback(BaseCallback):
+        """Append-only RL live-event emitter driven by SB3 rollout hooks."""
+
+        def __init__(self) -> None:
+            super().__init__(verbose=0)
+            self._iterations = 0
+
+        def _mean_episode_reward(self) -> Optional[float]:
+            buffer = getattr(self.model, "ep_info_buffer", None)
+            if buffer:
+                rewards = [ep.get("r") for ep in buffer if ep.get("r") is not None]
+                if rewards:
+                    return float(np.mean(rewards))
+            logged = self.logger.name_to_value.get("rollout/ep_rew_mean") if self.logger else None
+            return float(logged) if logged is not None else None
+
+        def _latest_loss(self) -> Optional[float]:
+            if not self.logger:
+                return None
+            values = self.logger.name_to_value
+            for key in ("train/loss", "train/value_loss", "train/policy_gradient_loss"):
+                value = values.get(key)
+                if value is not None:
+                    try:
+                        candidate = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    if np.isfinite(candidate):
+                        return candidate
+            return None
+
+        def _ep_count(self) -> int:
+            buffer = getattr(self.model, "ep_info_buffer", None)
+            return int(len(buffer)) if buffer else 0
+
+        def _emit(self) -> None:
+            reward = self._mean_episode_reward()
+            event_writer.write_step(
+                algorithm=live_algorithm,
+                phase=PORTFOLIO_TRAIN_LIVE_PHASE,
+                global_step=int(self.num_timesteps),
+                reward=reward if reward is not None else 0.0,
+                loss=self._latest_loss(),
+                source="portfolio_sb3_train",
+                info={
+                    "timesteps": int(self.num_timesteps),
+                    "iterations": int(self._iterations),
+                    "ep_count": self._ep_count(),
+                },
+            )
+
+        def _on_step(self) -> bool:  # noqa: D401 - SB3 hook
+            return True
+
+        def _on_rollout_end(self) -> None:  # noqa: D401 - SB3 hook
+            self._iterations += 1
+            self._emit()
+
+        def _on_training_end(self) -> None:  # noqa: D401 - SB3 hook
+            # Final flush so short runs (no completed rollout boundary) still
+            # produce at least one terminal event carrying the last stats.
+            self._emit()
+
+    return RlLiveEventTrainingCallback()
+
+
 def _make_train_env(config: PortfolioSb3TrainConfig) -> PortfolioSb3GymEnv:
     """Build the Stage-A Gym env for training (cost-aware reward via λ>0)."""
 
@@ -168,12 +288,22 @@ def check_train_env(config: PortfolioSb3TrainConfig) -> Dict[str, Any]:
         env.close()
 
 
-def train_portfolio_model(config: PortfolioSb3TrainConfig) -> Tuple[Any, Dict[str, Any]]:
+def train_portfolio_model(
+    config: PortfolioSb3TrainConfig,
+    *,
+    live_events_path: Optional[Path] = None,
+) -> Tuple[Any, Dict[str, Any]]:
     """Train a deterministic SB3 PPO/DQN model on the Stage-A env.
 
     REUSE: the PPO/DQN construction + bounded ``n_steps``/``batch_size`` clamping
     and the ``model.learn`` loop mirror ``sb3_smoke._train_model`` (:130).
     NET-NEW: determinism pins applied BEFORE model construction; ``device`` pinned.
+
+    Story A: when ``live_events_path`` is given AND ``config.write_training_events``
+    is on, a write-only ``RlLiveEventTrainingCallback`` streams per-rollout
+    telemetry into ``live_events_path`` during ``model.learn``.  The callback is a
+    pure side-effect (no env/RNG/gradient interaction), so determinism (V4) holds.
+    Passing no path (the default, used by ``assert_reproducible``) emits nothing.
     """
 
     runtime = apply_determinism(config.seed, device=config.device)
@@ -217,7 +347,18 @@ def train_portfolio_model(config: PortfolioSb3TrainConfig) -> Tuple[Any, Dict[st
             )
         else:
             raise ValueError(f"Unknown algorithm: {config.algorithm!r}; expected 'ppo' or 'dqn'.")
-        model.learn(total_timesteps=int(config.total_timesteps), progress_bar=False)
+
+        callback = None
+        if config.write_training_events and live_events_path is not None:
+            event_writer = RlLiveEventWriter(live_events_path, run_id=Path(live_events_path).parent.name)
+            event_writer.reset()
+            callback = _make_training_callback(algorithm, event_writer=event_writer)
+
+        model.learn(
+            total_timesteps=int(config.total_timesteps),
+            progress_bar=False,
+            callback=callback,
+        )
         return model, runtime
     finally:
         env.close()
@@ -324,19 +465,38 @@ def measure_invalid_action_rate(
 
 
 def train_and_save(config: PortfolioSb3TrainConfig) -> Dict[str, Any]:
-    """Train, save the model, measure invalid-action rate; return a summary."""
+    """Train, save the model, measure invalid-action rate; return a summary.
+
+    Story A: when ``write_artifacts`` AND ``write_training_events`` are on, the
+    train run dir gains an ``rl_live_events.jsonl`` (the per-rollout telemetry
+    stream), an ``rl_live_summary.json`` rollup, and an ``sb3_smoke_summary.json``
+    signature so the existing dashboard recognises the directory as a run and
+    serves the live events through ``/table/events`` (follow/replay).
+    """
 
     check_result = check_train_env(config)
-    model, runtime = train_portfolio_model(config)
+
+    output_dir = Path(config.output_dir)
+    emit_events = bool(config.write_artifacts and config.write_training_events)
+    live_events_path = output_dir / "rl_live_events.jsonl"
+    if emit_events:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    model, runtime = train_portfolio_model(
+        config, live_events_path=live_events_path if emit_events else None
+    )
     raw_rate = measure_invalid_action_rate(model, config, use_masked_policy=False)
     masked_rate = measure_invalid_action_rate(model, config, use_masked_policy=True)
 
-    output_dir = Path(config.output_dir)
     model_path: Optional[str] = None
     if config.write_artifacts:
         output_dir.mkdir(parents=True, exist_ok=True)
         model_path = str(output_dir / f"portfolio_{config.algorithm}_model.zip")
         model.save(model_path)
+
+    live_summary: Optional[Dict[str, Any]] = None
+    if emit_events and live_events_path.is_file():
+        live_summary = summarize_live_event_file(live_events_path)
 
     summary: Dict[str, Any] = {
         "mode": "stom_rl_portfolio_sb3_train",
@@ -358,11 +518,61 @@ def train_and_save(config: PortfolioSb3TrainConfig) -> Dict[str, Any]:
         },
         "model_path": model_path,
     }
+    if live_summary is not None:
+        summary["live_events"] = live_summary
     if config.write_artifacts:
         (output_dir / "portfolio_sb3_train_summary.json").write_text(
             json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8-sig"
         )
+    if live_summary is not None:
+        _write_train_run_signature(output_dir, config=config, live_summary=live_summary)
+        (output_dir / "rl_live_summary.json").write_text(
+            json.dumps(live_summary, ensure_ascii=False, indent=2), encoding="utf-8-sig"
+        )
     return summary
+
+
+def _write_train_run_signature(
+    output_dir: Path,
+    *,
+    config: PortfolioSb3TrainConfig,
+    live_summary: Mapping[str, Any],
+) -> None:
+    """Write the dashboard signature so the train run is follow/replay-visible.
+
+    The dashboard's ``_detect_artifact_type`` recognises a run by a signature
+    file; ``sb3_smoke_summary.json`` is one of them and its ``live_events`` block
+    is read by ``load_rl_run``.  Writing it here makes the SB3 *training* stream
+    appear in the same realtime view the deterministic smoke run uses — without a
+    separate publish step or any new ``/api/*`` route.
+    """
+
+    live_algorithm = PORTFOLIO_TRAIN_LIVE_ALGORITHM.get(
+        config.algorithm.lower(), f"portfolio_{config.algorithm.lower()}"
+    )
+    signature = {
+        "mode": "stom_rl_portfolio_sb3_train",
+        "run_name": output_dir.name,
+        "config": asdict(config),
+        "summary": {
+            "algorithm": config.algorithm,
+            "best_model": live_algorithm,
+            "total_timesteps": int(config.total_timesteps),
+            "live_event_count": int(live_summary.get("event_count", 0)),
+            "feature_columns": [],
+        },
+        "models": [
+            {
+                "model": live_algorithm,
+                "algorithm": config.algorithm,
+                "total_timesteps": int(config.total_timesteps),
+            }
+        ],
+        "live_events": dict(live_summary),
+    }
+    (output_dir / SB3_SMOKE_SIGNATURE_FILE).write_text(
+        json.dumps(signature, ensure_ascii=False, indent=2), encoding="utf-8-sig"
+    )
 
 
 def load_trained_model(model_path: str, *, algorithm: str = "ppo") -> Any:
@@ -539,6 +749,11 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> Tuple[PortfolioSb3Train
     parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--n-folds", type=int, default=2)
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument(
+        "--no-training-events",
+        action="store_true",
+        help="Disable the live training-event stream (rl_live_events.jsonl).",
+    )
     args = parser.parse_args(argv)
     config = PortfolioSb3TrainConfig(
         candidate_path=args.candidate_csv,
@@ -551,6 +766,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> Tuple[PortfolioSb3Train
         turnover_penalty_lambda=args.turnover_penalty_lambda,
         seed=args.seed,
         write_artifacts=not args.no_write,
+        write_training_events=not args.no_training_events,
     )
     return config, args.n_folds
 
@@ -565,6 +781,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 __all__ = [
     "PortfolioSb3TrainConfig",
     "MASKABLE_PPO_INVALID_ACTION_TRIGGER",
+    "PORTFOLIO_TRAIN_LIVE_ALGORITHM",
+    "PORTFOLIO_TRAIN_LIVE_PHASE",
+    "SB3_SMOKE_SIGNATURE_FILE",
     "apply_determinism",
     "check_train_env",
     "train_portfolio_model",

@@ -349,3 +349,130 @@ def test_real_ppo_train_is_reproducible_within_tolerance():
     result = _run_python(code)
     assert result.returncode == 0, result.stderr + result.stdout
     assert "DETERMINISM_OK" in (result.stdout + result.stderr)
+
+
+# --------------------------------------------------------------------------- #
+# Story A: SB3 training-loop telemetry -> live training dashboard stream.
+# --------------------------------------------------------------------------- #
+def test_training_event_config_flag_defaults_on():
+    """``write_training_events`` is default-on (the "watch it learn" stream)."""
+
+    from stom_rl.portfolio_sb3_train import PortfolioSb3TrainConfig
+
+    assert PortfolioSb3TrainConfig().write_training_events is True
+    assert PortfolioSb3TrainConfig(write_training_events=False).write_training_events is False
+
+
+def test_cli_no_training_events_flag_disables_stream():
+    """``--no-training-events`` flips the config flag off without touching writes."""
+
+    from stom_rl.portfolio_sb3_train import _parse_args
+
+    on, _ = _parse_args([])
+    off, _ = _parse_args(["--no-training-events"])
+    assert on.write_training_events is True
+    assert off.write_training_events is False
+    # The flag is independent of artifact writing (default-on write_artifacts).
+    assert off.write_artifacts is True
+
+
+def test_real_ppo_train_emits_well_formed_live_events(tmp_path):
+    """A tiny REAL ``model.learn`` streams well-formed phase=train live events.
+
+    Asserts (round-tripped via ``read_live_events``):
+      * >=1 event with ``phase=='train'`` and ``algorithm=='portfolio_ppo'``;
+      * ``global_step`` is monotonic non-decreasing and finite;
+      * every ``reward`` is finite (mean episode reward);
+      * the dashboard signature (sb3_smoke_summary.json) + rl_live_summary.json
+        are written so the run is follow/replay-visible.
+
+    Subprocess + skip-on-DLL convention (see module header) so this exercises a
+    REAL SB3 train without the Windows in-process torch DLL flake.
+    """
+
+    out_dir = (tmp_path / "train_live").as_posix()
+    code = (
+        "import warnings, json, math; warnings.filterwarnings('ignore')\n"
+        "from pathlib import Path\n"
+        "from stom_rl.portfolio_sb3_train import PortfolioSb3TrainConfig, train_and_save, SB3_SMOKE_SIGNATURE_FILE\n"
+        "from stom_rl.rl_events import read_live_events\n"
+        f"out = Path({out_dir!r})\n"
+        "cfg = PortfolioSb3TrainConfig(algorithm='ppo', total_timesteps=96, ppo_n_steps=32,\n"
+        "    ppo_batch_size=8, ppo_n_epochs=1, output_dir=str(out))\n"
+        "summary = train_and_save(cfg)\n"
+        "rows, _ = read_live_events(out / 'rl_live_events.jsonl', limit=500)\n"
+        "train_rows = [r for r in rows if r.get('phase') == 'train']\n"
+        "assert train_rows, ('no phase=train events', rows)\n"
+        "assert all(r.get('algorithm') == 'portfolio_ppo' for r in train_rows), rows\n"
+        "steps = [int(r['global_step']) for r in train_rows]\n"
+        "assert steps == sorted(steps), ('global_step not monotonic', steps)\n"
+        "assert all(math.isfinite(float(r['reward'])) for r in train_rows), rows\n"
+        "assert (out / SB3_SMOKE_SIGNATURE_FILE).is_file(), 'missing dashboard signature'\n"
+        "assert (out / 'rl_live_summary.json').is_file(), 'missing live summary'\n"
+        "assert int(summary['live_events']['event_count']) == len(rows)\n"
+        "print('LIVE_EVENTS_OK', len(train_rows), steps[-1])\n"
+    )
+    result = _run_python(code)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "LIVE_EVENTS_OK" in (result.stdout + result.stderr)
+
+
+def test_training_events_disabled_writes_no_jsonl(tmp_path):
+    """With ``write_training_events=False`` no live-event JSONL/signature appears.
+
+    Proves the stream is opt-out and that the default-off path leaves the run dir
+    free of the live-event artifacts (so disabling truly disables).
+    """
+
+    out_dir = (tmp_path / "train_no_events").as_posix()
+    code = (
+        "import warnings; warnings.filterwarnings('ignore')\n"
+        "from pathlib import Path\n"
+        "from stom_rl.portfolio_sb3_train import PortfolioSb3TrainConfig, train_and_save, SB3_SMOKE_SIGNATURE_FILE\n"
+        f"out = Path({out_dir!r})\n"
+        "cfg = PortfolioSb3TrainConfig(algorithm='ppo', total_timesteps=64, ppo_n_steps=16,\n"
+        "    ppo_batch_size=8, ppo_n_epochs=1, output_dir=str(out), write_training_events=False)\n"
+        "summary = train_and_save(cfg)\n"
+        "assert not (out / 'rl_live_events.jsonl').is_file(), 'jsonl written while disabled'\n"
+        "assert not (out / SB3_SMOKE_SIGNATURE_FILE).is_file(), 'signature written while disabled'\n"
+        "assert 'live_events' not in summary, summary.keys()\n"
+        "print('NO_EVENTS_OK')\n"
+    )
+    result = _run_python(code)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "NO_EVENTS_OK" in (result.stdout + result.stderr)
+
+
+def test_dashboard_serves_training_events(tmp_path):
+    """The trained run is dashboard-visible: /table/events serves phase=train rows.
+
+    Trains into a temp ``rl_runs`` root, points the dashboard's RL_RUN_ROOTS at it,
+    and asserts the existing follow/replay route returns the live training stream
+    with no new ``/api/*`` surface.
+    """
+
+    runs_root = (tmp_path / "rl_runs").as_posix()
+    code = (
+        "import warnings; warnings.filterwarnings('ignore')\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stom_rl.portfolio_sb3_train import PortfolioSb3TrainConfig, train_and_save\n"
+        f"runs_root = Path({runs_root!r})\n"
+        "run_dir = runs_root / 'portfolio_train_dash'\n"
+        "cfg = PortfolioSb3TrainConfig(algorithm='ppo', total_timesteps=96, ppo_n_steps=32,\n"
+        "    ppo_batch_size=8, ppo_n_epochs=1, output_dir=str(run_dir))\n"
+        "train_and_save(cfg)\n"
+        "sys.path.insert(0, 'webui')\n"
+        "import rl_dashboard as dash\n"
+        "dash.RL_RUN_ROOTS = [runs_root]\n"
+        "names = [r['name'] for r in dash.list_rl_runs()]\n"
+        "assert 'portfolio_train_dash' in names, names\n"
+        "tbl = dash.load_rl_table('portfolio_train_dash', 'events', limit=500)\n"
+        "assert tbl['row_count'] > 0, tbl\n"
+        "assert tbl['source_file'] == 'rl_live_events.jsonl', tbl\n"
+        "assert all(r.get('phase') == 'train' for r in tbl['rows']), tbl['rows']\n"
+        "print('DASH_OK', tbl['row_count'])\n"
+    )
+    result = _run_python(code)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "DASH_OK" in (result.stdout + result.stderr)
