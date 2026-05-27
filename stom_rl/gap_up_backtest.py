@@ -15,13 +15,27 @@ Strategy (user-specified, pre-registered BEFORE reading any result)
   The forward walk IS the legitimate trade execution — it only consumes
   prices at or after the entry second, so there is NO look-ahead at ENTRY
   (the entry decision uses only the first bar's 등락율).
-* **Cost** — 25 bps round-trip (entry + exit combined) deducted from each
-  trade's gross return.
+* **Cost** — a configurable round-trip model
+  (:func:`round_trip_cost_bps`):
+  ``commission_bps_per_side*2 + transaction_tax_bps (SELL side only)
+  + slippage_bps``.  The legacy flat 25 bp is the default total; a cost SWEEP
+  over ``{0,5,10,15,18,25}`` bp is run to report the BREAKEVEN round-trip cost
+  at which OOS net expectancy crosses zero (a property, not a tuned cell).
+* **Entry filters (optional, pre-registered from STOM buy rules)** — on top of
+  the 등락율>=2% gate, optionally require causal ENTRY-BAR demand signals:
+  ``체결강도``(trade_strength) and 호가 ``bid_ask_imbalance``
+  (매수총잔량/(매수+매도총잔량)).  Filters use only entry-bar values (<= entry
+  second), so there is no look-ahead.  Definitions are pre-registered
+  (:data:`ENTRY_FILTERS`), drawn from ``stom_rl/rules/buy_demand_pressure.json``
+  / ``buy_widev1.json`` — NOT searched for the best threshold.
 
 Honesty caveats (locked, see the doc)
 -------------------------------------
 * The TP/SL pair is SWEPT over a small grid (``TP x SL``); the full surface
   is reported and no single cell is cherry-picked as "the" answer.
+* The cost sweep reports the BREAKEVEN cost (where OOS expectancy = 0), not a
+  cherry-picked low-cost cell, and the entry filters are pre-registered (no
+  threshold search).
 * The universe is a TRIGGERED subset: the DB only recorded a session because
   it hit *some* STOM condition, so 등락율>=2% instances here are NOT a random
   sample of all 2%+ market gap-ups.  Results may not generalise.
@@ -62,16 +76,35 @@ from finetune_csv.stom_tick_dataset import (  # noqa: E402
 ENTRY_CHANGE_RATE_THRESHOLD: float = 2.0  # 등락율 >= 2.0% at the first bar
 TIME_EXIT_HHMMSS: str = "092500"  # 시간청산 cutoff (data ends ~0930)
 SESSION_START_HHMMSS: str = "090000"
-COST_BPS_ROUND_TRIP: float = 25.0  # entry + exit combined, basis points
+COST_BPS_ROUND_TRIP: float = 25.0  # entry + exit combined, basis points (legacy flat)
 
 # Swept TP/SL grid (M = 16 combos).  Reported in full; no cherry-pick.
 TP_GRID_PCT: Tuple[float, ...] = (1.0, 2.0, 3.0, 5.0)
 SL_GRID_PCT: Tuple[float, ...] = (1.0, 1.5, 2.0, 3.0)
 
+# Cost SWEEP of round-trip levels (bps).  Used to locate the breakeven cost
+# (OOS net expectancy = 0).  Includes the two labelled reference scenarios:
+#   * Korean-domestic ~18 bp  (commission ~1.5 bp/side + transaction tax ~15 bp
+#     on the SELL side only); see KOREAN_DOMESTIC_COST.
+#   * International / low ~5 bp (commission ~2.5 bp/side, no transaction tax);
+#     see INTERNATIONAL_LOW_COST.
+COST_SWEEP_BPS: Tuple[float, ...] = (0.0, 5.0, 10.0, 15.0, 18.0, 25.0)
+
+# Pre-registered entry filters (NOT threshold-searched).  Thresholds are the
+# STOM canonical values (체결강도 >= 100 = "at par", 호가 imbalance >= 0.5 =
+# "bid-side leaning") taken verbatim from buy_widev1.json / buy_demand_pressure
+# .json — NOT tuned on this backtest's results.
+TRADE_STRENGTH_THRESHOLD: float = 100.0  # 체결강도 >= 100 (STOM "at par")
+IMBALANCE_THRESHOLD: float = 0.5  # 호가 매수총잔량/(매수+매도총잔량) >= 0.5
+
 # DB column resolution (Korean names stored UTF-8; sqlite3 decodes by default).
 _TIMESTAMP_CANDIDATES: Tuple[str, ...] = ("index", "timestamps", "timestamp")
 _PRICE_CANDIDATES: Tuple[str, ...] = ("현재가", "종가", "close")
 _CHANGE_RATE_CANDIDATES: Tuple[str, ...] = ("등락율",)
+_TRADE_STRENGTH_CANDIDATES: Tuple[str, ...] = ("체결강도",)
+_SEC_AMOUNT_CANDIDATES: Tuple[str, ...] = ("초당거래대금",)
+_BID_QTY_CANDIDATES: Tuple[str, ...] = ("매수총잔량",)
+_ASK_QTY_CANDIDATES: Tuple[str, ...] = ("매도총잔량",)
 
 # Exit-reason labels.
 EXIT_TP = "tp"
@@ -89,6 +122,155 @@ def _resolve_column(columns: Sequence[str], candidates: Sequence[str]) -> Option
         if candidate in column_set:
             return candidate
     return None
+
+
+# ---------------------------------------------------------------------------
+# Realistic round-trip cost model (commission + sell-side tax + slippage).
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class RoundTripCost:
+    """A realistic per-round-trip cost model (all components in basis points).
+
+    A round trip is one BUY (entry) + one SELL (exit).  The total round-trip
+    cost is::
+
+        commission_bps_per_side * 2      (commission charged on BOTH sides)
+        + transaction_tax_bps            (Korean 증권거래세 — SELL side ONLY)
+        + slippage_bps                   (round-trip execution slippage)
+
+    The transaction tax is applied ONCE (sell side only); buying incurs no
+    transaction tax in the Korean market, hence it is not multiplied by two.
+    """
+
+    commission_bps_per_side: float = 0.0
+    transaction_tax_bps: float = 0.0  # sell side only
+    slippage_bps: float = 0.0
+
+    def total_round_trip_bps(self) -> float:
+        return round_trip_cost_bps(
+            commission_bps_per_side=self.commission_bps_per_side,
+            transaction_tax_bps=self.transaction_tax_bps,
+            slippage_bps=self.slippage_bps,
+        )
+
+
+def round_trip_cost_bps(
+    *,
+    commission_bps_per_side: float = 0.0,
+    transaction_tax_bps: float = 0.0,
+    slippage_bps: float = 0.0,
+) -> float:
+    """Compute the total round-trip cost in basis points.
+
+    ``commission_bps_per_side`` is charged on BOTH the buy and the sell, so it
+    is doubled.  ``transaction_tax_bps`` (증권거래세) is charged on the SELL side
+    ONLY, so it is added once.  ``slippage_bps`` is the round-trip slippage.
+    """
+
+    if (
+        commission_bps_per_side < 0
+        or transaction_tax_bps < 0
+        or slippage_bps < 0
+    ):
+        raise ValueError("cost components must be non-negative")
+    return (
+        commission_bps_per_side * 2.0
+        + transaction_tax_bps
+        + slippage_bps
+    )
+
+
+# Two labelled reference scenarios (see COST_SWEEP_BPS docstring).
+# Korean-domestic: commission ~1.5 bp/side + 증권거래세 ~15 bp (sell only)
+#   -> 1.5*2 + 15 = 18 bp round trip.
+KOREAN_DOMESTIC_COST = RoundTripCost(
+    commission_bps_per_side=1.5, transaction_tax_bps=15.0, slippage_bps=0.0
+)
+# International / low: commission ~2.5 bp/side, no transaction tax
+#   -> 2.5*2 + 0 = 5 bp round trip.
+INTERNATIONAL_LOW_COST = RoundTripCost(
+    commission_bps_per_side=2.5, transaction_tax_bps=0.0, slippage_bps=0.0
+)
+
+
+# ---------------------------------------------------------------------------
+# Pre-registered causal entry filters (STOM buy-rule derived; NOT searched).
+# ---------------------------------------------------------------------------
+def compute_bid_ask_imbalance(
+    bid_total_qty: Optional[float], ask_total_qty: Optional[float]
+) -> Optional[float]:
+    """호가 imbalance = 매수총잔량 / (매수총잔량 + 매도총잔량).
+
+    Returns ``None`` when either side is missing or the book is empty (no
+    denominator).  Range is ``[0, 1]``; ``>= 0.5`` means the book leans bid-side
+    (more resting buy interest), the STOM 호가상승압력 intent.
+    """
+
+    if bid_total_qty is None or ask_total_qty is None:
+        return None
+    try:
+        bid = float(bid_total_qty)
+        ask = float(ask_total_qty)
+    except (TypeError, ValueError):
+        return None
+    denom = bid + ask
+    if denom <= 0:
+        return None
+    return bid / denom
+
+
+@dataclass(frozen=True)
+class EntryFilter:
+    """A pre-registered causal entry filter (evaluated on the ENTRY BAR only)."""
+
+    name: str
+    require_trade_strength: bool = False
+    require_imbalance: bool = False
+    trade_strength_threshold: float = TRADE_STRENGTH_THRESHOLD
+    imbalance_threshold: float = IMBALANCE_THRESHOLD
+
+
+# Pre-registered filter set.  "none" = baseline (등락율>=2% only); F1/F2 are the
+# STOM demand gates.  These are FIXED definitions (no per-result tuning).
+ENTRY_FILTERS: Dict[str, EntryFilter] = {
+    "none": EntryFilter(name="none"),
+    # F1: 체결강도 >= 100 (STOM buy_widev1 / buy_demand_pressure "at par").
+    "ts": EntryFilter(name="ts", require_trade_strength=True),
+    # F2: 체결강도 >= 100 AND 호가 imbalance >= 0.5 (full buy_demand_pressure).
+    "ts_imb": EntryFilter(
+        name="ts_imb", require_trade_strength=True, require_imbalance=True
+    ),
+}
+
+
+def passes_entry_filter(
+    inst: "GapUpInstance", entry_filter: EntryFilter
+) -> bool:
+    """Return True if the instance's ENTRY-BAR signals satisfy the filter.
+
+    Uses ONLY the entry-bar (<= entry second) ``trade_strength`` and
+    ``bid_ask_imbalance`` already captured on the instance, so there is no
+    look-ahead.  A required signal that is missing (``None``) FAILS the filter
+    (we do not silently admit instances lacking the demand evidence).
+    """
+
+    if entry_filter.require_trade_strength:
+        ts = inst.entry_trade_strength
+        if ts is None or ts < entry_filter.trade_strength_threshold:
+            return False
+    if entry_filter.require_imbalance:
+        imb = inst.entry_bid_ask_imbalance
+        if imb is None or imb < entry_filter.imbalance_threshold:
+            return False
+    return True
+
+
+def filter_instances(
+    instances: Sequence["GapUpInstance"], entry_filter: EntryFilter
+) -> List["GapUpInstance"]:
+    """Apply a pre-registered entry filter, returning the surviving instances."""
+
+    return [inst for inst in instances if passes_entry_filter(inst, entry_filter)]
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +405,14 @@ def simulate_baseline(
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class GapUpInstance:
-    """A resolved gap-up entry candidate for one (symbol, session)."""
+    """A resolved gap-up entry candidate for one (symbol, session).
+
+    ``entry_trade_strength`` (체결강도), ``entry_sec_amount`` (초당거래대금) and
+    ``entry_bid_ask_imbalance`` are the CAUSAL entry-bar demand signals used by
+    :func:`passes_entry_filter`; all are taken from the FIRST (entry) bar only,
+    so they never look ahead.  Any may be ``None`` when the source column is
+    absent or unreadable.
+    """
 
     symbol: str
     session: str
@@ -231,6 +420,9 @@ class GapUpInstance:
     entry_price: float
     prices: Tuple[float, ...]
     seconds: Tuple[int, ...]
+    entry_trade_strength: Optional[float] = None
+    entry_sec_amount: Optional[float] = None
+    entry_bid_ask_imbalance: Optional[float] = None
 
 
 def _hhmmss_of(ts: int) -> str:
@@ -251,6 +443,10 @@ def read_gap_up_instance(
     timestamp_col: str,
     price_col: str,
     change_rate_col: str,
+    trade_strength_col: Optional[str] = None,
+    sec_amount_col: Optional[str] = None,
+    bid_qty_col: Optional[str] = None,
+    ask_qty_col: Optional[str] = None,
     entry_threshold: float = ENTRY_CHANGE_RATE_THRESHOLD,
     session_start: str = SESSION_START_HHMMSS,
     time_exit: str = TIME_EXIT_HHMMSS,
@@ -262,6 +458,11 @@ def read_gap_up_instance(
     if its 등락율 < ``entry_threshold`` (or price is non-positive) the session is
     skipped (returns None).  The forward path is every row from entry to the
     time-exit cutoff.  This touches one table's morning window only.
+
+    When the optional demand columns (``trade_strength_col`` = 체결강도,
+    ``sec_amount_col`` = 초당거래대금, ``bid_qty_col``/``ask_qty_col`` =
+    매수/매도총잔량) are supplied they are read from the ENTRY bar ONLY and stored
+    on the instance for the causal entry filters (no look-ahead).
     """
 
     if len(session) != 8 or not session.isdigit():
@@ -270,10 +471,15 @@ def read_gap_up_instance(
     ts_q = _quote_ident(timestamp_col)
     px_q = _quote_ident(price_col)
     cr_q = _quote_ident(change_rate_col)
+    # Optional demand columns appended AFTER the core three (entry-bar only).
+    extra_cols = [trade_strength_col, sec_amount_col, bid_qty_col, ask_qty_col]
+    select_extra = "".join(
+        f", {_quote_ident(c)}" if c else ", NULL" for c in extra_cols
+    )
     start_full = int(session + session_start)
     end_full = int(session + time_exit)
     query = (
-        f"SELECT {ts_q}, {px_q}, {cr_q} FROM {qt} "
+        f"SELECT {ts_q}, {px_q}, {cr_q}{select_extra} FROM {qt} "
         f"WHERE {ts_q} >= ? AND {ts_q} <= ? "
         f"ORDER BY {ts_q}"
     )
@@ -282,7 +488,8 @@ def read_gap_up_instance(
         return None
 
     # Entry = first bar of the session window.
-    entry_ts, entry_px, entry_cr = rows[0]
+    entry_row = rows[0]
+    entry_px, entry_cr = entry_row[1], entry_row[2]
     if entry_cr is None or entry_px is None:
         return None
     try:
@@ -293,9 +500,25 @@ def read_gap_up_instance(
     if entry_px <= 0 or entry_cr < float(entry_threshold):
         return None
 
+    # CAUSAL entry-bar demand signals (entry row only; never look ahead).
+    def _opt_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    entry_trade_strength = _opt_float(entry_row[3])
+    entry_sec_amount = _opt_float(entry_row[4])
+    entry_bid_qty = _opt_float(entry_row[5])
+    entry_ask_qty = _opt_float(entry_row[6])
+    entry_imbalance = compute_bid_ask_imbalance(entry_bid_qty, entry_ask_qty)
+
     prices: List[float] = []
     secs: List[int] = []
-    for ts, px, _cr in rows:
+    for row in rows:
+        ts, px = row[0], row[1]
         if px is None:
             continue
         try:
@@ -316,6 +539,9 @@ def read_gap_up_instance(
         entry_price=prices[0],
         prices=tuple(prices),
         seconds=tuple(secs),
+        entry_trade_strength=entry_trade_strength,
+        entry_sec_amount=entry_sec_amount,
+        entry_bid_ask_imbalance=entry_imbalance,
     )
 
 
@@ -382,6 +608,82 @@ def split_instances_by_date(
 
 
 # ---------------------------------------------------------------------------
+# Cost sweep + breakeven (the breakeven is a PROPERTY, not a tuned cell).
+# ---------------------------------------------------------------------------
+def expectancy_at_cost(
+    instances: Sequence[GapUpInstance],
+    *,
+    tp_pct: float,
+    sl_pct: float,
+    cost_bps: float,
+) -> Optional[float]:
+    """Net per-trade expectancy (%) for one TP/SL at one round-trip cost.
+
+    Returns ``None`` for an empty instance set.  Because cost enters the net
+    return purely additively (``net = gross - cost%``), expectancy is exactly
+    ``gross_expectancy - cost_bps/100`` and STRICTLY DECREASES as cost rises —
+    this monotonicity is what makes the breakeven well-defined.
+    """
+
+    if not instances:
+        return None
+    trades = [
+        simulate_trade(
+            inst.prices,
+            tp_pct=tp_pct,
+            sl_pct=sl_pct,
+            cost_bps=cost_bps,
+            seconds=inst.seconds,
+        )
+        for inst in instances
+    ]
+    return aggregate_trades(trades)["expectancy_pct"]
+
+
+def breakeven_round_trip_bps(
+    instances: Sequence[GapUpInstance],
+    *,
+    tp_pct: float,
+    sl_pct: float,
+) -> Optional[float]:
+    """Round-trip cost (bps) at which net expectancy crosses 0 for this TP/SL.
+
+    Net expectancy = ``gross_expectancy_pct - cost_bps/100``; it is 0 exactly
+    when ``cost_bps = gross_expectancy_pct * 100``.  A NEGATIVE result means even
+    a zero-cost trade loses (gross edge < 0) — the strategy is unprofitable at
+    ANY cost.  A POSITIVE result is the maximum tolerable round-trip cost.
+    Returns ``None`` for an empty set.
+    """
+
+    gross = expectancy_at_cost(
+        instances, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=0.0
+    )
+    if gross is None:
+        return None
+    return gross * 100.0  # %/trade -> bps
+
+
+def cost_sweep_table(
+    instances: Sequence[GapUpInstance],
+    *,
+    tp_pct: float,
+    sl_pct: float,
+    cost_levels: Sequence[float] = COST_SWEEP_BPS,
+) -> List[Dict[str, Any]]:
+    """OOS-honest cost sweep: net expectancy at each round-trip cost level."""
+
+    return [
+        {
+            "cost_bps": float(c),
+            "expectancy_pct": expectancy_at_cost(
+                instances, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=float(c)
+            ),
+        }
+        for c in cost_levels
+    ]
+
+
+# ---------------------------------------------------------------------------
 # DB-backed full backtest runner (bounded enumeration + per-instance reads).
 # ---------------------------------------------------------------------------
 @dataclass
@@ -393,6 +695,10 @@ class GapUpBacktestConfig:
     entry_threshold: float = ENTRY_CHANGE_RATE_THRESHOLD
     tp_grid: Tuple[float, ...] = TP_GRID_PCT
     sl_grid: Tuple[float, ...] = SL_GRID_PCT
+    # Cost-sweep + filter analysis (the prior best cell is the PRIMARY TP/SL).
+    cost_sweep_bps: Tuple[float, ...] = COST_SWEEP_BPS
+    primary_tp_pct: float = 5.0  # prior "best OOS" cell (TP5/SL1), reported only
+    primary_sl_pct: float = 1.0
     artifacts_dir: Optional[str] = None
 
 
@@ -406,6 +712,8 @@ class GapUpBacktestResult:
     boundary_date: Optional[str] = None
     grid: List[Dict[str, Any]] = field(default_factory=list)
     baseline: Dict[str, Any] = field(default_factory=dict)
+    # Cost-sweep x filter analysis (keyed by filter name "none"/"ts"/"ts_imb").
+    filter_analysis: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def collect_gap_up_instances(
@@ -430,6 +738,11 @@ def collect_gap_up_instances(
             cr_col = _resolve_column(columns, _CHANGE_RATE_CANDIDATES)
             if not ts_col or not px_col or not cr_col:
                 continue  # table lacks the required columns; skip honestly
+            # Optional causal demand columns (None when absent -> filter NULLs).
+            ts_strength_col = _resolve_column(columns, _TRADE_STRENGTH_CANDIDATES)
+            sec_amount_col = _resolve_column(columns, _SEC_AMOUNT_CANDIDATES)
+            bid_qty_col = _resolve_column(columns, _BID_QTY_CANDIDATES)
+            ask_qty_col = _resolve_column(columns, _ASK_QTY_CANDIDATES)
             qt = _quote_ident(table)
             ts_q = _quote_ident(ts_col)
             date_query = f"SELECT DISTINCT substr(CAST({ts_q} AS TEXT), 1, 8) FROM {qt}"
@@ -446,6 +759,10 @@ def collect_gap_up_instances(
                     timestamp_col=ts_col,
                     price_col=px_col,
                     change_rate_col=cr_col,
+                    trade_strength_col=ts_strength_col,
+                    sec_amount_col=sec_amount_col,
+                    bid_qty_col=bid_qty_col,
+                    ask_qty_col=ask_qty_col,
                     entry_threshold=config.entry_threshold,
                 )
                 if inst is not None:
@@ -518,6 +835,41 @@ def run_gap_up_backtest(config: GapUpBacktestConfig) -> GapUpBacktestResult:
         "all": _baseline(instances),
     }
 
+    # ---- Cost-sweep x entry-filter analysis (PRIMARY TP/SL, OOS-honest) ----
+    # For each pre-registered filter, report: surviving N (IS/OOS), the
+    # breakeven round-trip cost (IS & OOS), and the net expectancy at every
+    # swept cost level (IS & OOS).  The breakeven is a PROPERTY (gross edge x
+    # 100), so reporting it across filters is not cherry-picking.
+    tp_p, sl_p = config.primary_tp_pct, config.primary_sl_pct
+    filter_analysis: List[Dict[str, Any]] = []
+    for fname, efilter in ENTRY_FILTERS.items():
+        is_f = filter_instances(in_sample, efilter)
+        oos_f = filter_instances(out_sample, efilter)
+        all_f = filter_instances(instances, efilter)
+        filter_analysis.append(
+            {
+                "filter": fname,
+                "n_in_sample": len(is_f),
+                "n_out_of_sample": len(oos_f),
+                "n_all": len(all_f),
+                "primary_tp_pct": tp_p,
+                "primary_sl_pct": sl_p,
+                "breakeven_bps_in_sample": breakeven_round_trip_bps(
+                    is_f, tp_pct=tp_p, sl_pct=sl_p
+                ),
+                "breakeven_bps_out_of_sample": breakeven_round_trip_bps(
+                    oos_f, tp_pct=tp_p, sl_pct=sl_p
+                ),
+                "sweep_in_sample": cost_sweep_table(
+                    is_f, tp_pct=tp_p, sl_pct=sl_p, cost_levels=config.cost_sweep_bps
+                ),
+                "sweep_out_of_sample": cost_sweep_table(
+                    oos_f, tp_pct=tp_p, sl_pct=sl_p, cost_levels=config.cost_sweep_bps
+                ),
+            }
+        )
+    result.filter_analysis = filter_analysis
+
     if config.artifacts_dir:
         _write_artifacts(config, result, in_sample, out_sample)
 
@@ -545,6 +897,15 @@ def _write_artifacts(
             "split": split_label.get(id(inst), "unknown"),
             "entry_change_rate": inst.entry_change_rate,
             "entry_price": inst.entry_price,
+            "entry_trade_strength": inst.entry_trade_strength,
+            "entry_sec_amount": inst.entry_sec_amount,
+            "entry_bid_ask_imbalance": (
+                round(inst.entry_bid_ask_imbalance, 6)
+                if inst.entry_bid_ask_imbalance is not None
+                else None
+            ),
+            "pass_ts": passes_entry_filter(inst, ENTRY_FILTERS["ts"]),
+            "pass_ts_imb": passes_entry_filter(inst, ENTRY_FILTERS["ts_imb"]),
             "n_path_bars": len(inst.prices),
         }
         for tp in config.tp_grid:
@@ -578,8 +939,12 @@ def _write_artifacts(
         "entry_threshold": config.entry_threshold,
         "tp_grid": list(config.tp_grid),
         "sl_grid": list(config.sl_grid),
+        "cost_sweep_bps": list(config.cost_sweep_bps),
+        "primary_tp_pct": config.primary_tp_pct,
+        "primary_sl_pct": config.primary_sl_pct,
         "grid": result.grid,
         "baseline": result.baseline,
+        "filter_analysis": result.filter_analysis,
     }
     (out_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -662,6 +1027,42 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"OOS[{_format_metrics(cell['out_of_sample'])}]"
         )
 
+    # Cost-sweep x filter (PRIMARY TP/SL) + breakeven round-trip cost.
+    if result.filter_analysis:
+        tp_p, sl_p = config.primary_tp_pct, config.primary_sl_pct
+        levels = list(config.cost_sweep_bps)
+        print(
+            f"-- cost sweep x entry filter (PRIMARY TP={tp_p:g}%/SL={sl_p:g}%) --"
+        )
+        print(
+            "   ref scenarios: Korean-domestic="
+            f"{KOREAN_DOMESTIC_COST.total_round_trip_bps():g}bp "
+            f"(comm {KOREAN_DOMESTIC_COST.commission_bps_per_side:g}bp/side x2 "
+            f"+ tax {KOREAN_DOMESTIC_COST.transaction_tax_bps:g}bp sell-only), "
+            "international/low="
+            f"{INTERNATIONAL_LOW_COST.total_round_trip_bps():g}bp "
+            f"(comm {INTERNATIONAL_LOW_COST.commission_bps_per_side:g}bp/side x2, no tax)"
+        )
+        header = "  filter    N(IS/OOS)  breakeven(IS/OOS)bp  " + " ".join(
+            f"OOS@{int(c)}bp" for c in levels
+        )
+        print(header)
+        for fa in result.filter_analysis:
+            sweep = {row["cost_bps"]: row["expectancy_pct"] for row in fa["sweep_out_of_sample"]}
+
+            def _fmt_exp(v: Optional[float]) -> str:
+                return "  n=0  " if v is None else f"{v:+.3f}"
+
+            def _fmt_be(v: Optional[float]) -> str:
+                return "n/a" if v is None else f"{v:+.1f}"
+
+            cells = " ".join(f"{_fmt_exp(sweep.get(c)):>8}" for c in levels)
+            print(
+                f"  {fa['filter']:<8}  {fa['n_in_sample']}/{fa['n_out_of_sample']:<6}  "
+                f"{_fmt_be(fa['breakeven_bps_in_sample'])}/"
+                f"{_fmt_be(fa['breakeven_bps_out_of_sample'])}        {cells}"
+            )
+
     if args.json_out:
         out_path = Path(args.json_out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -678,8 +1079,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "entry_threshold": config.entry_threshold,
                     "tp_grid": list(config.tp_grid),
                     "sl_grid": list(config.sl_grid),
+                    "cost_sweep_bps": list(config.cost_sweep_bps),
+                    "primary_tp_pct": config.primary_tp_pct,
+                    "primary_sl_pct": config.primary_sl_pct,
                     "grid": result.grid,
                     "baseline": result.baseline,
+                    "filter_analysis": result.filter_analysis,
                 },
                 ensure_ascii=False,
                 indent=2,

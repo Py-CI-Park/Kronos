@@ -12,11 +12,23 @@ import pytest
 
 from stom_rl.gap_up_backtest import (
     COST_BPS_ROUND_TRIP,
+    ENTRY_FILTERS,
     EXIT_SL,
     EXIT_TIME,
     EXIT_TP,
+    IMBALANCE_THRESHOLD,
+    INTERNATIONAL_LOW_COST,
+    KOREAN_DOMESTIC_COST,
+    TRADE_STRENGTH_THRESHOLD,
     GapUpInstance,
     aggregate_trades,
+    breakeven_round_trip_bps,
+    compute_bid_ask_imbalance,
+    cost_sweep_table,
+    expectancy_at_cost,
+    filter_instances,
+    passes_entry_filter,
+    round_trip_cost_bps,
     simulate_baseline,
     simulate_trade,
     split_instances_by_date,
@@ -175,3 +187,182 @@ def test_split_single_date_all_in_sample():
     assert len(in_sample) == 2
     assert out_sample == []
     assert boundary == "20230101"
+
+
+# ---------------------------------------------------------------------------
+# Realistic cost model: commission (both sides) + tax (sell side only) + slip.
+# ---------------------------------------------------------------------------
+def test_round_trip_cost_commission_charged_both_sides():
+    # 3 bp/side commission, no tax, no slippage -> 3*2 = 6 bp round trip.
+    assert _approx(round_trip_cost_bps(commission_bps_per_side=3.0), 6.0)
+
+
+def test_round_trip_cost_transaction_tax_is_sell_side_only():
+    # Tax is added ONCE (sell side), not doubled like commission.
+    # comm 1.5/side (=3) + tax 15 (once) = 18 bp.  If tax were doubled it'd be 33.
+    total = round_trip_cost_bps(
+        commission_bps_per_side=1.5, transaction_tax_bps=15.0
+    )
+    assert _approx(total, 18.0)
+    # Isolate the tax: zero commission -> tax appears exactly once.
+    assert _approx(round_trip_cost_bps(transaction_tax_bps=15.0), 15.0)
+
+
+def test_round_trip_cost_includes_slippage():
+    total = round_trip_cost_bps(
+        commission_bps_per_side=2.0, transaction_tax_bps=0.0, slippage_bps=4.0
+    )
+    assert _approx(total, 2.0 * 2 + 0.0 + 4.0)  # 8 bp
+
+
+def test_round_trip_cost_rejects_negative_components():
+    with pytest.raises(ValueError):
+        round_trip_cost_bps(commission_bps_per_side=-1.0)
+    with pytest.raises(ValueError):
+        round_trip_cost_bps(transaction_tax_bps=-1.0)
+    with pytest.raises(ValueError):
+        round_trip_cost_bps(slippage_bps=-1.0)
+
+
+def test_reference_scenarios_match_documented_totals():
+    # Korean-domestic ~18 bp (comm 1.5/side x2 + 증권거래세 15 sell-only).
+    assert _approx(KOREAN_DOMESTIC_COST.total_round_trip_bps(), 18.0)
+    assert KOREAN_DOMESTIC_COST.transaction_tax_bps == 15.0  # sell-side tax present
+    # International / low ~5 bp (comm 2.5/side x2, NO transaction tax).
+    assert _approx(INTERNATIONAL_LOW_COST.total_round_trip_bps(), 5.0)
+    assert INTERNATIONAL_LOW_COST.transaction_tax_bps == 0.0  # no tax internationally
+
+
+# ---------------------------------------------------------------------------
+# Breakeven cost: net = gross - cost%, monotonic-decreasing in cost.
+# ---------------------------------------------------------------------------
+def _mk_path(symbol: str, session: str, exit_price: float) -> GapUpInstance:
+    # entry=100, single forward bar at exit_price; with TP5/SL1 a mild move
+    # neither hits TP nor SL, so it time-exits at exit_price (gross = move%).
+    return GapUpInstance(
+        symbol=symbol,
+        session=session,
+        entry_change_rate=2.5,
+        entry_price=100.0,
+        prices=(100.0, exit_price),
+        seconds=(32400, 32401),
+    )
+
+
+def test_breakeven_equals_gross_expectancy_times_100():
+    # Two instances time-exit at +2% and +0% gross -> mean gross = +1.0%/trade.
+    # Breakeven round-trip cost = 1.0% * 100 = 100 bp.
+    insts = [_mk_path("A", "20230101", 102.0), _mk_path("B", "20230102", 100.0)]
+    be = breakeven_round_trip_bps(insts, tp_pct=5.0, sl_pct=1.0)
+    assert be is not None and _approx(be, 100.0)
+    # At exactly the breakeven cost, net expectancy is ~0.
+    exp = expectancy_at_cost(insts, tp_pct=5.0, sl_pct=1.0, cost_bps=be)
+    assert _approx(exp, 0.0, tol=1e-6)
+
+
+def test_breakeven_negative_when_gross_edge_is_negative():
+    # Both instances lose gross (-1% time-exit) -> breakeven is NEGATIVE,
+    # i.e. unprofitable at ANY non-negative cost.
+    insts = [_mk_path("A", "20230101", 99.0), _mk_path("B", "20230102", 99.0)]
+    be = breakeven_round_trip_bps(insts, tp_pct=5.0, sl_pct=2.0)
+    assert be is not None and be < 0.0
+
+
+def test_cost_sweep_expectancy_is_monotonic_decreasing():
+    insts = [_mk_path("A", "20230101", 103.0), _mk_path("B", "20230102", 101.0)]
+    sweep = cost_sweep_table(
+        insts, tp_pct=5.0, sl_pct=1.0, cost_levels=(0.0, 5.0, 10.0, 18.0, 25.0)
+    )
+    exps = [row["expectancy_pct"] for row in sweep]
+    # Strictly decreasing: higher cost -> lower net expectancy.
+    assert all(a > b for a, b in zip(exps, exps[1:]))
+    # The drop between adjacent levels equals the cost delta in % (additive).
+    assert _approx(exps[0] - exps[1], (5.0 - 0.0) / 100.0)
+
+
+def test_breakeven_none_for_empty_set():
+    assert breakeven_round_trip_bps([], tp_pct=5.0, sl_pct=1.0) is None
+    assert expectancy_at_cost([], tp_pct=5.0, sl_pct=1.0, cost_bps=10.0) is None
+
+
+# ---------------------------------------------------------------------------
+# Causal entry filters (STOM-derived, evaluated on the ENTRY bar only).
+# ---------------------------------------------------------------------------
+def test_imbalance_formula_and_edge_cases():
+    assert _approx(compute_bid_ask_imbalance(60.0, 40.0), 0.6)
+    assert _approx(compute_bid_ask_imbalance(50.0, 50.0), 0.5)
+    assert compute_bid_ask_imbalance(0.0, 0.0) is None  # empty book -> no denom
+    assert compute_bid_ask_imbalance(None, 40.0) is None
+    assert compute_bid_ask_imbalance(60.0, None) is None
+
+
+def _mk_feat(
+    symbol: str,
+    session: str,
+    *,
+    ts=None,
+    imb=None,
+) -> GapUpInstance:
+    return GapUpInstance(
+        symbol=symbol,
+        session=session,
+        entry_change_rate=2.5,
+        entry_price=100.0,
+        prices=(100.0, 101.0),
+        seconds=(32400, 32401),
+        entry_trade_strength=ts,
+        entry_bid_ask_imbalance=imb,
+    )
+
+
+def test_entry_filter_none_admits_everything():
+    inst = _mk_feat("A", "20230101", ts=None, imb=None)
+    assert passes_entry_filter(inst, ENTRY_FILTERS["none"]) is True
+
+
+def test_entry_filter_ts_requires_threshold():
+    strong = _mk_feat("A", "20230101", ts=TRADE_STRENGTH_THRESHOLD)
+    weak = _mk_feat("B", "20230101", ts=TRADE_STRENGTH_THRESHOLD - 0.1)
+    missing = _mk_feat("C", "20230101", ts=None)
+    assert passes_entry_filter(strong, ENTRY_FILTERS["ts"]) is True
+    assert passes_entry_filter(weak, ENTRY_FILTERS["ts"]) is False
+    # A missing signal FAILS (we don't admit instances lacking the evidence).
+    assert passes_entry_filter(missing, ENTRY_FILTERS["ts"]) is False
+
+
+def test_entry_filter_ts_imb_requires_both():
+    both = _mk_feat("A", "20230101", ts=120.0, imb=IMBALANCE_THRESHOLD)
+    only_ts = _mk_feat("B", "20230101", ts=120.0, imb=IMBALANCE_THRESHOLD - 0.01)
+    only_imb = _mk_feat("C", "20230101", ts=80.0, imb=0.7)
+    assert passes_entry_filter(both, ENTRY_FILTERS["ts_imb"]) is True
+    assert passes_entry_filter(only_ts, ENTRY_FILTERS["ts_imb"]) is False
+    assert passes_entry_filter(only_imb, ENTRY_FILTERS["ts_imb"]) is False
+
+
+def test_filter_instances_reduces_or_preserves_count():
+    instances = [
+        _mk_feat("A", "20230101", ts=150.0, imb=0.7),  # passes both
+        _mk_feat("B", "20230101", ts=150.0, imb=0.3),  # passes ts only
+        _mk_feat("C", "20230101", ts=50.0, imb=0.7),   # passes neither
+        _mk_feat("D", "20230101", ts=None, imb=None),  # missing -> fails ts
+    ]
+    none_kept = filter_instances(instances, ENTRY_FILTERS["none"])
+    ts_kept = filter_instances(instances, ENTRY_FILTERS["ts"])
+    ts_imb_kept = filter_instances(instances, ENTRY_FILTERS["ts_imb"])
+    assert len(none_kept) == 4  # no-filter keeps all
+    assert len(ts_kept) == 2    # A, B
+    assert len(ts_imb_kept) == 1  # only A
+    # Filtering NEVER increases the instance count (monotone subset).
+    assert len(ts_kept) <= len(none_kept)
+    assert len(ts_imb_kept) <= len(ts_kept)
+
+
+def test_filter_is_causal_uses_only_entry_bar_signals():
+    # The filter reads ONLY entry_trade_strength / entry_bid_ask_imbalance,
+    # which are entry-bar values; the forward price path must not affect it.
+    rising = GapUpInstance(
+        "A", "20230101", 2.5, 100.0, (100.0, 200.0, 300.0), (0, 1, 2),
+        entry_trade_strength=50.0, entry_bid_ask_imbalance=0.2,
+    )
+    # Despite a huge favourable forward path, weak entry-bar demand still fails.
+    assert passes_entry_filter(rising, ENTRY_FILTERS["ts"]) is False
