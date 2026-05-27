@@ -44,6 +44,46 @@ DEFAULT_BASELINES = (
     "cost_aware",
 )
 
+# P0-2 — trained/learned baseline keys.  These are NOT in DEFAULT_BASELINES (the
+# deterministic stand-ins) because they require an out-of-band fit/model handoff
+# that ``_fit_policy`` performs via ``TRAINED_POLICY_FACTORIES`` (below).  Keeping
+# them in a separate set keeps the diff small AND lets ``_parse_baselines`` accept
+# them WITHOUT relaxing the strict DEFAULT_BASELINES membership check that guards
+# typos.  ``supervised_ranker`` (§7a) is a built-in factory; ``trained_ppo`` is
+# registered at runtime by the trainer once a model is loaded.
+TRAINED_BASELINES = (
+    "trained_ppo",
+    "supervised_ranker",
+)
+
+# Model-handoff seam (P0-2(b)): a module-level registry the runner consults in
+# ``_fit_policy`` BEFORE the ``del train_frame, config, fold_index`` line, so a
+# trained model (or a TRAIN-fit ranker) can be handed to the holdout machinery
+# without changing ``_fit_policy``'s signature.  Each factory receives the TRAIN
+# segment + config + fold_index and returns a ``PolicyFn`` evaluated on the
+# disjoint, strictly-later TEST segment.
+TrainedPolicyFactory = Callable[..., "PolicyFn"]
+TRAINED_POLICY_FACTORIES: Dict[str, "TrainedPolicyFactory"] = {}
+
+
+def register_trained_policy_factory(key: str, factory: "TrainedPolicyFactory") -> None:
+    """Register a trained-policy factory under ``key`` for the ``_fit_policy`` seam.
+
+    The factory is called as ``factory(train_frame=..., config=..., fold_index=...)``
+    and must return a ``PolicyFn``.  ``trained_ppo`` (SB3 model handoff) and any
+    ad-hoc trained baseline register here; ``supervised_ranker`` is built in.
+    """
+
+    if not isinstance(key, str) or not key:
+        raise ValueError("trained policy factory key must be a non-empty string")
+    TRAINED_POLICY_FACTORIES[key] = factory
+
+
+def unregister_trained_policy_factory(key: str) -> None:
+    """Remove a registered trained-policy factory (no error if absent)."""
+
+    TRAINED_POLICY_FACTORIES.pop(key, None)
+
 # Bounded TRAIN tuning grid for the cost-aware policy (no open-ended search).
 # ``score_quantile``: only buy a candidate whose rank_score is at/above this
 # quantile of the TRAIN rank_score distribution (higher ⇒ more selective).
@@ -368,6 +408,131 @@ def _fit_cost_aware_policy(
     return _policy
 
 
+def _causal_feature_columns(frame: pd.DataFrame) -> List[str]:
+    """The same causal feature columns the env consumes: ``rank_score`` + ``feature_*``.
+
+    Mirrors ``PortfolioEnv._infer_feature_columns`` so the supervised ranker is
+    fit on the EXACT features the RL policy sees (no leaky strawman).
+    """
+
+    features = [str(c) for c in frame.columns if str(c).startswith("feature_")]
+    if "rank_score" in frame.columns and "rank_score" not in features:
+        features.insert(0, "rank_score")
+    return features
+
+
+def _next_bar_return_labels(train_frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    """Build (X, y) where y is the next-bar return of each candidate, TRAIN only.
+
+    For each ``symbol`` the label is the realised next-bar move
+    ``(price_{t+1} - price_t) / price_t`` within the TRAIN segment only (sorted by
+    timestamp).  This is a TRAIN-segment quantity: it never reads the TEST tail
+    because ``_fit_policy`` is handed only ``train_frame``.  The classifier target
+    is ``y > 0`` (next bar up), so the ranker scores candidates by P(up).
+    """
+
+    feature_cols = _causal_feature_columns(train_frame)
+    frame = train_frame.copy()
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
+    frame = frame.dropna(subset=["timestamp", "price"]).sort_values(["symbol", "timestamp"])
+    frame["_next_price"] = frame.groupby("symbol")["price"].shift(-1)
+    frame = frame.dropna(subset=["_next_price"])
+    if frame.empty:
+        return np.zeros((0, len(feature_cols)), dtype=np.float64), np.zeros((0,), dtype=np.int64)
+    ret = (frame["_next_price"].to_numpy(dtype=np.float64) - frame["price"].to_numpy(dtype=np.float64))
+    ret = ret / np.maximum(frame["price"].to_numpy(dtype=np.float64), 1e-12)
+    features = frame[feature_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    X = features.to_numpy(dtype=np.float64)
+    y = (ret > 0.0).astype(np.int64)
+    return X, y
+
+
+class _SupervisedRankerPolicy:
+    """TRAIN-fit supervised ranker that selects top_k candidates by P(next-up).
+
+    A regularized logistic regression on the SAME causal features the env uses,
+    fit on the TRAIN segment ONLY, predicting whether a candidate's next bar is
+    up.  At eval it scores the current-bar candidates and buys the best fillable
+    candidate whose predicted up-probability is highest (mirrors the env's top_k
+    selection).  No TEST data ever reaches ``fit`` — the leakage guard test
+    asserts this.  Falls back to the env's rank_score order if the model could
+    not be fit (degenerate single-class TRAIN labels).
+    """
+
+    def __init__(self, feature_cols: Sequence[str], model: Optional[Any]) -> None:
+        self.feature_cols = list(feature_cols)
+        self.model = model
+
+    def _score_rows(self, candidates: pd.DataFrame) -> np.ndarray:
+        if candidates.empty:
+            return np.zeros((0,), dtype=np.float64)
+        feats = candidates.reindex(columns=self.feature_cols, fill_value=0.0)
+        X = feats.apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy(dtype=np.float64)
+        if self.model is None or X.shape[0] == 0:
+            # Fallback: rank by rank_score (already the candidate sort key).
+            return pd.to_numeric(candidates.get("rank_score"), errors="coerce").fillna(0.0).to_numpy(dtype=np.float64)
+        return self.model.predict_proba(X)[:, 1]
+
+    def __call__(self, env: PortfolioEnv, info: Mapping[str, Any]) -> int:
+        mask = list(info["action_mask"])
+        sell_offset = 1 + env.config.top_k_candidates
+        candidates = env._current_candidates()  # noqa: SLF001 - read-only current bar view
+        scores = self._score_rows(candidates)
+        # Rank buyable candidate slots by predicted P(up), descending.
+        buy_slots = [slot for slot in range(1, sell_offset) if mask[slot] and (slot - 1) < len(scores)]
+        buy_slots.sort(key=lambda slot: float(scores[slot - 1]), reverse=True)
+        for slot in buy_slots:
+            return slot
+        # No buyable candidate: free a slot only if forced (hold otherwise — the
+        # ranker is a long-only top_k selector, not a churn policy).
+        return ACTION_HOLD
+
+
+def _fit_supervised_ranker(
+    *,
+    train_frame: pd.DataFrame,
+    config: PortfolioWalkForwardConfig,
+    fold_index: int,
+) -> PolicyFn:
+    """Fit a logistic ranker on TRAIN causal features (P0-2 / §7a factory).
+
+    Wired through the same ``_fit_policy`` plumbing as ``trained_ppo``; fit on the
+    TRAIN segment only, evaluated on the identical disjoint holdout the RL policy
+    uses.  ``fold_index``/``config`` are accepted for the uniform factory
+    signature; the fit reads only ``train_frame``.
+    """
+
+    from sklearn.linear_model import LogisticRegression
+
+    seed = int(config.seed) if config is not None else 0
+    del fold_index, config  # uniform factory signature; ranker reads only TRAIN
+    feature_cols = _causal_feature_columns(train_frame)
+    X, y = _next_bar_return_labels(train_frame)
+    model: Optional[Any] = None
+    if X.shape[0] >= 2 and len(np.unique(y)) >= 2:
+        model = LogisticRegression(C=1.0, max_iter=1000, random_state=seed)
+        model.fit(X, y)
+    frozen = _SupervisedRankerPolicy(feature_cols, model)
+
+    def _policy(env: PortfolioEnv, info: Mapping[str, Any]) -> int:
+        return frozen(env, info)
+
+    _policy.frozen_params = {  # type: ignore[attr-defined]
+        "ranker_fitted": bool(model is not None),
+        "feature_count": len(feature_cols),
+    }
+    return _policy
+
+
+# Built-in trained-baseline factory: supervised_ranker is always available.
+register_trained_policy_factory(
+    "supervised_ranker",
+    lambda *, train_frame, config, fold_index: _fit_supervised_ranker(
+        train_frame=train_frame, config=config, fold_index=fold_index
+    ),
+)
+
+
 def _fit_policy(
     policy: str,
     train_frame: pd.DataFrame,
@@ -380,12 +545,21 @@ def _fit_policy(
     so fitting is a no-op that simply closes over the policy name.  The
     ``cost_aware`` policy *does* fit: its (rank_score threshold, min-hold) params
     are grid-searched on ``train_frame`` only and frozen, then evaluated on the
-    disjoint, strictly-later TEST segment.  Either way the surrounding holdout
-    machinery is unchanged — this is the single seam a trained model replaces.
+    disjoint, strictly-later TEST segment.
+
+    P0-2: a trained/learned baseline (``trained_ppo``, ``supervised_ranker``, or
+    any runtime-registered key) is handed off here via ``TRAINED_POLICY_FACTORIES``
+    BEFORE the ``del`` below — so the factory still receives ``train_frame`` /
+    ``config`` / ``fold_index``.  ``_fit_policy``'s signature is unchanged.
     """
 
     if policy == "cost_aware":
         return _fit_cost_aware_policy(train_frame, config, fold_index)
+
+    # P0-2(b): trained/learned model handoff — MUST run before the del below.
+    factory = TRAINED_POLICY_FACTORIES.get(policy)
+    if factory is not None:
+        return factory(train_frame=train_frame, config=config, fold_index=fold_index)
 
     del train_frame, config, fold_index  # train segment is the future seam
 
@@ -486,7 +660,10 @@ def run_portfolio_walk_forward(config: PortfolioWalkForwardConfig) -> Dict[str, 
             )
             # Expose the TRAIN-fit params for the cost-aware policy so the fold
             # report shows exactly what was frozen before the held-out eval.
-            fitted = getattr(policy_fn, "frozen_params", None)
+            # Trained/learned baselines (supervised_ranker, trained_ppo) carry a
+            # differently-shaped ``frozen_params``; the cost-aware columns stay
+            # blank for them (use ``.get`` so any factory shape is tolerated).
+            fitted = getattr(policy_fn, "frozen_params", None) or {}
             rows.append(
                 {
                     "train_start": fold.train_start,
@@ -494,10 +671,10 @@ def run_portfolio_walk_forward(config: PortfolioWalkForwardConfig) -> Dict[str, 
                     "test_start": fold.test_start,
                     "test_end": fold.test_end,
                     "fitted_score_threshold": (
-                        float(fitted["score_threshold"]) if fitted else ""
+                        float(fitted["score_threshold"]) if "score_threshold" in fitted else ""
                     ),
                     "fitted_min_hold_steps": (
-                        int(fitted["min_hold_steps"]) if fitted else ""
+                        int(fitted["min_hold_steps"]) if "min_hold_steps" in fitted else ""
                     ),
                     **metrics,
                 }
@@ -561,9 +738,13 @@ def run_portfolio_walk_forward(config: PortfolioWalkForwardConfig) -> Dict[str, 
 
 def _parse_baselines(raw: str) -> Tuple[str, ...]:
     baselines = tuple(part.strip() for part in raw.split(",") if part.strip())
-    unknown = sorted(set(baselines) - set(DEFAULT_BASELINES))
+    # P0-2(a): accept DEFAULT_BASELINES (deterministic stand-ins) PLUS the
+    # trained/learned keys (TRAINED_BASELINES + any runtime-registered factory),
+    # without relaxing the strict typo-guard for the deterministic set.
+    allowed = set(DEFAULT_BASELINES) | set(TRAINED_BASELINES) | set(TRAINED_POLICY_FACTORIES)
+    unknown = sorted(set(baselines) - allowed)
     if unknown:
-        raise ValueError(f"Unknown portfolio baselines: {unknown}. Available: {sorted(DEFAULT_BASELINES)}")
+        raise ValueError(f"Unknown portfolio baselines: {unknown}. Available: {sorted(allowed)}")
     return baselines
 
 
