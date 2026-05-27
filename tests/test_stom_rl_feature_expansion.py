@@ -8,6 +8,7 @@ import pytest
 
 from finetune.qlib_stom_pipeline import (
     STOM_RL_CANONICAL_FEATURES,
+    STOM_RL_TRADE_STRENGTH_AVG_WINDOW,
     build_stom_rl_feature_frame,
     export_stom_rl_features,
 )
@@ -32,6 +33,9 @@ _FIXTURE_COLUMNS = [
     "매도총잔량",
     "매수호가1",
     "매도호가1",
+    "등락율",
+    "시가총액",
+    "고저평균대비등락율",
 ]
 
 
@@ -51,7 +55,8 @@ def _make_fixture_db(db_path: Path, rows: list[tuple]) -> None:
 
 def _fixture_row(idx: int, close: float, buy: float, sell: float, amount: float, strength: float = 200.0) -> tuple:
     # index, 현재가, 시가, 고가, 저가, 초당매수수량, 초당매도수량, 체결강도,
-    # 초당거래대금, 회전율, 매수총잔량, 매도총잔량, 매수호가1, 매도호가1
+    # 초당거래대금, 회전율, 매수총잔량, 매도총잔량, 매수호가1, 매도호가1,
+    # 등락율, 시가총액, 고저평균대비등락율
     return (
         idx,
         close,
@@ -67,6 +72,9 @@ def _fixture_row(idx: int, close: float, buy: float, sell: float, amount: float,
         20.0,
         close - 10.0,
         close + 10.0,
+        1.25,
+        45000.0,
+        -0.5,
     )
 
 
@@ -268,3 +276,146 @@ def test_export_stom_rl_features_is_leakage_free(tmp_path: Path):
     amount_delta = frame_baseline["amount_delta"].to_numpy(dtype="float64")
     assert amount_delta[0] == 0.0
     np.testing.assert_allclose(amount_delta[1:], amount[1:] - amount[:-1])
+
+
+# ---------------------------------------------------------------------------
+# Stage C feature expansion: the 4 new canonical features.
+# ---------------------------------------------------------------------------
+def test_build_stom_rl_feature_frame_adds_stage_c_features():
+    """The 4 Stage C features are produced from DB-like Korean columns and
+    are finite (no NaN/inf)."""
+
+    n = 6
+    frame = pd.DataFrame(
+        {
+            "symbol": ["000001"] * n,
+            "session": ["20250103"] * n,
+            "open": np.arange(n) + 100.0,
+            "high": np.arange(n) + 101.0,
+            "low": np.arange(n) + 99.0,
+            "close": np.arange(n) + 100.0,
+            "volume": np.arange(n) + 10.0,
+            "amount": (np.arange(n) + 100.0) * 5.0,
+            "체결강도": np.arange(n) + 200.0,
+            "등락율": np.linspace(-2.0, 3.0, n),
+            "시가총액": np.full(n, 45000.0),
+            "고저평균대비등락율": np.linspace(-1.0, 1.0, n),
+        }
+    )
+
+    features = build_stom_rl_feature_frame(frame)
+
+    # Canonical set is now 18 wide and includes the 4 new columns.
+    assert len(STOM_RL_CANONICAL_FEATURES) == 18
+    for new_col in (
+        "change_rate",
+        "market_cap",
+        "high_low_mid_change_rate",
+        "trade_strength_avg_n",
+    ):
+        assert new_col in features.columns
+
+    block = features[
+        ["change_rate", "market_cap", "high_low_mid_change_rate", "trade_strength_avg_n"]
+    ]
+    assert not block.isna().any().any()
+    assert np.isfinite(block.to_numpy(dtype="float64")).all()
+
+    # Direct passthroughs map their source column values.
+    np.testing.assert_allclose(features["change_rate"].to_numpy(), np.linspace(-2.0, 3.0, n))
+    np.testing.assert_allclose(
+        features["high_low_mid_change_rate"].to_numpy(), np.linspace(-1.0, 1.0, n)
+    )
+    # market_cap is log1p-normalized from the large 시가총액 magnitude.
+    np.testing.assert_allclose(features["market_cap"].to_numpy(), np.log1p(45000.0))
+
+
+def test_trade_strength_avg_n_is_causal_trailing_mean():
+    """``trade_strength_avg_n`` at row T equals the trailing mean of
+    trade_strength over rows <= T, and is UNCHANGED when future rows are
+    appended or modified (no look-ahead)."""
+
+    window = STOM_RL_TRADE_STRENGTH_AVG_WINDOW
+    n = 40
+    strengths = (np.arange(n) % 7) * 30.0 + 50.0  # within the [0, 500] band
+
+    def _frame(values: np.ndarray) -> pd.DataFrame:
+        m = len(values)
+        return pd.DataFrame(
+            {
+                "symbol": ["000001"] * m,
+                "session": ["20250103"] * m,
+                "open": np.full(m, 100.0),
+                "high": np.full(m, 101.0),
+                "low": np.full(m, 99.0),
+                "close": np.full(m, 100.0),
+                "volume": np.full(m, 10.0),
+                "amount": np.full(m, 500.0),
+                "체결강도": values,
+            }
+        )
+
+    base = build_stom_rl_feature_frame(_frame(strengths))
+    avg = base["trade_strength_avg_n"].to_numpy(dtype="float64")
+
+    # Reference: explicit backward-only window mean over rows [max(0, T-N+1), T].
+    clipped = np.clip(strengths, 0.0, 500.0)
+    expected = np.array(
+        [clipped[max(0, t - window + 1) : t + 1].mean() for t in range(n)]
+    )
+    np.testing.assert_allclose(avg, expected)
+
+    # Leakage guard: append extreme FUTURE rows; rows <= T must be byte-identical.
+    future = np.concatenate([strengths, np.full(10, 9999.0)])
+    extended = build_stom_rl_feature_frame(_frame(future))
+    np.testing.assert_allclose(
+        extended["trade_strength_avg_n"].to_numpy(dtype="float64")[:n], avg
+    )
+
+    # Modifying ONLY a future row must not change any row at or before T.
+    mutated = strengths.copy()
+    mutated_future = np.concatenate([mutated, np.full(5, 0.0)])
+    mutated_future[n + 2] = 12345.0  # a far-future spike
+    mutated_frame = build_stom_rl_feature_frame(_frame(mutated_future))
+    np.testing.assert_allclose(
+        mutated_frame["trade_strength_avg_n"].to_numpy(dtype="float64")[:n], avg
+    )
+
+
+def test_export_stom_rl_features_populates_stage_c_columns(tmp_path: Path):
+    """The real export path emits the 4 new columns, populated and finite."""
+
+    db_path = tmp_path / "fixture.db"
+    rows = [
+        _fixture_row(20221212090005 + i, close=9260.0 + i, buy=10.0 + i, sell=3.0 + i, amount=100.0 + i)
+        for i in range(8)
+    ]
+    _make_fixture_db(db_path, rows)
+
+    report = export_stom_rl_features(
+        db_path=db_path,
+        output_dir=tmp_path / "out",
+        table="000020",
+        session="20221212",
+        time_start="090000",
+        time_end="093000",
+        max_rows=5000,
+    )
+
+    frame = pd.read_csv(Path(report["csv_path"]), encoding="utf-8-sig")
+    for new_col in (
+        "change_rate",
+        "market_cap",
+        "high_low_mid_change_rate",
+        "trade_strength_avg_n",
+    ):
+        assert new_col in frame.columns
+        assert np.isfinite(frame[new_col].to_numpy(dtype="float64")).all()
+
+    # 등락율=1.25, 고저평균대비등락율=-0.5, 시가총액=45000 in every fixture row.
+    np.testing.assert_allclose(frame["change_rate"].to_numpy(), 1.25)
+    np.testing.assert_allclose(frame["high_low_mid_change_rate"].to_numpy(), -0.5)
+    np.testing.assert_allclose(frame["market_cap"].to_numpy(), np.log1p(45000.0))
+    # Constant strength=200 fixture -> trailing mean is 200 everywhere.
+    np.testing.assert_allclose(frame["trade_strength_avg_n"].to_numpy(), 200.0)
+    assert report["canonical_features"] == list(STOM_RL_CANONICAL_FEATURES)

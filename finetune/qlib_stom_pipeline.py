@@ -66,7 +66,16 @@ STOM_RL_CANONICAL_FEATURES = [
     "spread_ticks",
     "amount_delta",
     "turnover_rate",
+    "change_rate",
+    "market_cap",
+    "high_low_mid_change_rate",
+    "trade_strength_avg_n",
 ]
+
+# Trailing window (bars) for the causal ``trade_strength_avg_n`` rolling mean.
+# The window covers ONLY bars <= the current bar (no look-ahead); see
+# :func:`build_stom_rl_feature_frame`.
+STOM_RL_TRADE_STRENGTH_AVG_WINDOW = 30
 STOM_RL_FEATURE_MAPPING: Dict[str, Dict[str, Any]] = {
     "trade_strength": {
         "source_columns": ["체결강도", "trade_strength"],
@@ -99,6 +108,25 @@ STOM_RL_FEATURE_MAPPING: Dict[str, Dict[str, Any]] = {
     "turnover_rate": {
         "source_columns": ["회전율", "turnover_rate"],
         "formula": "numeric fill 0",
+    },
+    "change_rate": {
+        "source_columns": ["등락율", "change_rate"],
+        "formula": "numeric fill 0 (same-bar % change, point-in-time)",
+    },
+    "market_cap": {
+        "source_columns": ["시가총액", "market_cap"],
+        "formula": "log1p(max(numeric, 0)) to tame the large magnitude",
+    },
+    "high_low_mid_change_rate": {
+        "source_columns": ["고저평균대비등락율", "high_low_mid_change_rate"],
+        "formula": "numeric fill 0 (same-bar derived, point-in-time)",
+    },
+    "trade_strength_avg_n": {
+        "source_columns": ["체결강도", "trade_strength"],
+        "formula": (
+            "trailing causal mean of trade_strength over <= N bars "
+            "(rolling(N, min_periods=1).mean(), no look-ahead)"
+        ),
     },
 }
 
@@ -189,6 +217,32 @@ def build_stom_rl_feature_frame(frame: pd.DataFrame, tick_size: float = 1.0) -> 
         out["amount_delta"] = out["amount"].diff().fillna(0.0)
     out["turnover_rate"] = _numeric_or_zero(out, ["회전율", "turnover_rate"])
 
+    # Stage C feature expansion (C-0 probe confirmed dense direct DB columns).
+    out["change_rate"] = _numeric_or_zero(out, ["등락율", "change_rate"])
+    # ``시가총액`` (market cap) spans 2+ orders of magnitude; log1p keeps it on a
+    # comparable scale to the other features (matches the "log" normalization
+    # guidance) while staying finite for the non-negative magnitudes in the DB.
+    market_cap_raw = _numeric_or_zero(out, ["시가총액", "market_cap"]).clip(lower=0.0)
+    out["market_cap"] = np.log1p(market_cap_raw)
+    out["high_low_mid_change_rate"] = _numeric_or_zero(
+        out, ["고저평균대비등락율", "high_low_mid_change_rate"]
+    )
+
+    # Causal trailing mean of trade strength over <= N bars (NO look-ahead): a
+    # row at index T uses only rows in [T-N+1, T].  ``rolling(...).mean()`` is
+    # backward-only by construction; grouping per symbol/session prevents the
+    # window from bleeding across instruments or sessions.
+    window = int(STOM_RL_TRADE_STRENGTH_AVG_WINDOW)
+    if group_keys:
+        out["trade_strength_avg_n"] = (
+            out.groupby(group_keys, sort=False)["trade_strength"]
+            .transform(lambda s: s.rolling(window, min_periods=1).mean())
+        )
+    else:
+        out["trade_strength_avg_n"] = (
+            out["trade_strength"].rolling(window, min_periods=1).mean()
+        )
+
     return out[STOM_RL_CANONICAL_FEATURES].replace([np.inf, -np.inf], 0.0).fillna(0.0)
 
 
@@ -198,11 +252,11 @@ def build_stom_rl_feature_frame(frame: pd.DataFrame, tick_size: float = 1.0) -> 
 # The legacy ``export`` subcommand and ``QLIB_CSV_FIELDS`` stay unchanged so
 # existing Kronos/Qlib consumers are not affected.  This path reads ONE symbol
 # table for a small time window, decodes the source column names, maps them to
-# the inputs of :func:`build_stom_rl_feature_frame`, and emits the 14 canonical
+# the inputs of :func:`build_stom_rl_feature_frame`, and emits the canonical
 # RL features plus a missing/scale report.  It never performs a full DB scan.
 # ---------------------------------------------------------------------------
 
-# DB-source columns required to compute the 14 canonical RL features.  Korean
+# DB-source columns required to compute the canonical RL features.  Korean
 # names are stored as UTF-8 in the STOM tick DB and are returned correctly by
 # sqlite3's default ``text_factory`` (no cp949 round-trip needed for this DB).
 STOM_RL_SOURCE_COLUMNS: Dict[str, List[str]] = {
@@ -220,6 +274,9 @@ STOM_RL_SOURCE_COLUMNS: Dict[str, List[str]] = {
     "매도총잔량": ["매도총잔량"],
     "매수호가1": ["매수호가1"],
     "매도호가1": ["매도호가1"],
+    "등락율": ["등락율"],
+    "시가총액": ["시가총액"],
+    "고저평균대비등락율": ["고저평균대비등락율"],
 }
 
 
@@ -349,7 +406,17 @@ def read_stom_table_rl_source(
     amount_col = resolved.get("amount")
     frame["amount"] = pd.to_numeric(raw[amount_col], errors="coerce").fillna(0.0) if amount_col else frame["volume"] * close.fillna(0.0)
 
-    for passthrough in ("체결강도", "회전율", "매수총잔량", "매도총잔량", "매수호가1", "매도호가1"):
+    for passthrough in (
+        "체결강도",
+        "회전율",
+        "매수총잔량",
+        "매도총잔량",
+        "매수호가1",
+        "매도호가1",
+        "등락율",
+        "시가총액",
+        "고저평균대비등락율",
+    ):
         col = resolved.get(passthrough)
         if col:
             frame[passthrough] = pd.to_numeric(raw[col], errors="coerce")
@@ -421,9 +488,9 @@ def export_stom_rl_features(
     max_rows: int = 0,
     tick_size: float = 1.0,
 ) -> Dict[str, Any]:
-    """Export the 14 canonical STOM RL features for ONE symbol/time window.
+    """Export the canonical STOM RL features for ONE symbol/time window.
 
-    Writes ``<symbol>_rl_features.csv`` (the 14 canonical features plus
+    Writes ``<symbol>_rl_features.csv`` (the canonical features plus
     ``timestamp``/``symbol``/``session`` keys) and a missing/scale report JSON.
     The legacy Qlib export and ``QLIB_CSV_FIELDS`` are left untouched.
     """
