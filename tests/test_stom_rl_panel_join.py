@@ -330,3 +330,79 @@ def test_empty_symbol_frame_is_all_nan_not_future():
     assert len(empty_rows) == 3
     assert empty_rows[STOM_RL_CANONICAL_FEATURES].isna().all().all()
     assert report.per_symbol["000099"]["grid_rows_nan"] == 3
+
+
+def _make_minutes_db(db_path: Path, symbol: str, n_minutes: int, secs_per_min: int) -> None:
+    """Build a single-symbol DB spanning ``n_minutes`` × ``secs_per_min`` seconds.
+
+    Timestamps run 09:00:00, 09:00:01, ... so the live feed path can be exercised
+    at both 1s and 1min grids without the production DB.
+    """
+
+    rows = []
+    base = pd.Timestamp("2022-12-12 09:00:00")
+    counter = 0
+    for minute in range(n_minutes):
+        for sec in range(secs_per_min):
+            t = base + pd.Timedelta(minutes=minute, seconds=sec)
+            idx = int(t.strftime("%Y%m%d%H%M%S"))
+            # close drifts up over the session; flow varies per second.
+            rows.append(
+                _fixture_row(
+                    idx,
+                    close=9260.0 + counter * 0.5,
+                    buy=10.0 + (counter % 7),
+                    sell=3.0 + (counter % 5),
+                    amount=100.0 + (counter % 11) * 10.0,
+                    strength=180.0 + (counter % 13) * 5.0,
+                )
+            )
+            counter += 1
+    _make_multi_symbol_db(db_path, {symbol: rows})
+
+
+def test_build_panel_from_db_freq_1min_resamples_live_feed(tmp_path: Path):
+    """The live feed path (build_panel_from_db) at freq='1min' resamples the RL
+    SOURCE frame to 1-min bars: far fewer timestamps than 1s, flow summed, and
+    the 22 canonical features (incl. the 4 trend features) present + non-degenerate."""
+
+    db_path = tmp_path / "minutes.db"
+    n_minutes, secs_per_min = 6, 12
+    _make_minutes_db(db_path, "000020", n_minutes=n_minutes, secs_per_min=secs_per_min)
+
+    panel_1s, report_1s = build_panel_from_db(
+        db_path=db_path, tables=["000020"], session="20221212", freq="1s"
+    )
+    panel_1min, report_1min = build_panel_from_db(
+        db_path=db_path, tables=["000020"], session="20221212", freq="1min"
+    )
+
+    assert list(panel_1min.columns) == PANEL_LONG_COLUMNS
+    # 1-min grid has ~one bar per minute, far fewer than the per-second grid.
+    assert report_1min.grid_size == n_minutes
+    assert report_1s.grid_size == n_minutes * secs_per_min
+    assert report_1min.grid_size < report_1s.grid_size
+
+    # Bars labeled at bucket start (floor to minute), one per minute.
+    minute_stamps = sorted(panel_1min["timestamp"].unique())
+    assert len(minute_stamps) == n_minutes
+    assert pd.Timestamp(minute_stamps[0]) == pd.Timestamp("2022-12-12 09:00:00")
+
+    # V-NONDEGEN on the live feed: the trend + flow/rate features must vary.
+    sym = panel_1min[panel_1min["symbol"] == "000020"]
+    for col in (
+        "amount",
+        "volume",
+        "trade_strength",
+        "moving_average_n",
+        "amount_slope_n",
+    ):
+        assert float(sym[col].var()) > 0.0, f"{col!r} degenerate on the 1-min live-feed panel"
+
+    # Flow is SUMMED per minute: the 1-min volume of the first bar equals the sum
+    # of the per-second volumes in that minute (each second volume = buy+sell).
+    expected_first_volume = sum(
+        (10.0 + (i % 7)) + (3.0 + (i % 5)) for i in range(secs_per_min)
+    )
+    first_bar = sym.sort_values("timestamp").iloc[0]
+    assert first_bar["volume"] == pytest.approx(expected_first_volume)

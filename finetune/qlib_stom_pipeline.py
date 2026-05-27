@@ -70,12 +70,28 @@ STOM_RL_CANONICAL_FEATURES = [
     "market_cap",
     "high_low_mid_change_rate",
     "trade_strength_avg_n",
+    "moving_average_n",
+    "volatility_n",
+    "amount_slope_n",
+    "change_rate_slope_n",
 ]
 
 # Trailing window (bars) for the causal ``trade_strength_avg_n`` rolling mean.
 # The window covers ONLY bars <= the current bar (no look-ahead); see
 # :func:`build_stom_rl_feature_frame`.
 STOM_RL_TRADE_STRENGTH_AVG_WINDOW = 30
+
+# Trailing window (bars, N) for the four causal trend/momentum features
+# (``moving_average_n`` 이동평균, ``volatility_n`` 변동성, ``amount_slope_n``
+# 거래대금각도, ``change_rate_slope_n`` 등락율각도).  LOCKED at N=10 one-minute
+# bars by the Stage-1 pre-registration (docs/stom_rl_1min_stage1_prereg_2026-05-27.md
+# §4).  Every window covers ONLY bars <= the current bar (no look-ahead).
+STOM_RL_TREND_WINDOW = 10
+
+# Population std (ddof=0) for ``volatility_n`` — LOCKED by Stage-1 pre-registration
+# §4 ("변동성 ddof = 0"): deterministic, avoids small-sample inflation at the
+# window edge.
+STOM_RL_VOLATILITY_DDOF = 0
 STOM_RL_FEATURE_MAPPING: Dict[str, Dict[str, Any]] = {
     "trade_strength": {
         "source_columns": ["체결강도", "trade_strength"],
@@ -128,6 +144,36 @@ STOM_RL_FEATURE_MAPPING: Dict[str, Dict[str, Any]] = {
             "(rolling(N, min_periods=1).mean(), no look-ahead)"
         ),
     },
+    "moving_average_n": {
+        "source_columns": ["close"],
+        "formula": (
+            "이동평균(N): trailing causal mean of close over <= N bars "
+            "(rolling(N, min_periods=1).mean(), no look-ahead)"
+        ),
+    },
+    "volatility_n": {
+        "source_columns": ["change_rate", "등락율"],
+        "formula": (
+            "변동성(N): trailing causal population std (ddof=0) of change_rate "
+            "over <= N bars (rolling(N, min_periods=1).std(ddof=0), no look-ahead)"
+        ),
+    },
+    "amount_slope_n": {
+        "source_columns": ["amount", "초당거래대금"],
+        "formula": (
+            "거래대금각도: trailing-OLS slope cov(x,y)/var(x) of per-bar SUMMED "
+            "amount over <= N bars (rolling(N, min_periods=2), x=bar-index, "
+            "trailing-only, no shift(-k)/center)"
+        ),
+    },
+    "change_rate_slope_n": {
+        "source_columns": ["change_rate", "등락율"],
+        "formula": (
+            "등락율각도: trailing-OLS slope cov(x,y)/var(x) of change_rate over "
+            "<= N bars (rolling(N, min_periods=2), x=bar-index, trailing-only, "
+            "no shift(-k)/center)"
+        ),
+    },
 }
 
 
@@ -178,6 +224,34 @@ def _numeric_or_zero(frame: pd.DataFrame, candidates: Sequence[str]) -> pd.Serie
     if column is None:
         return pd.Series(np.zeros(len(frame)), index=frame.index, dtype="float64")
     return pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
+
+
+def _trailing_ols_slope(values: np.ndarray) -> float:
+    """Trailing-OLS slope ``cov(x, y) / var(x)`` for one rolling window.
+
+    ``x = [0, 1, ..., k-1]`` is the within-window bar index and ``y`` is the
+    window's series values.  Returns ``NaN`` when fewer than 2 points are present
+    or ``var(x) == 0`` (a single distinct bar); the caller fills NaN with 0.0.
+
+    The window is supplied by ``rolling(N, min_periods=2)`` which is *trailing
+    only* (bars ``<= T``), so this introduces NO look-ahead: row ``T`` never sees
+    bar ``T+1``.  No ``shift(-k)``, no ``center=True``, no full-series fit — this
+    matches the Stage-1 LOCKED causal slope formula
+    (docs/stom_rl_1min_stage1_prereg_2026-05-27.md §4).
+    """
+
+    y = np.asarray(values, dtype="float64")
+    k = y.size
+    if k < 2:
+        return float("nan")
+    x = np.arange(k, dtype="float64")
+    x_mean = x.mean()
+    var_x = float(((x - x_mean) ** 2).sum())
+    if var_x <= 0.0:
+        return float("nan")
+    y_mean = y.mean()
+    cov_xy = float(((x - x_mean) * (y - y_mean)).sum())
+    return cov_xy / var_x
 
 
 def build_stom_rl_feature_frame(frame: pd.DataFrame, tick_size: float = 1.0) -> pd.DataFrame:
@@ -242,6 +316,41 @@ def build_stom_rl_feature_frame(frame: pd.DataFrame, tick_size: float = 1.0) -> 
         out["trade_strength_avg_n"] = (
             out["trade_strength"].rolling(window, min_periods=1).mean()
         )
+
+    # ------------------------------------------------------------------
+    # Causal trend/momentum features (이동평균/변동성/거래대금각도/등락율각도).
+    # All four are trailing-only (window in [T-N+1, T], NO shift(-k)/center) and
+    # grouped per symbol/session so the window never bleeds across instruments or
+    # sessions.  N and the 변동성 ddof are LOCKED by Stage-1 pre-registration.
+    # Level features use min_periods=1; slope features use min_periods=2 (a slope
+    # needs >=2 points) and their first-bar NaN is filled to 0.0 by the closing
+    # replace/fillna — no look-ahead is introduced.
+    # ------------------------------------------------------------------
+    trend_window = int(STOM_RL_TREND_WINDOW)
+    ddof = int(STOM_RL_VOLATILITY_DDOF)
+
+    def _ma(series: pd.Series) -> pd.Series:
+        return series.rolling(trend_window, min_periods=1).mean()
+
+    def _vol(series: pd.Series) -> pd.Series:
+        return series.rolling(trend_window, min_periods=1).std(ddof=ddof)
+
+    def _slope(series: pd.Series) -> pd.Series:
+        return series.rolling(trend_window, min_periods=2).apply(
+            _trailing_ols_slope, raw=True
+        )
+
+    if group_keys:
+        grouped = out.groupby(group_keys, sort=False)
+        out["moving_average_n"] = grouped["close"].transform(_ma)
+        out["volatility_n"] = grouped["change_rate"].transform(_vol)
+        out["amount_slope_n"] = grouped["amount"].transform(_slope)
+        out["change_rate_slope_n"] = grouped["change_rate"].transform(_slope)
+    else:
+        out["moving_average_n"] = _ma(out["close"])
+        out["volatility_n"] = _vol(out["change_rate"])
+        out["amount_slope_n"] = _slope(out["amount"])
+        out["change_rate_slope_n"] = _slope(out["change_rate"])
 
     return out[STOM_RL_CANONICAL_FEATURES].replace([np.inf, -np.inf], 0.0).fillna(0.0)
 
@@ -448,6 +557,102 @@ def read_stom_table_rl_source(
     return frame, report
 
 
+# ---------------------------------------------------------------------------
+# Net-new RL-path 1-minute resampler (Stage 2, R1).
+#
+# This is NOT ``_resample_group`` (which is ``"timestamps"``-keyed, OHLCV-only,
+# and would KeyError / silently drop the 12 non-OHLCV RL passthrough columns —
+# manufacturing all-zero features and a FALSE null).  This resampler keys on
+# ``"timestamp"`` (the RL source frame's key, matching
+# :func:`read_stom_table_rl_source`) and aggregates EVERY source column the
+# feature builder reads, per the Stage-1 LOCKED per-column aggregation table
+# (docs/stom_rl_1min_stage1_prereg_2026-05-27.md §5).  It runs on the RL source
+# frame BEFORE :func:`build_stom_rl_feature_frame`, so all derived features
+# (amount_delta, net_buy_qty_1s, the trailing means/slopes) recompute correctly
+# on the 1-minute bars.
+# ---------------------------------------------------------------------------
+
+# Per-column 1-minute aggregation, LOCKED by Stage-1 §5.
+#   OHLC: open=first, high=max, low=min, close=last
+#   flow -> SUM: 초당매수수량, 초당매도수량, volume (derived = buy+sell), amount
+#       (amount = 초당거래대금 PER-SECOND, Stage-1 §2 -> SUM, no cumulative branch)
+#   order-book + rate/snapshot -> LAST
+STOM_RL_RESAMPLE_AGG: Dict[str, str] = {
+    "open": "first",
+    "high": "max",
+    "low": "min",
+    "close": "last",
+    # flow -> SUM
+    "초당매수수량": "sum",
+    "초당매도수량": "sum",
+    # ``volume`` is DERIVED in read_stom_table_rl_source (volume = buy+sell);
+    # summing the per-second derived volume over a 1-min bucket is correct.
+    "volume": "sum",
+    # ``amount`` resolves to 초당거래대금 (per-second flow, Stage-1 §2) -> SUM.
+    "amount": "sum",
+    # order-book -> LAST (snapshot at the last second in the bucket)
+    "매수총잔량": "last",
+    "매도총잔량": "last",
+    "매수호가1": "last",
+    "매도호가1": "last",
+    # rate / snapshot -> LAST
+    "등락율": "last",
+    "회전율": "last",
+    "시가총액": "last",
+    "고저평균대비등락율": "last",
+    "체결강도": "last",
+}
+
+
+def resample_stom_rl_source_frame(frame: pd.DataFrame, freq: str = "1s") -> pd.DataFrame:
+    """Resample an RL *source* frame to the requested bar frequency.
+
+    ``frame`` is the output of :func:`read_stom_table_rl_source` — keyed on
+    ``"timestamp"`` with ``symbol``/``session`` plus the DB-named source columns.
+    For ``freq == "1s"`` the frame is returned unchanged (the 1s path is
+    byte-identical, so all existing tests stay green).  For ``freq == "1min"``
+    each ``(symbol, session)`` group is floored to 1-minute buckets
+    (``floor("min")``, bucket-START labeling) and every present source column is
+    aggregated per :data:`STOM_RL_RESAMPLE_AGG` (the Stage-1 LOCKED table); the
+    resulting ``"timestamp"`` is the bucket start, so bar ``T`` carries NO value
+    from bar ``T+1`` (coheres with the grid-agnostic T+1 fill).
+
+    Columns not present in the input are skipped; columns present but absent from
+    the agg table fall back to ``last`` (a point-in-time snapshot, never a future
+    value).
+    """
+
+    if freq not in SUPPORTED_FREQS:
+        raise ValueError(f"freq must be one of {sorted(SUPPORTED_FREQS)}")
+    if freq == "1s" or frame.empty or "timestamp" not in frame.columns:
+        return frame
+
+    work = frame.copy()
+    work["timestamp"] = pd.to_datetime(work["timestamp"], errors="coerce")
+    work = work.dropna(subset=["timestamp"])
+    if work.empty:
+        return work.reset_index(drop=True)
+
+    work["__bucket__"] = work["timestamp"].dt.floor("min")
+    group_keys = [c for c in ("symbol", "session") if c in work.columns]
+    value_cols = [
+        c for c in work.columns if c not in (*group_keys, "timestamp", "__bucket__")
+    ]
+    agg_map = {
+        col: STOM_RL_RESAMPLE_AGG.get(col, "last") for col in value_cols
+    }
+
+    grouped = work.sort_values("timestamp", kind="mergesort").groupby(
+        [*group_keys, "__bucket__"], sort=True
+    )
+    resampled = grouped.agg(agg_map).reset_index()
+    # The bucket start IS the 1-min bar timestamp (bucket-START labeling).
+    resampled = resampled.rename(columns={"__bucket__": "timestamp"})
+    ordered = ["timestamp", *group_keys, *value_cols]
+    resampled = resampled[[c for c in ordered if c in resampled.columns]]
+    return resampled.sort_values("timestamp", kind="mergesort").reset_index(drop=True)
+
+
 def _missing_scale_report(features: pd.DataFrame) -> Dict[str, Any]:
     column_stats: Dict[str, Any] = {}
     total = int(len(features))
@@ -487,12 +692,18 @@ def export_stom_rl_features(
     time_end: str = "093000",
     max_rows: int = 0,
     tick_size: float = 1.0,
+    freq: str = "1s",
 ) -> Dict[str, Any]:
     """Export the canonical STOM RL features for ONE symbol/time window.
 
     Writes ``<symbol>_rl_features.csv`` (the canonical features plus
     ``timestamp``/``symbol``/``session`` keys) and a missing/scale report JSON.
     The legacy Qlib export and ``QLIB_CSV_FIELDS`` are left untouched.
+
+    ``freq`` is accepted for parity with the live feed path (default ``"1s"``
+    leaves the frame unchanged).  NOTE: this CSV emitter is NOT the feed path —
+    the live walk-forward feed resamples inside :func:`build_panel_from_db`
+    (``stom_rl/panel_join.py``).  ``freq`` here only affects the standalone CSV.
     """
 
     out_dir = Path(output_dir)
@@ -517,6 +728,9 @@ def export_stom_rl_features(
             "Widen the time window or pick a session with data."
         )
 
+    # Resample the RL SOURCE frame BEFORE the feature builder so derived features
+    # (amount_delta, net_buy_qty_1s, trailing means/slopes) recompute on bars.
+    source_frame = resample_stom_rl_source_frame(source_frame, freq=freq)
     features = build_stom_rl_feature_frame(source_frame, tick_size=tick_size)
     keyed = pd.concat(
         [source_frame[["timestamp", "symbol", "session"]].reset_index(drop=True), features.reset_index(drop=True)],
@@ -540,6 +754,7 @@ def export_stom_rl_features(
             "time_end": time_end,
             "max_rows": max_rows,
             "tick_size": tick_size,
+            "freq": freq,
         },
         "source": source_report,
         "scale": scale_report,

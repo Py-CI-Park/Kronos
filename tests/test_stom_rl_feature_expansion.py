@@ -9,8 +9,11 @@ import pytest
 from finetune.qlib_stom_pipeline import (
     STOM_RL_CANONICAL_FEATURES,
     STOM_RL_TRADE_STRENGTH_AVG_WINDOW,
+    STOM_RL_TREND_WINDOW,
+    STOM_RL_VOLATILITY_DDOF,
     build_stom_rl_feature_frame,
     export_stom_rl_features,
+    resample_stom_rl_source_frame,
 )
 from stom_rl.trading_env import StomTickTradingEnv, StomTickTradingEnvConfig
 
@@ -305,8 +308,8 @@ def test_build_stom_rl_feature_frame_adds_stage_c_features():
 
     features = build_stom_rl_feature_frame(frame)
 
-    # Canonical set is now 18 wide and includes the 4 new columns.
-    assert len(STOM_RL_CANONICAL_FEATURES) == 18
+    # Canonical set is now 22 wide (18 Stage-C + 4 Stage-2 trend features).
+    assert len(STOM_RL_CANONICAL_FEATURES) == 22
     for new_col in (
         "change_rate",
         "market_cap",
@@ -419,3 +422,331 @@ def test_export_stom_rl_features_populates_stage_c_columns(tmp_path: Path):
     # Constant strength=200 fixture -> trailing mean is 200 everywhere.
     np.testing.assert_allclose(frame["trade_strength_avg_n"].to_numpy(), 200.0)
     assert report["canonical_features"] == list(STOM_RL_CANONICAL_FEATURES)
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 — net-new RL resampler + causal trend features.
+# Test ordering note (plan R7): V-RESAMPLE-SEMANTICS and V-NONDEGEN are
+# feature-integrity gates that MUST hold before any alpha/shuffle use; they
+# assert loudly so a silent-zero / mis-aggregated feature can never reach the
+# alpha verdict.
+# ---------------------------------------------------------------------------
+
+
+def _rl_source_minute_frame() -> pd.DataFrame:
+    """A synthetic RL *source* frame: 1 symbol/session, two 1-min buckets of
+    per-second rows, carrying the DB-named source columns the resampler keys on.
+
+    Bucket A = 09:00:00..09:00:02 (3 seconds), bucket B = 09:01:00..09:01:01
+    (2 seconds).  Flow columns vary per second (so SUM != LAST); book/rate
+    columns step DOWN within each bucket so the last-second value is distinct
+    from first/mean (so LAST is verifiable).
+    """
+
+    ts = [
+        pd.Timestamp("2025-01-03 09:00:00"),
+        pd.Timestamp("2025-01-03 09:00:01"),
+        pd.Timestamp("2025-01-03 09:00:02"),
+        pd.Timestamp("2025-01-03 09:01:00"),
+        pd.Timestamp("2025-01-03 09:01:01"),
+    ]
+    return pd.DataFrame(
+        {
+            "timestamp": ts,
+            "symbol": ["000001"] * 5,
+            "session": ["20250103"] * 5,
+            "open": [100.0, 101.0, 102.0, 110.0, 111.0],
+            "high": [105.0, 106.0, 107.0, 115.0, 116.0],
+            "low": [99.0, 98.0, 97.0, 108.0, 107.0],
+            "close": [101.0, 102.0, 103.0, 111.0, 112.0],
+            "초당매수수량": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "초당매도수량": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "volume": [11.0, 22.0, 33.0, 44.0, 55.0],
+            "amount": [100.0, 200.0, 300.0, 400.0, 500.0],
+            "매수총잔량": [80.0, 70.0, 60.0, 50.0, 40.0],
+            "매도총잔량": [20.0, 25.0, 30.0, 35.0, 40.0],
+            "매수호가1": [99.0, 98.0, 97.0, 107.0, 106.0],
+            "매도호가1": [101.0, 102.0, 103.0, 113.0, 114.0],
+            "등락율": [1.0, 1.5, 2.0, 2.5, 3.0],
+            "회전율": [0.10, 0.11, 0.12, 0.13, 0.14],
+            "시가총액": [45000.0, 45010.0, 45020.0, 45030.0, 45040.0],
+            "고저평균대비등락율": [-1.0, -0.5, 0.0, 0.5, 1.0],
+            "체결강도": [200.0, 210.0, 220.0, 230.0, 240.0],
+        }
+    )
+
+
+def test_v_resample_semantics_flow_sum_book_rate_last():
+    """V-RESAMPLE-SEMANTICS: on a synthetic minute the net-new resampler sums
+    flow columns (incl. amount, per Stage-1 §2), snapshots book/rate columns to
+    the LAST second, keeps OHLC=first/max/min/last, and preserves ALL inputs."""
+
+    src = _rl_source_minute_frame()
+    out = resample_stom_rl_source_frame(src, freq="1min")
+
+    # Two 1-min buckets, labeled at bucket START (floor("min")).
+    assert len(out) == 2
+    assert list(out["timestamp"]) == [
+        pd.Timestamp("2025-01-03 09:00:00"),
+        pd.Timestamp("2025-01-03 09:01:00"),
+    ]
+
+    # ALL source inputs survive the resample (no silent drop, R1).
+    for col in src.columns:
+        assert col in out.columns
+
+    bucket_a = out.iloc[0]
+    bucket_b = out.iloc[1]
+
+    # OHLC: first / max / min / last over the bucket.
+    assert bucket_a["open"] == 100.0  # first
+    assert bucket_a["high"] == 107.0  # max
+    assert bucket_a["low"] == 97.0  # min
+    assert bucket_a["close"] == 103.0  # last
+
+    # Flow -> SUM == hand-sum of the per-second values.
+    assert bucket_a["초당매수수량"] == 10.0 + 20.0 + 30.0
+    assert bucket_a["초당매도수량"] == 1.0 + 2.0 + 3.0
+    assert bucket_a["volume"] == 11.0 + 22.0 + 33.0
+    # CRITICAL Stage-1 branch: amount == SUM (per-second 초당거래대금), NOT last.
+    assert bucket_a["amount"] == 100.0 + 200.0 + 300.0
+    assert bucket_b["amount"] == 400.0 + 500.0
+
+    # Book + rate/snapshot -> LAST second's value in the bucket.
+    assert bucket_a["매수총잔량"] == 60.0
+    assert bucket_a["매도총잔량"] == 30.0
+    assert bucket_a["매수호가1"] == 97.0
+    assert bucket_a["매도호가1"] == 103.0
+    assert bucket_a["등락율"] == 2.0
+    assert bucket_a["회전율"] == 0.12
+    assert bucket_a["시가총액"] == 45020.0
+    assert bucket_a["고저평균대비등락율"] == 0.0
+    assert bucket_a["체결강도"] == 220.0
+
+
+def test_v_resample_freq_1s_is_identity():
+    """freq='1s' returns the frame unchanged so the 1s path stays byte-identical."""
+
+    src = _rl_source_minute_frame()
+    out = resample_stom_rl_source_frame(src, freq="1s")
+    pd.testing.assert_frame_equal(out, src)
+
+
+def test_v_nondegen_one_minute_panel_features_have_variance():
+    """V-NONDEGEN: a 1-min panel's flow/book/rate + trend features have NON-ZERO
+    variance.  All-zero would mean the resample silently dropped source columns
+    (R1/R5) -> manufactured false null -> FAIL LOUDLY here."""
+
+    # Many per-second rows across several minutes so each 1-min bucket is dense
+    # and the trend features have multiple bars to vary over.
+    base = pd.Timestamp("2025-01-03 09:00:00")
+    n = 300  # 5 minutes of per-second rows
+    rng = np.arange(n, dtype="float64")
+    src = pd.DataFrame(
+        {
+            "timestamp": [base + pd.Timedelta(seconds=int(i)) for i in range(n)],
+            "symbol": ["000001"] * n,
+            "session": ["20250103"] * n,
+            "open": 100.0 + rng * 0.1,
+            "high": 101.0 + rng * 0.1,
+            "low": 99.0 + rng * 0.1,
+            "close": 100.0 + np.sin(rng / 5.0) * 3.0 + rng * 0.05,
+            "초당매수수량": 10.0 + (rng % 7),
+            "초당매도수량": 3.0 + (rng % 5),
+            "volume": 13.0 + (rng % 7) + (rng % 5),
+            "amount": 100.0 + (rng % 11) * 10.0,
+            "매수총잔량": 80.0 + (rng % 13),
+            "매도총잔량": 20.0 + (rng % 9),
+            "매수호가1": 99.0 + rng * 0.1,
+            "매도호가1": 101.0 + rng * 0.1,
+            "등락율": np.sin(rng / 4.0) * 2.0,
+            "회전율": 0.10 + (rng % 3) * 0.01,
+            "시가총액": 45000.0 + rng,
+            "고저평균대비등락율": np.cos(rng / 6.0),
+            "체결강도": 150.0 + (rng % 17) * 5.0,
+        }
+    )
+
+    resampled = resample_stom_rl_source_frame(src, freq="1min")
+    features = build_stom_rl_feature_frame(resampled)
+
+    # The resampled panel must have multiple 1-min bars (else variance is vacuous).
+    assert len(features) >= 4
+
+    must_vary = [
+        "trade_strength",
+        "bid_ask_imbalance",
+        "change_rate",
+        "amount",
+        "volume",
+        "moving_average_n",
+        "volatility_n",
+        "amount_slope_n",
+        "change_rate_slope_n",
+    ]
+    for col in must_vary:
+        variance = float(features[col].var())
+        assert variance > 0.0, f"feature {col!r} is degenerate (zero variance) on the 1-min panel"
+
+
+def test_v_freq_no_lookahead_bar_carries_no_next_bar_value():
+    """V-FREQ: a 1-min bar T carries NO value from bar T+1.  A synthetic monotone
+    per-second series resampled to 1-min must label at the bucket start and the
+    last-second (LAST) columns of bar T must equal bar T's own last second, never
+    bar T+1's."""
+
+    base = pd.Timestamp("2025-01-03 09:00:00")
+    rows = []
+    # Two minutes, monotone-increasing 등락율 across the whole series.
+    for minute in range(2):
+        for sec in range(3):
+            t = base + pd.Timedelta(minutes=minute, seconds=sec)
+            val = minute * 100.0 + sec * 10.0  # strictly increasing
+            rows.append((t, val))
+    src = pd.DataFrame(
+        {
+            "timestamp": [r[0] for r in rows],
+            "symbol": ["000001"] * len(rows),
+            "session": ["20250103"] * len(rows),
+            "open": [100.0] * len(rows),
+            "high": [101.0] * len(rows),
+            "low": [99.0] * len(rows),
+            "close": [100.0] * len(rows),
+            "amount": [r[1] for r in rows],
+            "등락율": [r[1] for r in rows],
+        }
+    )
+
+    out = resample_stom_rl_source_frame(src, freq="1min")
+    assert list(out["timestamp"]) == [base, base + pd.Timedelta(minutes=1)]
+
+    # Bar T=0 (09:00) LAST 등락율 is its OWN last second (sec=2 -> 20.0), NOT any
+    # value from bar T=1 (09:01, which starts at 100.0).  No look-ahead.
+    assert out.iloc[0]["등락율"] == 20.0
+    assert out.iloc[1]["등락율"] == 120.0
+    # The bucket-start label coheres with the grid-agnostic T+1 fill: a decision
+    # at bar T fills at T+1 = the NEXT 1-min bar, so bar T must not embed T+1.
+    assert out.iloc[0]["timestamp"] < out.iloc[1]["timestamp"]
+
+
+@pytest.mark.parametrize(
+    "feature,source_col,source_values",
+    [
+        ("moving_average_n", "close", None),
+        ("volatility_n", "등락율", None),
+        ("amount_slope_n", "amount", None),
+        ("change_rate_slope_n", "등락율", None),
+    ],
+)
+def test_v_causal_trend_feature_is_strictly_trailing(feature, source_col, source_values):
+    """V-CAUSAL: each trend feature at row T is UNCHANGED when future bars are
+    appended or a far-future bar is mutated (row T uses only bars <= T)."""
+
+    n = 24
+    driver = (np.arange(n, dtype="float64") % 6) * 3.0 + 1.0 if source_values is None else source_values
+
+    def _frame(values: np.ndarray) -> pd.DataFrame:
+        m = len(values)
+        data = {
+            "symbol": ["000001"] * m,
+            "session": ["20250103"] * m,
+            "open": np.full(m, 100.0),
+            "high": np.full(m, 101.0),
+            "low": np.full(m, 99.0),
+            "close": np.full(m, 100.0),
+            "volume": np.full(m, 10.0),
+            "amount": np.full(m, 500.0),
+            "체결강도": np.full(m, 200.0),
+            "등락율": np.zeros(m),
+        }
+        data[source_col] = values
+        return pd.DataFrame(data)
+
+    base = build_stom_rl_feature_frame(_frame(driver))
+    base_vals = base[feature].to_numpy(dtype="float64")
+
+    # Append extreme FUTURE bars; rows <= T must be byte-identical.
+    extended = np.concatenate([driver, np.full(8, 9999.0)])
+    ext_vals = build_stom_rl_feature_frame(_frame(extended))[feature].to_numpy(dtype="float64")
+    np.testing.assert_allclose(ext_vals[:n], base_vals)
+
+    # Mutate ONLY a far-future bar; no row at or before T may change.
+    mutated = np.concatenate([driver, np.full(5, 0.0)])
+    mutated[n + 2] = -88888.0
+    mut_vals = build_stom_rl_feature_frame(_frame(mutated))[feature].to_numpy(dtype="float64")
+    np.testing.assert_allclose(mut_vals[:n], base_vals)
+
+
+def test_trend_slope_matches_closed_form_trailing_ols():
+    """``amount_slope_n`` equals the hand-computed trailing-OLS slope
+    cov(x,y)/var(x) over the last N bars (the Stage-1 LOCKED formula)."""
+
+    window = STOM_RL_TREND_WINDOW
+    n = 15
+    amounts = np.arange(n, dtype="float64") ** 1.5 + 10.0
+    frame = pd.DataFrame(
+        {
+            "symbol": ["000001"] * n,
+            "session": ["20250103"] * n,
+            "open": np.full(n, 100.0),
+            "high": np.full(n, 101.0),
+            "low": np.full(n, 99.0),
+            "close": np.full(n, 100.0),
+            "volume": np.full(n, 10.0),
+            "amount": amounts,
+            "체결강도": np.full(n, 200.0),
+            "등락율": np.zeros(n),
+        }
+    )
+    out = build_stom_rl_feature_frame(frame)
+    got = out["amount_slope_n"].to_numpy(dtype="float64")
+
+    def _ols(y: np.ndarray) -> float:
+        k = y.size
+        if k < 2:
+            return 0.0  # min_periods=2 -> filled to 0.0 by build frame
+        x = np.arange(k, dtype="float64")
+        xm, ym = x.mean(), y.mean()
+        var_x = ((x - xm) ** 2).sum()
+        return float(((x - xm) * (y - ym)).sum() / var_x)
+
+    expected = np.array(
+        [_ols(amounts[max(0, t - window + 1) : t + 1]) for t in range(n)]
+    )
+    # Row 0 has a single point -> NaN -> filled to 0.0 by build frame.
+    expected[0] = 0.0
+    np.testing.assert_allclose(got, expected, rtol=1e-9, atol=1e-9)
+
+
+def test_volatility_uses_locked_population_std_ddof():
+    """``volatility_n`` is the trailing population std (ddof=0, Stage-1 LOCKED) of
+    change_rate over the last N bars."""
+
+    assert STOM_RL_VOLATILITY_DDOF == 0
+    window = STOM_RL_TREND_WINDOW
+    n = 14
+    rates = np.sin(np.arange(n, dtype="float64") / 2.0) * 2.0
+    frame = pd.DataFrame(
+        {
+            "symbol": ["000001"] * n,
+            "session": ["20250103"] * n,
+            "open": np.full(n, 100.0),
+            "high": np.full(n, 101.0),
+            "low": np.full(n, 99.0),
+            "close": np.full(n, 100.0),
+            "volume": np.full(n, 10.0),
+            "amount": np.full(n, 500.0),
+            "체결강도": np.full(n, 200.0),
+            "등락율": rates,
+        }
+    )
+    out = build_stom_rl_feature_frame(frame)
+    got = out["volatility_n"].to_numpy(dtype="float64")
+
+    expected = np.array(
+        [
+            float(np.std(rates[max(0, t - window + 1) : t + 1], ddof=0))
+            for t in range(n)
+        ]
+    )
+    np.testing.assert_allclose(got, expected, rtol=1e-9, atol=1e-9)

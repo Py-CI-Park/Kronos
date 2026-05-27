@@ -141,6 +141,12 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     source.add_argument("--session", default=None, help="Session date YYYYMMDD (with --db).")
     source.add_argument("--time-start", default="090000", help="Window start HHMMSS (with --db).")
     source.add_argument("--time-end", default="093000", help="Window end HHMMSS (with --db).")
+    source.add_argument(
+        "--freq",
+        default="1s",
+        choices=["1s", "1min"],
+        help="Bar frequency for the DB feed path (default 1s; 1min resamples the RL source).",
+    )
 
     parser.add_argument("--rules", required=True, help="Page 8 rule JSON path.")
     parser.add_argument("--output", required=True, help="Candidate CSV/JSONL output path.")
@@ -166,6 +172,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             session=args.session,
             time_start=args.time_start,
             time_end=args.time_end,
+            freq=args.freq,
         )
     else:
         panel = _load_panel(args.input_csv)

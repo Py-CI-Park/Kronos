@@ -333,6 +333,7 @@ class FullUniverseConfig:
     n_folds: int = 2
     cost_bps: float = 25.0
     top_k: int = 3
+    freq: str = "1s"
     stuck_seconds: float = DEFAULT_STUCK_SECONDS
     # Bound the *enumeration* table scan for in-session validation (0 = all
     # tables).  Distinct from ``max_symbols_per_session`` which caps symbols
@@ -364,6 +365,7 @@ def run_session(
         time_start=config.time_start,
         time_end=config.time_end,
         max_rows_per_group=config.max_rows_per_group,
+        freq=config.freq,
     )
 
     candidates = generate_candidates(panel, rules)
@@ -563,6 +565,12 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--n-folds", type=int, default=2, help="Walk-forward folds per session.")
     parser.add_argument("--cost-bps", type=float, default=25.0, help="Round-trip cost in bps.")
     parser.add_argument("--top-k", type=int, default=3, help="Top-K size for candidate report / env.")
+    parser.add_argument(
+        "--freq",
+        default="1s",
+        choices=["1s", "1min"],
+        help="Bar frequency for the feed path (default 1s; 1min resamples the RL source).",
+    )
     parser.add_argument("--stuck-seconds", type=float, default=DEFAULT_STUCK_SECONDS, help="Wall-clock budget before stuck flag.")
     parser.add_argument("--resume", action="store_true", help="Skip sessions already marked done.")
     parser.add_argument("--refresh-index", action="store_true", help="Rebuild the cached session index.")
@@ -586,6 +594,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         n_folds=int(args.n_folds),
         cost_bps=float(args.cost_bps),
         top_k=int(args.top_k),
+        freq=str(args.freq),
         stuck_seconds=float(args.stuck_seconds),
         enum_max_tables=int(args.enum_max_tables),
     )

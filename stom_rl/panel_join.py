@@ -55,6 +55,7 @@ from finetune.qlib_stom_pipeline import (  # noqa: E402
     STOM_RL_CANONICAL_FEATURES,
     build_stom_rl_feature_frame,
     read_stom_table_rl_source,
+    resample_stom_rl_source_frame,
 )
 from stom_tick_dataset import connect_readonly  # noqa: E402
 
@@ -350,6 +351,7 @@ def build_panel_from_db(
     grid: Optional[pd.DatetimeIndex] = None,
     tolerance: Optional[pd.Timedelta] = None,
     memory_budget_bytes: int = DEFAULT_MEMORY_BUDGET_BYTES,
+    freq: str = "1s",
 ) -> Tuple[pd.DataFrame, PanelJoinReport]:
     """Read several symbol tables for one day-window and as-of join them.
 
@@ -359,6 +361,12 @@ def build_panel_from_db(
     ``max_rows_per_group`` so it never scans a whole table.  The memory budget is
     asserted up-front using the requested ``max_rows_per_group`` (a value of 0
     means "window-bounded"; supply a positive bound before a full-universe run).
+
+    ``freq`` (default ``"1s"`` — the 1s path is byte-unchanged) selects the bar
+    grid.  At ``"1min"`` the RL SOURCE frame is resampled by
+    :func:`resample_stom_rl_source_frame` BEFORE :func:`build_stom_rl_feature_frame`
+    so every derived feature (amount_delta, trailing means/slopes) recomputes on
+    the 1-minute bars — this is THE live feed path where ``freq`` threads.
     """
 
     if max_rows_per_group and max_rows_per_group > 0:
@@ -391,6 +399,10 @@ def build_panel_from_db(
                     )
                 )
                 continue
+            # Resample the 18-col RL SOURCE frame BEFORE the feature builder so
+            # derived features recompute on the requested bar grid (R1/R2).  At
+            # freq="1s" this returns the frame unchanged (1s path untouched).
+            source_frame = resample_stom_rl_source_frame(source_frame, freq=freq)
             features = build_stom_rl_feature_frame(source_frame, tick_size=tick_size)
             keyed = pd.concat(
                 [
