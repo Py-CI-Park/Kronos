@@ -115,6 +115,13 @@ class PortfolioWalkForwardConfig:
     # eval always runs with λ unchanged from this config (kept 0 for honesty).
     turnover_penalty_lambda: float = 0.0
     write_artifacts: bool = True
+    # Mandatory shuffle/permutation sanity check (plan §7).  When ``shuffle_signal``
+    # is True the loaded candidate frame has its ``rank_score`` + ``feature_*``
+    # columns permuted within each timestamp (selection signal destroyed, fills
+    # untouched) before folds are built — used to prove a real edge vanishes under
+    # shuffle.  ``shuffle_seed`` makes the permutation deterministic/auditable.
+    shuffle_signal: bool = False
+    shuffle_seed: int = 0
 
 
 @dataclass(frozen=True)
@@ -151,6 +158,52 @@ def _load_candidates(path: Optional[str]) -> pd.DataFrame:
     frame = frame.copy()
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
     return frame.dropna(subset=["timestamp"]).sort_values(["timestamp", "symbol"]).reset_index(drop=True)
+
+
+def shuffle_candidate_signal(frame: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
+    """Destroy the per-timestamp *selection* signal while keeping accounting identical.
+
+    Mandatory shuffle/permutation sanity check (plan §7, V8/V8b).  Within EACH
+    timestamp group, the values of ``rank_score`` AND every ``feature_*`` column
+    are permuted across that timestamp's rows.  Crucially this OVERWRITES the
+    ``rank_score`` values (not merely the row order): :meth:`PortfolioEnv._current_candidates`
+    re-sorts by ``rank_score`` before ``head(top_k)``, so reordering rows alone is
+    a no-op — only overwriting the score values changes which candidates the env
+    selects.  ``price`` / ``fill_price`` / ``symbol`` / ``timestamp`` / ``fillable``
+    are left untouched so the realised fills and cost accounting are byte-for-byte
+    identical to the real run; ONLY the selection signal is scrambled.
+
+    Each column is permuted *independently* per timestamp (its own draw from the
+    shared deterministic ``numpy`` generator), so no row retains its original
+    feature/score vector — the joint signal is fully destroyed.  Singleton
+    timestamps (one row) are unchanged by construction (a permutation of one
+    element is the identity); the shuffle therefore only perturbs timestamps with
+    >=2 candidates, which is exactly where selection happens.
+
+    Returns a NEW frame (input is not mutated).
+    """
+
+    work = frame.copy()
+    work["timestamp"] = pd.to_datetime(work["timestamp"], errors="coerce")
+    signal_cols = [c for c in work.columns if str(c).startswith("feature_")]
+    if "rank_score" in work.columns:
+        signal_cols.insert(0, "rank_score")
+    if not signal_cols:
+        return work.reset_index(drop=True)
+
+    rng = np.random.default_rng(int(seed))
+    # Permute within each timestamp group, in a deterministic timestamp order so a
+    # fixed seed yields a reproducible shuffle (audit + V8b unit test).
+    for _ts, idx in sorted(
+        work.groupby("timestamp").groups.items(), key=lambda kv: kv[0]
+    ):
+        positions = list(idx)
+        if len(positions) < 2:
+            continue
+        for col in signal_cols:
+            values = work.loc[positions, col].to_numpy()
+            work.loc[positions, col] = values[rng.permutation(len(positions))]
+    return work.reset_index(drop=True)
 
 
 def _segment_timestamps(timestamps: Sequence[pd.Timestamp], n_segments: int) -> List[List[pd.Timestamp]]:
@@ -625,6 +678,10 @@ def _evaluate_on_test(
 
 def run_portfolio_walk_forward(config: PortfolioWalkForwardConfig) -> Dict[str, Any]:
     candidates = _load_candidates(config.candidate_path)
+    if config.shuffle_signal:
+        # Destroy the per-timestamp selection signal (rank_score + feature_*) while
+        # keeping price/fill_price/symbol intact — the mandatory shuffle test (§7).
+        candidates = shuffle_candidate_signal(candidates, seed=config.shuffle_seed)
     folds = build_expanding_window_folds(candidates, config.n_folds)
     rows: List[Dict[str, Any]] = []
     periods: List[Dict[str, Any]] = []
@@ -689,6 +746,8 @@ def run_portfolio_walk_forward(config: PortfolioWalkForwardConfig) -> Dict[str, 
             "baseline_count": len(config.baselines),
             "holdout": "expanding_window_train_le_N_eval_N_plus_1",
             "cost_bps": float(config.cost_bps),
+            "shuffle_signal": bool(config.shuffle_signal),
+            "shuffle_seed": int(config.shuffle_seed) if config.shuffle_signal else None,
             "smoke_success": bool(rows),
             "best_policy_by_return": ranking[0]["policy"] if ranking else None,
             "performance_success": bool(ranking and float(ranking[0]["return_pct"]) > 0.0),
@@ -770,6 +829,14 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> PortfolioWalkForwardCon
         "TEST eval uses this value (keep 0 for an honest costed comparison).",
     )
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument(
+        "--shuffle-signal",
+        action="store_true",
+        help="Mandatory shuffle test (§7): permute rank_score + feature_* within "
+        "each timestamp (overwrite, not reorder) so the selection signal is "
+        "destroyed while fills/cost stay identical. A real edge must vanish here.",
+    )
+    parser.add_argument("--shuffle-seed", type=int, default=0, help="Deterministic seed for the shuffle test.")
     args = parser.parse_args(argv)
     return PortfolioWalkForwardConfig(
         candidate_path=args.candidate_csv,
@@ -785,6 +852,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> PortfolioWalkForwardCon
         slippage_bps=args.slippage_bps,
         turnover_penalty_lambda=args.turnover_penalty_lambda,
         write_artifacts=not args.no_write,
+        shuffle_signal=bool(args.shuffle_signal),
+        shuffle_seed=int(args.shuffle_seed),
     )
 
 
