@@ -403,7 +403,15 @@ def build_panel_from_db(
             # derived features recompute on the requested bar grid (R1/R2).  At
             # freq="1s" this returns the frame unchanged (1s path untouched).
             source_frame = resample_stom_rl_source_frame(source_frame, freq=freq)
-            features = build_stom_rl_feature_frame(source_frame, tick_size=tick_size)
+            # Story B1 SESSION bars are one row per (symbol, session): the causal
+            # trend features must compute *across the per-symbol session series*
+            # (group by symbol only), else each per-session group is a length-1
+            # window and every trend feature collapses to a constant (which would
+            # trip V-NONDEGEN).  1s/1min keep the default [symbol, session].
+            trend_group_keys = ["symbol"] if freq == "session" else None
+            features = build_stom_rl_feature_frame(
+                source_frame, tick_size=tick_size, trend_group_keys=trend_group_keys
+            )
             keyed = pd.concat(
                 [
                     source_frame[["timestamp", "symbol", "session"]].reset_index(drop=True),

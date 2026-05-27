@@ -47,7 +47,14 @@ from stom_tick_dataset import (  # noqa: E402
 
 KRONOS_PICKLE_COLUMNS = ["open", "high", "low", "close", "vol", "amt"]
 QLIB_CSV_FIELDS = ["open", "high", "low", "close", "volume", "amount", "money", "factor"]
-SUPPORTED_FREQS = {"1s", "1min"}
+SUPPORTED_FREQS = {"1s", "1min", "session"}
+# ``session`` collapses ALL rows of one (symbol, session) into ONE bar (the
+# "daily proxy" of Story B1).  It is a *caveated proxy* for a daily bar — the
+# DB is event-triggered + morning-only (~30 min/session), so a session bar is a
+# morning-30min bar, NOT a true close-to-close daily bar; cross-session signal
+# built on it is confounded by selection bias and is NOT an alpha claim (see
+# docs/stom_rl_story_b_daily_data_feasibility_2026-05-27.md).
+SESSION_FREQ = "session"
 SUPPORTED_SPLIT_STRATEGIES = {"session", "group"}
 PYQLIB_PROVIDER_UNSUPPORTED_FREQS = {"1s"}
 ExportItem = Tuple[str, str, pd.Timestamp, pd.Timestamp, pd.DataFrame]
@@ -254,12 +261,26 @@ def _trailing_ols_slope(values: np.ndarray) -> float:
     return cov_xy / var_x
 
 
-def build_stom_rl_feature_frame(frame: pd.DataFrame, tick_size: float = 1.0) -> pd.DataFrame:
+def build_stom_rl_feature_frame(
+    frame: pd.DataFrame,
+    tick_size: float = 1.0,
+    trend_group_keys: Optional[Sequence[str]] = None,
+) -> pd.DataFrame:
     """Return a deterministic canonical feature frame for STOM RL.
 
     The legacy Qlib export keeps ``QLIB_CSV_FIELDS`` unchanged.  This helper is
     an opt-in portfolio/RL feature expansion layer used by tests, future export
     commands, and handoff documentation.
+
+    ``trend_group_keys`` selects the grouping for the sequential/causal features
+    (``amount_delta`` first-difference + the trailing means/slopes).  When
+    ``None`` (the default) the legacy ``[symbol, session]`` grouping is used, so
+    the 1s/1min paths are byte-unchanged: trailing windows never bleed across a
+    symbol's *or* a session's boundary.  For Story B1 SESSION bars (one row per
+    ``(symbol, session)``) the caller passes ``["symbol"]`` so the trailing trend
+    features compute *across the per-symbol session series* (each session is one
+    bar) — still trailing-only (no look-ahead), just over the session axis rather
+    than within a single session.
     """
 
     if frame.empty:
@@ -284,7 +305,10 @@ def build_stom_rl_feature_frame(frame: pd.DataFrame, tick_size: float = 1.0) -> 
     ask_price = ask_price.mask(missing_quote, out["close"])
     out["spread_ticks"] = (ask_price - bid_price).clip(lower=0.0) / max(float(tick_size), 1e-9)
 
-    group_keys = [column for column in ["symbol", "session"] if column in out.columns]
+    if trend_group_keys is None:
+        group_keys = [column for column in ["symbol", "session"] if column in out.columns]
+    else:
+        group_keys = [column for column in trend_group_keys if column in out.columns]
     if group_keys:
         out["amount_delta"] = out.groupby(group_keys, sort=False)["amount"].diff().fillna(0.0)
     else:
@@ -617,6 +641,18 @@ def resample_stom_rl_source_frame(frame: pd.DataFrame, freq: str = "1s") -> pd.D
     resulting ``"timestamp"`` is the bucket start, so bar ``T`` carries NO value
     from bar ``T+1`` (coheres with the grid-agnostic T+1 fill).
 
+    For ``freq == "session"`` (Story B1 "daily proxy") ALL rows of one
+    ``(symbol, session)`` collapse into ONE bar using the SAME LOCKED per-column
+    aggregation (OHLC=first/max/min/last, flow/amount=SUM, book/rate=LAST).  The
+    bucket is the ``session`` itself, so there is exactly one bar per
+    ``(symbol, session)``; the resulting ``"timestamp"`` is set to the session
+    date (midnight of ``YYYYMMDD``) so cross-session bars of *different* symbols
+    align on a common session-date axis (the cross-session panel grid).  This is
+    a CAVEATED PROXY: the session window is the recorded morning ~30 min, NOT a
+    true close-to-close day, and symbols appear only on dates they triggered
+    recording (selection bias).  Causal trend features still compute trailing
+    across the per-symbol SESSION series downstream (no look-ahead).
+
     Columns not present in the input are skipped; columns present but absent from
     the agg table fall back to ``last`` (a point-in-time snapshot, never a future
     value).
@@ -633,7 +669,23 @@ def resample_stom_rl_source_frame(frame: pd.DataFrame, freq: str = "1s") -> pd.D
     if work.empty:
         return work.reset_index(drop=True)
 
-    work["__bucket__"] = work["timestamp"].dt.floor("min")
+    if freq == SESSION_FREQ:
+        # ONE bar per (symbol, session): the bucket IS the calendar day of the
+        # session.  Use the session date (parsed from the YYYYMMDD ``session``
+        # string when present, else the timestamp's day) so different symbols'
+        # session bars land on a SHARED session-date axis for the cross-session
+        # panel.  ``floor("D")`` of the per-row timestamp would also collapse to
+        # the day, but deriving from ``session`` keeps the proxy honest when a
+        # row's clock time and its session label disagree.
+        if "session" in work.columns:
+            session_day = pd.to_datetime(
+                work["session"].astype(str), format="%Y%m%d", errors="coerce"
+            )
+            work["__bucket__"] = session_day.fillna(work["timestamp"].dt.floor("D"))
+        else:
+            work["__bucket__"] = work["timestamp"].dt.floor("D")
+    else:
+        work["__bucket__"] = work["timestamp"].dt.floor("min")
     group_keys = [c for c in ("symbol", "session") if c in work.columns]
     value_cols = [
         c for c in work.columns if c not in (*group_keys, "timestamp", "__bucket__")

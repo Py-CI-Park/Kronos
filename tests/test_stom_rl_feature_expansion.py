@@ -750,3 +750,200 @@ def test_volatility_uses_locked_population_std_ddof():
         ]
     )
     np.testing.assert_allclose(got, expected, rtol=1e-9, atol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Story B1 — session-bar ("daily proxy") resample mode.
+#
+# freq="session" collapses ALL rows of one (symbol, session) into ONE bar using
+# the SAME LOCKED per-column aggregation as the 1-min path (OHLC=first/max/min/
+# last, flow/amount=SUM, book/rate=LAST), timestamps the bar at the session
+# date, and (via build_stom_rl_feature_frame trend_group_keys) computes the
+# causal trend features ACROSS the per-symbol session series with no look-ahead.
+# This is a CAVEATED PROXY (morning-30min, selection-biased), NOT a daily bar.
+# ---------------------------------------------------------------------------
+def _rl_source_two_session_frame() -> pd.DataFrame:
+    """One symbol, TWO sessions, several per-second rows each.
+
+    Session A = 20250103 (3 seconds), session B = 20250106 (2 seconds).  Flow
+    columns vary per second (SUM != LAST); book/rate columns step within each
+    session so LAST is distinguishable from first/mean.
+    """
+
+    return pd.DataFrame(
+        {
+            "timestamp": [
+                pd.Timestamp("2025-01-03 09:00:00"),
+                pd.Timestamp("2025-01-03 09:00:01"),
+                pd.Timestamp("2025-01-03 09:00:02"),
+                pd.Timestamp("2025-01-06 09:00:00"),
+                pd.Timestamp("2025-01-06 09:00:01"),
+            ],
+            "symbol": ["000001"] * 5,
+            "session": ["20250103", "20250103", "20250103", "20250106", "20250106"],
+            "open": [100.0, 101.0, 102.0, 110.0, 111.0],
+            "high": [105.0, 106.0, 107.0, 115.0, 116.0],
+            "low": [99.0, 98.0, 97.0, 108.0, 107.0],
+            "close": [101.0, 102.0, 103.0, 111.0, 112.0],
+            "초당매수수량": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "초당매도수량": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "volume": [11.0, 22.0, 33.0, 44.0, 55.0],
+            "amount": [100.0, 200.0, 300.0, 400.0, 500.0],
+            "매수총잔량": [80.0, 70.0, 60.0, 50.0, 40.0],
+            "매도총잔량": [20.0, 25.0, 30.0, 35.0, 40.0],
+            "매수호가1": [99.0, 98.0, 97.0, 107.0, 106.0],
+            "매도호가1": [101.0, 102.0, 103.0, 113.0, 114.0],
+            "등락율": [1.0, 1.5, 2.0, 2.5, 3.0],
+            "회전율": [0.10, 0.11, 0.12, 0.13, 0.14],
+            "시가총액": [45000.0, 45010.0, 45020.0, 45030.0, 45040.0],
+            "고저평균대비등락율": [-1.0, -0.5, 0.0, 0.5, 1.0],
+            "체결강도": [200.0, 210.0, 220.0, 230.0, 240.0],
+        }
+    )
+
+
+def test_v_session_resample_one_bar_per_symbol_session():
+    """V-SESSION-BAR: freq='session' produces exactly ONE bar per (symbol,
+    session), timestamped at the session date, with the LOCKED per-column agg."""
+
+    src = _rl_source_two_session_frame()
+    out = resample_stom_rl_source_frame(src, freq="session")
+
+    # Exactly one bar per session (2 sessions for 1 symbol).
+    assert len(out) == 2
+    assert list(out["session"]) == ["20250103", "20250106"]
+    # Bar timestamp = the session DATE (midnight), so cross-session bars of
+    # different symbols align on a shared session-date axis.
+    assert list(out["timestamp"]) == [
+        pd.Timestamp("2025-01-03 00:00:00"),
+        pd.Timestamp("2025-01-06 00:00:00"),
+    ]
+
+    # ALL source inputs survive (no silent drop -> no manufactured null).
+    for col in src.columns:
+        assert col in out.columns
+
+    sess_a = out.iloc[0]
+    sess_b = out.iloc[1]
+
+    # OHLC over the WHOLE session: first / max / min / last.
+    assert sess_a["open"] == 100.0
+    assert sess_a["high"] == 107.0
+    assert sess_a["low"] == 97.0
+    assert sess_a["close"] == 103.0
+    assert sess_b["open"] == 110.0
+    assert sess_b["close"] == 112.0
+
+    # Flow + amount -> SUM over the entire session (Stage-1 LOCKED).
+    assert sess_a["초당매수수량"] == 10.0 + 20.0 + 30.0
+    assert sess_a["초당매도수량"] == 1.0 + 2.0 + 3.0
+    assert sess_a["volume"] == 11.0 + 22.0 + 33.0
+    assert sess_a["amount"] == 100.0 + 200.0 + 300.0
+    assert sess_b["amount"] == 400.0 + 500.0
+
+    # Book + rate/snapshot -> LAST second of the session.
+    assert sess_a["매수총잔량"] == 60.0
+    assert sess_a["매도총잔량"] == 30.0
+    assert sess_a["매수호가1"] == 97.0
+    assert sess_a["매도호가1"] == 103.0
+    assert sess_a["등락율"] == 2.0
+    assert sess_a["회전율"] == 0.12
+    assert sess_a["시가총액"] == 45020.0
+    assert sess_a["고저평균대비등락율"] == 0.0
+    assert sess_a["체결강도"] == 220.0
+
+
+def test_v_session_resample_cross_symbol_dates_align():
+    """V-SESSION-PANEL: two symbols sharing a session date collapse to bars on
+    the SAME timestamp, so a cross-session panel can key on session-date."""
+
+    a = _rl_source_two_session_frame()
+    b = _rl_source_two_session_frame().assign(symbol="000002")
+    src = pd.concat([a, b], ignore_index=True)
+    out = resample_stom_rl_source_frame(src, freq="session")
+
+    assert len(out) == 4  # 2 symbols x 2 sessions
+    # Both symbols' 20250103 bar share the identical session-date timestamp.
+    jan3 = out[out["timestamp"] == pd.Timestamp("2025-01-03 00:00:00")]
+    assert set(jan3["symbol"]) == {"000001", "000002"}
+
+
+def test_v_session_trend_features_are_causal_across_sessions():
+    """V-SESSION-CAUSAL: with trend_group_keys=['symbol'] the trailing trend
+    features compute ACROSS the per-symbol session series and use ONLY sessions
+    <= T (no look-ahead): row T is unchanged when a far-future session is added.
+
+    This is also why the session path needs trend_group_keys=['symbol']: under
+    the default [symbol, session] grouping each one-row session is a length-1
+    window and every trend feature would collapse to a constant.
+    """
+
+    sessions = [f"2025010{d}" for d in range(1, 7)]  # 6 sessions
+    closes = [100.0, 102.0, 101.0, 105.0, 110.0, 108.0]
+
+    def _session_bars(n: int) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "timestamp": [pd.Timestamp(f"{s[:4]}-{s[4:6]}-{s[6:]}") for s in sessions[:n]],
+                "symbol": ["000001"] * n,
+                "session": sessions[:n],
+                "open": closes[:n],
+                "high": [c + 2 for c in closes[:n]],
+                "low": [c - 2 for c in closes[:n]],
+                "close": closes[:n],
+                "volume": [10.0] * n,
+                "amount": [500.0 + 10 * i for i in range(n)],
+                "체결강도": [200.0] * n,
+                "등락율": [float(i) for i in range(n)],
+            }
+        )
+
+    full = build_stom_rl_feature_frame(_session_bars(6), trend_group_keys=["symbol"])
+    short = build_stom_rl_feature_frame(_session_bars(4), trend_group_keys=["symbol"])
+
+    # Trend features are non-degenerate across sessions (would be all-equal under
+    # the default per-(symbol,session) length-1 grouping).
+    assert full["moving_average_n"].nunique() > 1
+    assert full["amount_slope_n"].nunique() > 1
+
+    # Causal: the first 4 session rows are byte-identical whether or not the 2
+    # later sessions exist -> row T sees only sessions <= T.
+    for col in (
+        "moving_average_n",
+        "volatility_n",
+        "amount_slope_n",
+        "change_rate_slope_n",
+        "amount_delta",
+    ):
+        np.testing.assert_allclose(
+            full[col].to_numpy()[:4], short[col].to_numpy(), rtol=1e-9, atol=1e-9
+        )
+
+
+def test_v_session_resample_default_grouping_collapses_trend():
+    """The default [symbol, session] grouping makes per-session trend features
+    degenerate (length-1 windows) — documenting WHY freq='session' must pass
+    trend_group_keys=['symbol'] (guards against a silent manufactured null)."""
+
+    sessions = [f"2025010{d}" for d in range(1, 6)]
+    bars = pd.DataFrame(
+        {
+            "timestamp": [pd.Timestamp(f"{s[:4]}-{s[4:6]}-{s[6:]}") for s in sessions],
+            "symbol": ["000001"] * 5,
+            "session": sessions,
+            "open": [100.0, 102.0, 101.0, 105.0, 110.0],
+            "high": [106.0] * 5,
+            "low": [96.0] * 5,
+            "close": [100.0, 102.0, 101.0, 105.0, 110.0],
+            "volume": [10.0] * 5,
+            "amount": [500.0, 510.0, 520.0, 530.0, 540.0],
+            "체결강도": [200.0] * 5,
+            "등락율": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+    # Default grouping: each (symbol, session) is one row -> slope NaN->0, MA=close.
+    default = build_stom_rl_feature_frame(bars)
+    assert (default["amount_slope_n"] == 0.0).all()
+    np.testing.assert_allclose(
+        default["moving_average_n"].to_numpy(), bars["close"].to_numpy()
+    )

@@ -144,8 +144,10 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     source.add_argument(
         "--freq",
         default="1s",
-        choices=["1s", "1min"],
-        help="Bar frequency for the DB feed path (default 1s; 1min resamples the RL source).",
+        choices=["1s", "1min", "session"],
+        help="Bar frequency for the DB feed path (default 1s; 1min resamples the RL "
+        "source; session = ONE bar per (symbol, session) — the Story B1 caveated "
+        "daily proxy, NOT a clean daily bar).",
     )
 
     parser.add_argument("--rules", required=True, help="Page 8 rule JSON path.")
