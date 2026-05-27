@@ -19,19 +19,27 @@ from stom_rl.gap_up_backtest import (
     IMBALANCE_THRESHOLD,
     INTERNATIONAL_LOW_COST,
     KOREAN_DOMESTIC_COST,
+    REALISTIC_COST_BPS,
+    SLIPPAGE_SWEEP_BPS,
     TRADE_STRENGTH_THRESHOLD,
     GapUpInstance,
     aggregate_trades,
     breakeven_round_trip_bps,
     compute_bid_ask_imbalance,
+    compute_regime_analysis,
     cost_sweep_table,
     expectancy_at_cost,
     filter_instances,
+    multi_boundary_oos,
     passes_entry_filter,
+    per_year_expectancy,
     round_trip_cost_bps,
     simulate_baseline,
     simulate_trade,
+    slippage_sensitivity,
     split_instances_by_date,
+    split_instances_by_year,
+    year_of,
 )
 
 
@@ -366,3 +374,149 @@ def test_filter_is_causal_uses_only_entry_bar_signals():
     )
     # Despite a huge favourable forward path, weak entry-bar demand still fails.
     assert passes_entry_filter(rising, ENTRY_FILTERS["ts"]) is False
+
+
+# ---------------------------------------------------------------------------
+# Regime-robustness analysis: per-year split, multi-boundary OOS, slippage.
+# ---------------------------------------------------------------------------
+def _mk_year(session: str, exit_price: float, *, ts=None, imb=None) -> GapUpInstance:
+    # entry=100, single forward bar at exit_price; TP5/SL1 neither triggers so
+    # it time-exits at exit_price (gross = move%); cost enters additively.
+    return GapUpInstance(
+        symbol="SYM",
+        session=session,
+        entry_change_rate=2.5,
+        entry_price=100.0,
+        prices=(100.0, exit_price),
+        seconds=(32400, 32401),
+        entry_trade_strength=ts,
+        entry_bid_ask_imbalance=imb,
+    )
+
+
+def test_year_of_extracts_calendar_year_and_rejects_bad_input():
+    assert year_of("20220323") == "2022"
+    assert year_of("20260227") == "2026"
+    with pytest.raises(ValueError):
+        year_of("2022")  # too short
+    with pytest.raises(ValueError):
+        year_of("2022XX01")  # non-digit
+
+
+def test_split_by_year_buckets_ascending_and_partitions_all():
+    instances = [
+        _mk_year("20220601", 102.0),
+        _mk_year("20230601", 101.0),
+        _mk_year("20230701", 100.0),
+        _mk_year("20250601", 99.0),
+    ]
+    buckets = split_instances_by_year(instances)
+    assert list(buckets.keys()) == ["2022", "2023", "2025"]  # ascending, no 2024
+    assert len(buckets["2023"]) == 2
+    # Every instance lands in exactly one bucket (partition is exhaustive).
+    assert sum(len(v) for v in buckets.values()) == len(instances)
+
+
+def test_per_year_expectancy_isolates_each_year_with_additive_cost():
+    # 2022 time-exits at +2% gross; 2023 at +0% gross.  At 18bp cost (=0.18%):
+    #   2022 net = 2.0 - 0.18 = +1.82%, 2023 net = 0.0 - 0.18 = -0.18%.
+    instances = [
+        _mk_year("20220101", 102.0),
+        _mk_year("20230101", 100.0),
+    ]
+    rows = per_year_expectancy(instances, tp_pct=5.0, sl_pct=1.0, cost_bps=18.0)
+    by_year = {r["year"]: r for r in rows}
+    assert _approx(by_year["2022"]["mean_net_return_pct"], 1.82, tol=1e-6)
+    assert _approx(by_year["2023"]["mean_net_return_pct"], -0.18, tol=1e-6)
+    assert by_year["2022"]["n_trades"] == 1
+    assert by_year["2022"]["win_rate"] == 1.0  # +1.82 is a win
+    assert by_year["2023"]["win_rate"] == 0.0  # -0.18 is a loss
+
+
+def test_per_year_recent_only_edge_is_visible():
+    # A signal positive ONLY in 2025 (others negative) must show that asymmetry.
+    instances = [
+        _mk_year("20220101", 99.0),   # -1% gross -> loss
+        _mk_year("20230101", 99.0),   # -1% gross -> loss
+        _mk_year("20250101", 103.0),  # +3% gross -> big win
+    ]
+    rows = per_year_expectancy(instances, tp_pct=5.0, sl_pct=1.0, cost_bps=18.0)
+    by_year = {r["year"]: r["mean_net_return_pct"] for r in rows}
+    assert by_year["2022"] < 0 and by_year["2023"] < 0
+    assert by_year["2025"] > 0  # only the recent year is positive
+
+
+def test_multi_boundary_oos_sweeps_boundary_and_reports_each_split():
+    # 6 distinct dates; sweeping the fraction moves the boundary and OOS set.
+    instances = [_mk_year(f"2022010{i}", 102.0) for i in range(1, 7)]
+    rows = multi_boundary_oos(
+        instances, tp_pct=5.0, sl_pct=1.0, cost_bps=18.0, fractions=(0.5, 0.7)
+    )
+    assert len(rows) == 2
+    # All exit +2% gross -> OOS expectancy is +1.82% at every boundary (stable).
+    for row in rows:
+        assert row["n_in_sample"] + row["n_out_of_sample"] == 6
+        assert _approx(row["expectancy_out_of_sample"], 1.82, tol=1e-6)
+    # A later boundary fraction puts MORE instances in-sample (expanding window).
+    assert rows[1]["n_in_sample"] >= rows[0]["n_in_sample"]
+
+
+def test_slippage_adds_to_cost_and_lowers_expectancy_monotonically():
+    # entry=100, time-exit at +2% gross.  base 18bp; slippage {0,5,10,20}.
+    # net = 2.0 - (18+slip)/100.  Each +5bp slip drops net by 0.05%.
+    instances = [_mk_year("20240101", 102.0)]
+    rows = slippage_sensitivity(
+        instances,
+        tp_pct=5.0,
+        sl_pct=1.0,
+        base_cost_bps=18.0,
+        slippage_levels=(0.0, 5.0, 10.0, 20.0),
+    )
+    by_slip = {r["slippage_bps"]: r for r in rows}
+    # Total cost is exactly base + slippage (verifies slippage adds to cost).
+    assert _approx(by_slip[0.0]["total_cost_bps"], 18.0)
+    assert _approx(by_slip[10.0]["total_cost_bps"], 28.0)
+    assert _approx(by_slip[20.0]["total_cost_bps"], 38.0)
+    # net@18bp = 2.0-0.18 = 1.82; net@28bp = 1.72; net@38bp = 1.62.
+    assert _approx(by_slip[0.0]["expectancy_pct"], 1.82, tol=1e-6)
+    assert _approx(by_slip[10.0]["expectancy_pct"], 1.72, tol=1e-6)
+    assert _approx(by_slip[20.0]["expectancy_pct"], 1.62, tol=1e-6)
+    # Monotonic decreasing in slippage.
+    exps = [by_slip[s]["expectancy_pct"] for s in (0.0, 5.0, 10.0, 20.0)]
+    assert all(a > b for a, b in zip(exps, exps[1:]))
+
+
+def test_slippage_kills_a_thin_edge_below_breakeven():
+    # A thin +0.20% gross edge (breakeven 20bp) survives 18bp but dies once
+    # slippage pushes total cost above 20bp (e.g. 18+5=23bp).
+    instances = [_mk_year("20240101", 100.2)]  # +0.2% gross
+    rows = slippage_sensitivity(
+        instances, tp_pct=5.0, sl_pct=1.0, base_cost_bps=18.0,
+        slippage_levels=(0.0, 5.0),
+    )
+    by_slip = {r["slippage_bps"]: r["expectancy_pct"] for r in rows}
+    assert by_slip[0.0] > 0  # net@18bp = 0.20-0.18 = +0.02% survives
+    assert by_slip[5.0] < 0  # net@23bp = 0.20-0.23 = -0.03% dies
+
+
+def test_compute_regime_analysis_bundles_all_filters():
+    # ts_imb passer (ts>=100 & imb>=0.5) vs ts-only vs neither.
+    instances = [
+        _mk_year("20220101", 103.0, ts=150.0, imb=0.7),  # passes both
+        _mk_year("20230101", 102.0, ts=150.0, imb=0.3),  # passes ts only
+        _mk_year("20250101", 101.0, ts=50.0, imb=0.7),   # passes neither
+    ]
+    bundle = compute_regime_analysis(
+        instances, tp_pct=5.0, sl_pct=1.0, cost_bps=18.0
+    )
+    by_filter = {b["filter"]: b for b in bundle}
+    assert set(by_filter) == {"none", "ts", "ts_imb"}
+    assert by_filter["none"]["n_all"] == 3
+    assert by_filter["ts"]["n_all"] == 2
+    assert by_filter["ts_imb"]["n_all"] == 1
+    # Each filter carries the three analysis blocks.
+    for b in bundle:
+        assert "per_year" in b and "multi_boundary" in b and "slippage" in b
+    # Defaults are exported for the CLI / doc.
+    assert REALISTIC_COST_BPS == 18.0
+    assert SLIPPAGE_SWEEP_BPS == (0.0, 5.0, 10.0, 20.0)

@@ -684,6 +684,217 @@ def cost_sweep_table(
 
 
 # ---------------------------------------------------------------------------
+# Regime-robustness analysis modes (per-year, multi-boundary, slippage).
+#
+# These answer "is the OOS-positive filtered gap-up edge regime-robust or a
+# recent-bull artifact, and does it survive realistic slippage?".  All three
+# reuse the SAME pure trade-execution core (:func:`simulate_trade`) and the
+# SAME additive cost model, so a positive result is comparable to the prior
+# cost-sweep run.  No new edge is "discovered" — these only re-slice the
+# existing instances by calendar year / split boundary / total cost level.
+# ---------------------------------------------------------------------------
+# Slippage levels (bps) ADDED to the round-trip commission+tax cost.  Execution
+# at a gap-up open is not free; this stresses the edge against that reality.
+SLIPPAGE_SWEEP_BPS: Tuple[float, ...] = (0.0, 5.0, 10.0, 20.0)
+# Realistic Korean-domestic base cost (commission+tax) the slippage is added to.
+REALISTIC_COST_BPS: float = 18.0
+
+
+def year_of(session: str) -> str:
+    """Calendar year (YYYY) of a YYYYMMDD session string.
+
+    Raises ``ValueError`` for a malformed session so a bad date can never be
+    silently bucketed into the wrong year.
+    """
+
+    s = str(session)
+    if len(s) != 8 or not s.isdigit():
+        raise ValueError(f"session must be YYYYMMDD, got: {session!r}")
+    return s[:4]
+
+
+def split_instances_by_year(
+    instances: Sequence[GapUpInstance],
+) -> Dict[str, List[GapUpInstance]]:
+    """Bucket instances by their session's calendar year (YYYY).
+
+    Returns an ordered dict (ascending year) so a strategy that is positive
+    only in the latest years is visible as a recent-regime artifact rather than
+    a robust edge.
+    """
+
+    buckets: Dict[str, List[GapUpInstance]] = {}
+    for inst in instances:
+        buckets.setdefault(year_of(inst.session), []).append(inst)
+    return {year: buckets[year] for year in sorted(buckets)}
+
+
+def per_year_expectancy(
+    instances: Sequence[GapUpInstance],
+    *,
+    tp_pct: float,
+    sl_pct: float,
+    cost_bps: float,
+) -> List[Dict[str, Any]]:
+    """Net per-trade expectancy + N + win-rate for EACH calendar year.
+
+    A signal positive only in recent years (e.g. 2025-2026) is a regime
+    artifact; one positive across all years is robust.  Cost enters additively
+    so each year's expectancy is that year's gross edge minus ``cost_bps/100``.
+    """
+
+    rows: List[Dict[str, Any]] = []
+    for year, year_insts in split_instances_by_year(instances).items():
+        trades = [
+            simulate_trade(
+                inst.prices,
+                tp_pct=tp_pct,
+                sl_pct=sl_pct,
+                cost_bps=cost_bps,
+                seconds=inst.seconds,
+            )
+            for inst in year_insts
+        ]
+        agg = aggregate_trades(trades)
+        rows.append(
+            {
+                "year": year,
+                "n_trades": agg["n_trades"],
+                "mean_net_return_pct": agg["mean_net_return_pct"],
+                "win_rate": agg["win_rate"],
+            }
+        )
+    return rows
+
+
+def multi_boundary_oos(
+    instances: Sequence[GapUpInstance],
+    *,
+    tp_pct: float,
+    sl_pct: float,
+    cost_bps: float,
+    fractions: Sequence[float] = (0.5, 0.6, 0.7, 0.8, 0.9),
+) -> List[Dict[str, Any]]:
+    """Sweep the IS/OOS split boundary; report OOS expectancy at each.
+
+    Instead of one favourable holdout date, this walks the boundary across the
+    sorted distinct session dates (expanding in-sample window).  If the OOS
+    expectancy stays positive as the boundary moves the edge is boundary-robust;
+    if it is positive only for one boundary it is fragile.  Each row reports the
+    boundary date, the IS/OOS instance counts, and the IS & OOS expectancy.
+    """
+
+    rows: List[Dict[str, Any]] = []
+    for frac in fractions:
+        in_sample, out_sample, boundary = split_instances_by_date(
+            instances, in_sample_fraction=float(frac)
+        )
+        rows.append(
+            {
+                "in_sample_fraction": float(frac),
+                "boundary_date": boundary,
+                "n_in_sample": len(in_sample),
+                "n_out_of_sample": len(out_sample),
+                "expectancy_in_sample": expectancy_at_cost(
+                    in_sample, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=cost_bps
+                ),
+                "expectancy_out_of_sample": expectancy_at_cost(
+                    out_sample, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=cost_bps
+                ),
+            }
+        )
+    return rows
+
+
+def slippage_sensitivity(
+    instances: Sequence[GapUpInstance],
+    *,
+    tp_pct: float,
+    sl_pct: float,
+    base_cost_bps: float = REALISTIC_COST_BPS,
+    slippage_levels: Sequence[float] = SLIPPAGE_SWEEP_BPS,
+) -> List[Dict[str, Any]]:
+    """Net expectancy at ``base_cost_bps + slippage`` for each slippage level.
+
+    Slippage adds to the round-trip cost (verified by :func:`round_trip_cost_bps`
+    composing commission+tax+slippage).  At each level the TOTAL cost is
+    ``base_cost_bps + slippage_bps`` and the expectancy is computed with that
+    total — so a filter whose breakeven exceeds base+slippage survives, one
+    whose breakeven sits below it dies.  Returns one row per slippage level with
+    the total cost and the resulting net expectancy.
+    """
+
+    rows: List[Dict[str, Any]] = []
+    for slip in slippage_levels:
+        total_cost = round_trip_cost_bps(
+            commission_bps_per_side=0.0,
+            transaction_tax_bps=float(base_cost_bps),
+            slippage_bps=float(slip),
+        )
+        rows.append(
+            {
+                "slippage_bps": float(slip),
+                "base_cost_bps": float(base_cost_bps),
+                "total_cost_bps": total_cost,
+                "expectancy_pct": expectancy_at_cost(
+                    instances, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=total_cost
+                ),
+            }
+        )
+    return rows
+
+
+def compute_regime_analysis(
+    instances: Sequence[GapUpInstance],
+    *,
+    tp_pct: float,
+    sl_pct: float,
+    cost_bps: float = REALISTIC_COST_BPS,
+    boundary_fractions: Sequence[float] = (0.5, 0.6, 0.7, 0.8, 0.9),
+    slippage_levels: Sequence[float] = SLIPPAGE_SWEEP_BPS,
+) -> List[Dict[str, Any]]:
+    """Per-filter regime robustness bundle (per-year + multi-boundary + slip).
+
+    For EACH pre-registered entry filter, computes (a) the per-calendar-year
+    expectancy at the realistic ``cost_bps``, (b) the OOS expectancy as the
+    IS/OOS boundary is swept, and (c) the net expectancy as slippage is added to
+    that cost.  This is the decisive regime-robustness + slippage-survivability
+    evidence; it re-slices the SAME filtered instances, discovering no new edge.
+    """
+
+    out: List[Dict[str, Any]] = []
+    for fname, efilter in ENTRY_FILTERS.items():
+        kept = filter_instances(instances, efilter)
+        out.append(
+            {
+                "filter": fname,
+                "primary_tp_pct": tp_pct,
+                "primary_sl_pct": sl_pct,
+                "cost_bps": float(cost_bps),
+                "n_all": len(kept),
+                "per_year": per_year_expectancy(
+                    kept, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=cost_bps
+                ),
+                "multi_boundary": multi_boundary_oos(
+                    kept,
+                    tp_pct=tp_pct,
+                    sl_pct=sl_pct,
+                    cost_bps=cost_bps,
+                    fractions=boundary_fractions,
+                ),
+                "slippage": slippage_sensitivity(
+                    kept,
+                    tp_pct=tp_pct,
+                    sl_pct=sl_pct,
+                    base_cost_bps=cost_bps,
+                    slippage_levels=slippage_levels,
+                ),
+            }
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
 # DB-backed full backtest runner (bounded enumeration + per-instance reads).
 # ---------------------------------------------------------------------------
 @dataclass
@@ -700,6 +911,12 @@ class GapUpBacktestConfig:
     primary_tp_pct: float = 5.0  # prior "best OOS" cell (TP5/SL1), reported only
     primary_sl_pct: float = 1.0
     artifacts_dir: Optional[str] = None
+    # Regime-robustness analysis (per-year / multi-boundary / slippage) at the
+    # realistic cost; off by default so the existing cost-sweep run is unchanged.
+    regime_analysis: bool = False
+    regime_cost_bps: float = REALISTIC_COST_BPS
+    boundary_fractions: Tuple[float, ...] = (0.5, 0.6, 0.7, 0.8, 0.9)
+    slippage_levels: Tuple[float, ...] = SLIPPAGE_SWEEP_BPS
 
 
 @dataclass
@@ -714,6 +931,8 @@ class GapUpBacktestResult:
     baseline: Dict[str, Any] = field(default_factory=dict)
     # Cost-sweep x filter analysis (keyed by filter name "none"/"ts"/"ts_imb").
     filter_analysis: List[Dict[str, Any]] = field(default_factory=list)
+    # Regime-robustness analysis per filter (per-year / multi-boundary / slip).
+    regime_analysis: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def collect_gap_up_instances(
@@ -870,6 +1089,17 @@ def run_gap_up_backtest(config: GapUpBacktestConfig) -> GapUpBacktestResult:
         )
     result.filter_analysis = filter_analysis
 
+    # ---- Regime-robustness analysis (per-year / multi-boundary / slippage) ----
+    if config.regime_analysis:
+        result.regime_analysis = compute_regime_analysis(
+            instances,
+            tp_pct=tp_p,
+            sl_pct=sl_p,
+            cost_bps=config.regime_cost_bps,
+            boundary_fractions=config.boundary_fractions,
+            slippage_levels=config.slippage_levels,
+        )
+
     if config.artifacts_dir:
         _write_artifacts(config, result, in_sample, out_sample)
 
@@ -945,10 +1175,32 @@ def _write_artifacts(
         "grid": result.grid,
         "baseline": result.baseline,
         "filter_analysis": result.filter_analysis,
+        "regime_analysis": result.regime_analysis,
     }
     (out_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    # Regime-robustness artifact (written only when the analysis was requested).
+    if result.regime_analysis:
+        (out_dir / "regime_analysis.json").write_text(
+            json.dumps(
+                {
+                    "n_instances": len(result.instances),
+                    "n_symbols": result.n_symbols,
+                    "date_min": result.date_min,
+                    "date_max": result.date_max,
+                    "regime_cost_bps": config.regime_cost_bps,
+                    "primary_tp_pct": config.primary_tp_pct,
+                    "primary_sl_pct": config.primary_sl_pct,
+                    "boundary_fractions": list(config.boundary_fractions),
+                    "slippage_levels": list(config.slippage_levels),
+                    "regime_analysis": result.regime_analysis,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -998,6 +1250,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=None,
         help="Optional path to write the full result summary as JSON.",
     )
+    parser.add_argument(
+        "--regime-analysis",
+        action="store_true",
+        help=(
+            "Run the per-year / multi-boundary / slippage regime-robustness "
+            "analysis at the realistic cost (--regime-cost-bps)."
+        ),
+    )
+    parser.add_argument(
+        "--regime-cost-bps",
+        type=float,
+        default=REALISTIC_COST_BPS,
+        help="Realistic round-trip cost the regime analysis evaluates at (bp).",
+    )
     args = parser.parse_args(argv)
 
     config = GapUpBacktestConfig(
@@ -1006,6 +1272,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         in_sample_fraction=args.in_sample_fraction,
         cost_bps=args.cost_bps,
         artifacts_dir=args.artifacts_dir,
+        regime_analysis=args.regime_analysis,
+        regime_cost_bps=args.regime_cost_bps,
     )
     result = run_gap_up_backtest(config)
 
@@ -1063,6 +1331,56 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 f"{_fmt_be(fa['breakeven_bps_out_of_sample'])}        {cells}"
             )
 
+    # Regime-robustness analysis (per-year / multi-boundary / slippage).
+    if result.regime_analysis:
+
+        def _fmt(v: Optional[float]) -> str:
+            return "  n=0  " if v is None else f"{v:+.3f}"
+
+        def _fmt_rate(v: Optional[float]) -> str:
+            return " n=0" if v is None else f"{v:4.0%}"
+
+        rc = config.regime_cost_bps
+        tp_p, sl_p = config.primary_tp_pct, config.primary_sl_pct
+        print(
+            f"-- regime robustness (PRIMARY TP={tp_p:g}%/SL={sl_p:g}% @ {rc:g}bp) --"
+        )
+        for ra in result.regime_analysis:
+            years = [r["year"] for r in ra["per_year"]]
+            print(f"  [{ra['filter']}] N={ra['n_all']}  per-year expectancy@{rc:g}bp:")
+            print(
+                "    year :  "
+                + "  ".join(f"{y:>7}" for y in years)
+            )
+            print(
+                "    N    :  "
+                + "  ".join(f"{r['n_trades']:>7}" for r in ra["per_year"])
+            )
+            print(
+                "    net% :  "
+                + "  ".join(f"{_fmt(r['mean_net_return_pct']):>7}" for r in ra["per_year"])
+            )
+            print(
+                "    win  :  "
+                + "  ".join(f"{_fmt_rate(r['win_rate']):>7}" for r in ra["per_year"])
+            )
+            print("    multi-boundary OOS expectancy:")
+            for mb in ra["multi_boundary"]:
+                print(
+                    f"      frac={mb['in_sample_fraction']:.2f} "
+                    f"bdy={mb['boundary_date']} "
+                    f"N(IS/OOS)={mb['n_in_sample']}/{mb['n_out_of_sample']} "
+                    f"IS={_fmt(mb['expectancy_in_sample'])} "
+                    f"OOS={_fmt(mb['expectancy_out_of_sample'])}"
+                )
+            print("    slippage sensitivity (net@cost+slip):")
+            for sl in ra["slippage"]:
+                print(
+                    f"      slip={sl['slippage_bps']:g}bp "
+                    f"total={sl['total_cost_bps']:g}bp "
+                    f"net={_fmt(sl['expectancy_pct'])}"
+                )
+
     if args.json_out:
         out_path = Path(args.json_out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1085,6 +1403,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "grid": result.grid,
                     "baseline": result.baseline,
                     "filter_analysis": result.filter_analysis,
+                    "regime_analysis": result.regime_analysis,
                 },
                 ensure_ascii=False,
                 indent=2,
