@@ -293,6 +293,9 @@ class TradeResult:
     net_return_pct: float
 
 
+_FILL_MODES: frozenset = frozenset({"idealized", "realized", "sl_gap_stress"})
+
+
 def simulate_trade(
     prices: Sequence[float],
     *,
@@ -300,6 +303,7 @@ def simulate_trade(
     sl_pct: float,
     cost_bps: float = COST_BPS_ROUND_TRIP,
     seconds: Optional[Sequence[int]] = None,
+    fill_mode: str = "idealized",
 ) -> TradeResult:
     """Walk a forward 1s price path from entry and resolve the exit.
 
@@ -316,8 +320,28 @@ def simulate_trade(
     from the gross move.  ``seconds`` (optional) supplies the elapsed-second of
     each path element so the reported ``hold_seconds`` reflects wall-clock time;
     when absent the index is used.
+
+    ``fill_mode`` controls how the booked exit price is determined once a
+    threshold is crossed — three modes are supported:
+
+    * ``"idealized"`` (default): SL books at exactly ``sl_level``; TP books at
+      exactly ``tp_level``.  This is the original behaviour and preserves all
+      prior test results.
+    * ``"realized"``: SL books at ``min(price, sl_level)`` — the actual bar
+      price, which may gap *through* the level for a worse fill; TP books at
+      ``max(price, tp_level)`` — the actual bar price, which may overshoot for
+      a better fill.
+    * ``"sl_gap_stress"`` (most pessimistic overall): SL books at
+      ``min(price, sl_level)`` like ``"realized"`` (gap-through worst case);
+      TP books at ``tp_level`` like ``"idealized"`` (conservative, no credit
+      for overshoot).  Use this to stress-test whether the edge survives the
+      combined worst-case scenario.
     """
 
+    if fill_mode not in _FILL_MODES:
+        raise ValueError(
+            f"fill_mode must be one of {sorted(_FILL_MODES)!r}, got {fill_mode!r}"
+        )
     if tp_pct <= 0 or sl_pct <= 0:
         raise ValueError("tp_pct and sl_pct must be positive")
     if not prices:
@@ -335,6 +359,22 @@ def simulate_trade(
             return int(seconds[idx]) - int(seconds[0])
         return int(idx)
 
+    def _sl_fill(price: float) -> float:
+        # idealized: book at the exact SL level (optimistic).
+        # realized / sl_gap_stress: book at the actual crossing price (realistic
+        # worst-case: gap-through fills at the bar price, not the level).
+        if fill_mode == "idealized":
+            return sl_level
+        return min(price, sl_level)
+
+    def _tp_fill(price: float) -> float:
+        # realized: book at the actual crossing price (may be above tp_level on
+        # gap-through — a better fill for the long).
+        # idealized / sl_gap_stress: book at the exact TP level (conservative).
+        if fill_mode == "realized":
+            return max(price, tp_level)
+        return tp_level
+
     exit_idx = len(prices) - 1
     exit_price = float(prices[-1])
     exit_reason = EXIT_TIME
@@ -346,10 +386,10 @@ def simulate_trade(
         hit_sl = price <= sl_level
         hit_tp = price >= tp_level
         if hit_sl:  # conservative: SL wins a same-bar TP+SL straddle
-            exit_idx, exit_price, exit_reason = idx, sl_level, EXIT_SL
+            exit_idx, exit_price, exit_reason = idx, _sl_fill(price), EXIT_SL
             break
         if hit_tp:
-            exit_idx, exit_price, exit_reason = idx, tp_level, EXIT_TP
+            exit_idx, exit_price, exit_reason = idx, _tp_fill(price), EXIT_TP
             break
 
     gross = (exit_price / entry - 1.0) * 100.0
@@ -616,6 +656,7 @@ def expectancy_at_cost(
     tp_pct: float,
     sl_pct: float,
     cost_bps: float,
+    fill_mode: str = "idealized",
 ) -> Optional[float]:
     """Net per-trade expectancy (%) for one TP/SL at one round-trip cost.
 
@@ -623,6 +664,9 @@ def expectancy_at_cost(
     return purely additively (``net = gross - cost%``), expectancy is exactly
     ``gross_expectancy - cost_bps/100`` and STRICTLY DECREASES as cost rises —
     this monotonicity is what makes the breakeven well-defined.
+
+    ``fill_mode`` is forwarded to :func:`simulate_trade`; see that function's
+    docstring for the three supported modes.
     """
 
     if not instances:
@@ -634,6 +678,7 @@ def expectancy_at_cost(
             sl_pct=sl_pct,
             cost_bps=cost_bps,
             seconds=inst.seconds,
+            fill_mode=fill_mode,
         )
         for inst in instances
     ]
@@ -645,6 +690,7 @@ def breakeven_round_trip_bps(
     *,
     tp_pct: float,
     sl_pct: float,
+    fill_mode: str = "idealized",
 ) -> Optional[float]:
     """Round-trip cost (bps) at which net expectancy crosses 0 for this TP/SL.
 
@@ -653,10 +699,12 @@ def breakeven_round_trip_bps(
     a zero-cost trade loses (gross edge < 0) — the strategy is unprofitable at
     ANY cost.  A POSITIVE result is the maximum tolerable round-trip cost.
     Returns ``None`` for an empty set.
+
+    ``fill_mode`` is forwarded to :func:`simulate_trade`.
     """
 
     gross = expectancy_at_cost(
-        instances, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=0.0
+        instances, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=0.0, fill_mode=fill_mode
     )
     if gross is None:
         return None
@@ -669,14 +717,22 @@ def cost_sweep_table(
     tp_pct: float,
     sl_pct: float,
     cost_levels: Sequence[float] = COST_SWEEP_BPS,
+    fill_mode: str = "idealized",
 ) -> List[Dict[str, Any]]:
-    """OOS-honest cost sweep: net expectancy at each round-trip cost level."""
+    """OOS-honest cost sweep: net expectancy at each round-trip cost level.
+
+    ``fill_mode`` is forwarded to :func:`simulate_trade`.
+    """
 
     return [
         {
             "cost_bps": float(c),
             "expectancy_pct": expectancy_at_cost(
-                instances, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=float(c)
+                instances,
+                tp_pct=tp_pct,
+                sl_pct=sl_pct,
+                cost_bps=float(c),
+                fill_mode=fill_mode,
             ),
         }
         for c in cost_levels
@@ -735,12 +791,15 @@ def per_year_expectancy(
     tp_pct: float,
     sl_pct: float,
     cost_bps: float,
+    fill_mode: str = "idealized",
 ) -> List[Dict[str, Any]]:
     """Net per-trade expectancy + N + win-rate for EACH calendar year.
 
     A signal positive only in recent years (e.g. 2025-2026) is a regime
     artifact; one positive across all years is robust.  Cost enters additively
     so each year's expectancy is that year's gross edge minus ``cost_bps/100``.
+
+    ``fill_mode`` is forwarded to :func:`simulate_trade`.
     """
 
     rows: List[Dict[str, Any]] = []
@@ -752,6 +811,7 @@ def per_year_expectancy(
                 sl_pct=sl_pct,
                 cost_bps=cost_bps,
                 seconds=inst.seconds,
+                fill_mode=fill_mode,
             )
             for inst in year_insts
         ]
@@ -774,6 +834,7 @@ def multi_boundary_oos(
     sl_pct: float,
     cost_bps: float,
     fractions: Sequence[float] = (0.5, 0.6, 0.7, 0.8, 0.9),
+    fill_mode: str = "idealized",
 ) -> List[Dict[str, Any]]:
     """Sweep the IS/OOS split boundary; report OOS expectancy at each.
 
@@ -782,6 +843,8 @@ def multi_boundary_oos(
     expectancy stays positive as the boundary moves the edge is boundary-robust;
     if it is positive only for one boundary it is fragile.  Each row reports the
     boundary date, the IS/OOS instance counts, and the IS & OOS expectancy.
+
+    ``fill_mode`` is forwarded to :func:`simulate_trade`.
     """
 
     rows: List[Dict[str, Any]] = []
@@ -796,10 +859,18 @@ def multi_boundary_oos(
                 "n_in_sample": len(in_sample),
                 "n_out_of_sample": len(out_sample),
                 "expectancy_in_sample": expectancy_at_cost(
-                    in_sample, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=cost_bps
+                    in_sample,
+                    tp_pct=tp_pct,
+                    sl_pct=sl_pct,
+                    cost_bps=cost_bps,
+                    fill_mode=fill_mode,
                 ),
                 "expectancy_out_of_sample": expectancy_at_cost(
-                    out_sample, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=cost_bps
+                    out_sample,
+                    tp_pct=tp_pct,
+                    sl_pct=sl_pct,
+                    cost_bps=cost_bps,
+                    fill_mode=fill_mode,
                 ),
             }
         )
@@ -813,6 +884,7 @@ def slippage_sensitivity(
     sl_pct: float,
     base_cost_bps: float = REALISTIC_COST_BPS,
     slippage_levels: Sequence[float] = SLIPPAGE_SWEEP_BPS,
+    fill_mode: str = "idealized",
 ) -> List[Dict[str, Any]]:
     """Net expectancy at ``base_cost_bps + slippage`` for each slippage level.
 
@@ -822,6 +894,8 @@ def slippage_sensitivity(
     total — so a filter whose breakeven exceeds base+slippage survives, one
     whose breakeven sits below it dies.  Returns one row per slippage level with
     the total cost and the resulting net expectancy.
+
+    ``fill_mode`` is forwarded to :func:`simulate_trade`.
     """
 
     rows: List[Dict[str, Any]] = []
@@ -837,7 +911,11 @@ def slippage_sensitivity(
                 "base_cost_bps": float(base_cost_bps),
                 "total_cost_bps": total_cost,
                 "expectancy_pct": expectancy_at_cost(
-                    instances, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=total_cost
+                    instances,
+                    tp_pct=tp_pct,
+                    sl_pct=sl_pct,
+                    cost_bps=total_cost,
+                    fill_mode=fill_mode,
                 ),
             }
         )
@@ -852,6 +930,7 @@ def compute_regime_analysis(
     cost_bps: float = REALISTIC_COST_BPS,
     boundary_fractions: Sequence[float] = (0.5, 0.6, 0.7, 0.8, 0.9),
     slippage_levels: Sequence[float] = SLIPPAGE_SWEEP_BPS,
+    fill_mode: str = "idealized",
 ) -> List[Dict[str, Any]]:
     """Per-filter regime robustness bundle (per-year + multi-boundary + slip).
 
@@ -860,6 +939,8 @@ def compute_regime_analysis(
     IS/OOS boundary is swept, and (c) the net expectancy as slippage is added to
     that cost.  This is the decisive regime-robustness + slippage-survivability
     evidence; it re-slices the SAME filtered instances, discovering no new edge.
+
+    ``fill_mode`` is forwarded to :func:`simulate_trade` via all sub-analyses.
     """
 
     out: List[Dict[str, Any]] = []
@@ -873,7 +954,11 @@ def compute_regime_analysis(
                 "cost_bps": float(cost_bps),
                 "n_all": len(kept),
                 "per_year": per_year_expectancy(
-                    kept, tp_pct=tp_pct, sl_pct=sl_pct, cost_bps=cost_bps
+                    kept,
+                    tp_pct=tp_pct,
+                    sl_pct=sl_pct,
+                    cost_bps=cost_bps,
+                    fill_mode=fill_mode,
                 ),
                 "multi_boundary": multi_boundary_oos(
                     kept,
@@ -881,6 +966,7 @@ def compute_regime_analysis(
                     sl_pct=sl_pct,
                     cost_bps=cost_bps,
                     fractions=boundary_fractions,
+                    fill_mode=fill_mode,
                 ),
                 "slippage": slippage_sensitivity(
                     kept,
@@ -888,6 +974,7 @@ def compute_regime_analysis(
                     sl_pct=sl_pct,
                     base_cost_bps=cost_bps,
                     slippage_levels=slippage_levels,
+                    fill_mode=fill_mode,
                 ),
             }
         )
@@ -917,6 +1004,10 @@ class GapUpBacktestConfig:
     regime_cost_bps: float = REALISTIC_COST_BPS
     boundary_fractions: Tuple[float, ...] = (0.5, 0.6, 0.7, 0.8, 0.9)
     slippage_levels: Tuple[float, ...] = SLIPPAGE_SWEEP_BPS
+    # TP/SL fill model: "idealized" preserves original behavior (exact levels);
+    # "realized" uses actual crossing price; "sl_gap_stress" is the most
+    # pessimistic (gap-through SL + conservative TP).  Default unchanged.
+    fill_mode: str = "idealized"
 
 
 @dataclass
@@ -1023,6 +1114,7 @@ def run_gap_up_backtest(config: GapUpBacktestConfig) -> GapUpBacktestResult:
                 sl_pct=sl,
                 cost_bps=config.cost_bps,
                 seconds=inst.seconds,
+                fill_mode=config.fill_mode,
             )
             for inst in insts
         ]
@@ -1074,16 +1166,24 @@ def run_gap_up_backtest(config: GapUpBacktestConfig) -> GapUpBacktestResult:
                 "primary_tp_pct": tp_p,
                 "primary_sl_pct": sl_p,
                 "breakeven_bps_in_sample": breakeven_round_trip_bps(
-                    is_f, tp_pct=tp_p, sl_pct=sl_p
+                    is_f, tp_pct=tp_p, sl_pct=sl_p, fill_mode=config.fill_mode
                 ),
                 "breakeven_bps_out_of_sample": breakeven_round_trip_bps(
-                    oos_f, tp_pct=tp_p, sl_pct=sl_p
+                    oos_f, tp_pct=tp_p, sl_pct=sl_p, fill_mode=config.fill_mode
                 ),
                 "sweep_in_sample": cost_sweep_table(
-                    is_f, tp_pct=tp_p, sl_pct=sl_p, cost_levels=config.cost_sweep_bps
+                    is_f,
+                    tp_pct=tp_p,
+                    sl_pct=sl_p,
+                    cost_levels=config.cost_sweep_bps,
+                    fill_mode=config.fill_mode,
                 ),
                 "sweep_out_of_sample": cost_sweep_table(
-                    oos_f, tp_pct=tp_p, sl_pct=sl_p, cost_levels=config.cost_sweep_bps
+                    oos_f,
+                    tp_pct=tp_p,
+                    sl_pct=sl_p,
+                    cost_levels=config.cost_sweep_bps,
+                    fill_mode=config.fill_mode,
                 ),
             }
         )
@@ -1098,6 +1198,7 @@ def run_gap_up_backtest(config: GapUpBacktestConfig) -> GapUpBacktestResult:
             cost_bps=config.regime_cost_bps,
             boundary_fractions=config.boundary_fractions,
             slippage_levels=config.slippage_levels,
+            fill_mode=config.fill_mode,
         )
 
     if config.artifacts_dir:
@@ -1146,6 +1247,7 @@ def _write_artifacts(
                     sl_pct=sl,
                     cost_bps=config.cost_bps,
                     seconds=inst.seconds,
+                    fill_mode=config.fill_mode,
                 )
                 key = f"tp{tp:g}_sl{sl:g}"
                 rec[f"{key}_reason"] = tr.exit_reason
@@ -1166,6 +1268,7 @@ def _write_artifacts(
         "date_max": result.date_max,
         "boundary_date": result.boundary_date,
         "cost_bps": config.cost_bps,
+        "fill_mode": config.fill_mode,
         "entry_threshold": config.entry_threshold,
         "tp_grid": list(config.tp_grid),
         "sl_grid": list(config.sl_grid),
@@ -1190,6 +1293,7 @@ def _write_artifacts(
                     "date_min": result.date_min,
                     "date_max": result.date_max,
                     "regime_cost_bps": config.regime_cost_bps,
+                    "fill_mode": config.fill_mode,
                     "primary_tp_pct": config.primary_tp_pct,
                     "primary_sl_pct": config.primary_sl_pct,
                     "boundary_fractions": list(config.boundary_fractions),
@@ -1264,6 +1368,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=REALISTIC_COST_BPS,
         help="Realistic round-trip cost the regime analysis evaluates at (bp).",
     )
+    parser.add_argument(
+        "--fill-mode",
+        choices=["idealized", "realized", "sl_gap_stress"],
+        default="idealized",
+        help=(
+            "TP/SL fill model: idealized (exact levels, default), realized "
+            "(actual crossing price), sl_gap_stress (TP conservative + SL "
+            "gap-through worst-case)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     config = GapUpBacktestConfig(
@@ -1274,6 +1388,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         artifacts_dir=args.artifacts_dir,
         regime_analysis=args.regime_analysis,
         regime_cost_bps=args.regime_cost_bps,
+        fill_mode=args.fill_mode,
     )
     result = run_gap_up_backtest(config)
 

@@ -520,3 +520,125 @@ def test_compute_regime_analysis_bundles_all_filters():
     # Defaults are exported for the CLI / doc.
     assert REALISTIC_COST_BPS == 18.0
     assert SLIPPAGE_SWEEP_BPS == (0.0, 5.0, 10.0, 20.0)
+
+
+# ---------------------------------------------------------------------------
+# fill_mode tests: idealized (default), realized, sl_gap_stress.
+# ---------------------------------------------------------------------------
+
+def test_fill_mode_default_is_idealized():
+    # SL-hit path: entry=100, next bar gaps to 97 (below SL at 99 for sl_pct=1).
+    # Both omitting fill_mode and passing fill_mode="idealized" must give the
+    # same exit_price and net_return_pct.
+    sl_prices = [100.0, 97.0, 100.0]
+    r_default = simulate_trade(sl_prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0)
+    r_explicit = simulate_trade(
+        sl_prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0, fill_mode="idealized"
+    )
+    assert r_default.exit_price == r_explicit.exit_price
+    assert r_default.net_return_pct == r_explicit.net_return_pct
+    assert r_default.exit_reason == EXIT_SL
+
+    # TP-hit path: entry=100, next bar jumps to 106 (above TP at 105 for tp_pct=5).
+    tp_prices = [100.0, 106.0, 90.0]
+    r_default_tp = simulate_trade(tp_prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0)
+    r_explicit_tp = simulate_trade(
+        tp_prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0, fill_mode="idealized"
+    )
+    assert r_default_tp.exit_price == r_explicit_tp.exit_price
+    assert r_default_tp.net_return_pct == r_explicit_tp.net_return_pct
+    assert r_default_tp.exit_reason == EXIT_TP
+
+
+def test_sl_gap_through_realized_worse():
+    # entry=100, sl_pct=1 -> SL level=99.
+    # Next bar gaps to 94 (well below SL level).
+    # idealized: exit_price=99 (exact level), gross=-1%.
+    # realized:  exit_price=94 (actual bar price), gross=-6%.
+    # sl_gap_stress: exit_price=94 (same SL logic as realized), gross=-6%.
+    prices = [100.0, 94.0, 100.0]
+    r_ideal = simulate_trade(prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0,
+                             fill_mode="idealized")
+    r_real = simulate_trade(prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0,
+                            fill_mode="realized")
+    r_stress = simulate_trade(prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0,
+                              fill_mode="sl_gap_stress")
+
+    # All three must recognise an SL exit.
+    assert r_ideal.exit_reason == EXIT_SL
+    assert r_real.exit_reason == EXIT_SL
+    assert r_stress.exit_reason == EXIT_SL
+
+    # idealized books at the level; realized and sl_gap_stress book at bar price.
+    assert _approx(r_ideal.exit_price, 99.0)
+    assert _approx(r_real.exit_price, 94.0)
+    assert _approx(r_stress.exit_price, 94.0)
+
+    # Net return ordering: idealized is best (least negative), others are worse.
+    assert r_ideal.net_return_pct > r_real.net_return_pct
+    assert _approx(r_real.net_return_pct, r_stress.net_return_pct)
+
+
+def test_tp_overshoot_realized_better():
+    # entry=100, tp_pct=5 -> TP level=105.
+    # Next bar jumps to 108 (overshoots TP).
+    # realized:      exit_price=108, gross=+8%.
+    # idealized:     exit_price=105, gross=+5%.
+    # sl_gap_stress: exit_price=105 (TP conservative), gross=+5%.
+    prices = [100.0, 108.0, 90.0]
+    r_ideal = simulate_trade(prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0,
+                             fill_mode="idealized")
+    r_real = simulate_trade(prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0,
+                            fill_mode="realized")
+    r_stress = simulate_trade(prices, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0,
+                              fill_mode="sl_gap_stress")
+
+    assert r_ideal.exit_reason == EXIT_TP
+    assert r_real.exit_reason == EXIT_TP
+    assert r_stress.exit_reason == EXIT_TP
+
+    assert _approx(r_real.exit_price, 108.0)
+    assert _approx(r_ideal.exit_price, 105.0)
+    assert _approx(r_stress.exit_price, 105.0)
+
+    # realized gets a better fill; idealized and sl_gap_stress are equal (conservative).
+    assert r_real.net_return_pct > r_ideal.net_return_pct
+    assert _approx(r_ideal.net_return_pct, r_stress.net_return_pct)
+
+
+def test_invalid_fill_mode_raises():
+    with pytest.raises(ValueError, match="fill_mode"):
+        simulate_trade([100.0, 97.0], tp_pct=5.0, sl_pct=1.0, fill_mode="bogus")
+
+
+def test_expectancy_at_cost_threads_fill_mode():
+    # Build two instances: one has an SL gap-through (bar gaps well below SL),
+    # one time-exits safely inside the band.
+    # For the gap-through SL instance:
+    #   idealized books sl_level (less loss); sl_gap_stress books bar price (more loss).
+    # So expectancy under sl_gap_stress <= idealized.
+    gap_through = GapUpInstance(
+        symbol="GAP",
+        session="20240101",
+        entry_change_rate=3.0,
+        entry_price=100.0,
+        prices=(100.0, 90.0),   # bar gaps to 90; SL at 99 for sl_pct=1
+        seconds=(32400, 32401),
+    )
+    safe = GapUpInstance(
+        symbol="SAFE",
+        session="20240102",
+        entry_change_rate=3.0,
+        entry_price=100.0,
+        prices=(100.0, 101.0),  # time-exit inside band
+        seconds=(32400, 32401),
+    )
+    instances = [gap_through, safe]
+    exp_ideal = expectancy_at_cost(
+        instances, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0, fill_mode="idealized"
+    )
+    exp_stress = expectancy_at_cost(
+        instances, tp_pct=5.0, sl_pct=1.0, cost_bps=0.0, fill_mode="sl_gap_stress"
+    )
+    assert exp_ideal is not None and exp_stress is not None
+    assert exp_stress <= exp_ideal
