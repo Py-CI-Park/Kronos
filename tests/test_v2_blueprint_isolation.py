@@ -1,61 +1,87 @@
-"""Verify P6 cutover: `/` serves v2, `/v1/*` serves legacy, `/v2` redirects."""
+﻿"""Verify official dashboard cutover preserves legacy archive and API routes."""
+from urllib.parse import urlparse
+
 from webui.app import app
 
 
-def test_root_serves_v2_after_cutover():
-    """P6: 루트 `/` 는 v2 SPA shell 을 서빙해야 한다."""
+OFFICIAL_SHELL_MARKER = "kronos-dashboard-shell"
+LEGACY_PUBLIC_MARKERS = (
+    "kronos-v2-version",
+    "p1-ssr",
+    "p1-5-spa",
+)
+
+
+def _location_path(location: str | None) -> str:
+    assert location is not None
+    parsed = urlparse(location)
+    return parsed.path or "/"
+
+
+def _assert_official_shell(body: str) -> None:
+    assert OFFICIAL_SHELL_MARKER in body
+    for marker in LEGACY_PUBLIC_MARKERS:
+        assert marker not in body
+
+
+def test_root_serves_official_dashboard_after_cutover():
     client = app.test_client()
-    resp = client.get('/')
+
+    resp = client.get("/")
+
     assert resp.status_code == 200, "/ broke after cutover"
-    body = resp.data.decode('utf-8')
-    # v2 SSR meta marker 가 노출되어야 한다 (Jinja shell or dist 둘 다 포함)
-    assert 'kronos-v2-shell' in body
+    _assert_official_shell(resp.data.decode("utf-8"))
 
 
-
-def test_training_bookmark_serves_v2_shell():
-    """Operator bookmarks for the live-training dashboard should not 404."""
+def test_training_bookmarks_serve_official_dashboard_shell():
     client = app.test_client()
-    for path in ['/training', '/dashboard']:
+
+    for path in ("/training", "/dashboard"):
         resp = client.get(path)
         assert resp.status_code == 200, f"{path} broke"
-        assert 'kronos-v2-shell' in resp.data.decode('utf-8')
+        _assert_official_shell(resp.data.decode("utf-8"))
 
 
 def test_v1_legacy_routes_still_available():
-    """P6: 기존 v1 페이지 3종은 /v1/ prefix 로 보존 (6개월 archive)."""
     client = app.test_client()
-    for path in ['/v1/', '/v1/training', '/v1/stom']:
+
+    for path in ("/v1/", "/v1/training", "/v1/stom"):
         resp = client.get(path)
         assert resp.status_code == 200, f"{path} broke"
 
 
-def test_v2_legacy_url_redirects_to_root():
-    """기존 /v2 북마크는 / 로 301 영구 리다이렉트."""
+def test_versioned_dashboard_urls_redirect_to_canonical_routes():
     client = app.test_client()
-    resp = client.get('/v2', follow_redirects=False)
-    assert resp.status_code == 301
-    assert resp.headers.get('Location', '').rstrip('/') in ('', 'http://localhost')
+
+    for path in ("/v2", "/v2/"):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 301
+        assert _location_path(resp.headers.get("Location")) == "/"
+
+    for path in ("/rl-lab", "/v2/rl-trading", "/v2/rl-lab"):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 301
+        assert _location_path(resp.headers.get("Location")) == "/rl"
 
 
 def test_api_routes_unchanged():
-    """모든 /api/* 라우트는 cutover 영향 없음."""
     client = app.test_client()
-    for path in [
-        '/api/training/status',
-        '/api/training/history',
-        '/api/training/artifacts',
-        '/api/training/gpu',
-        '/api/training/system',
-        '/api/training/runs',
-    ]:
+
+    for path in (
+        "/api/training/status",
+        "/api/training/history",
+        "/api/training/artifacts",
+        "/api/training/gpu",
+        "/api/training/system",
+        "/api/training/runs",
+        "/api/rl/runs",
+    ):
         resp = client.get(path)
         assert resp.status_code == 200, f"{path} broke"
 
 
 def test_no_global_catchall():
-    """글로벌 /<path:p> 없이 v1/v2/api/static 만 매칭됨을 확인."""
-    rules = [str(r) for r in app.url_map.iter_rules()]
-    # 글로벌 catch-all 없음
-    assert '/<path:subpath>' not in rules
-    assert not any(r == '/<path:p>' for r in rules)
+    rules = [str(rule) for rule in app.url_map.iter_rules()]
+
+    assert "/<path:subpath>" not in rules
+    assert not any(rule == "/<path:p>" for rule in rules)

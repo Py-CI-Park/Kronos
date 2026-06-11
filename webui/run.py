@@ -75,7 +75,7 @@ def main():
     # Start server
     try:
         from app import app
-        host = os.environ.get("KRONOS_WEBUI_HOST", "0.0.0.0")
+        host = os.environ.get("KRONOS_WEBUI_HOST", "127.0.0.1")
         port = int(os.environ.get("KRONOS_WEBUI_PORT", os.environ.get("PORT", "7070")))
         open_browser = os.environ.get("KRONOS_WEBUI_OPEN_BROWSER", "1").lower() not in {"0", "false", "no", "off"}
         # Debug stays available, but the file-watch reloader is OFF by default:

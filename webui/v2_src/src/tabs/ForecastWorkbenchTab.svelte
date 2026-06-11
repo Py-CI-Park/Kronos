@@ -215,7 +215,7 @@
 
 <section class="page-hero">
   <div class="row" style="gap:10px;flex-wrap:wrap">
-    <span class="text-eyebrow">P3 · 본격</span>
+    <span class="text-eyebrow">본격</span>
     <span class="pill {modelAvailable === true ? 'success' : modelAvailable === false ? 'warn' : ''}">
       <span class="dot"></span>
       {modelAvailable === true ? '모델 라이브러리 사용 가능' : modelAvailable === false ? '모델 라이브러리 미가용 (시뮬레이션)' : '확인 중'}

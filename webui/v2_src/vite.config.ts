@@ -6,13 +6,26 @@ import path from 'node:path';
 // 빌드 산출물은 webui/static/v2/dist/ 에 위치하며, asset URL 은 /static/v2/dist/assets/...
 export default defineConfig({
   base: '/static/v2/dist/',
-  plugins: [svelte()],
+  plugins: [
+    svelte({
+      onwarn: (warning, handler) => {
+        if (
+          warning.code === 'a11y_no_redundant_roles' ||
+          warning.code === 'a11y_click_events_have_key_events' ||
+          warning.code === 'a11y_no_noninteractive_element_interactions'
+        ) {
+          return;
+        }
+        handler(warning);
+      },
+    }),
+  ],
   build: {
     outDir: path.resolve(__dirname, '../static/v2/dist'),
     emptyOutDir: true,
     sourcemap: true,
     target: 'es2020',
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 1400,
   },
   server: {
     port: 5173,

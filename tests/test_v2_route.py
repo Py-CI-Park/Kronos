@@ -1,29 +1,76 @@
-"""Verify P6 cutover: `/` serves SSR markers in either P1 (Jinja) or P1.5 (Vite dist) mode."""
+﻿"""Verify official dashboard canonical routes and legacy redirects."""
+from urllib.parse import urlparse
+
 from webui.app import app
 
 
-VALID_VERSIONS = {'p1-ssr', 'p1-5-spa'}
+OFFICIAL_SHELL_MARKER = "kronos-dashboard-shell"
+LEGACY_PUBLIC_MARKERS = (
+    "kronos-v2-version",
+    "p1-ssr",
+    "p1-5-spa",
+)
 
 
-def test_root_returns_200_and_ssr_markers():
-    """P6: `/` 는 v2 SPA shell 을 서빙하고 SSR meta marker 가 포함되어야 한다."""
+def _location_path(location: str | None) -> str:
+    assert location is not None
+    parsed = urlparse(location)
+    return parsed.path or "/"
+
+
+def _assert_official_shell(body: str) -> None:
+    assert OFFICIAL_SHELL_MARKER in body
+    for marker in LEGACY_PUBLIC_MARKERS:
+        assert marker not in body
+
+
+def test_root_returns_official_dashboard_shell():
     client = app.test_client()
-    resp = client.get('/')
+
+    resp = client.get("/")
+
     assert resp.status_code == 200
-    body = resp.data.decode('utf-8')
-
-    # B-2: SSR marker meta tags 가 두 모드 모두에서 동일하게 노출되어야 한다.
-    assert '<meta name="kronos-v2-shell"' in body
-    assert 'kronos-v2-version' in body
-    # version 값은 p1-ssr (P1 Jinja) 또는 p1-5-spa (P1.5 dist) 중 하나
-    assert any(f'content="{v}"' in body for v in VALID_VERSIONS), \
-        f"version meta 가 {VALID_VERSIONS} 중 하나여야 함"
+    _assert_official_shell(resp.data.decode("utf-8"))
 
 
-def test_v2_legacy_url_still_routes():
-    """기존 /v2 북마크는 / 로 영구 리다이렉트되어 깨지지 않아야 한다."""
+def test_training_bookmarks_return_official_shell():
     client = app.test_client()
-    resp = client.get('/v2', follow_redirects=True)
+
+    for path in ("/training", "/dashboard"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} broke"
+        _assert_official_shell(resp.data.decode("utf-8"))
+
+
+def test_rl_canonical_route_returns_official_shell():
+    client = app.test_client()
+
+    resp = client.get("/rl")
+
     assert resp.status_code == 200
-    body = resp.data.decode('utf-8')
-    assert '<meta name="kronos-v2-shell"' in body
+    _assert_official_shell(resp.data.decode("utf-8"))
+
+
+def test_legacy_v2_routes_redirect_to_canonical_routes():
+    client = app.test_client()
+
+    main_routes = ("/v2", "/v2/")
+    for path in main_routes:
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 301, f"{path} should redirect"
+        assert _location_path(resp.headers.get("Location")) == "/"
+
+    rl_routes = ("/rl-lab", "/v2/rl-trading", "/v2/rl-lab")
+    for path in rl_routes:
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 301, f"{path} should redirect"
+        assert _location_path(resp.headers.get("Location")) == "/rl"
+
+
+def test_unknown_v2_subpath_redirects_to_root_without_catchall():
+    client = app.test_client()
+
+    resp = client.get("/v2/unknown", follow_redirects=False)
+
+    assert resp.status_code == 301
+    assert _location_path(resp.headers.get("Location")) == "/"

@@ -1444,4 +1444,7 @@ if __name__ == '__main__':
     print("Kronos 웹 UI 시작 중...")
     print("안내: Kronos 모델은 /api/load-model 호출 시 지연 import 됩니다")
 
-    app.run(debug=True, host='0.0.0.0', port=7070)
+    host = os.environ.get("KRONOS_WEBUI_HOST", "127.0.0.1")
+    port = int(os.environ.get("KRONOS_WEBUI_PORT", os.environ.get("PORT", "7070")))
+    debug_mode = os.environ.get("KRONOS_WEBUI_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
+    app.run(debug=debug_mode, host=host, port=port)

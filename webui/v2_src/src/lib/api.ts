@@ -1,275 +1,152 @@
-// /api/training/* 엔드포인트 fetch 헬퍼.
-// readonly only — 새 endpoint 도입 0건, 기존 응답 구조만 사용.
+import { fetchJson } from './http';
+import { rlApi } from './rlApi';
 
 export interface TrainingStatus {
-  run_name?: string;
-  status: string;
-  overall_percent?: number;
-  stage_count?: number;
-  stages: TrainingStage[];
-  latest_stage?: TrainingStage;
-  dataset_summary?: DatasetSummary;
-  readiness?: {
-    level: 'waiting' | 'training' | 'ready';
-    label: string;
-    message: string;
-    predictor_started?: boolean;
-    predictor_complete?: boolean;
-    checkpoint_ready?: boolean;
+  readonly run_name?: string;
+  readonly status: string;
+  readonly overall_percent?: number;
+  readonly stage_count?: number;
+  readonly stages: readonly TrainingStage[];
+  readonly latest_stage?: TrainingStage;
+  readonly dataset_summary?: DatasetSummary;
+  readonly readiness?: {
+    readonly level: 'waiting' | 'training' | 'ready';
+    readonly label: string;
+    readonly message: string;
+    readonly predictor_started?: boolean;
+    readonly predictor_complete?: boolean;
+    readonly checkpoint_ready?: boolean;
   };
-  updated_at?: string;
-  default_training_refresh_seconds?: number;
-  generated_at?: string;
+  readonly updated_at?: string;
+  readonly default_training_refresh_seconds?: number;
+  readonly generated_at?: string;
 }
 
 export interface DatasetSplitSummary {
-  name: 'train' | 'val' | 'test' | string;
-  sessions?: number;
-  first_session?: string | null;
-  last_session?: string | null;
-  groups?: number | null;
-  rows?: number | null;
-  possible_samples?: number | null;
-  current_target_samples?: number | null;
+  readonly name: 'train' | 'val' | 'test' | string;
+  readonly sessions?: number;
+  readonly first_session?: string | null;
+  readonly last_session?: string | null;
+  readonly groups?: number | null;
+  readonly rows?: number | null;
+  readonly possible_samples?: number | null;
+  readonly current_target_samples?: number | null;
 }
 
 export interface DatasetSummary {
-  available: boolean;
-  dataset_dir?: string | null;
-  report_path?: string | null;
-  source_db?: string | null;
-  freq?: string | null;
-  regularize_1s?: boolean;
-  price_mode?: string | null;
-  horizon_seconds?: number | null;
-  lookback_window?: number | null;
-  predict_window?: number | null;
-  sample_window?: number | null;
-  features?: string[];
-  time_features?: string[];
-  range?: {
-    session_start?: string | null;
-    session_end?: string | null;
-    actual_start?: string | null;
-    actual_end?: string | null;
-    time_start?: string | null;
-    time_end?: string | null;
+  readonly available: boolean;
+  readonly dataset_dir?: string | null;
+  readonly report_path?: string | null;
+  readonly source_db?: string | null;
+  readonly freq?: string | null;
+  readonly regularize_1s?: boolean;
+  readonly price_mode?: string | null;
+  readonly horizon_seconds?: number | null;
+  readonly lookback_window?: number | null;
+  readonly predict_window?: number | null;
+  readonly sample_window?: number | null;
+  readonly features?: readonly string[];
+  readonly time_features?: readonly string[];
+  readonly range?: Record<string, string | null | undefined>;
+  readonly counts?: {
+    readonly selected_table_count?: string | number | null;
+    readonly table_count?: number | null;
+    readonly tables_with_rows?: number | null;
+    readonly tables_zero_rows?: number | null;
+    readonly exported_group_count?: number | null;
+    readonly exported_row_count?: number | null;
+    readonly regularized_groups?: number | null;
+    readonly regularized_inserted_rows?: number | null;
   };
-  counts?: {
-    selected_table_count?: string | number | null;
-    table_count?: number | null;
-    tables_with_rows?: number | null;
-    tables_zero_rows?: number | null;
-    exported_group_count?: number | null;
-    exported_row_count?: number | null;
-    regularized_groups?: number | null;
-    regularized_inserted_rows?: number | null;
-  };
-  splits?: Record<string, DatasetSplitSummary>;
-  current_targets?: {
-    train_samples?: number | null;
-    val_samples?: number | null;
-  };
-  warnings?: string[];
-  message?: string;
+  readonly splits?: Record<string, DatasetSplitSummary>;
+  readonly current_targets?: Record<string, number | null | undefined>;
+  readonly warnings?: readonly string[];
+  readonly message?: string;
 }
 
 export interface TrainingStage {
-  train_stage: string;
-  stage_index?: number;
-  stage_count?: number;
-  step?: number;
-  total_steps?: number;
-  overall_percent?: number;
-  stage_percent?: number;
-  eta_seconds?: number;
-  samples_per_second?: number;
-  last_loss?: number | null;
-  last_validation_loss?: number | null;
-  phase?: string | null;
-  validation_step?: number | null;
-  validation_total_steps?: number | null;
-  validation_samples?: number | null;
-  validation_fraction?: number | null;
-  epoch?: number | null;
-  epochs?: number | null;
-  status?: string;
-  updated_at?: string;
+  readonly train_stage: string;
+  readonly stage_index?: number;
+  readonly stage_count?: number;
+  readonly step?: number;
+  readonly total_steps?: number;
+  readonly overall_percent?: number;
+  readonly stage_percent?: number;
+  readonly eta_seconds?: number;
+  readonly samples_per_second?: number;
+  readonly last_loss?: number | null;
+  readonly last_validation_loss?: number | null;
+  readonly phase?: string | null;
+  readonly validation_step?: number | null;
+  readonly validation_total_steps?: number | null;
+  readonly validation_samples?: number | null;
+  readonly validation_fraction?: number | null;
+  readonly epoch?: number | null;
+  readonly epochs?: number | null;
+  readonly status?: string;
+  readonly updated_at?: string;
 }
 
 export interface HistoryPoint {
-  step: number;
-  loss: number;
-  learning_rate?: number;
-  epoch?: number;
-  epochs?: number;
+  readonly step: number;
+  readonly loss: number;
+  readonly learning_rate?: number;
+  readonly epoch?: number;
+  readonly epochs?: number;
 }
 
 export interface HistoryResponse {
-  points: HistoryPoint[];
-  latest_point?: HistoryPoint & { line?: string };
-  latest_progress?: {
-    eta_seconds?: number;
-    samples_per_second?: number;
-    last_loss?: number;
-    step?: number;
-    overall_percent?: number;
-    stage_percent?: number;
-    updated_at?: string;
-  };
-  run_name?: string;
-  stage?: string;
-  source_log_path?: string;
+  readonly points: readonly HistoryPoint[];
+  readonly latest_point?: HistoryPoint & { readonly line?: string };
+  readonly latest_progress?: Record<string, string | number | null | undefined>;
+  readonly run_name?: string;
+  readonly stage?: string;
+  readonly source_log_path?: string;
 }
 
 export interface ArtifactsResponse {
-  checkpoint_file_count: number;
-  model_weight_file_count: number;
-  checkpoint_ready: boolean;
-  predictor_started: boolean;
-  label: string;
-  message: string;
-  recent_checkpoint_files: Array<{ path?: string; name?: string } | string>;
-  recent_model_weight_files: Array<{ path?: string; name?: string } | string>;
-  stages?: {
-    tokenizer?: { checkpoint_ready: boolean };
-    predictor?: { checkpoint_ready: boolean };
-  };
-  run_name?: string;
+  readonly checkpoint_file_count: number;
+  readonly model_weight_file_count: number;
+  readonly checkpoint_ready: boolean;
+  readonly predictor_started: boolean;
+  readonly label: string;
+  readonly message: string;
+  readonly recent_checkpoint_files: readonly ({ readonly path?: string; readonly name?: string } | string)[];
+  readonly recent_model_weight_files: readonly ({ readonly path?: string; readonly name?: string } | string)[];
+  readonly stages?: Record<string, { readonly checkpoint_ready: boolean }>;
+  readonly run_name?: string;
 }
 
 export interface GpuResponse {
-  gpus: Array<{
-    name?: string;
-    utilization_gpu_percent?: number;
-    temperature_c?: number;
-    memory_used_mib?: number;
-    memory_total_mib?: number;
-    memory_used_percent?: number;
-    power_limit_watts?: number;
-    power_draw_watts?: number;
-    power_draw_available?: boolean;
-  }>;
-  total_memory_used_percent?: number;
-  generated_at?: string;
-  available: boolean;
+  readonly gpus: readonly {
+    readonly name?: string;
+    readonly utilization_gpu_percent?: number;
+    readonly temperature_c?: number;
+    readonly memory_used_percent?: number;
+    readonly memory_used_mib?: number;
+    readonly memory_total_mib?: number;
+    readonly power_draw_available?: boolean;
+    readonly power_draw_watts?: number;
+    readonly power_limit_watts?: number;
+  }[];
+  readonly total_memory_used_percent?: number;
+  readonly generated_at?: string;
+  readonly available: boolean;
 }
 
 export interface SystemResponse {
-  available: boolean;
-  cpu?: {
-    utilization_percent?: number | null;
-    temperature_c?: number | null;
-    temperature_limit_c?: number | null;
-    temperature_percent?: number | null;
-    temperature_available?: boolean;
-    temperature_source?: string | null;
-    utilization_source?: string | null;
+  readonly available: boolean;
+  readonly cpu?: {
+    readonly utilization_percent?: number | null;
+    readonly temperature_c?: number | null;
+    readonly temperature_percent?: number | null;
   };
-  memory?: {
-    used_percent?: number | null;
-    total_bytes?: number | null;
-    available_bytes?: number | null;
+  readonly memory?: {
+    readonly used_percent?: number | null;
+    readonly total_bytes?: number | null;
+    readonly available_bytes?: number | null;
   };
-  generated_at?: string;
-}
-
-export interface RlRunRecord {
-  name: string;
-  artifact_type:
-    | 'contextual_bandit'
-    | 'sb3_smoke'
-    | 'cost_gate'
-    | 'baseline'
-    | 'episode_manifest'
-    | 'portfolio_paper'
-    | string;
-  modified_at?: string;
-  summary?: Record<string, any>;
-  policies?: string[];
-}
-
-export interface RlRunsResponse {
-  runs: RlRunRecord[];
-}
-
-export interface RlRunDetail extends RlRunRecord {
-  artifacts?: Array<{
-    name: string;
-    suffix?: string;
-    size_bytes?: number;
-    modified_at?: string;
-  }>;
-  detail?: Record<string, any>;
-  model?: {
-    model_type?: string;
-    feature_columns?: string[];
-    train_summary?: Record<string, any>;
-  };
-}
-
-export interface RlTableResponse {
-  run?: string;
-  artifact_type?: string;
-  table?: string;
-  policy?: string | null;
-  source_file?: string;
-  rows: Array<Record<string, any>>;
-  row_count?: number;
-  truncated?: boolean;
-  policies?: string[];
-}
-
-
-export interface RlLiveEventsResponse {
-  run?: string;
-  artifact_type?: string;
-  table?: string;
-  source_file?: string | null;
-  rows: Array<Record<string, any>>;
-  row_count?: number;
-  truncated?: boolean;
-  message?: string;
-}
-
-export interface RlCostGateResponse {
-  run?: string;
-  artifact_type?: string;
-  summary?: Record<string, any>;
-  gate?: RlTableResponse;
-  scenario?: RlTableResponse;
-  rolling?: RlTableResponse;
-}
-
-export interface RlProgressCriterion {
-  label: string;
-  passed: boolean;
-  evidence?: string;
-}
-
-export interface RlProgressPage {
-  page: string;
-  progress_pct: number;
-  status: 'complete' | 'in_progress' | string;
-  criteria?: RlProgressCriterion[];
-}
-
-export interface RlProgressResponse {
-  mode?: string;
-  overall_progress_pct: number;
-  status: 'complete' | 'in_progress' | string;
-  pages: RlProgressPage[];
-  evidence?: Record<string, any>;
-}
-
-async function fetchJson<T>(url: string): Promise<T | null> {
-  try {
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    return (await r.json()) as T;
-  } catch {
-    return null;
-  }
+  readonly generated_at?: string;
 }
 
 export const api = {
@@ -278,36 +155,5 @@ export const api = {
   artifacts: () => fetchJson<ArtifactsResponse>('/api/training/artifacts'),
   gpu: () => fetchJson<GpuResponse>('/api/training/gpu'),
   system: () => fetchJson<SystemResponse>('/api/training/system'),
-  rlRuns: (limit: number = 20) => fetchJson<RlRunsResponse>(`/api/rl/runs?limit=${limit}`),
-  rlProgress: () => fetchJson<RlProgressResponse>('/api/rl/progress'),
-  rlRun: (run: string) => fetchJson<RlRunDetail>(`/api/rl/runs/${encodeURIComponent(run)}`),
-  rlActions: (run: string, limit: number = 500) =>
-    fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/actions?limit=${limit}`),
-  rlTrades: (run: string, limit: number = 500) =>
-    fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/trades?limit=${limit}`),
-  rlEquity: (run: string, limit: number = 500) =>
-    fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/equity?limit=${limit}`),
-  rlEpisodes: (run: string, limit: number = 500) =>
-    fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/episodes?limit=${limit}`),
-  rlEvents: (run: string, limit: number = 500) =>
-    fetchJson<RlLiveEventsResponse>(`/api/rl/runs/${encodeURIComponent(run)}/events?limit=${limit}`),
-  rlTable: (run: string, table: string, limit: number = 500) =>
-    fetchJson<RlTableResponse>(
-      `/api/rl/runs/${encodeURIComponent(run)}/table/${encodeURIComponent(table)}?limit=${limit}`
-    ),
-  rlCostGate: (run: string, limit: number = 500) =>
-    fetchJson<RlCostGateResponse>(`/api/rl/runs/${encodeURIComponent(run)}/cost-gate?limit=${limit}`),
-  // Portfolio (Page 10/11/12) tables are served through the existing /table/<name> route.
-  rlNav: (run: string, limit: number = 500) =>
-    fetchJson<RlTableResponse>(
-      `/api/rl/runs/${encodeURIComponent(run)}/table/nav?limit=${limit}`
-    ),
-  rlDecisions: (run: string, limit: number = 500) =>
-    fetchJson<RlTableResponse>(
-      `/api/rl/runs/${encodeURIComponent(run)}/table/decisions?limit=${limit}`
-    ),
-  rlPortfolioFolds: (run: string, limit: number = 500) =>
-    fetchJson<RlTableResponse>(
-      `/api/rl/runs/${encodeURIComponent(run)}/table/portfolio_folds?limit=${limit}`
-    ),
+  ...rlApi,
 };

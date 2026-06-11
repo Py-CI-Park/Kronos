@@ -1,4 +1,4 @@
-// 디자인 시스템 v2 — inline SVG icons (Lucide 풍, 24x24, stroke 1.7)
+// 공식 대시보드 디자인 시스템 — inline SVG icons (Lucide 풍, 24x24, stroke 1.7)
 // 이모지 사용 금지 (anti-AI-slop 가이드)
 
 export type IconName =

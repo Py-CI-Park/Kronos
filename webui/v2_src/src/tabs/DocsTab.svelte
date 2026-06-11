@@ -126,7 +126,7 @@
 
 <section class="page-hero">
   <div class="row" style="gap:10px;flex-wrap:wrap">
-    <span class="text-eyebrow">P1.5 · 정식</span>
+    <span class="text-eyebrow">공식 문서</span>
     <span class="pill"><span class="dot" style="background:var(--info)"></span>/api/docs/* · read-only</span>
     <span class="pill"><span class="dot" style="background:var(--success)"></span>{docs.length} 개 문서</span>
   </div>

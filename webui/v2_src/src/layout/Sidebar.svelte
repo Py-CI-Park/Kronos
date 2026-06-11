@@ -46,9 +46,9 @@
       ],
     },
     {
-      label: '실험실',
+      label: '트레이딩',
       items: [
-        { id: 'rl-lab', label: '강화학습 실험실', icon: 'rocket', badge: 'RL' },
+        { id: 'rl', label: 'RL Trading', icon: 'rocket', badge: '정규' },
       ],
     },
   ];
@@ -81,8 +81,8 @@
     </div>
     {#if !collapsed}
       <div class="brand-text">
-        <span class="brand-name">Kronos</span>
-        <span class="brand-tag">v2 · operations</span>
+        <span class="brand-name">Kronos 대시보드</span>
+        <span class="brand-tag">official · operations</span>
       </div>
     {/if}
   </div>

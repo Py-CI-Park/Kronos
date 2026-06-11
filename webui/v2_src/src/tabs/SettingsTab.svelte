@@ -23,7 +23,7 @@
 
   function testNotif() {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    new Notification('Kronos v2', {
+    new Notification('Kronos 대시보드', {
       body: '알림 테스트입니다. 학습 단계 전환 시 이런 알림을 받습니다.',
       icon: undefined,
     });
@@ -54,7 +54,7 @@
 
 <section class="page-hero">
   <div class="row" style="gap:10px">
-    <span class="text-eyebrow">P1.5 · 정식</span>
+    <span class="text-eyebrow">공식 기능</span>
     <span class="pill"><span class="dot" style="background:var(--info)"></span>클라이언트 저장 (localStorage)</span>
   </div>
   <h1 class="text-h2" style="margin-top:8px">설정</h1>
@@ -203,7 +203,7 @@
       <div class="card-eyebrow">ROADMAP</div>
       <div class="card-title">차후 추가 예정 설정</div>
     </div>
-    <span class="pill warn"><span class="dot"></span>P2~P5</span>
+    <span class="pill warn"><span class="dot"></span>계획</span>
   </div>
   <ul class="text-caption" style="line-height:1.8;padding-left:18px;margin:0">
     <li>언어 / 지역 (한국어 ↔ English)</li>

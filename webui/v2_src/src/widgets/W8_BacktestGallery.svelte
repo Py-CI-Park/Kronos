@@ -1,5 +1,5 @@
 <script lang="ts">
-  // W8 — 백테스트 비교 갤러리. P5 에서 정식 도입 예정. P1.5 에선 placeholder.
+  // W8 — 백테스트 비교 갤러리. 정식 도입 전까지 placeholder로 유지.
 </script>
 
 <div class="bg-card border border-border rounded-lg p-4 mb-4">

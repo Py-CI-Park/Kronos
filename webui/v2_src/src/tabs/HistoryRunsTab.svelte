@@ -105,7 +105,7 @@
 
 <section class="page-hero">
   <div class="row" style="gap:10px">
-    <span class="text-eyebrow">P2 · 정식</span>
+    <span class="text-eyebrow">정식</span>
     <span class="pill"><span class="dot" style="background:var(--info)"></span>/api/training/runs · 60초 폴링</span>
   </div>
   <h1 class="text-h2" style="margin-top:8px">기록 & 런</h1>

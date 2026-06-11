@@ -293,7 +293,7 @@
 
 <section class="page-hero">
   <div class="row" style="gap:10px;flex-wrap:wrap">
-    <span class="text-eyebrow">P4 · 본격</span>
+    <span class="text-eyebrow">본격</span>
     <span class="pill"><span class="dot" style="background:var(--info)"></span>STOM 1초봉 · read-only</span>
     <span class="pill"><span class="dot" style="background:{summary?.inspect_available ? 'var(--success)' : 'var(--warn)'}"></span>
       inspect {summary?.inspect_available ? 'OK' : '제한'}</span>

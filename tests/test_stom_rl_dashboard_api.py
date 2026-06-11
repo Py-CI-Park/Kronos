@@ -1,6 +1,9 @@
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -214,6 +217,34 @@ def _write_rl_fixture(root: Path) -> None:
         encoding="utf-8-sig",
     )
 
+    readiness = root / "orderbook_readiness_run"
+    readiness.mkdir()
+    (readiness / "orderbook_rl_readiness_summary.json").write_text(
+        json.dumps(
+            {
+                "mode": "stom_orderbook_rl_readiness",
+                "artifact_type": "orderbook_rl_readiness",
+                "summary": {
+                    "readiness_status": "INCONCLUSIVE",
+                    "verdict": "INCONCLUSIVE",
+                    "is_live_ready": False,
+                    "environment": "StomOrderbookRlEnv",
+                    "eligible_episode_count": 12,
+                    "quote_coverage": 0.98,
+                    "valid_spread_coverage": 0.96,
+                    "sample_env_smoke_passed": True,
+                },
+                "observation_features": ["ret_open", "spread_rel", "position"],
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+    _write_csv(
+        readiness / "orderbook_rl_readiness.csv",
+        "readiness_status,eligible_episode_count,quote_coverage,valid_spread_coverage",
+        ["INCONCLUSIVE,12,0.98,0.96"],
+    )
+
 
 def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     _write_rl_fixture(tmp_path)
@@ -221,6 +252,7 @@ def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
 
     runs = rl_dashboard.list_rl_runs(limit=10)
     names = {run["name"] for run in runs}
+    run_by_name = {run["name"]: run for run in runs}
     detail = rl_dashboard.load_rl_run("bandit_run")
     trades = rl_dashboard.load_rl_table("bandit_run", "trades", limit=5)
     baseline_trades = rl_dashboard.load_rl_table("baseline_run", "trades", policy="buy_and_hold", limit=5)
@@ -230,22 +262,63 @@ def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     sb3_summary = rl_dashboard.load_rl_table("sb3_smoke_run", "summary", limit=5)
     sb3_events = rl_dashboard.load_rl_events("sb3_smoke_run", limit=5)
     cost_gate = rl_dashboard.load_rl_cost_gate("cost_gate_run", limit=5)
+    readiness_detail = rl_dashboard.load_rl_run("orderbook_readiness_run")
+    readiness_rows = rl_dashboard.load_rl_table("orderbook_readiness_run", "orderbook-readiness", limit=5)
 
-    assert {"bandit_run", "cost_gate_run", "baseline_run", "leaderboard_run", "sb3_smoke_run"}.issubset(names)
+    assert {
+        "bandit_run",
+        "cost_gate_run",
+        "baseline_run",
+        "leaderboard_run",
+        "sb3_smoke_run",
+        "orderbook_readiness_run",
+    }.issubset(names)
     assert detail["artifact_type"] == "contextual_bandit"
     assert detail["model"]["model_type"] == "stom_fixed_horizon_contextual_bandit_ridge"
     assert trades["rows"][0]["net_return_pct"] == 1.5
     assert baseline_trades["rows"][0]["policy"] == "buy_and_hold"
+    baseline_context = run_by_name["baseline_run"]["strategy_context"]
+    baseline_risk = baseline_context["risk_policy_summary"]
+    assert baseline_context["line"] == "rule_mainline"
+    assert baseline_context["label"] == "RULE MAINLINE"
+    assert baseline_context["primary_baseline"] == "ts_imb"
+    assert baseline_context["is_reinforcement_learning"] is False
+    assert baseline_context["is_live_ready"] is False
+    assert baseline_context["is_profit_model"] is False
+    assert baseline_risk["per_trade_fraction_pct"] == 10.0
+    assert baseline_risk["max_concurrent"] == 3
+    assert baseline_risk["daily_loss_limit_pct"] == 3.0
+    assert baseline_risk["cost_bps"] == 23.0
+    assert baseline_risk["tp_pct"] == 5.0
+    assert baseline_risk["sl_pct"] == 1.0
+    assert baseline_risk["risk_unit_account_pct"] == pytest.approx(0.123)
     assert leaderboard_detail["artifact_type"] == "performance_leaderboard"
     assert leaderboard_detail["summary"]["best_policy"] == "buy_and_hold"
+    assert leaderboard_detail["strategy_context"]["line"] == "evaluation"
+    assert leaderboard_detail["strategy_context"]["is_profit_model"] is False
     assert leaderboard_rows["rows"][1]["model"] == "contextual_bandit"
+    assert detail["strategy_context"]["line"] == "rl_experiment"
+    assert detail["strategy_context"]["label"] == "RL EXPERIMENT"
+    assert detail["strategy_context"]["is_reinforcement_learning"] is True
+    assert detail["strategy_context"]["is_live_ready"] is False
+    assert detail["strategy_context"]["is_profit_model"] is False
     assert sb3_detail["artifact_type"] == "sb3_smoke"
     assert sb3_detail["model"]["model_type"] == "stable_baselines3_dqn"
     assert sb3_detail["summary"]["live_event_count"] == 1
+    assert sb3_detail["strategy_context"]["line"] == "rl_experiment"
+    assert sb3_detail["strategy_context"]["is_live_ready"] is False
+    assert sb3_detail["strategy_context"]["is_profit_model"] is False
     assert sb3_summary["rows"][0]["model"] == "dqn_smoke"
     assert sb3_events["rows"][0]["action_name"] == "buy"
     assert cost_gate["summary"]["passing_policies"] == ["buy_and_hold"]
     assert cost_gate["gate"]["rows"][0]["passes_cost_gate"] is True
+    assert readiness_detail["artifact_type"] == "orderbook_rl_readiness"
+    assert readiness_detail["summary"]["readiness_status"] == "INCONCLUSIVE"
+    assert readiness_detail["model"]["model_type"] == "marketable_only_orderbook_rl_environment"
+    assert readiness_detail["strategy_context"]["line"] == "rl_experiment"
+    assert readiness_detail["strategy_context"]["is_live_ready"] is False
+    assert readiness_detail["strategy_context"]["is_profit_model"] is False
+    assert readiness_rows["rows"][0]["quote_coverage"] == 0.98
 
 
 def _write_portfolio_fixture(root: Path) -> None:
@@ -410,6 +483,60 @@ def test_rl_dashboard_rejects_path_traversal(tmp_path, monkeypatch):
         raise AssertionError("path traversal was accepted")
 
 
+def test_rl_dashboard_rejects_symlink_escape(tmp_path, monkeypatch):
+    run_root = tmp_path / "runs"
+    run_root.mkdir()
+    outside = tmp_path / "outside_run"
+    outside.mkdir()
+    (outside / "baseline_summary.json").write_text(
+        json.dumps({"mode": "stom_rl_baseline_run", "summary": {"policy_count": 1}}),
+        encoding="utf-8-sig",
+    )
+    link = run_root / "linked_run"
+    try:
+        os.symlink(outside, link, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [run_root])
+
+    assert "linked_run" not in {run["name"] for run in rl_dashboard.list_rl_runs(limit=10)}
+
+    with pytest.raises(ValueError, match="escapes RL root"):
+        rl_dashboard.load_rl_run("linked_run")
+
+
+def test_rl_dashboard_rejects_symlinked_artifact_file(tmp_path, monkeypatch):
+    run_root = tmp_path / "runs"
+    run_root.mkdir()
+    run = run_root / "baseline_run"
+    run.mkdir()
+    (run / "baseline_summary.json").write_text(
+        json.dumps({"mode": "stom_rl_baseline_run", "summary": {"policy_count": 1}}),
+        encoding="utf-8-sig",
+    )
+    policy_dir = run / "buy_and_hold"
+    policy_dir.mkdir()
+    outside = tmp_path / "outside_trades.csv"
+    outside.write_text("secret\nleaked\n", encoding="utf-8-sig")
+    try:
+        os.symlink(outside, policy_dir / "trades.csv")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [run_root])
+
+    with pytest.raises(FileNotFoundError):
+        rl_dashboard.load_rl_table("baseline_run", "trades", policy="buy_and_hold", limit=5)
+
+
+def test_webui_default_bind_is_localhost_only():
+    run_launcher = (REPO_ROOT / "webui" / "run.py").read_text(encoding="utf-8")
+    direct_app = (REPO_ROOT / "webui" / "app.py").read_text(encoding="utf-8")
+
+    assert 'KRONOS_WEBUI_HOST", "127.0.0.1"' in run_launcher
+    assert 'KRONOS_WEBUI_HOST", "127.0.0.1"' in direct_app
+    assert "host='0.0.0.0'" not in direct_app
+
+
 def test_flask_rl_routes_smoke(tmp_path, monkeypatch):
     _write_rl_fixture(tmp_path)
     monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
@@ -423,6 +550,8 @@ def test_flask_rl_routes_smoke(tmp_path, monkeypatch):
     detail = client.get("/api/rl/runs/bandit_run")
     assert detail.status_code == 200
     assert detail.get_json()["summary"]["passes_cost_gate"] is True
+    assert detail.get_json()["strategy_context"]["line"] == "rl_experiment"
+    assert detail.get_json()["strategy_context"]["is_live_ready"] is False
 
     trades = client.get("/api/rl/runs/bandit_run/trades")
     assert trades.status_code == 200
@@ -443,6 +572,11 @@ def test_flask_rl_routes_smoke(tmp_path, monkeypatch):
     sb3 = client.get("/api/rl/runs/sb3_smoke_run")
     assert sb3.status_code == 200
     assert sb3.get_json()["artifact_type"] == "sb3_smoke"
+
+    readiness = client.get("/api/rl/runs/orderbook_readiness_run")
+    assert readiness.status_code == 200
+    assert readiness.get_json()["artifact_type"] == "orderbook_rl_readiness"
+    assert readiness.get_json()["strategy_context"]["is_profit_model"] is False
 
     events = client.get("/api/rl/runs/sb3_smoke_run/events")
     assert events.status_code == 200

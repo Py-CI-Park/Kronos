@@ -1,9 +1,9 @@
 {
-  "name": "kronos-v2-dashboard",
+  "name": "kronos-dashboard",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Kronos v2 통합 대시보드 (P1.5 SPA)",
+  "description": "Kronos official dashboard",
   "engines": {
     "node": "^20 || ^22",
     "npm": "^9 || ^10 || ^11"

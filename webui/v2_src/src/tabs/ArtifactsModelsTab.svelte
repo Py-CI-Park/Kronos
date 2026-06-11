@@ -34,7 +34,7 @@
 
 <section class="page-hero">
   <div class="row" style="gap:10px">
-    <span class="text-eyebrow">P1.5 · 정식</span>
+    <span class="text-eyebrow">공식 기능</span>
     <span class="pill"><span class="dot" style="background:var(--info)"></span>/api/training/artifacts · read-only</span>
   </div>
   <h1 class="text-h2" style="margin-top:8px">아티팩트 & 모델</h1>

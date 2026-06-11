@@ -1,58 +1,77 @@
-from flask import Blueprint, render_template, send_from_directory, current_app, redirect
+from __future__ import annotations
+
 import os
+from typing import Final
 
-v2_bp = Blueprint('v2', __name__)
+from flask import Blueprint, current_app, redirect, render_template, send_from_directory
 
+v2_bp = Blueprint("v2", __name__)
 
-def _serve_v2_shell():
-    """디자인 시스템 v2 SPA 진입점.
-
-    `KRONOS_V2_DIST=1` 이고 빌드 산출물(`webui/static/v2/dist/index.html`)이 존재하면 dist 모드,
-    아니면 P1 SSR Jinja shell(`templates/v2_shell.html`) 폴백.
-    """
-    dist_dir = os.path.join(current_app.static_folder, 'v2', 'dist')
-    dist_index = os.path.join(dist_dir, 'index.html')
-    if os.path.exists(dist_index) and os.environ.get('KRONOS_V2_DIST', '0') == '1':
-        return send_from_directory(dist_dir, 'index.html')
-    return render_template('v2_shell.html')
+_TRUTHY: Final[frozenset[str]] = frozenset({"1", "true", "yes", "on"})
+_FALSY: Final[frozenset[str]] = frozenset({"0", "false", "no", "off"})
 
 
-# ── P6 cutover: 루트 `/` 가 v2 SPA 를 서빙 ─────────────────────
-@v2_bp.route('/')
-def v2_root():
-    """루트 진입점 — 새 통합 대시보드."""
-    return _serve_v2_shell()
+def _env_flag_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in _TRUTHY
 
 
-# ── 하위 호환: `/v2` 는 `/` 로 영구 리다이렉트 ────────────────
+def _official_ssr_fallback_requested() -> bool:
+    mode = os.environ.get("KRONOS_DASHBOARD_MODE", "").strip().lower()
+    if mode == "ssr":
+        return True
+    if _env_flag_enabled("KRONOS_DASHBOARD_SSR_FALLBACK"):
+        return True
 
-# Direct dashboard bookmarks used during long-running training.
-#
-# The v2 UI is a single-page shell and selects the live-training view by
-# default. Serving the same shell for these explicit paths keeps operator
-# bookmarks such as http://127.0.0.1:5070/training working without adding a
-# broad Flask catch-all that could mask API/static mistakes.
-@v2_bp.route('/training')
-@v2_bp.route('/dashboard')
-def v2_training_alias():
-    """Serve the v2 live-training shell for direct dashboard bookmarks."""
-    return _serve_v2_shell()
+    # Backward compatibility only. The official default is the built dashboard
+    # when dist exists; this old flag is retained only as an undocumented escape.
+    legacy_dist = os.environ.get("KRONOS_V2_DIST", "").strip().lower()
+    return legacy_dist in _FALSY
 
 
-@v2_bp.route('/rl')
-@v2_bp.route('/rl-lab')
-def v2_rl_lab_alias():
-    """Serve the v2 shell for direct RL Lab / deep-learning dashboard bookmarks."""
-    return _serve_v2_shell()
+def _serve_dashboard_shell():
+    """Serve the official Kronos dashboard shell."""
+    dist_dir = os.path.join(current_app.static_folder or "", "v2", "dist")
+    dist_index = os.path.join(dist_dir, "index.html")
+    if os.path.exists(dist_index) and not _official_ssr_fallback_requested():
+        return send_from_directory(dist_dir, "index.html")
+    return render_template("v2_shell.html")
 
 
-@v2_bp.route('/v2')
-def v2_legacy_redirect():
-    """기존 북마크/링크 호환용 영구 리다이렉트."""
-    return redirect('/', code=301)
+@v2_bp.route("/")
+def dashboard_root():
+    """Serve the official dashboard entry point."""
+    return _serve_dashboard_shell()
 
 
-@v2_bp.route('/v2/<path:subpath>')
-def v2_legacy_subpath(subpath):
-    """기존 /v2/anything 도 루트로 리다이렉트 (해시 라우팅이라 subpath 무의미)."""
-    return redirect('/', code=301)
+@v2_bp.route("/training")
+@v2_bp.route("/dashboard")
+def dashboard_training_alias():
+    """Serve the official dashboard for operator training bookmarks."""
+    return _serve_dashboard_shell()
+
+
+@v2_bp.route("/rl")
+def dashboard_rl():
+    """Serve the official RL trading/evidence dashboard."""
+    return _serve_dashboard_shell()
+
+
+@v2_bp.route("/rl-lab")
+@v2_bp.route("/v2/rl-trading")
+@v2_bp.route("/v2/rl-lab")
+def dashboard_rl_legacy_redirect():
+    """Redirect legacy RL dashboard bookmarks to the canonical route."""
+    return redirect("/rl", code=301)
+
+
+@v2_bp.route("/v2")
+@v2_bp.route("/v2/")
+def dashboard_legacy_redirect():
+    """Redirect legacy dashboard bookmarks to the canonical route."""
+    return redirect("/", code=301)
+
+
+@v2_bp.route("/v2/<path:subpath>")
+def dashboard_legacy_subpath_redirect(subpath: str):
+    """Redirect legacy versioned subpaths without adding a global catch-all."""
+    return redirect("/", code=301)

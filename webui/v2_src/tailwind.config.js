@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 // [AC-1] Tailwind prebuilt 강제 — Play CDN 사용 금지
-// 디자인 시스템 v2 — Tailwind 색상 토큰은 styles/core.css 의 CSS 변수를 참조
+// 공식 대시보드 디자인 시스템 — Tailwind 색상 토큰은 styles/core.css 의 CSS 변수를 참조
 export default {
   content: ['./index.html', './src/**/*.{svelte,ts,js}'],
   darkMode: ['class', '[data-theme="dark"]'],

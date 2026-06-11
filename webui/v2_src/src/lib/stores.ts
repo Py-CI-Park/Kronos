@@ -16,7 +16,7 @@ export const activeTab: Writable<string> = writable('live-training');
 export const sidebarCollapsed: Writable<boolean> = writable(false);
 export const sidebarMobileOpen: Writable<boolean> = writable(false);
 
-// ── 테마 (light/dark) — 디자인 시스템 v2 추가 ────────────────────
+// ── 테마 (light/dark) — 공식 대시보드 디자인 시스템 ────────────────────
 const THEME_KEY = 'kronos-theme';
 type ThemeValue = 'light' | 'dark';
 

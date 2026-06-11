@@ -176,7 +176,7 @@
 
 <section class="page-hero">
   <div class="row" style="gap:10px">
-    <span class="text-eyebrow">P1.5 · 정식</span>
+    <span class="text-eyebrow">공식 기능</span>
     <span class="pill"><span class="dot" style="background:var(--info)"></span>/api/training/gpu · /api/training/system · 5초 폴링</span>
   </div>
   <h1 class="text-h2" style="margin-top:8px">시스템 상태</h1>
@@ -340,7 +340,7 @@
         <tr><td>버퍼 시간</td><td class="text-mono tnum">{fmt.durationCompact(ring.length * sec)}</td></tr>
         <tr><td>마지막 화면 갱신</td><td class="text-mono tnum">{last}</td></tr>
         <tr><td>Artifacts 폴링</td><td class="text-mono">30 초 (고정)</td></tr>
-        <tr><td>SPA 모드</td><td class="text-mono">P1.5 dist (KRONOS_V2_DIST=1)</td></tr>
+        <tr><td>대시보드 모드</td><td class="text-mono">official dist (default)</td></tr>
       </tbody>
     </table>
     <div class="card compact flat" style="background:var(--surface-sunken);border:none;padding:12px;gap:8px;border-radius:12px;margin-top:8px">
