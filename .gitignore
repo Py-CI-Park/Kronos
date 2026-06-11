@@ -59,6 +59,7 @@ finetune_csv/data/stom_*.csv
 finetune_csv/data/stom_*.json
 webui/stom_predictions/*.csv
 webui/stom_predictions/*.json
+webui/stom_predictions/
 webui/qlib_backtests/*.json
 webui/qlib_backtests/*.csv
 webui/rl_runs/
@@ -80,6 +81,11 @@ finetune_csv/finetuned/
 *.log
 logs/
 .omx/
+# Local agent/workflow/session state
+.codegraph/
+.gjc/
+.omc/
+.omo/
 
 # Environment
 .env
