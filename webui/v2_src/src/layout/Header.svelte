@@ -17,6 +17,8 @@
     forecast: '예측 워크벤치',
     stom: '예측 진단',
     rl: 'RL Trading',
+    'daily-ohlcv': 'Daily OHLCV',
+    'daily-rl-guide': '일봉 RL 설명서',
     artifacts: '아티팩트 & 모델',
     history: '기록 & 런',
     'system-health': '시스템 상태',

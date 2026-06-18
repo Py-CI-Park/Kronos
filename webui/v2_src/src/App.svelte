@@ -7,6 +7,8 @@
   import ForecastWorkbenchTab from '$tabs/ForecastWorkbenchTab.svelte';
   import StomDiagnosticsTab from '$tabs/StomDiagnosticsTab.svelte';
   import RLTradingTab from '$tabs/RLTradingTab.svelte';
+  import DailyOhlcvTab from '$tabs/DailyOhlcvTab.svelte';
+  import DailyRlGuideTab from '$tabs/DailyRlGuideTab.svelte';
   import ArtifactsModelsTab from '$tabs/ArtifactsModelsTab.svelte';
   import HistoryRunsTab from '$tabs/HistoryRunsTab.svelte';
   import SystemHealthTab from '$tabs/SystemHealthTab.svelte';
@@ -21,6 +23,8 @@
     if (requested === 'rl-lab' || requested === 'rl-trading') return 'rl';
     if (requested) return requested;
     const path = window.location.pathname.replace(/\/+$/, '');
+    if (path === '/daily-rl-guide' || path === '/daily-ohlcv/rl-guide') return 'daily-rl-guide';
+    if (path === '/daily-ohlcv' || path === '/daily') return 'daily-ohlcv';
     if (path === '/rl' || path === '/rl-lab' || path === '/v2/rl-trading' || path === '/v2/rl-lab') return 'rl';
     if (path === '/training' || path === '/dashboard') return 'live-training';
     return null;
@@ -53,6 +57,10 @@
         <StomDiagnosticsTab />
       {:else if tab === 'rl'}
         <RLTradingTab />
+      {:else if tab === 'daily-ohlcv'}
+        <DailyOhlcvTab />
+      {:else if tab === 'daily-rl-guide'}
+        <DailyRlGuideTab />
       {:else if tab === 'artifacts'}
         <ArtifactsModelsTab />
       {:else if tab === 'history'}
