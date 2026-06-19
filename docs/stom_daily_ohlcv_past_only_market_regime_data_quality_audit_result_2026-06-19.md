@@ -23,7 +23,7 @@ This result raises data-governance/reproducibility evidence maturity. It does **
 ## Command
 
 ```powershell
-py -3.11 -m stom_rl.daily_market_regime_audit --db-path D:/Chanil_Park/Project/Programming/Kronos/_database/Stock_Database_ohlcv_1day.db --output-root webui/rl_runs/daily_ohlcv_market_regime --run-id market_regime_audit_2026_06_19_001 --table-limit 25 --row-limit 260 --source-ref 4b86a3302a37
+py -3.11 -m stom_rl.daily_market_regime_audit --db-path D:/Chanil_Park/Project/Programming/Kronos/_database/Stock_Database_ohlcv_1day.db --output-root webui/rl_runs/daily_ohlcv_market_regime --run-id market_regime_audit_2026_06_19_001 --table-limit 25 --row-limit 260 --source-ref cc59e50
 ```
 
 Observed stdout:
@@ -44,6 +44,8 @@ Observed stdout:
 | Leakage audit | `webui/rl_runs/daily_ohlcv_market_regime/market_regime_audit_2026_06_19_001/leakage_audit.json` | `79ec94836b2166d7482e87f11b63c23f9d56bdaf2d48a85a6445fe9d9c050e6e` |
 | Stale artifact audit | `webui/rl_runs/daily_ohlcv_market_regime/market_regime_audit_2026_06_19_001/stale_artifact_audit.json` | `39934839cf2a630eceaf10def7a0aef9bcf34541ae6934cf1f2eb1e06e9fe41f` |
 
+Source hashes recorded in the manifest include `stom_rl/daily_market_regime_audit.py`, `stom_rl/daily_ohlcv_db.py`, and the PR-7 preregistration document.
+
 ## Manifest snapshot
 
 | Field | Value |
@@ -57,6 +59,7 @@ Observed stdout:
 | `leakage_status` | `PASS` |
 | `stale_artifact_status` | `PASS` |
 | `promotion_allowed` | `false` |
+| `source_ref` | `cc59e50` |
 
 Blocker flags:
 
@@ -93,8 +96,7 @@ The regime proxy metrics mark `future_label_used=false` and `source_timing=past_
 ```powershell
 py -3.11 -m pytest tests/test_stom_rl_daily_market_regime_audit.py -q
 ```
-
-Observed result: `2 passed in 0.36s`.
+Observed result: `3 passed in 0.49s`.
 
 ## Next allowed action
 

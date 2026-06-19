@@ -1,10 +1,30 @@
 {
   "schema_version": "daily_ohlcv_market_regime_audit.v1",
   "run_id": "market_regime_audit_2026_06_19_001",
-  "created_at_utc": "2026-06-19T06:28:31Z",
+  "created_at_utc": "2026-06-19T06:39:23Z",
   "status": "COMPLETED_RESEARCH_ONLY",
   "verdict": "BLOCKER_EVIDENCE_RECORDED_NO_PROMOTION",
-  "source_ref": "4b86a3302a37",
+  "source_ref": "cc59e50",
+  "source_hashes": {
+    "stom_rl/daily_market_regime_audit.py": {
+      "exists": true,
+      "path": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\stom_rl\\daily_market_regime_audit.py",
+      "sha256": "4b751bc9f5c3296a12e8e11bab5f629073b9a82aa3f432e03c2c858f7cb17a12",
+      "bytes": 21426
+    },
+    "stom_rl/daily_ohlcv_db.py": {
+      "exists": true,
+      "path": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\stom_rl\\daily_ohlcv_db.py",
+      "sha256": "cb740fc90c47137447e251e004f642f6ab7dc053d9550d515f167c3e59943992",
+      "bytes": 28387
+    },
+    "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_prereg_2026-06-19.md": {
+      "exists": true,
+      "path": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\docs\\stom_daily_ohlcv_past_only_market_regime_data_quality_audit_prereg_2026-06-19.md",
+      "sha256": "d47713ea532e0bf67e35274e4c6a43952bd274b2464b5e8afd4afb865bd8b225",
+      "bytes": 7026
+    }
+  },
   "db_path": "D:\\Chanil_Park\\Project\\Programming\\Kronos\\_database\\Stock_Database_ohlcv_1day.db",
   "db_fingerprint": {
     "exists": true,
