@@ -3,6 +3,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from stom_rl.daily_market_regime_audit import build_stale_artifact_audit, run_market_regime_audit
 
 
@@ -117,3 +119,40 @@ def test_stale_artifact_audit_fails_closed_on_missing_or_malformed_json(tmp_path
     checks = {row["artifact"]: row for row in audit["artifact_checks"]}
     assert checks["malformed.json"]["parse_status"] == "malformed_fail_closed"
     assert checks["missing.json"]["parse_status"] == "missing_fail_closed"
+
+
+def test_stale_artifact_audit_fails_closed_on_stale_file(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "present.json").write_text("{}", encoding="utf-8")
+
+    audit = build_stale_artifact_audit(
+        run_dir,
+        required_artifacts=["present.json"],
+        fresh_after_utc="2100-01-01T00:00:00Z",
+    )
+
+    assert audit["status"] == "FAIL_CLOSED"
+    assert audit["stale_count"] == 1
+    checks = {row["artifact"]: row for row in audit["artifact_checks"]}
+    assert checks["present.json"]["freshness_status"] == "stale_fail_closed"
+
+
+def test_market_regime_audit_rejects_escaping_run_id(tmp_path):
+    with pytest.raises(ValueError, match="run_id"):
+        run_market_regime_audit(
+            db_path=tmp_path / "missing.db",
+            output_root=tmp_path / "runs",
+            run_id="../escape",
+        )
+
+
+def test_market_regime_audit_rejects_repo_local_source_output_root(tmp_path):
+    repo_source_dir = Path(__file__).resolve().parents[1] / "stom_rl"
+
+    with pytest.raises(ValueError, match="repo-local output_root"):
+        run_market_regime_audit(
+            db_path=tmp_path / "missing.db",
+            output_root=repo_source_dir,
+            run_id="blocked",
+        )

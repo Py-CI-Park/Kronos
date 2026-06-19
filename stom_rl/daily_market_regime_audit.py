@@ -46,6 +46,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RUN_ID = "market_regime_audit_2026_06_19_001"
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "webui" / "rl_runs" / "daily_ohlcv_market_regime"
 DEFAULT_COST_SENSITIVITY_BP = (0, 23, 46)
+ALLOWED_REPO_OUTPUT_ROOTS = (
+    REPO_ROOT / "webui" / "rl_runs",
+    REPO_ROOT / "artifacts",
+)
 RESEARCH_GUARDRAIL = (
     "Research-only market-regime data-quality audit; no live/broker/orders, "
     "no model-build unlock, no paper-forward unlock, and no profit claim."
@@ -107,6 +111,44 @@ def _source_hashes(paths: Sequence[str] = SOURCE_HASH_PATHS) -> dict[str, dict[s
         path = REPO_ROOT / rel_path
         hashes[rel_path] = _fingerprint_path(path)
     return hashes
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_run_id(run_id: str) -> str:
+    if not run_id or run_id in {".", ".."}:
+        raise ValueError("run_id must be a non-empty leaf directory name")
+    if Path(run_id).name != run_id or any(sep in run_id for sep in ("/", "\\", ":")):
+        raise ValueError("run_id must not contain path separators or drive markers")
+    return run_id
+
+
+def _resolve_run_dir(output_root: Path, run_id: str) -> Path:
+    output_root = output_root.resolve()
+    repo_root = REPO_ROOT.resolve()
+    if _is_relative_to(output_root, repo_root):
+        allowed_roots = tuple(root.resolve() for root in ALLOWED_REPO_OUTPUT_ROOTS)
+        if not any(_is_relative_to(output_root, allowed_root) for allowed_root in allowed_roots):
+            raise ValueError("repo-local output_root must be under webui/rl_runs or artifacts")
+    run_dir = (output_root / _validate_run_id(run_id)).resolve()
+    if not _is_relative_to(run_dir, output_root):
+        raise ValueError("run_id escapes output_root")
+    return run_dir
+
+
+def _parse_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 
 
 
@@ -304,39 +346,62 @@ def build_leakage_audit(proxy_rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def build_stale_artifact_audit(run_dir: Path, *, required_artifacts: Sequence[str]) -> dict[str, Any]:
+def build_stale_artifact_audit(
+    run_dir: Path,
+    *,
+    required_artifacts: Sequence[str],
+    fresh_after_utc: str | None = None,
+) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     missing = 0
     malformed = 0
+    stale = 0
+    fresh_after = _parse_utc(fresh_after_utc)
     for name in required_artifacts:
         path = run_dir / name
         exists = path.exists()
         parse_status = "not_checked"
+        modified_at_utc = None
+        freshness_status = "not_checked"
         if not exists:
             missing += 1
             parse_status = "missing_fail_closed"
-        elif path.suffix == ".json":
-            try:
-                json.loads(path.read_text(encoding="utf-8"))
-                parse_status = "json_ok"
-            except json.JSONDecodeError:
-                malformed += 1
-                parse_status = "malformed_fail_closed"
+            freshness_status = "missing_fail_closed"
+        else:
+            if path.is_file():
+                modified_at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+                modified_at_utc = modified_at.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                if fresh_after and modified_at < fresh_after:
+                    stale += 1
+                    freshness_status = "stale_fail_closed"
+                else:
+                    freshness_status = "fresh_ok" if fresh_after else "freshness_not_required"
+            if path.suffix == ".json":
+                try:
+                    json.loads(path.read_text(encoding="utf-8"))
+                    parse_status = "json_ok"
+                except json.JSONDecodeError:
+                    malformed += 1
+                    parse_status = "malformed_fail_closed"
         rows.append(
             {
                 "artifact": name,
                 "exists": exists,
                 "parse_status": parse_status,
+                "freshness_status": freshness_status,
+                "modified_at_utc": modified_at_utc,
                 "sha256": _sha256_file(path) if exists and path.is_file() else None,
             }
         )
     return {
         "schema_version": "daily_ohlcv_market_regime_stale_artifact_audit.v1",
-        "status": "PASS" if missing == 0 and malformed == 0 else "FAIL_CLOSED",
+        "status": "PASS" if missing == 0 and malformed == 0 and stale == 0 else "FAIL_CLOSED",
         "missing_count": missing,
         "malformed_count": malformed,
+        "stale_count": stale,
+        "fresh_after_utc": fresh_after_utc,
         "artifact_checks": rows,
-        "latest_selection_policy": "hash_required_and_missing_or_malformed_artifacts_fail_closed",
+        "latest_selection_policy": "hash_required_and_missing_malformed_or_stale_artifacts_fail_closed",
         "optimistic_state_allowed": False,
     }
 
@@ -352,8 +417,8 @@ def run_market_regime_audit(
     source_ref: str | None = None,
 ) -> dict[str, Any]:
     db_path = Path(db_path)
-    output_root = Path(output_root)
-    run_dir = output_root / run_id
+    run_started_at = datetime.now(timezone.utc)
+    run_dir = _resolve_run_dir(Path(output_root), run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_path = run_dir / "market_regime_audit_manifest.json"
@@ -463,6 +528,7 @@ def run_market_regime_audit(
             for name in REQUIRED_ARTIFACTS
             if name not in {"market_regime_audit_manifest.json", "stale_artifact_audit.json"}
         ],
+        fresh_after_utc=run_started_at.isoformat().replace("+00:00", "Z"),
     )
     _write_json(stale_path, stale_audit)
 
