@@ -1,16 +1,16 @@
 {
   "schema_version": "daily_ohlcv_market_regime_audit.v1",
   "run_id": "market_regime_audit_2026_06_19_001",
-  "created_at_utc": "2026-06-19T06:39:23Z",
+  "created_at_utc": "2026-06-19T06:48:09Z",
   "status": "COMPLETED_RESEARCH_ONLY",
   "verdict": "BLOCKER_EVIDENCE_RECORDED_NO_PROMOTION",
-  "source_ref": "cc59e50",
+  "source_ref": "0b46367",
   "source_hashes": {
     "stom_rl/daily_market_regime_audit.py": {
       "exists": true,
       "path": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\stom_rl\\daily_market_regime_audit.py",
-      "sha256": "4b751bc9f5c3296a12e8e11bab5f629073b9a82aa3f432e03c2c858f7cb17a12",
-      "bytes": 21426
+      "sha256": "7548f38d24e1f691987048a9b6104f2798e7e1591ec55ce73bed0c102b8fc09f",
+      "bytes": 24060
     },
     "stom_rl/daily_ohlcv_db.py": {
       "exists": true,
@@ -48,12 +48,12 @@
     "frozen_d3"
   ],
   "artifact_paths": {
-    "price_basis_audit": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\price_basis_audit.json",
-    "universe_quality": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\universe_quality.csv",
-    "regime_proxy_metrics": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\regime_proxy_metrics.csv",
-    "baseline_control_metrics": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\baseline_control_metrics.csv",
-    "leakage_audit": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\leakage_audit.json",
-    "stale_artifact_audit": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\stale_artifact_audit.json"
+    "price_basis_audit": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\price_basis_audit.json",
+    "universe_quality": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\universe_quality.csv",
+    "regime_proxy_metrics": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\regime_proxy_metrics.csv",
+    "baseline_control_metrics": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\baseline_control_metrics.csv",
+    "leakage_audit": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\leakage_audit.json",
+    "stale_artifact_audit": "D:\\Chanil_Park\\Project\\Programming\\Kronos_market_regime_maturity\\webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\stale_artifact_audit.json"
   },
   "artifact_hashes": {
     "price_basis_audit": "6dde34279c02a92ac542f1964cb88ac68abe9ff124c83e54aa363b9341538054",
@@ -61,7 +61,7 @@
     "regime_proxy_metrics": "3401fb152f1d2a9b5440461bf402dffec4973c6e4be86e23e4321999da32b92b",
     "baseline_control_metrics": "7c53fa08e12f1d110ac52ac79d6e9373b3c0e9b02b75efdeb6000d4b616d2cb4",
     "leakage_audit": "79ec94836b2166d7482e87f11b63c23f9d56bdaf2d48a85a6445fe9d9c050e6e",
-    "stale_artifact_audit": "39934839cf2a630eceaf10def7a0aef9bcf34541ae6934cf1f2eb1e06e9fe41f"
+    "stale_artifact_audit": "179f3e996e458a1a9dad0fc06647c88941732748043068facab1a445d9c25446"
   },
   "blocker_flags": [
     "D0_PRICE_BASIS_NOT_VERIFIED",

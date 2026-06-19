@@ -55,7 +55,7 @@ Latest observed merged base for this plan: `origin/feature/stom-rl-lab` at `34db
 | Leakage audit | `webui/rl_runs/daily_ohlcv_signal_quality/signal_quality_audit_2026_06_18_001/signal_quality_leakage_audit.json` | Feature timing and future-label evaluation-only audit. |
 | Hypothesis rejection analytics manifest | `webui/rl_runs/daily_ohlcv_rejection_audit/hypothesis_rejection_audit_2026_06_18_001/audit_manifest.json` | Gate-funnel, rejection taxonomy, calibration, threshold sensitivity, false-negative review-only row counts, hashes, and research-only locks. |
 | Market-regime audit preregistration plan | `artifacts/scenario_batch_market_regime_audit_001_plan.json` | Frozen PR-7 scenario matrix for the next evidence-producing audit; no run outputs yet. |
-| Market-regime audit manifest | `webui/rl_runs/daily_ohlcv_market_regime/market_regime_audit_2026_06_19_001/market_regime_audit_manifest.json` | Source-ref `cc59e50` plus explicit source hashes; 4,727 table denominator, 25 sampled tables, D0/D1 blockers, leakage pass, stale-artifact pass, promotion false. |
+| Market-regime audit manifest | `webui/rl_runs/daily_ohlcv_market_regime/market_regime_audit_2026_06_19_001/market_regime_audit_manifest.json` | Source-ref `0b46367` plus explicit source hashes; 4,727 table denominator, 25 sampled tables, D0/D1 blockers, leakage pass, stale-artifact pass, promotion false. |
 
 ## Current findings snapshot
 
