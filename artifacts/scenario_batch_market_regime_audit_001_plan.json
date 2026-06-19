@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "kind": "daily_ohlcv_market_regime_audit_plan",
+  "run_id": "market_regime_audit_2026_06_19_001",
+  "created_at_utc": "2026-06-19T00:00:00Z",
+  "status": "PREREGISTERED_RESEARCH_ONLY",
+  "default_cost_round_trip_bp": 23,
+  "cost_sensitivity_bp": [0, 23, 46],
+  "research_only_locks": {
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "go_summary_allowed": false,
+    "profitability_claim_allowed": false
+  },
+  "promotion_status": "NO-GO_RESEARCH_ONLY_UNTIL_FRESH_GATE_PASSES",
+  "required_controls": [
+    "no_trade",
+    "shuffle",
+    "equal_weight_top_k",
+    "frozen_d3"
+  ],
+  "scenarios": [
+    {
+      "id": "MR-D0",
+      "name": "price_basis_audit",
+      "question": "Classify or block adjusted/raw/split/dividend status for Daily OHLCV labels.",
+      "required_artifacts": ["price_basis_audit.json"],
+      "promotion_allowed": false
+    },
+    {
+      "id": "MR-D1",
+      "name": "universe_breadth_missingness",
+      "question": "Measure universe breadth, missingness, stale symbols, and leading-zero code preservation.",
+      "required_artifacts": ["universe_quality.csv"],
+      "promotion_allowed": false
+    },
+    {
+      "id": "MR-R1",
+      "name": "past_only_proxy_construction",
+      "question": "Build volatility/drawdown/breadth/dispersion/liquidity proxies using current or prior data only.",
+      "required_artifacts": ["regime_proxy_metrics.csv", "leakage_audit.json"],
+      "promotion_allowed": false
+    },
+    {
+      "id": "MR-R2",
+      "name": "regime_control_comparison",
+      "question": "Compare regime buckets against no-trade, shuffle, equal-weight top-k, and frozen D3 under cost sensitivity.",
+      "required_artifacts": ["baseline_control_metrics.csv"],
+      "promotion_allowed": false
+    },
+    {
+      "id": "MR-S1",
+      "name": "stale_latest_fail_closed",
+      "question": "Verify missing, stale, or malformed latest artifacts fail closed and do not produce optimistic maturity states.",
+      "required_artifacts": ["stale_artifact_audit.json"],
+      "promotion_allowed": false
+    }
+  ],
+  "output_root": "webui/rl_runs/daily_ohlcv_market_regime/market_regime_audit_2026_06_19_001",
+  "notes": [
+    "This plan freezes audit intent only; it does not execute a run.",
+    "Positive-looking rows are diagnostic and cannot unlock D5/model/paper/live behavior.",
+    "Future labels are evaluation-only and forbidden as decision-time proxy inputs."
+  ]
+}
