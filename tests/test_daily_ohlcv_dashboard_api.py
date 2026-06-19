@@ -1898,6 +1898,101 @@ def test_daily_ohlcv_prediction_stale_artifact_fails_closed(tmp_path, monkeypatc
     assert chart['d3_gate_blockers'] == payload['d3_gate_blockers']
 
 
+def test_daily_ohlcv_latest_malformed_artifact_selection_fails_closed(tmp_path, monkeypatch):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    dataset_root = tmp_path / "dataset"
+    prediction_root = tmp_path / "prediction"
+    portfolio_root = tmp_path / "portfolio"
+    walk_root = tmp_path / "walk_forward"
+    universe_root = tmp_path / "universe"
+    specs = [
+        (dataset_root, "old_dataset", "dataset_manifest.json", {"run_id": "old_dataset", "leakage_status": "PASS", "split_chronology_status": "PASS"}),
+        (prediction_root, "old_prediction", "prediction_manifest.json", {"run_id": "old_prediction"}),
+        (portfolio_root, "old_portfolio", "rl_manifest.json", {"run_id": "old_portfolio"}),
+        (walk_root, "old_walk", "walk_forward_manifest.json", {"run_id": "old_walk"}),
+        (universe_root, "old_universe", "universe.json", {"run_id": "old_universe", "verdict": "WATCH_HEURISTIC_UNIVERSE"}),
+    ]
+    for root, run_id, filename, payload in specs:
+        old_dir = root / run_id
+        old_dir.mkdir(parents=True)
+        (old_dir / filename).write_text(json.dumps(payload), encoding="utf-8")
+        latest_dir = root / "zz_latest_malformed"
+        latest_dir.mkdir(parents=True)
+        (latest_dir / filename).write_text("{not-json", encoding="utf-8")
+
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_DATASET_ROOT", dataset_root)
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_PREDICTION_ROOT", prediction_root)
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_PORTFOLIO_ROOT", portfolio_root)
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_WALK_FORWARD_ROOT", walk_root)
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_UNIVERSE_ROOT", universe_root)
+
+    dataset = daily_dashboard.load_dataset_latest(sample_limit=0)
+    prediction = daily_dashboard.load_prediction_latest(sample_limit=0)
+    portfolio = daily_dashboard.load_portfolio_latest(sample_limit=0)
+    walk_forward = daily_dashboard.load_walk_forward_latest(sample_limit=0)
+    dataset_list = daily_dashboard.list_dataset_artifacts(limit=1)
+    universe_list = daily_dashboard.list_universe_manifests(limit=1)
+    universe_preview = daily_dashboard.load_universe_preview(limit=0)
+
+    surfaces = {
+        "DATASET_MANIFEST_MALFORMED_JSON": dataset,
+        "PREDICTION_MANIFEST_MALFORMED_JSON": prediction,
+        "PORTFOLIO_MANIFEST_MALFORMED_JSON": portfolio,
+        "WALK_FORWARD_MANIFEST_MALFORMED_JSON": walk_forward,
+    }
+    for expected_error, payload in surfaces.items():
+        assert payload["status"] == "BLOCKED_INVALID_LATEST_ARTIFACT"
+        assert payload["run_id"] == "zz_latest_malformed"
+        assert payload["artifact_selection_status"] == "FAIL_CLOSED_LATEST_INVALID"
+        assert payload["latest_selection_policy"] == "newest_manifest_is_authoritative_no_fallback_to_older_runs"
+        assert expected_error in payload["artifact_selection_errors"]
+        assert payload["model_build_allowed"] is False
+        assert payload["paper_forward_allowed"] is False
+        assert payload["live_broker_order_allowed"] is False
+        assert payload["profitability_claim_allowed"] is False
+    assert dataset_list["runs"][0]["status"] == "BLOCKED_INVALID_LATEST_ARTIFACT"
+    assert "DATASET_MANIFEST_MALFORMED_JSON" in dataset_list["runs"][0]["artifact_selection_errors"]
+    assert universe_list["runs"][0]["status"] == "BLOCKED_INVALID_LATEST_ARTIFACT"
+    assert "UNIVERSE_MANIFEST_MALFORMED_JSON" in universe_list["runs"][0]["artifact_selection_errors"]
+    assert universe_preview["status"] == "BLOCKED_INVALID_LATEST_ARTIFACT"
+    assert "UNIVERSE_MANIFEST_MALFORMED_JSON" in universe_preview["artifact_selection_errors"]
+    assert universe_preview["model_build_allowed"] is False
+    assert universe_preview["live_broker_order_allowed"] is False
+
+
+def test_daily_ohlcv_dataset_malformed_auxiliary_json_fails_closed(tmp_path, monkeypatch):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    root = tmp_path / "dataset"
+    old_dir = root / "old_valid"
+    old_dir.mkdir(parents=True)
+    (old_dir / "dataset_manifest.json").write_text(
+        json.dumps({"run_id": "old_valid", "leakage_status": "PASS", "split_chronology_status": "PASS"}),
+        encoding="utf-8",
+    )
+    latest_dir = root / "zz_latest_bad_auxiliary"
+    latest_dir.mkdir(parents=True)
+    (latest_dir / "dataset_manifest.json").write_text(
+        json.dumps({"run_id": "zz_latest_bad_auxiliary", "leakage_status": "PASS", "split_chronology_status": "PASS"}),
+        encoding="utf-8",
+    )
+    (latest_dir / "normalization_stats.json").write_text("{not-json", encoding="utf-8")
+
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_DATASET_ROOT", root)
+
+    payload = daily_dashboard.load_dataset_latest(sample_limit=0)
+
+    assert payload["status"] == "BLOCKED_INVALID_LATEST_ARTIFACT"
+    assert payload["run_id"] == "zz_latest_bad_auxiliary"
+    assert payload["artifact_selection_status"] == "FAIL_CLOSED_LATEST_INVALID"
+    assert payload["latest_selection_policy"] == "newest_manifest_is_authoritative_no_fallback_to_older_runs"
+    assert "DATASET_NORMALIZATION_STATS_MALFORMED_JSON" in payload["artifact_selection_errors"]
+    assert payload["model_build_allowed"] is False
+    assert payload["paper_forward_allowed"] is False
+    assert payload["live_broker_order_allowed"] is False
+    assert payload["profitability_claim_allowed"] is False
+
 def test_daily_ohlcv_visual_chart_apis_expose_read_only_gate_payloads():
     client = flask_app.test_client()
 

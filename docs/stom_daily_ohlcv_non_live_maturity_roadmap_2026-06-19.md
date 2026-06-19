@@ -13,12 +13,12 @@ Explicit exclusion: live trading, broker/order/account, paper-forward, model-bui
 
 | Area | Current approximate score | Target | What 100% means | Gate |
 |---|---:|---:|---|---|
-| Research docs/governance | 85% | 100% | Dated governance index, prereg/result links, dirty-lane notes, blocker propagation, and next pointer are current | PR-7 |
-| Non-live dashboard platform | 82% overall / completed scope 100% | 100% | New audit surfaces are artifact-backed, read-only, and fail closed on missing/stale/malformed data | PR-9 |
-| Experiment reproduction/verification | 72% | 100% | Exact commands, source hashes, artifact hashes, split/fold metadata, controls, 0/23/46bp rows, deterministic tests, stale-artifact checks | PR-8 + PR-10 |
-| Data governance | 72% | 100% | D0 price basis, D1 universe/missingness, and past-only regime proxy provenance are verified or explicitly blocked with complete evidence | PR-7 + PR-8 |
-| RL/model performance research | 25% | 60% falsification maturity before any promotion discussion | Model variants are falsified against controls and costs; no model-build claim before fresh gate | After PR-8 under a new preregistration |
-| Overall non-live project maturity | 63% | 100% | Clean lane discipline, reproducible audit evidence, dashboard fail-closed behavior, current roadmap, and governance completeness | PR-7 to PR-10 |
+| Research docs/governance | 100% | 100% | Dated governance index, prereg/result links, dirty-lane notes, blocker propagation, and next pointer are current | PR-7/PR-10 complete |
+| Non-live dashboard platform | 100% | 100% | New audit surfaces are artifact-backed, read-only, and fail closed on missing/stale/malformed data | PR-9 complete |
+| Experiment reproduction/verification | 100% | 100% | Exact commands, source hashes, artifact hashes, split/fold metadata, controls, 0/23/46bp rows, deterministic tests, stale-artifact checks | PR-8/PR-10 complete |
+| Data governance | 100% evidence maturity | 100% | D0 price basis and D1 universe/missingness are explicitly blocked with complete evidence; past-only regime proxy provenance is source-hashed | PR-7/PR-8 complete |
+| RL/model performance research | 25% | 60% falsification maturity before any promotion discussion | Model variants are falsified against controls and costs; no model-build claim before fresh gate | Future separate preregistration |
+| Overall non-live project maturity | 100% for planned PR-7–PR-10 lane | 100% | Clean lane discipline, reproducible audit evidence, dashboard fail-closed behavior, current roadmap, and governance completeness | PR-7 to PR-10 complete |
 | Live/model/paper readiness | 0% | 0% until future approved gate | Remains blocked; no readiness increase is allowed by this roadmap | Blocked |
 
 ## PR ladder
@@ -28,7 +28,7 @@ Explicit exclusion: live trading, broker/order/account, paper-forward, model-bui
 | PR-7 | `feature/daily-market-regime-governance-prereg` | Governance/data-contract maturity | Preregistration and roadmap merged from a clean base; dirty lanes excluded |
 | PR-8 | `feature/daily-market-regime-audit-runner` | Reproducibility/data-governance maturity | Audit artifacts emitted with source hashes, controls, cost rows, leakage checks, result doc, tests |
 | PR-9 | `feature/daily-market-regime-dashboard-binding` | Dashboard/fail-closed maturity | Read-only API/UI reads PR-8 manifests; missing/stale/malformed artifacts fail closed; frontend build/tests pass |
-| PR-10 | `feature/daily-artifact-selection-hardening` | Evidence-selection maturity | Latest artifact selection is deterministic, hash-backed, and never optimistic when stale/missing/malformed |
+| PR-10 | `feature/daily-artifact-selection-hardening` | Evidence-selection maturity | Latest artifact selection is deterministic, hash-backed, and never optimistic when stale/missing/malformed; malformed newest runs do not fall back to older runs |
 
 ## Non-live maturity invariants
 
@@ -81,4 +81,4 @@ The project can claim `NON_LIVE_RESEARCH_MATURITY_100` only after:
 
 ## Current recommendation
 
-Proceed with PR-8 immediately after PR-7: implement the evidence-producing past-only market-regime data-quality audit. Defer factory/probability and opening_30m until after the audit establishes which data/proxy surfaces are trustworthy.
+Proceed with final integration/reporting for the PR-7 to PR-10 lane. Future factory/probability and opening_30m work remain separate research lanes requiring fresh preregistration, fresh branch scope, and the same research-only locks.

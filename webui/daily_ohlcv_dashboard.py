@@ -145,6 +145,47 @@ def _load_json_if_exists(path: Path | None) -> dict[str, Any]:
         return {}
 
 
+def _safe_load_json_artifact(path: Path, *, error_prefix: str, required: bool = True, fallback: dict[str, Any] | None = None) -> tuple[dict[str, Any], list[str]]:
+    if not path.exists():
+        if required:
+            return {}, [f"{error_prefix}_MISSING"]
+        return dict(fallback or {}), []
+    try:
+        payload = _load_json(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}, [f"{error_prefix}_MALFORMED_JSON"]
+    if not isinstance(payload, dict):
+        return {}, [f"{error_prefix}_NOT_OBJECT"]
+    return payload, []
+
+
+def _fail_closed_latest_artifact(
+    surface: str,
+    *,
+    run_dir: Path,
+    errors: list[str],
+    readiness_status: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "surface": surface,
+        "status": "BLOCKED_INVALID_LATEST_ARTIFACT",
+        "readiness_status": readiness_status or "BLOCKED_INVALID_LATEST_ARTIFACT",
+        "run_id": run_dir.name,
+        "artifact_status": "FAIL_CLOSED_INVALID_LATEST_ARTIFACT",
+        "artifact_dir": str(run_dir),
+        "artifact_selection_status": "FAIL_CLOSED_LATEST_INVALID",
+        "artifact_selection_errors": errors,
+        "latest_selection_policy": "newest_manifest_is_authoritative_no_fallback_to_older_runs",
+        "model_build_allowed": False,
+        "go_summary_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "read_only": True,
+        "guardrail": "Latest Daily OHLCV artifact selection fails closed on missing or malformed evidence; no older run fallback and no model/paper/live/profit unlock.",
+    }
+
+
 def _path_text(path: Path | None) -> str | None:
     if path is None:
         return None
@@ -838,7 +879,17 @@ def load_universe_preview(*, run: str | None = None, limit: int = 200, include: 
         manifest = build_universe_manifest()
         manifest["artifact_status"] = "GENERATED_ON_DEMAND_READ_ONLY"
     else:
-        manifest = _load_json(run_dir / "universe.json")
+        manifest, manifest_errors = _safe_load_json_artifact(
+            run_dir / "universe.json",
+            error_prefix="UNIVERSE_MANIFEST",
+        )
+        if manifest_errors:
+            return _fail_closed_latest_artifact(
+                "universe",
+                run_dir=run_dir,
+                errors=manifest_errors,
+                readiness_status="UNIVERSE_ARTIFACT_SELECTION_FAILED_CLOSED",
+            )
         manifest["artifact_status"] = "LOADED_GENERATED_ARTIFACT"
         manifest["artifact_dir"] = str(run_dir)
     manifest.setdefault("official_metadata_status", "MISSING")
@@ -916,7 +967,22 @@ def list_universe_manifests(limit: int = 20) -> dict[str, Any]:
             manifest_path = run_dir / "universe.json"
             if not run_dir.is_dir() or not manifest_path.exists():
                 continue
-            payload = _load_json(manifest_path)
+            payload, errors = _safe_load_json_artifact(manifest_path, error_prefix="UNIVERSE_MANIFEST")
+            if errors:
+                runs.append(
+                    {
+                        "run_id": run_dir.name,
+                        "artifact_dir": str(run_dir),
+                        "modified_at": manifest_path.stat().st_mtime,
+                        "status": "BLOCKED_INVALID_LATEST_ARTIFACT",
+                        "artifact_status": "FAIL_CLOSED_INVALID_ARTIFACT",
+                        "artifact_selection_errors": errors,
+                        "read_only": True,
+                    }
+                )
+                if len(runs) >= safe_limit:
+                    break
+                continue
             runs.append(
                 {
                     "run_id": run_dir.name,
@@ -946,7 +1012,38 @@ def load_dataset_latest(*, run: str | None = None, sample_limit: int = 25) -> di
             "read_only": True,
             "guardrail": "D2 dataset artifacts are absent; no model/profit/live readiness claim.",
         }
-    manifest = _normalize_dataset_manifest(_load_json(run_dir / "dataset_manifest.json"))
+    manifest, manifest_errors = _safe_load_json_artifact(
+        run_dir / "dataset_manifest.json",
+        error_prefix="DATASET_MANIFEST",
+    )
+    if manifest_errors:
+        return _fail_closed_latest_artifact(
+            "dataset",
+            run_dir=run_dir,
+            errors=manifest_errors,
+            readiness_status="DATASET_ARTIFACT_SELECTION_FAILED_CLOSED",
+        )
+    manifest = _normalize_dataset_manifest(manifest)
+    normalization_stats, normalization_errors = _safe_load_json_artifact(
+        run_dir / "normalization_stats.json",
+        error_prefix="DATASET_NORMALIZATION_STATS",
+        required=False,
+        fallback={},
+    )
+    leakage_report, leakage_errors = _safe_load_json_artifact(
+        run_dir / "leakage_report.json",
+        error_prefix="DATASET_LEAKAGE_REPORT",
+        required=False,
+        fallback={},
+    )
+    artifact_errors = [*normalization_errors, *leakage_errors]
+    if artifact_errors:
+        return _fail_closed_latest_artifact(
+            "dataset",
+            run_dir=run_dir,
+            errors=artifact_errors,
+            readiness_status="DATASET_ARTIFACT_SELECTION_FAILED_CLOSED",
+        )
     safe_limit = _bounded_limit(sample_limit, default=25, maximum=500)
     payload = {
         **manifest,
@@ -963,8 +1060,8 @@ def load_dataset_latest(*, run: str | None = None, sample_limit: int = 25) -> di
             "blocked_windows": _read_csv_rows(run_dir / "blocked_windows.csv", safe_limit),
         },
     }
-    payload["normalization_stats"] = _load_json(run_dir / "normalization_stats.json") if (run_dir / "normalization_stats.json").exists() else {}
-    payload["leakage_report"] = _load_json(run_dir / "leakage_report.json") if (run_dir / "leakage_report.json").exists() else {}
+    payload["normalization_stats"] = normalization_stats
+    payload["leakage_report"] = leakage_report
     return payload
 
 
@@ -977,7 +1074,25 @@ def list_dataset_artifacts(limit: int = 20) -> dict[str, Any]:
             manifest_path = run_dir / "dataset_manifest.json"
             if not run_dir.is_dir() or not manifest_path.exists():
                 continue
-            manifest = _normalize_dataset_manifest(_load_json(manifest_path))
+            manifest, errors = _safe_load_json_artifact(manifest_path, error_prefix="DATASET_MANIFEST")
+            if errors:
+                runs.append(
+                    {
+                        "kind": "daily_ohlcv_dataset",
+                        "run_id": run_dir.name,
+                        "artifact_dir": str(run_dir),
+                        "primary_file": str(manifest_path),
+                        "modified_at": manifest_path.stat().st_mtime,
+                        "status": "BLOCKED_INVALID_LATEST_ARTIFACT",
+                        "artifact_status": "FAIL_CLOSED_INVALID_ARTIFACT",
+                        "artifact_selection_errors": errors,
+                        "read_only": True,
+                    }
+                )
+                if len(runs) >= safe_limit:
+                    break
+                continue
+            manifest = _normalize_dataset_manifest(manifest)
             runs.append(
                 {
                     "kind": "daily_ohlcv_dataset",
@@ -1034,11 +1149,48 @@ def load_prediction_latest(*, run: str | None = None, sample_limit: int = 25) ->
     if run_dir is None:
         return load_not_started_surface("prediction")
     safe_limit = _bounded_limit(sample_limit, default=25, maximum=500)
-    manifest = _load_json(run_dir / "prediction_manifest.json")
-    verdict = _load_json(run_dir / "verdict.json") if (run_dir / "verdict.json").exists() else manifest.get("verdict", {})
-    baseline = _load_json(run_dir / "baseline_metrics.json") if (run_dir / "baseline_metrics.json").exists() else {"metrics": []}
-    baseline_delta_summary = _load_json(run_dir / "baseline_delta_summary.json") if (run_dir / "baseline_delta_summary.json").exists() else manifest.get("baseline_delta_summary", {})
-    model_metrics = _load_json(run_dir / "model_metrics.json") if (run_dir / "model_metrics.json").exists() else {"metrics": []}
+    manifest, manifest_errors = _safe_load_json_artifact(
+        run_dir / "prediction_manifest.json",
+        error_prefix="PREDICTION_MANIFEST",
+    )
+    verdict, verdict_errors = _safe_load_json_artifact(
+        run_dir / "verdict.json",
+        error_prefix="PREDICTION_VERDICT",
+        required=False,
+        fallback=manifest.get("verdict", {}) if isinstance(manifest.get("verdict"), dict) else {},
+    )
+    baseline, baseline_errors = _safe_load_json_artifact(
+        run_dir / "baseline_metrics.json",
+        error_prefix="PREDICTION_BASELINE_METRICS",
+        required=False,
+        fallback={"metrics": []},
+    )
+    baseline_delta_summary, delta_errors = _safe_load_json_artifact(
+        run_dir / "baseline_delta_summary.json",
+        error_prefix="PREDICTION_BASELINE_DELTA_SUMMARY",
+        required=False,
+        fallback=manifest.get("baseline_delta_summary", {}) if isinstance(manifest.get("baseline_delta_summary"), dict) else {},
+    )
+    model_metrics, model_errors = _safe_load_json_artifact(
+        run_dir / "model_metrics.json",
+        error_prefix="PREDICTION_MODEL_METRICS",
+        required=False,
+        fallback={"metrics": []},
+    )
+    artifact_errors = [
+        *manifest_errors,
+        *verdict_errors,
+        *baseline_errors,
+        *delta_errors,
+        *model_errors,
+    ]
+    if artifact_errors:
+        return _fail_closed_latest_artifact(
+            "prediction",
+            run_dir=run_dir,
+            errors=artifact_errors,
+            readiness_status=D3_BLOCKED_READINESS_STATUS,
+        )
     manifest, verdict, baseline_delta_summary = _normalize_prediction_payload(manifest, verdict, baseline_delta_summary)
     return {
         **manifest,
@@ -1073,14 +1225,69 @@ def load_portfolio_latest(*, run: str | None = None, sample_limit: int = 25) -> 
     if run_dir is None:
         return load_not_started_surface("portfolio")
     safe_limit = _bounded_limit(sample_limit, default=25, maximum=500)
-    manifest = _load_json(run_dir / "rl_manifest.json")
-    verdict = _load_json(run_dir / "verdict.json") if (run_dir / "verdict.json").exists() else manifest.get("verdict", {})
-    policy_metrics = _load_json(run_dir / "policy_metrics.json") if (run_dir / "policy_metrics.json").exists() else {"metrics": []}
-    baseline_comparison = _load_json(run_dir / "baseline_comparison.json") if (run_dir / "baseline_comparison.json").exists() else {}
-    training_manifest = _load_json(run_dir / "training_manifest.json") if (run_dir / "training_manifest.json").exists() else manifest
-    reward_component_summary = _load_json(run_dir / "reward_component_summary.json") if (run_dir / "reward_component_summary.json").exists() else {}
-    policy_evaluation = _load_json(run_dir / "policy_evaluation_manifest.json") if (run_dir / "policy_evaluation_manifest.json").exists() else {}
-    observation_manifest = _load_json(run_dir / "observation_manifest.json") if (run_dir / "observation_manifest.json").exists() else manifest.get("observation_manifest", {})
+    manifest, manifest_errors = _safe_load_json_artifact(
+        run_dir / "rl_manifest.json",
+        error_prefix="PORTFOLIO_MANIFEST",
+    )
+    verdict, verdict_errors = _safe_load_json_artifact(
+        run_dir / "verdict.json",
+        error_prefix="PORTFOLIO_VERDICT",
+        required=False,
+        fallback=manifest.get("verdict", {}) if isinstance(manifest.get("verdict"), dict) else {},
+    )
+    policy_metrics, policy_errors = _safe_load_json_artifact(
+        run_dir / "policy_metrics.json",
+        error_prefix="PORTFOLIO_POLICY_METRICS",
+        required=False,
+        fallback={"metrics": []},
+    )
+    baseline_comparison, baseline_errors = _safe_load_json_artifact(
+        run_dir / "baseline_comparison.json",
+        error_prefix="PORTFOLIO_BASELINE_COMPARISON",
+        required=False,
+        fallback={},
+    )
+    training_manifest, training_errors = _safe_load_json_artifact(
+        run_dir / "training_manifest.json",
+        error_prefix="PORTFOLIO_TRAINING_MANIFEST",
+        required=False,
+        fallback=manifest,
+    )
+    reward_component_summary, reward_errors = _safe_load_json_artifact(
+        run_dir / "reward_component_summary.json",
+        error_prefix="PORTFOLIO_REWARD_COMPONENT_SUMMARY",
+        required=False,
+        fallback={},
+    )
+    policy_evaluation, evaluation_errors = _safe_load_json_artifact(
+        run_dir / "policy_evaluation_manifest.json",
+        error_prefix="PORTFOLIO_POLICY_EVALUATION",
+        required=False,
+        fallback={},
+    )
+    observation_manifest, observation_errors = _safe_load_json_artifact(
+        run_dir / "observation_manifest.json",
+        error_prefix="PORTFOLIO_OBSERVATION_MANIFEST",
+        required=False,
+        fallback=manifest.get("observation_manifest", {}) if isinstance(manifest.get("observation_manifest"), dict) else {},
+    )
+    artifact_errors = [
+        *manifest_errors,
+        *verdict_errors,
+        *policy_errors,
+        *baseline_errors,
+        *training_errors,
+        *reward_errors,
+        *evaluation_errors,
+        *observation_errors,
+    ]
+    if artifact_errors:
+        return _fail_closed_latest_artifact(
+            "portfolio",
+            run_dir=run_dir,
+            errors=artifact_errors,
+            readiness_status=D4_RESEARCH_READINESS_STATUS,
+        )
     manifest, verdict = _normalize_portfolio_payload(manifest, verdict)
     training_manifest, _training_verdict = _normalize_portfolio_payload(
         training_manifest,
@@ -1143,13 +1350,30 @@ def load_walk_forward_latest(*, run: str | None = None, sample_limit: int = 25) 
     if run_dir is None:
         return load_not_started_surface("gate")
     safe_limit = _bounded_limit(sample_limit, default=25, maximum=500)
-    manifest = _load_json(run_dir / "walk_forward_manifest.json")
-    verdict = _load_json(run_dir / "gate_verdict.json") if (run_dir / "gate_verdict.json").exists() else manifest.get("verdict", {})
-    d4_state_contract = (
-        _load_json(run_dir / "d4_state_contract.json")
-        if (run_dir / "d4_state_contract.json").exists()
-        else manifest.get("d4_state_contract", {})
+    manifest, manifest_errors = _safe_load_json_artifact(
+        run_dir / "walk_forward_manifest.json",
+        error_prefix="WALK_FORWARD_MANIFEST",
     )
+    verdict, verdict_errors = _safe_load_json_artifact(
+        run_dir / "gate_verdict.json",
+        error_prefix="WALK_FORWARD_GATE_VERDICT",
+        required=False,
+        fallback=manifest.get("verdict", {}) if isinstance(manifest.get("verdict"), dict) else {},
+    )
+    d4_state_contract, d4_errors = _safe_load_json_artifact(
+        run_dir / "d4_state_contract.json",
+        error_prefix="WALK_FORWARD_D4_STATE_CONTRACT",
+        required=False,
+        fallback=manifest.get("d4_state_contract", {}) if isinstance(manifest.get("d4_state_contract"), dict) else {},
+    )
+    artifact_errors = [*manifest_errors, *verdict_errors, *d4_errors]
+    if artifact_errors:
+        return _fail_closed_latest_artifact(
+            "gate",
+            run_dir=run_dir,
+            errors=artifact_errors,
+            readiness_status=D5_RESEARCH_READINESS_STATUS,
+        )
     manifest, verdict = _normalize_walk_forward_payload(manifest, verdict)
     verdict = _normalize_d5_contract_verdict(verdict, d4_state_contract if isinstance(d4_state_contract, dict) else {})
     manifest["verdict"] = verdict
