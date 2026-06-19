@@ -3245,6 +3245,26 @@ def _market_regime_artifact_path(run_dir: Path, manifest: dict[str, Any], key: s
 def _market_regime_artifact_hashes(paths: dict[str, Path]) -> dict[str, str]:
     return {key: _file_sha256(path) for key, path in paths.items() if path.is_file()}
 
+def _market_regime_missing_columns(rows: list[dict[str, Any]], required: set[str]) -> set[str]:
+    if not rows:
+        return required
+    seen: set[str] = set()
+    for row in rows:
+        seen.update(str(key) for key in row.keys())
+    return required - seen
+
+
+def _read_market_regime_csv_rows(path: Path, limit: int, key: str) -> tuple[list[dict[str, Any]], str | None]:
+    try:
+        rows = _read_csv_rows(path, limit)
+    except (OSError, UnicodeDecodeError, csv.Error):
+        return [], f"{key.upper()}_CSV_READ_ERROR"
+    if any(None in row for row in rows):
+        return rows, f"{key.upper()}_CSV_MALFORMED_ROW"
+    return rows, None
+
+
+
 
 def _validate_market_regime_audit_payload(
     *,
@@ -3254,6 +3274,8 @@ def _validate_market_regime_audit_payload(
     leakage_audit: dict[str, Any],
     stale_audit: dict[str, Any],
     proxy_rows: list[dict[str, Any]],
+    universe_rows: list[dict[str, Any]],
+    control_rows: list[dict[str, Any]],
 ) -> list[str]:
     errors: list[str] = []
     if manifest.get("schema_version") != "daily_ohlcv_market_regime_audit.v1":
@@ -3293,6 +3315,39 @@ def _validate_market_regime_audit_payload(
             errors.append(f"STALE_ARTIFACT_AUDIT_{key.upper()}_NONZERO")
     if stale_audit.get("optimistic_state_allowed") is not False:
         errors.append("STALE_ARTIFACT_OPTIMISTIC_STATE_ALLOWED")
+    universe_missing = _market_regime_missing_columns(
+        universe_rows,
+        {"table", "code", "code_preserved_as_string", "row_count", "status"},
+    )
+    if universe_missing:
+        errors.append(f"UNIVERSE_CSV_MISSING_COLUMNS:{','.join(sorted(universe_missing))}")
+    if not universe_rows:
+        errors.append("UNIVERSE_CSV_EMPTY")
+    proxy_missing = _market_regime_missing_columns(
+        proxy_rows,
+        {"split", "fold_id", "table", "code", "source_timing", "future_label_used", "promotion_allowed", "status"},
+    )
+    if proxy_missing:
+        errors.append(f"PROXY_CSV_MISSING_COLUMNS:{','.join(sorted(proxy_missing))}")
+    if not proxy_rows:
+        errors.append("PROXY_CSV_EMPTY")
+    control_missing = _market_regime_missing_columns(
+        control_rows,
+        {"control", "cost_round_trip_bp", "promotion_allowed", "status"},
+    )
+    if control_missing:
+        errors.append(f"CONTROL_CSV_MISSING_COLUMNS:{','.join(sorted(control_missing))}")
+    required_controls = {str(item) for item in manifest.get("required_controls") or []}
+    observed_controls = {str(row.get("control") or "") for row in control_rows}
+    if required_controls and not required_controls <= observed_controls:
+        errors.append("CONTROL_CSV_MISSING_REQUIRED_CONTROLS")
+    observed_costs = {_to_int(row.get("cost_round_trip_bp"), None) for row in control_rows}
+    if not {0, 23, 46} <= observed_costs:
+        errors.append("CONTROL_CSV_MISSING_COST_SENSITIVITY")
+    for row in control_rows:
+        if str(row.get("promotion_allowed")).lower() not in {"false", "0"} and row.get("promotion_allowed") is not False:
+            errors.append("CONTROL_CSV_PROMOTION_ALLOWED")
+            break
     for row in proxy_rows:
         if str(row.get("future_label_used")) not in {"False", "false", "0"} and row.get("future_label_used") is not False:
             errors.append("PROXY_FUTURE_LABEL_USED")
@@ -3325,9 +3380,15 @@ def load_market_regime_audit(*, run: str | None = None, limit: int = 25) -> dict
     price_basis_audit, price_error = _load_json_strict(artifact_paths["price_basis_audit"])
     leakage_audit, leakage_error = _load_json_strict(artifact_paths["leakage_audit"])
     stale_audit, stale_error = _load_json_strict(artifact_paths["stale_artifact_audit"])
-    universe_all = _read_csv_rows(artifact_paths["universe_quality"], MAX_LIMIT)
-    proxy_all = _read_csv_rows(artifact_paths["regime_proxy_metrics"], MAX_LIMIT)
-    controls_all = _read_csv_rows(artifact_paths["baseline_control_metrics"], MAX_LIMIT)
+    universe_all, universe_csv_error = _read_market_regime_csv_rows(
+        artifact_paths["universe_quality"], MAX_LIMIT, "universe"
+    )
+    proxy_all, proxy_csv_error = _read_market_regime_csv_rows(
+        artifact_paths["regime_proxy_metrics"], MAX_LIMIT, "proxy"
+    )
+    controls_all, controls_csv_error = _read_market_regime_csv_rows(
+        artifact_paths["baseline_control_metrics"], MAX_LIMIT, "control"
+    )
     validation_errors = _validate_market_regime_audit_payload(
         manifest=manifest,
         artifact_paths=artifact_paths,
@@ -3335,10 +3396,15 @@ def load_market_regime_audit(*, run: str | None = None, limit: int = 25) -> dict
         leakage_audit=leakage_audit,
         stale_audit=stale_audit,
         proxy_rows=proxy_all,
+        universe_rows=universe_all,
+        control_rows=controls_all,
     )
     for key, error in (("price_basis_audit", price_error), ("leakage_audit", leakage_error), ("stale_artifact_audit", stale_error)):
         if error:
             validation_errors.append(f"{key.upper()}_{error}")
+    for error in (universe_csv_error, proxy_csv_error, controls_csv_error):
+        if error:
+            validation_errors.append(error)
     row_counts = {
         "universe_quality": len(universe_all),
         "regime_proxy_metrics": len(proxy_all),

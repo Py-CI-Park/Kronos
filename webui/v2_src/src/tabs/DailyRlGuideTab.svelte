@@ -100,6 +100,9 @@
   const marketRegimeAuditRowCounts = (): [string, unknown][] => recordEntries(field(guide?.market_regime_audit, 'row_counts'));
   const marketRegimeAuditArtifacts = (): [string, unknown][] => recordEntries(field(guide?.market_regime_audit, 'artifact_paths'));
   const marketRegimeAuditBlockers = (): string[] => stringItems(field(marketRegimeAuditSummary(), 'blocker_flags'));
+  const marketRegimeArtifactHashes = (): [string, unknown][] => recordEntries(field(guide?.market_regime_audit, 'artifact_hashes'));
+  const marketRegimeSourceHashes = (): [string, unknown][] => recordEntries(field(guide?.market_regime_audit, 'source_hashes'));
+  const sourceHashText = (value: unknown): string => String(field(value, 'sha256') ?? value ?? '—');
   const improvementQueueRows = (): readonly Record<string, unknown>[] => rows(field(guide?.improvement_queue, 'items'));
   const maturityRows = (): readonly Record<string, unknown>[] => rows(field(guide?.page_maturity_report, 'priority_completion'));
   const researchWorkflowRows = (): readonly Record<string, unknown>[] => rows(field(guide?.research_workflow_catalog, 'workflows'));
@@ -781,6 +784,14 @@
       <div class="text-eyebrow">Artifacts / hashes</div>
       {#each marketRegimeAuditArtifacts().slice(0, 4) as [name, path]}
         <div class="artifact-line"><b>{name}</b><span>{String(path)}</span></div>
+      {/each}
+      <div class="text-eyebrow" style="margin-top:10px">Artifact SHA-256</div>
+      {#each marketRegimeArtifactHashes().slice(0, 4) as [name, hash]}
+        <div class="artifact-line"><b>{name}</b><span>{String(hash)}</span></div>
+      {/each}
+      <div class="text-eyebrow" style="margin-top:10px">Source SHA-256</div>
+      {#each marketRegimeSourceHashes().slice(0, 3) as [name, info]}
+        <div class="artifact-line"><b>{name}</b><span>{sourceHashText(info)}</span></div>
       {/each}
     </article>
   </div>

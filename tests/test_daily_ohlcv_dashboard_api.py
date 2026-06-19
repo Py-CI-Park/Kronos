@@ -965,6 +965,79 @@ def test_daily_ohlcv_market_regime_audit_invalid_artifacts_fail_closed(tmp_path,
     assert "PROMOTION_ALLOWED_NOT_FALSE" in payload["errors"]
     assert "LOCK_NOT_FALSE:model_build_allowed" in payload["errors"]
 
+
+def test_daily_ohlcv_market_regime_audit_rejects_malformed_csv_schema(tmp_path, monkeypatch):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    root = tmp_path / "market_regime"
+    run_dir = root / "bad_csv"
+    run_dir.mkdir(parents=True)
+    json_payloads = {
+        "price_basis_audit.json": {"status": "UNKNOWN_CONFIRMED"},
+        "leakage_audit.json": {"status": "PASS", "future_label_used": False},
+        "stale_artifact_audit.json": {
+            "status": "PASS",
+            "missing_count": 0,
+            "malformed_count": 0,
+            "stale_count": 0,
+            "optimistic_state_allowed": False,
+        },
+    }
+    for filename, payload in json_payloads.items():
+        (run_dir / filename).write_text(json.dumps(payload), encoding="utf-8")
+    for filename in ("universe_quality.csv", "regime_proxy_metrics.csv", "baseline_control_metrics.csv"):
+        (run_dir / filename).write_text("wrong_column\nvalue,extra\n", encoding="utf-8")
+    artifact_files = {
+        "price_basis_audit": "price_basis_audit.json",
+        "universe_quality": "universe_quality.csv",
+        "regime_proxy_metrics": "regime_proxy_metrics.csv",
+        "baseline_control_metrics": "baseline_control_metrics.csv",
+        "leakage_audit": "leakage_audit.json",
+        "stale_artifact_audit": "stale_artifact_audit.json",
+    }
+    artifact_hashes = {
+        key: hashlib.sha256((run_dir / filename).read_bytes()).hexdigest()
+        for key, filename in artifact_files.items()
+    }
+    (run_dir / "market_regime_audit_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "daily_ohlcv_market_regime_audit.v1",
+                "status": "COMPLETED_RESEARCH_ONLY",
+                "run_id": "bad_csv",
+                "source_hashes": {
+                    "stom_rl/daily_market_regime_audit.py": {"exists": True, "sha256": "a" * 64},
+                    "stom_rl/daily_ohlcv_db.py": {"exists": True, "sha256": "b" * 64},
+                    "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_prereg_2026-06-19.md": {"exists": True, "sha256": "c" * 64},
+                },
+                "artifact_paths": {key: str(run_dir / filename) for key, filename in artifact_files.items()},
+                "artifact_hashes": artifact_hashes,
+                "required_controls": ["no_trade", "shuffle", "equal_weight_top_k", "frozen_d3"],
+                "research_only_locks": {
+                    "model_build_allowed": False,
+                    "paper_forward_allowed": False,
+                    "live_broker_order_allowed": False,
+                    "go_summary_allowed": False,
+                    "profitability_claim_allowed": False,
+                },
+                "promotion_allowed": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_MARKET_REGIME_AUDIT_ROOT", root)
+
+    payload = daily_dashboard.load_market_regime_audit(run="bad_csv")
+
+    assert payload["status"] == "INVALID_MARKET_REGIME_AUDIT_ARTIFACTS"
+    assert payload["promotion_allowed"] is False
+    assert payload["model_build_allowed"] is False
+    assert any(error.startswith("UNIVERSE_CSV_MISSING_COLUMNS:") for error in payload["errors"])
+    assert any(error.startswith("PROXY_CSV_MISSING_COLUMNS:") for error in payload["errors"])
+    assert any(error.startswith("CONTROL_CSV_MISSING_COLUMNS:") for error in payload["errors"])
+    assert "UNIVERSE_CSV_MALFORMED_ROW" in payload["errors"]
+    assert "CONTROL_CSV_MISSING_COST_SENSITIVITY" in payload["errors"]
+
 def test_daily_ohlcv_rejection_analytics_manifest_status_required(tmp_path, monkeypatch):
     import webui.daily_ohlcv_dashboard as daily_dashboard
 
