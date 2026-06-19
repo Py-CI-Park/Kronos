@@ -3,7 +3,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from stom_rl.daily_market_regime_audit import run_market_regime_audit
+from stom_rl.daily_market_regime_audit import build_stale_artifact_audit, run_market_regime_audit
 
 
 def _make_daily_db(path: Path) -> None:
@@ -53,6 +53,8 @@ def test_market_regime_audit_writes_research_only_artifacts(tmp_path):
     assert manifest["cost_sensitivity_bp"] == [0, 23, 46]
     assert "D0_PRICE_BASIS_NOT_VERIFIED" in manifest["blocker_flags"]
     assert manifest["stale_artifact_status"] == "PASS"
+    assert manifest["source_hashes"]["stom_rl/daily_market_regime_audit.py"]["exists"] is True
+    assert manifest["source_hashes"]["stom_rl/daily_market_regime_audit.py"]["sha256"]
 
     required = [
         "market_regime_audit_manifest.json",
@@ -101,3 +103,17 @@ def test_market_regime_audit_missing_db_fails_closed(tmp_path):
     assert manifest["research_only_locks"]["model_build_allowed"] is False
     manifest_path = tmp_path / "runs" / "missing_db" / "market_regime_audit_manifest.json"
     assert manifest_path.exists()
+
+def test_stale_artifact_audit_fails_closed_on_missing_or_malformed_json(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "malformed.json").write_text("{not-json", encoding="utf-8")
+
+    audit = build_stale_artifact_audit(run_dir, required_artifacts=["malformed.json", "missing.json"])
+
+    assert audit["status"] == "FAIL_CLOSED"
+    assert audit["malformed_count"] == 1
+    assert audit["missing_count"] == 1
+    checks = {row["artifact"]: row for row in audit["artifact_checks"]}
+    assert checks["malformed.json"]["parse_status"] == "malformed_fail_closed"
+    assert checks["missing.json"]["parse_status"] == "missing_fail_closed"

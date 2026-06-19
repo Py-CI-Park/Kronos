@@ -59,6 +59,12 @@ REQUIRED_ARTIFACTS = (
     "leakage_audit.json",
     "stale_artifact_audit.json",
 )
+SOURCE_HASH_PATHS = (
+    "stom_rl/daily_market_regime_audit.py",
+    "stom_rl/daily_ohlcv_db.py",
+    "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_prereg_2026-06-19.md",
+)
+
 
 
 def _utc_now() -> str:
@@ -94,6 +100,14 @@ def _fingerprint_path(path: Path) -> dict[str, Any]:
         return {"exists": True, "path": str(path), "sha256": _sha256_file(path), "bytes": path.stat().st_size}
     payload = "|".join(sorted(child.name for child in path.iterdir()))
     return {"exists": True, "path": str(path), "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(), "bytes": None}
+
+def _source_hashes(paths: Sequence[str] = SOURCE_HASH_PATHS) -> dict[str, dict[str, Any]]:
+    hashes: dict[str, dict[str, Any]] = {}
+    for rel_path in paths:
+        path = REPO_ROOT / rel_path
+        hashes[rel_path] = _fingerprint_path(path)
+    return hashes
+
 
 
 def _quote_ident(name: str) -> str:
@@ -353,6 +367,7 @@ def run_market_regime_audit(
             "promotion_allowed": False,
             "research_only_locks": _research_only_locks(),
             "guardrail": RESEARCH_GUARDRAIL,
+            "source_hashes": _source_hashes(),
         }
         _write_json(manifest_path, fail_payload)
         return fail_payload
@@ -477,6 +492,7 @@ def run_market_regime_audit(
         "status": "COMPLETED_RESEARCH_ONLY",
         "verdict": "BLOCKER_EVIDENCE_RECORDED_NO_PROMOTION",
         "source_ref": source_ref or "working_tree",
+        "source_hashes": _source_hashes(),
         "db_path": str(db_path),
         "db_fingerprint": _fingerprint_path(db_path),
         "table_denominator_count": len(all_tables),
