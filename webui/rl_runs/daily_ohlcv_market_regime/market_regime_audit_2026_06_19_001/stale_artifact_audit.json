@@ -1,0 +1,40 @@
+{
+  "schema_version": "daily_ohlcv_market_regime_stale_artifact_audit.v1",
+  "status": "PASS",
+  "missing_count": 0,
+  "malformed_count": 0,
+  "artifact_checks": [
+    {
+      "artifact": "price_basis_audit.json",
+      "exists": true,
+      "parse_status": "json_ok",
+      "sha256": "6dde34279c02a92ac542f1964cb88ac68abe9ff124c83e54aa363b9341538054"
+    },
+    {
+      "artifact": "universe_quality.csv",
+      "exists": true,
+      "parse_status": "not_checked",
+      "sha256": "2b4bb0db9179f38045303c42dac1913ac7f7b0eb9239dfe5921ad549b3ab585d"
+    },
+    {
+      "artifact": "regime_proxy_metrics.csv",
+      "exists": true,
+      "parse_status": "not_checked",
+      "sha256": "3401fb152f1d2a9b5440461bf402dffec4973c6e4be86e23e4321999da32b92b"
+    },
+    {
+      "artifact": "baseline_control_metrics.csv",
+      "exists": true,
+      "parse_status": "not_checked",
+      "sha256": "7c53fa08e12f1d110ac52ac79d6e9373b3c0e9b02b75efdeb6000d4b616d2cb4"
+    },
+    {
+      "artifact": "leakage_audit.json",
+      "exists": true,
+      "parse_status": "json_ok",
+      "sha256": "79ec94836b2166d7482e87f11b63c23f9d56bdaf2d48a85a6445fe9d9c050e6e"
+    }
+  ],
+  "latest_selection_policy": "hash_required_and_missing_or_malformed_artifacts_fail_closed",
+  "optimistic_state_allowed": false
+}

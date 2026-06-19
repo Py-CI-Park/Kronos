@@ -1,0 +1,67 @@
+{
+  "schema_version": "daily_ohlcv_market_regime_audit.v1",
+  "run_id": "market_regime_audit_2026_06_19_001",
+  "created_at_utc": "2026-06-19T06:28:31Z",
+  "status": "COMPLETED_RESEARCH_ONLY",
+  "verdict": "BLOCKER_EVIDENCE_RECORDED_NO_PROMOTION",
+  "source_ref": "4b86a3302a37",
+  "db_path": "D:\\Chanil_Park\\Project\\Programming\\Kronos\\_database\\Stock_Database_ohlcv_1day.db",
+  "db_fingerprint": {
+    "exists": true,
+    "path": "D:\\Chanil_Park\\Project\\Programming\\Kronos\\_database\\Stock_Database_ohlcv_1day.db",
+    "sha256": "9a363b33a9c2d125f3df7010e54efcec9d53fd6a40dbf16a39b538c20247a09c",
+    "bytes": 1009057792
+  },
+  "table_denominator_count": 4727,
+  "sampled_table_count": 25,
+  "row_limit_per_table": 260,
+  "default_cost_round_trip_bp": 23,
+  "cost_sensitivity_bp": [
+    0,
+    23,
+    46
+  ],
+  "required_controls": [
+    "no_trade",
+    "shuffle",
+    "equal_weight_top_k",
+    "frozen_d3"
+  ],
+  "artifact_paths": {
+    "price_basis_audit": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\price_basis_audit.json",
+    "universe_quality": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\universe_quality.csv",
+    "regime_proxy_metrics": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\regime_proxy_metrics.csv",
+    "baseline_control_metrics": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\baseline_control_metrics.csv",
+    "leakage_audit": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\leakage_audit.json",
+    "stale_artifact_audit": "webui\\rl_runs\\daily_ohlcv_market_regime\\market_regime_audit_2026_06_19_001\\stale_artifact_audit.json"
+  },
+  "artifact_hashes": {
+    "price_basis_audit": "6dde34279c02a92ac542f1964cb88ac68abe9ff124c83e54aa363b9341538054",
+    "universe_quality": "2b4bb0db9179f38045303c42dac1913ac7f7b0eb9239dfe5921ad549b3ab585d",
+    "regime_proxy_metrics": "3401fb152f1d2a9b5440461bf402dffec4973c6e4be86e23e4321999da32b92b",
+    "baseline_control_metrics": "7c53fa08e12f1d110ac52ac79d6e9373b3c0e9b02b75efdeb6000d4b616d2cb4",
+    "leakage_audit": "79ec94836b2166d7482e87f11b63c23f9d56bdaf2d48a85a6445fe9d9c050e6e",
+    "stale_artifact_audit": "39934839cf2a630eceaf10def7a0aef9bcf34541ae6934cf1f2eb1e06e9fe41f"
+  },
+  "blocker_flags": [
+    "D0_PRICE_BASIS_NOT_VERIFIED",
+    "D1_UNIVERSE_WATCH_OR_MISSINGNESS"
+  ],
+  "price_basis_status": "UNKNOWN_CONFIRMED",
+  "price_basis_blocked_uses": [
+    "decision_grade_return_labels",
+    "model_build_or_candidate_promotion",
+    "paper_forward_or_live_readiness_claims"
+  ],
+  "leakage_status": "PASS",
+  "stale_artifact_status": "PASS",
+  "research_only_locks": {
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "go_summary_allowed": false,
+    "profitability_claim_allowed": false
+  },
+  "promotion_allowed": false,
+  "guardrail": "Research-only market-regime data-quality audit; no live/broker/orders, no model-build unlock, no paper-forward unlock, and no profit claim."
+}

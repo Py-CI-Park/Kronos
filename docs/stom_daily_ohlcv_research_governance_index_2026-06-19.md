@@ -42,6 +42,7 @@ Latest observed merged base for this plan: `origin/feature/stom-rl-lab` at `34db
 | 13 | `docs/stom_daily_ohlcv_dashboard_first_research_platform_completion_result_2026-06-18.md` | result | `IMPLEMENTED_RESEARCH_ONLY_DASHBOARD_PLATFORM` | Non-live dashboard/research platform `100%`; live/model/paper readiness `0%` |
 | 14 | `docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_prereg_2026-06-19.md` | preregistration | `PREREGISTERED_RESEARCH_ONLY` | D0/D1/market-regime data-quality audit contract |
 | 15 | `docs/stom_daily_ohlcv_non_live_maturity_roadmap_2026-06-19.md` | roadmap | `NON_LIVE_MATURITY_ROADMAP` | PR-7 to PR-10 maturity gates |
+| 16 | `docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_result_2026-06-19.md` | result | `COMPLETED_RESEARCH_ONLY` / `BLOCKER_EVIDENCE_RECORDED_NO_PROMOTION` | `market_regime_audit_2026_06_19_001` |
 
 ## Latest generated evidence
 
@@ -54,6 +55,7 @@ Latest observed merged base for this plan: `origin/feature/stom-rl-lab` at `34db
 | Leakage audit | `webui/rl_runs/daily_ohlcv_signal_quality/signal_quality_audit_2026_06_18_001/signal_quality_leakage_audit.json` | Feature timing and future-label evaluation-only audit. |
 | Hypothesis rejection analytics manifest | `webui/rl_runs/daily_ohlcv_rejection_audit/hypothesis_rejection_audit_2026_06_18_001/audit_manifest.json` | Gate-funnel, rejection taxonomy, calibration, threshold sensitivity, false-negative review-only row counts, hashes, and research-only locks. |
 | Market-regime audit preregistration plan | `artifacts/scenario_batch_market_regime_audit_001_plan.json` | Frozen PR-7 scenario matrix for the next evidence-producing audit; no run outputs yet. |
+| Market-regime audit manifest | `webui/rl_runs/daily_ohlcv_market_regime/market_regime_audit_2026_06_19_001/market_regime_audit_manifest.json` | Source-hashed PR-8 audit manifest: 4,727 table denominator, 25 sampled tables, D0/D1 blockers, leakage pass, stale-artifact pass, promotion false. |
 
 ## Current findings snapshot
 
@@ -65,7 +67,7 @@ Latest observed merged base for this plan: `origin/feature/stom-rl-lab` at `34db
 | Label leakage | Bucket/proxy rows include source timing and future-label flags; lagged drawdown-path proxies are t-1 generated-artifact inputs. | Current audit passes no-leakage checks but needs stronger market-regime provenance |
 | D5 gate | Latest signal-quality run is diagnostic only and does not run or pass a D5 promotion gate. | Model-build/paper/live blocked |
 | Dashboard-first completion | Workflow center, inspector, safe config preview, approval-gated intent ledger, rejection analytics, and completion panel are integrated. | Non-live platform `100%`; live/model/paper readiness `0%` |
-| Market-regime data-quality audit | Fresh preregistration freezes adjusted/raw/split/dividend, universe, missingness, and past-only proxy checks. | `PREREGISTERED_RESEARCH_ONLY`; evidence pending PR-8 |
+| Market-regime data-quality audit | PR-8 runner emitted source-hashed artifacts for 25 sampled tables out of 4,727 denominator tables. D0 price basis is `UNKNOWN_CONFIRMED`; D1 missingness/universe remains WATCH/blocker evidence; leakage and stale-artifact checks pass. | `COMPLETED_RESEARCH_ONLY`; no D5/model/paper/live promotion |
 
 ## Data governance checklist
 

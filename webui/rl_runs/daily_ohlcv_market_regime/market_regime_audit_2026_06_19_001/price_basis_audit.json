@@ -1,0 +1,76 @@
+{
+  "status": "UNKNOWN_CONFIRMED",
+  "price_basis": "unknown",
+  "decision_grade_return_status": "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED",
+  "component_status": {
+    "adjusted_price": "not_declared_in_daily_db_schema",
+    "raw_price": "not_declared_in_daily_db_schema",
+    "split_adjustment": "not_declared_no_split_factor_or_corporate_action_table",
+    "dividend_adjustment": "not_declared_no_dividend_or_total_return_field"
+  },
+  "evidence": "Daily OHLCV tables include price/volume columns but no explicit adjusted/raw price flag, split factor, dividend, or corporate-action table was found in the daily DB contract; decision-grade return labels must treat adjustment status as unknown until independently verified.",
+  "adjustment_policy": "flag_split_like_discontinuities_and_block_decision_grade_metrics_until_price_basis_verified",
+  "blocking_implications": [
+    "decision_grade_return_labels_blocked_until_adjusted_or_raw_basis_is_verified",
+    "split_like_discontinuities_must_be_flagged_or_excluded_from_model_decision_windows",
+    "dashboard_must_keep_model_build_allowed_false_until_price_basis_and_gates_pass"
+  ],
+  "required_evidence": [
+    "official_or_vendor_field_declaring_adjusted_or_raw_close",
+    "split_factor_or_corporate_action_reference_for_split_like_windows",
+    "dividend_or_total_return_policy_if_returns_claim_dividend_adjustment",
+    "dated_audit_artifact_showing_rows_windows_and_downstream_blocker_effect"
+  ],
+  "allowed_uses": [
+    "read_only_db_coverage_and_quality_inspection",
+    "research_feature_preview_with_price_basis_unknown_label",
+    "split_like_window_discovery_for_future_exclusion_or_manual_review"
+  ],
+  "blocked_uses": [
+    "decision_grade_return_labels",
+    "model_build_or_candidate_promotion",
+    "paper_forward_or_live_readiness_claims"
+  ],
+  "user_guidance": [
+    {
+      "section": "D0 summary",
+      "can_do": "Inspect table count, date coverage, OHLC quality flags, and representative split-like windows.",
+      "must_not_do": "Treat D0 returns as decision-grade labels while price_basis is unknown.",
+      "next_action": "Provide independent adjusted/raw and split/dividend policy evidence, or keep the blocker visible."
+    },
+    {
+      "section": "D2/D3 downstream",
+      "can_do": "Build preview datasets and baselines with inherited price-basis warnings.",
+      "must_not_do": "Freeze or promote baselines without a verified price-basis policy.",
+      "next_action": "Rerun dataset and baseline verification after price-basis status changes."
+    },
+    {
+      "section": "D4-D9 promotion",
+      "can_do": "Use D4-D9 charts as research diagnostics only.",
+      "must_not_do": "Set model_build_allowed or paper_forward_allowed from unknown-basis evidence.",
+      "next_action": "Keep D0_PRICE_BASIS_NOT_VERIFIED in effective gate blockers until D0 is verified."
+    }
+  ],
+  "quality_scan_scope": "market_regime_audit_sample",
+  "quality_scan_table_count": 25,
+  "quality_scan_total_table_count": 4727,
+  "quality_scan_complete": false,
+  "split_like_table_count": 0,
+  "split_like_window_sample_count": 0,
+  "per_table_window_limit": 5,
+  "representative_windows": [
+    {
+      "table": "A000180",
+      "code": "000180",
+      "previous_date": 20260227,
+      "date": 20260303,
+      "previous_close": 1667.0,
+      "open": 8265.0,
+      "close": 8150.0,
+      "open_to_previous_close_ratio": 4.958008398320336,
+      "close_to_previous_close_ratio": 4.889022195560888,
+      "reason": "split_like_price_jump_with_unknown_adjustment_basis"
+    }
+  ],
+  "scan_limitation": "split_like windows are representative evidence capped per table; they confirm unknown adjustment risk but do not prove exact corporate actions"
+}

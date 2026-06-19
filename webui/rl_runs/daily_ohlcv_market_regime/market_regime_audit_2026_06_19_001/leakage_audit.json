@@ -1,0 +1,10 @@
+{
+  "schema_version": "daily_ohlcv_market_regime_leakage_audit.v1",
+  "status": "PASS",
+  "feature_timing_policy": "current_or_past_ohlcv_only; future labels evaluation-only",
+  "future_label_used": false,
+  "violation_count": 0,
+  "violations": [],
+  "promotion_allowed": false,
+  "guardrail": "Research-only market-regime data-quality audit; no live/broker/orders, no model-build unlock, no paper-forward unlock, and no profit claim."
+}
