@@ -1,6 +1,6 @@
-export async function fetchJson<T>(url: string): Promise<T | null> {
+export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, init);
     if (!response.ok) return null;
     return (await response.json()) as T;
   } catch {
