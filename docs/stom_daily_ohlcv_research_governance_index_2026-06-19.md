@@ -44,6 +44,7 @@ Latest observed merged base for this plan: `origin/feature/stom-rl-lab` at `34db
 | 15 | `docs/stom_daily_ohlcv_non_live_maturity_roadmap_2026-06-19.md` | roadmap | `NON_LIVE_MATURITY_ROADMAP` | PR-7 to PR-10 maturity gates |
 | 16 | `docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_result_2026-06-19.md` | result | `COMPLETED_RESEARCH_ONLY` / `BLOCKER_EVIDENCE_RECORDED_NO_PROMOTION` | `market_regime_audit_2026_06_19_001` |
 | 17 | `docs/stom_daily_ohlcv_pr10_artifact_selection_hardening_result_2026-06-19.md` | result | `COMPLETED_RESEARCH_ONLY` / `FAIL_CLOSED_LATEST_INVALID` | PR-10 latest-artifact selection hardening |
+| 18 | `docs/stom_daily_ohlcv_pr7_pr10_non_live_maturity_final_report_2026-06-19.md` | final report | `NON_LIVE_RESEARCH_MATURITY_100_COMPLETE` | PR-7~PR-10 local branch/commit readiness and final maturity score |
 
 ## Latest generated evidence
 
@@ -102,7 +103,7 @@ Latest observed merged base for this plan: `origin/feature/stom-rl-lab` at `34db
 
 ## Next research pointer
 
-PR-7 through PR-10 are complete for the planned non-live research maturity lane. The next step is **final integration and maturity reporting**: verify the integrated branch state, document commit/PR readiness, and report the honest maturity score.
+PR-7 through PR-10 are complete for the planned non-live research maturity lane. The final integration report is `docs/stom_daily_ohlcv_pr7_pr10_non_live_maturity_final_report_2026-06-19.md`. The next research should not be model/live promotion; it should be a fresh preregistered lane for D0 price-basis/D1 official-universe evidence first, or separately scoped factory/probability/opening_30m work only after acknowledging current blockers.
 
 Allowed follow-up research remains separate and must be preregistered on a fresh branch:
 
