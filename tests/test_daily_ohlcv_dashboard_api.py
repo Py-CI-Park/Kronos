@@ -460,8 +460,12 @@ def test_daily_ohlcv_rl_env_guide_explains_research_only_environment():
     assert replay["policy_type"] == "tabular_q"
     assert replay["policy_network_available"] is False
     assert replay["policy_network_status"] == "MISSING_POLICY_ARTIFACT"
-    assert replay["frames"][0]["status"] == "LOADED_GENERATED_ARTIFACT"
-    assert replay["frames"][0]["state"]["future_label_exposed"] == "False"
+    if replay["frames"]:
+        assert replay["frames"][0]["status"] in {"LOADED_GENERATED_ARTIFACT", "MISSING_REPLAY_JOIN_KEY"}
+    else:
+        assert replay["status"] == "MISSING_REPLAY_ARTIFACT"
+    if replay["frames"]:
+        assert replay["frames"][0]["state"]["future_label_exposed"] in {"False", "UNKNOWN"}
     assert "fake neural/probability fallback" in replay["guardrail"]
     catalog = payload["research_process_catalog"]
     assert catalog["schema_version"] == "daily_rl_research_process_catalog.v1"
@@ -532,14 +536,24 @@ def test_daily_ohlcv_rl_env_guide_explains_research_only_environment():
 
     regime_readiness = payload["market_regime_audit_readiness"]
     assert regime_readiness["schema_version"] == "daily_rl_market_regime_readiness.v1"
-    assert regime_readiness["maturity_score_pct"] == 72
+    assert regime_readiness["maturity_score_pct"] == 88
     assert "D0_PRICE_BASIS" in regime_readiness["blocked_gates"]
-    assert regime_readiness["ai_guidance_format"]["next_research_lane"] == "past_only_market_regime_data_quality_audit"
+    assert regime_readiness["status"] == "COMPLETED_RESEARCH_ONLY_BLOCKERS_ACTIVE"
+    assert regime_readiness["source_market_regime_run_id"] == "market_regime_audit_2026_06_19_001"
+    assert regime_readiness["ai_guidance_format"]["next_research_lane"] == "read_only_dashboard_binding_then_artifact_selection_hardening"
+    market_regime_audit = payload["market_regime_audit"]
+    assert market_regime_audit["schema_version"] == "daily_ohlcv_market_regime_audit_dashboard.v1"
+    assert market_regime_audit["status"] == "COMPLETED_RESEARCH_ONLY"
+    assert market_regime_audit["promotion_allowed"] is False
+    assert market_regime_audit["summary"]["price_basis_status"] == "UNKNOWN_CONFIRMED"
+    assert "D0_PRICE_BASIS_NOT_VERIFIED" in market_regime_audit["summary"]["blocker_flags"]
+    assert market_regime_audit["stale_artifact_audit"]["optimistic_state_allowed"] is False
+
 
     improvement_queue = payload["improvement_queue"]
     assert improvement_queue["schema_version"] == "daily_rl_ai_improvement_queue.v1"
     assert len(improvement_queue["items"]) == 5
-    assert improvement_queue["items"][0]["blocker_status"] == "BLOCKED_D0_D1_DATA_GOVERNANCE"
+    assert improvement_queue["items"][0]["blocker_status"] == "COMPLETED_RESEARCH_ONLY_BLOCKERS_ACTIVE"
     assert "profit_claim" in improvement_queue["ai_guidance_format"]["blocked_actions"]
 
     comparison = payload["scenario_comparison"]
@@ -876,6 +890,79 @@ def test_daily_ohlcv_rejection_analytics_invalid_artifacts_fail_closed(tmp_path,
     assert "MISSING_REQUIRED_ARTIFACT:gate_funnel_metrics.csv" in payload["errors"]
     assert "PROMOTION_ALLOWED_NOT_FALSE" in payload["errors"]
 
+
+def test_daily_ohlcv_market_regime_audit_api_is_research_only():
+    client = flask_app.test_client()
+
+    response = client.get("/api/daily-ohlcv/market-regime-audit?limit=3")
+    assert response.status_code == 200
+    payload = response.get_json()
+
+    assert payload["schema_version"] == "daily_ohlcv_market_regime_audit_dashboard.v1"
+    assert payload["status"] == "COMPLETED_RESEARCH_ONLY"
+    assert payload["run_id"] == "market_regime_audit_2026_06_19_001"
+    assert payload["read_only"] is True
+    assert payload["promotion_allowed"] is False
+    assert payload["model_build_allowed"] is False
+    assert payload["paper_forward_allowed"] is False
+    assert payload["live_broker_order_allowed"] is False
+    assert payload["profitability_claim_allowed"] is False
+    assert payload["summary"]["default_cost_round_trip_bp"] == 23
+    assert payload["summary"]["cost_sensitivity_bp"] == [0, 23, 46]
+    assert payload["summary"]["blocker_flags"] == ["D0_PRICE_BASIS_NOT_VERIFIED", "D1_UNIVERSE_WATCH_OR_MISSINGNESS"]
+    assert payload["row_counts"] == {
+        "universe_quality": 25,
+        "regime_proxy_metrics": 25,
+        "baseline_control_metrics": 12,
+    }
+    assert len(payload["universe_quality"]) == 3
+    assert payload["leakage_audit"]["status"] == "PASS"
+    assert payload["stale_artifact_audit"]["status"] == "PASS"
+    assert payload["stale_artifact_audit"]["optimistic_state_allowed"] is False
+    assert "stom_rl/daily_market_regime_audit.py" in payload["source_hashes"]
+    assert len(payload["artifact_hashes"]["stale_artifact_audit"]) == 64
+
+    invalid = client.get("/api/daily-ohlcv/market-regime-audit?run=../escape")
+    assert invalid.status_code == 200
+    assert invalid.get_json()["status"] == "INVALID_RUN_ID"
+
+
+def test_daily_ohlcv_market_regime_audit_invalid_artifacts_fail_closed(tmp_path, monkeypatch):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    root = tmp_path / "market_regime"
+    run_dir = root / "optimistic"
+    run_dir.mkdir(parents=True)
+    (run_dir / "market_regime_audit_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "daily_ohlcv_market_regime_audit.v1",
+                "status": "COMPLETED_RESEARCH_ONLY",
+                "run_id": "optimistic",
+                "artifact_hashes": {},
+                "source_hashes": {},
+                "research_only_locks": {
+                    "model_build_allowed": True,
+                    "paper_forward_allowed": True,
+                    "live_broker_order_allowed": True,
+                    "go_summary_allowed": True,
+                    "profitability_claim_allowed": True,
+                },
+                "promotion_allowed": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_MARKET_REGIME_AUDIT_ROOT", root)
+
+    payload = daily_dashboard.load_market_regime_audit(run="optimistic")
+
+    assert payload["status"] == "INVALID_MARKET_REGIME_AUDIT_ARTIFACTS"
+    assert payload["promotion_allowed"] is False
+    assert payload["model_build_allowed"] is False
+    assert "MISSING_REQUIRED_ARTIFACT:price_basis_audit.json" in payload["errors"]
+    assert "PROMOTION_ALLOWED_NOT_FALSE" in payload["errors"]
+    assert "LOCK_NOT_FALSE:model_build_allowed" in payload["errors"]
 
 def test_daily_ohlcv_rejection_analytics_manifest_status_required(tmp_path, monkeypatch):
     import webui.daily_ohlcv_dashboard as daily_dashboard

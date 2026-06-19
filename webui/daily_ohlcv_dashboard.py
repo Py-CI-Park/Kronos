@@ -55,6 +55,15 @@ LATEST_SIGNAL_QUALITY_RESULT_DOC = Path("docs/stom_daily_ohlcv_d3_d4_signal_qual
 LATEST_RESEARCH_GOVERNANCE_INDEX = Path("docs/stom_daily_ohlcv_research_governance_index_2026-06-18.md")
 DEFAULT_RESEARCH_INTENT_ROOT = Path("webui/rl_runs/daily_ohlcv_research_intents")
 DEFAULT_REJECTION_AUDIT_ROOT = Path("webui/rl_runs/daily_ohlcv_rejection_audit")
+DEFAULT_MARKET_REGIME_AUDIT_ROOT = Path("webui/rl_runs/daily_ohlcv_market_regime")
+MARKET_REGIME_REQUIRED_ARTIFACTS = {
+    "price_basis_audit": "price_basis_audit.json",
+    "universe_quality": "universe_quality.csv",
+    "regime_proxy_metrics": "regime_proxy_metrics.csv",
+    "baseline_control_metrics": "baseline_control_metrics.csv",
+    "leakage_audit": "leakage_audit.json",
+    "stale_artifact_audit": "stale_artifact_audit.json",
+}
 MAX_LIMIT = 5000
 
 
@@ -72,6 +81,13 @@ def _safe_run_id(run_id: str | None) -> str | None:
     if not SAFE_RUN_RE.match(run_id) or run_id in {".", ".."} or ".." in run_id.split("."):
         raise ValueError("Unsafe daily OHLCV artifact run id")
     return run_id
+
+def _path_is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
 
 
 def _is_scenario_generated_run_dir(path: Path) -> bool:
@@ -2221,12 +2237,19 @@ def _build_rl_guide_scenario_generator(signal_summary: dict[str, Any]) -> dict[s
     }
 
 
-def _build_rl_guide_market_regime_readiness(signal_summary: dict[str, Any]) -> dict[str, Any]:
+def _build_rl_guide_market_regime_readiness(
+    signal_summary: dict[str, Any],
+    market_regime_audit: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     signal_available = (
         signal_summary.get("status") == "COMPLETED_RESEARCH_ONLY"
         and signal_summary.get("run_id") not in {None, "", "MISSING_SIGNAL_QUALITY_AUDIT"}
         and bool(signal_summary.get("manifest_path"))
     )
+    market_regime_audit = market_regime_audit or load_market_regime_audit(limit=10)
+    audit_complete = market_regime_audit.get("status") == "COMPLETED_RESEARCH_ONLY"
+    audit_summary = market_regime_audit.get("summary") if isinstance(market_regime_audit.get("summary"), dict) else {}
+    blocker_flags = [str(item) for item in audit_summary.get("blocker_flags") or []]
     readiness_checks = [
         {
             "check": "signal_quality_artifacts_available",
@@ -2234,13 +2257,41 @@ def _build_rl_guide_market_regime_readiness(signal_summary: dict[str, Any]) -> d
             "completion_pct": 100 if signal_available else 0,
             "evidence": signal_summary.get("manifest_path") or "MISSING_SIGNAL_QUALITY_AUDIT_MANIFEST",
         },
-        {"check": "price_basis_certified", "status": "BLOCKED", "completion_pct": 35, "evidence": "D0 price basis still requires adjusted/raw/split/dividend audit"},
-        {"check": "universe_breadth_validated", "status": "WATCH", "completion_pct": 55, "evidence": "D1 universe remains heuristic/WATCH"},
+        {
+            "check": "market_regime_audit_artifacts_available",
+            "status": "PASS" if audit_complete else "BLOCKED",
+            "completion_pct": 100 if audit_complete else 0,
+            "evidence": market_regime_audit.get("manifest_path") or "MISSING_MARKET_REGIME_AUDIT_MANIFEST",
+        },
+        {
+            "check": "source_and_artifact_hashes",
+            "status": "PASS" if market_regime_audit.get("source_hashes") and market_regime_audit.get("artifact_hashes") else "BLOCKED",
+            "completion_pct": 100 if market_regime_audit.get("source_hashes") and market_regime_audit.get("artifact_hashes") else 0,
+            "evidence": market_regime_audit.get("source_ref") or "MISSING_SOURCE_REF",
+        },
+        {
+            "check": "price_basis_certified",
+            "status": "BLOCKED",
+            "completion_pct": 35,
+            "evidence": f"D0 price basis remains {audit_summary.get('price_basis_status') or 'UNKNOWN_CONFIRMED'}; decision-grade returns blocked",
+        },
+        {
+            "check": "universe_breadth_validated",
+            "status": "WATCH",
+            "completion_pct": 65 if audit_complete else 55,
+            "evidence": f"D1 universe audit sampled {audit_summary.get('sampled_table_count') or 0} / {audit_summary.get('table_denominator_count') or 0} tables; WATCH remains",
+        },
         {
             "check": "past_only_proxy_contract",
-            "status": "WATCH" if signal_available else "BLOCKED",
-            "completion_pct": 70 if signal_available else 0,
-            "evidence": "signal-quality audit emits past-only proxy source timing but not full OHLCV regime validation" if signal_available else "blocked until signal-quality artifacts exist",
+            "status": "PASS" if audit_complete and audit_summary.get("leakage_status") == "PASS" else "WATCH",
+            "completion_pct": 100 if audit_complete and audit_summary.get("leakage_status") == "PASS" else (70 if signal_available else 0),
+            "evidence": "market-regime audit emits past/current-only proxy rows and leakage PASS" if audit_complete else "blocked until market-regime artifacts exist",
+        },
+        {
+            "check": "missing_malformed_stale_fail_closed",
+            "status": "PASS" if audit_complete and audit_summary.get("stale_artifact_status") == "PASS" else "BLOCKED",
+            "completion_pct": 100 if audit_complete and audit_summary.get("stale_artifact_status") == "PASS" else 0,
+            "evidence": "stale_artifact_audit status PASS with fail-closed policy and no optimistic state",
         },
         {"check": "promotion_gates_locked", "status": "PASS", "completion_pct": 100, "evidence": "D5/model-build/paper-forward/live remain NO-GO/locked"},
     ]
@@ -2249,42 +2300,44 @@ def _build_rl_guide_market_regime_readiness(signal_summary: dict[str, Any]) -> d
     )
     return {
         "schema_version": "daily_rl_market_regime_readiness.v1",
-        "status": "NEXT_RESEARCH_READY_FOR_PREREGISTRATION" if signal_available else "BLOCKED_MISSING_SIGNAL_QUALITY_AUDIT",
+        "status": "COMPLETED_RESEARCH_ONLY_BLOCKERS_ACTIVE" if audit_complete else ("NEXT_RESEARCH_READY_FOR_PREREGISTRATION" if signal_available else "BLOCKED_MISSING_SIGNAL_QUALITY_AUDIT"),
         "maturity_score_pct": maturity_score,
-        "recommended_doc_path": "docs/stom_daily_ohlcv_market_regime_data_quality_prereg_2026-06-18.md",
+        "recommended_doc_path": "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_result_2026-06-19.md" if audit_complete else "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_prereg_2026-06-19.md",
         "source_signal_quality_run_id": signal_summary.get("run_id") if signal_available else None,
+        "source_market_regime_run_id": market_regime_audit.get("run_id") if audit_complete else None,
         "readiness_checks": readiness_checks,
-        "required_inputs": [
+        "required_inputs": list((market_regime_audit.get("artifact_paths") or {}).values()) if audit_complete else [
             "validated daily OHLCV price-basis manifest",
             "universe breadth/missingness diagnostics",
             "past-only volatility/drawdown/breadth/dispersion proxy definitions",
             "train/val/test + fold windows with no retune",
             "0/23/46bp cost sensitivity and no-trade/shuffle/frozen-D3 baselines",
         ],
-        "blocked_gates": ["D0_PRICE_BASIS", "D1_UNIVERSE", "D5_NO_GO", "MODEL_BUILD_LOCKED", "PAPER_FORWARD_LOCKED", "LIVE_BROKER_ORDER_LOCKED"],
+        "blocked_gates": blocker_flags or ["D0_PRICE_BASIS", "D1_UNIVERSE", "D5_NO_GO", "MODEL_BUILD_LOCKED", "PAPER_FORWARD_LOCKED", "LIVE_BROKER_ORDER_LOCKED"],
         "ai_guidance_format": {
-            "next_research_lane": "past_only_market_regime_data_quality_audit",
-            "objective": "validate whether regime proxies are reliable enough to become D4 state candidates",
-            "must_not_use": ["future_return_1d_as_feature", "post_hoc_threshold_tuning", "single_fold_cherry_pick"],
-            "acceptance_gate": "documented preregistration + generated manifest + leakage audit + baseline controls",
+            "next_research_lane": "read_only_dashboard_binding_then_artifact_selection_hardening" if audit_complete else "past_only_market_regime_data_quality_audit",
+            "objective": "surface market-regime evidence without unlocking D5/model/paper/live readiness",
+            "must_not_use": ["future_return_1d_as_feature", "post_hoc_threshold_tuning", "single_fold_cherry_pick", "dashboard_visual_as_profit_evidence"],
+            "acceptance_gate": "read-only API/dashboard binding + fail-closed latest artifact selection + research locks false",
         },
         "score_inputs": readiness_checks,
-        "guardrail": "Readiness score means the next audit can be specified; it does not mean market-regime proxies are validated or tradable.",
+        "guardrail": "Readiness score means non-live research evidence is visible; it does not mean market-regime proxies are validated, tradable, or approved for model/paper/live use.",
     }
 
 
-def _build_rl_guide_improvement_queue(signal_summary: dict[str, Any]) -> dict[str, Any]:
+def _build_rl_guide_improvement_queue(signal_summary: dict[str, Any], market_regime_audit: dict[str, Any] | None = None) -> dict[str, Any]:
+    audit_complete = bool(market_regime_audit and market_regime_audit.get("status") == "COMPLETED_RESEARCH_ONLY")
     items = [
         {
             "id": "IQ001",
             "priority": 1,
             "title_ko": "Past-only market-regime data quality audit",
-            "source_limitation": "Signal-quality audit uses lagged generated drawdown proxies, not a fully validated OHLCV regime dataset.",
-            "next_action": "Create preregistered market-regime data-quality audit and generate price-basis/breadth/proxy stability artifacts.",
-            "required_artifacts": ["market_regime_prereg.md", "price_basis_audit.csv", "past_only_regime_proxy_metrics.csv", "market_regime_leakage_audit.json"],
+            "source_limitation": "D0/D1 blockers remain even after the PR-8 audit; the audit is evidence, not a model/live unlock." if audit_complete else "Signal-quality audit uses lagged generated drawdown proxies, not a fully validated OHLCV regime dataset.",
+            "next_action": "Bind the PR-8 audit to read-only dashboard/API surfaces, then harden stale/latest artifact selection." if audit_complete else "Create preregistered market-regime data-quality audit and generate price-basis/breadth/proxy stability artifacts.",
+            "required_artifacts": ["market_regime_audit_manifest.json", "price_basis_audit.json", "universe_quality.csv", "regime_proxy_metrics.csv", "baseline_control_metrics.csv", "leakage_audit.json", "stale_artifact_audit.json"] if audit_complete else ["market_regime_prereg.md", "price_basis_audit.csv", "past_only_regime_proxy_metrics.csv", "market_regime_leakage_audit.json"],
             "acceptance_gate": "No future-label features, split/fold no-retune, 0/23/46bp rows, no-trade/shuffle/frozen-D3 controls.",
-            "status": "NEXT_RECOMMENDED",
-            "blocker_status": "BLOCKED_D0_D1_DATA_GOVERNANCE",
+            "status": "IMPLEMENTED_RESEARCH_ONLY_ON_PAGE" if audit_complete else "NEXT_RECOMMENDED",
+            "blocker_status": "COMPLETED_RESEARCH_ONLY_BLOCKERS_ACTIVE" if audit_complete else "BLOCKED_D0_D1_DATA_GOVERNANCE",
         },
         {
             "id": "IQ002",
@@ -2525,11 +2578,11 @@ def _build_research_workflow_catalog_payload(
             "stage": "D3-D4",
             "status": market_regime_readiness.get("status") or "NEXT_RESEARCH_READY_FOR_PREREGISTRATION",
             "approval_required": True,
-            "approval_status": "PREREGISTRATION_REQUIRED",
-            "trigger_status": "INTENT_ONLY_NOT_EXECUTED_BY_BROWSER",
+            "approval_status": "COMPLETED_ARTIFACT_BACKED_REFERENCE" if market_regime_readiness.get("source_market_regime_run_id") else "PREREGISTRATION_REQUIRED",
+            "trigger_status": "INTENT_ONLY_FOR_FOLLOW_UP" if market_regime_readiness.get("source_market_regime_run_id") else "INTENT_ONLY_NOT_EXECUTED_BY_BROWSER",
             "blocked_by": market_regime_readiness.get("blocked_gates") or [],
             "artifact_dependencies": market_regime_readiness.get("required_inputs") or [],
-            "next_allowed_action": "Write/read preregistration, then request an approved research-only intent.",
+            "next_allowed_action": "Inspect read-only dashboard/API evidence, then harden latest artifact selection before any follow-up." if market_regime_readiness.get("source_market_regime_run_id") else "Write/read preregistration, then request an approved research-only intent.",
             "maturity_pct": market_regime_readiness.get("maturity_score_pct"),
         },
         {
@@ -2633,7 +2686,8 @@ def _build_research_workflow_catalog_payload(
         "source_docs": [
             "docs/stom_daily_ohlcv_dashboard_first_research_platform_adr_2026-06-18.md",
             "docs/stom_daily_ohlcv_hypothesis_rejection_audit_prereg_2026-06-18.md",
-            "docs/stom_daily_ohlcv_research_governance_index_2026-06-18.md",
+            "docs/stom_daily_ohlcv_research_governance_index_2026-06-19.md",
+            "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_result_2026-06-19.md",
         ],
         "guardrail": "Research workflow catalog is dashboard-visible planning/inspection metadata only; browser execution and live/broker/order/model/paper/profit behavior are blocked.",
     }
@@ -3126,6 +3180,222 @@ def _validate_rejection_audit_payload(
         if expected_later_hash and expected_later_hash != later_sha:
             errors.append("FALSE_NEGATIVE_LATER_EVIDENCE_MANIFEST_HASH_MISMATCH")
     return errors
+
+
+def _load_json_strict(path: Path) -> tuple[dict[str, Any], str | None]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}, "MISSING_JSON"
+    except (OSError, json.JSONDecodeError):
+        return {}, "MALFORMED_JSON"
+    if not isinstance(payload, dict):
+        return {}, "JSON_NOT_OBJECT"
+    return payload, None
+
+
+def _market_regime_fail_closed(
+    status: str,
+    *,
+    run_id: str | None = None,
+    run_dir: Path | None = None,
+    errors: list[str] | None = None,
+    artifact_hashes: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "daily_ohlcv_market_regime_audit_dashboard.v1",
+        "status": status,
+        "run_id": run_id,
+        "errors": errors or [],
+        "read_only": True,
+        "artifact_root": _path_text(DEFAULT_MARKET_REGIME_AUDIT_ROOT),
+        "run_path": _path_text(run_dir),
+        "artifact_hashes": artifact_hashes or {},
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "go_summary_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "guardrail": "Market-regime audit artifacts fail closed; dashboard review cannot unlock model, paper, live, broker/order, or profit behavior.",
+    }
+
+
+def _market_regime_artifact_path(run_dir: Path, manifest: dict[str, Any], key: str) -> Path:
+    filename = MARKET_REGIME_REQUIRED_ARTIFACTS[key]
+    raw_paths = manifest.get("artifact_paths") if isinstance(manifest.get("artifact_paths"), dict) else {}
+    raw = raw_paths.get(key)
+    candidates: list[Path] = []
+    if raw:
+        raw_path = Path(str(raw))
+        candidates.append(raw_path)
+        candidates.append(run_dir / raw_path.name)
+    candidates.append(run_dir / filename)
+    run_root = run_dir.resolve()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if _path_is_relative_to(resolved, run_root):
+            return resolved
+    return (run_dir / filename).resolve()
+
+
+def _market_regime_artifact_hashes(paths: dict[str, Path]) -> dict[str, str]:
+    return {key: _file_sha256(path) for key, path in paths.items() if path.is_file()}
+
+
+def _validate_market_regime_audit_payload(
+    *,
+    manifest: dict[str, Any],
+    artifact_paths: dict[str, Path],
+    artifact_hashes: dict[str, str],
+    leakage_audit: dict[str, Any],
+    stale_audit: dict[str, Any],
+    proxy_rows: list[dict[str, Any]],
+) -> list[str]:
+    errors: list[str] = []
+    if manifest.get("schema_version") != "daily_ohlcv_market_regime_audit.v1":
+        errors.append("INVALID_MANIFEST_SCHEMA_VERSION")
+    if manifest.get("status") != "COMPLETED_RESEARCH_ONLY":
+        errors.append("INVALID_MANIFEST_STATUS")
+    if manifest.get("promotion_allowed") is not False:
+        errors.append("PROMOTION_ALLOWED_NOT_FALSE")
+    source_hashes = manifest.get("source_hashes") if isinstance(manifest.get("source_hashes"), dict) else {}
+    for rel_path in (
+        "stom_rl/daily_market_regime_audit.py",
+        "stom_rl/daily_ohlcv_db.py",
+        "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_prereg_2026-06-19.md",
+    ):
+        source_info = source_hashes.get(rel_path) if isinstance(source_hashes.get(rel_path), dict) else {}
+        if source_info.get("exists") is not True or not source_info.get("sha256"):
+            errors.append(f"MISSING_SOURCE_HASH:{rel_path}")
+    for key, filename in MARKET_REGIME_REQUIRED_ARTIFACTS.items():
+        if not artifact_paths[key].is_file():
+            errors.append(f"MISSING_REQUIRED_ARTIFACT:{filename}")
+    manifest_hashes = manifest.get("artifact_hashes") if isinstance(manifest.get("artifact_hashes"), dict) else {}
+    for key in MARKET_REGIME_REQUIRED_ARTIFACTS:
+        expected = str(manifest_hashes.get(key) or "")
+        actual = artifact_hashes.get(key)
+        if not expected or expected != actual:
+            errors.append(f"ARTIFACT_HASH_MISMATCH:{key}")
+    locks = manifest.get("research_only_locks") if isinstance(manifest.get("research_only_locks"), dict) else {}
+    for key in ("model_build_allowed", "paper_forward_allowed", "live_broker_order_allowed", "go_summary_allowed", "profitability_claim_allowed"):
+        if locks.get(key) is not False:
+            errors.append(f"LOCK_NOT_FALSE:{key}")
+    if leakage_audit.get("status") != "PASS" or leakage_audit.get("future_label_used") is not False:
+        errors.append("LEAKAGE_AUDIT_NOT_PASS")
+    if stale_audit.get("status") != "PASS":
+        errors.append("STALE_ARTIFACT_AUDIT_NOT_PASS")
+    for key in ("missing_count", "malformed_count", "stale_count"):
+        if _to_int(stale_audit.get(key), 0) != 0:
+            errors.append(f"STALE_ARTIFACT_AUDIT_{key.upper()}_NONZERO")
+    if stale_audit.get("optimistic_state_allowed") is not False:
+        errors.append("STALE_ARTIFACT_OPTIMISTIC_STATE_ALLOWED")
+    for row in proxy_rows:
+        if str(row.get("future_label_used")) not in {"False", "false", "0"} and row.get("future_label_used") is not False:
+            errors.append("PROXY_FUTURE_LABEL_USED")
+            break
+    return errors
+
+
+def load_market_regime_audit(*, run: str | None = None, limit: int = 25) -> dict[str, Any]:
+    safe_limit = _bounded_limit(limit, default=25, maximum=200)
+    try:
+        run_dir = _latest_run_dir(DEFAULT_MARKET_REGIME_AUDIT_ROOT, run_id=run, required_file="market_regime_audit_manifest.json")
+    except (FileNotFoundError, ValueError):
+        return _market_regime_fail_closed("INVALID_RUN_ID", run_id=run, errors=["INVALID_RUN_ID"])
+    if run_dir is None:
+        return _market_regime_fail_closed(
+            "MISSING_MARKET_REGIME_AUDIT_ARTIFACTS",
+            errors=[f"MISSING_REQUIRED_ARTIFACT:{filename}" for filename in MARKET_REGIME_REQUIRED_ARTIFACTS.values()],
+        )
+    manifest_path = run_dir / "market_regime_audit_manifest.json"
+    manifest, manifest_error = _load_json_strict(manifest_path)
+    if manifest_error:
+        return _market_regime_fail_closed(
+            "INVALID_MARKET_REGIME_AUDIT_ARTIFACTS",
+            run_id=run_dir.name,
+            run_dir=run_dir,
+            errors=[f"MANIFEST_{manifest_error}"],
+        )
+    artifact_paths = {key: _market_regime_artifact_path(run_dir, manifest, key) for key in MARKET_REGIME_REQUIRED_ARTIFACTS}
+    artifact_hashes = _market_regime_artifact_hashes(artifact_paths)
+    price_basis_audit, price_error = _load_json_strict(artifact_paths["price_basis_audit"])
+    leakage_audit, leakage_error = _load_json_strict(artifact_paths["leakage_audit"])
+    stale_audit, stale_error = _load_json_strict(artifact_paths["stale_artifact_audit"])
+    universe_all = _read_csv_rows(artifact_paths["universe_quality"], MAX_LIMIT)
+    proxy_all = _read_csv_rows(artifact_paths["regime_proxy_metrics"], MAX_LIMIT)
+    controls_all = _read_csv_rows(artifact_paths["baseline_control_metrics"], MAX_LIMIT)
+    validation_errors = _validate_market_regime_audit_payload(
+        manifest=manifest,
+        artifact_paths=artifact_paths,
+        artifact_hashes=artifact_hashes,
+        leakage_audit=leakage_audit,
+        stale_audit=stale_audit,
+        proxy_rows=proxy_all,
+    )
+    for key, error in (("price_basis_audit", price_error), ("leakage_audit", leakage_error), ("stale_artifact_audit", stale_error)):
+        if error:
+            validation_errors.append(f"{key.upper()}_{error}")
+    row_counts = {
+        "universe_quality": len(universe_all),
+        "regime_proxy_metrics": len(proxy_all),
+        "baseline_control_metrics": len(controls_all),
+    }
+    if validation_errors:
+        return _market_regime_fail_closed(
+            "INVALID_MARKET_REGIME_AUDIT_ARTIFACTS",
+            run_id=manifest.get("run_id") or run_dir.name,
+            run_dir=run_dir,
+            errors=validation_errors,
+            artifact_hashes=artifact_hashes,
+        )
+    summary = {
+        "table_denominator_count": manifest.get("table_denominator_count"),
+        "sampled_table_count": manifest.get("sampled_table_count"),
+        "row_limit_per_table": manifest.get("row_limit_per_table"),
+        "default_cost_round_trip_bp": manifest.get("default_cost_round_trip_bp") or 23,
+        "cost_sensitivity_bp": manifest.get("cost_sensitivity_bp") or [0, 23, 46],
+        "required_controls": manifest.get("required_controls") or [],
+        "blocker_flags": manifest.get("blocker_flags") or [],
+        "price_basis_status": manifest.get("price_basis_status"),
+        "leakage_status": manifest.get("leakage_status"),
+        "stale_artifact_status": manifest.get("stale_artifact_status"),
+        "promotion_allowed": False,
+    }
+    return {
+        "schema_version": "daily_ohlcv_market_regime_audit_dashboard.v1",
+        "status": manifest.get("status") or "COMPLETED_RESEARCH_ONLY",
+        "verdict": manifest.get("verdict") or "BLOCKER_EVIDENCE_RECORDED_NO_PROMOTION",
+        "run_id": manifest.get("run_id") or run_dir.name,
+        "created_at_utc": manifest.get("created_at_utc"),
+        "source_ref": manifest.get("source_ref"),
+        "source_hashes": manifest.get("source_hashes") or {},
+        "read_only": True,
+        "artifact_root": _path_text(DEFAULT_MARKET_REGIME_AUDIT_ROOT),
+        "run_path": _path_text(run_dir),
+        "manifest_path": _path_text(manifest_path),
+        "artifact_paths": {key: _path_text(path) for key, path in artifact_paths.items()},
+        "artifact_hashes": artifact_hashes,
+        "row_counts": row_counts,
+        "summary": summary,
+        "price_basis_audit": price_basis_audit,
+        "leakage_audit": leakage_audit,
+        "stale_artifact_audit": stale_audit,
+        "universe_quality": universe_all[:safe_limit],
+        "regime_proxy_metrics": proxy_all[:safe_limit],
+        "baseline_control_metrics": controls_all[:safe_limit],
+        "validation_errors": [],
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "go_summary_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "guardrail": "Market-regime audit is read-only evidence. D0/D1 blockers remain visible; dashboard review cannot unlock model, paper, live, broker/order, or profit behavior.",
+    }
 
 
 def load_rejection_analytics(*, run: str | None = None, limit: int = 25) -> dict[str, Any]:
@@ -3889,8 +4159,9 @@ def load_daily_rl_env_guide() -> dict[str, Any]:
         guide_blockers.append("BLOCKED_D4_CONTRACT_NOT_CONSUMED_BY_D5")
     signal_quality_summary = _build_rl_guide_signal_quality_summary()
     scenario_generator = _build_rl_guide_scenario_generator(signal_quality_summary)
-    market_regime_audit_readiness = _build_rl_guide_market_regime_readiness(signal_quality_summary)
-    improvement_queue = _build_rl_guide_improvement_queue(signal_quality_summary)
+    market_regime_audit = load_market_regime_audit(limit=10)
+    market_regime_audit_readiness = _build_rl_guide_market_regime_readiness(signal_quality_summary, market_regime_audit)
+    improvement_queue = _build_rl_guide_improvement_queue(signal_quality_summary, market_regime_audit)
     scenario_comparison = _build_rl_guide_scenario_comparison(signal_quality_summary)
     page_maturity_report = _build_rl_guide_page_maturity_report(
         scenario_generator=scenario_generator,
@@ -3974,6 +4245,7 @@ def load_daily_rl_env_guide() -> dict[str, Any]:
         "scenario_generator": scenario_generator,
         "signal_quality_audit_summary": signal_quality_summary,
         "market_regime_audit_readiness": market_regime_audit_readiness,
+        "market_regime_audit": market_regime_audit,
         "improvement_queue": improvement_queue,
         "scenario_comparison": scenario_comparison,
         "page_maturity_report": page_maturity_report,

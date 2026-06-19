@@ -224,6 +224,7 @@ try:
             load_research_job_intent,
             load_research_job_intent_ledger,
             load_rejection_analytics,
+            load_market_regime_audit,
             load_daily_flow_chart,
             load_daily_metric_glossary,
             load_research_diagnostics_chart,
@@ -264,6 +265,7 @@ try:
             load_research_job_intent,
             load_research_job_intent_ledger,
             load_rejection_analytics,
+            load_market_regime_audit,
             load_daily_flow_chart,
             load_daily_metric_glossary,
             load_research_diagnostics_chart,
@@ -304,6 +306,7 @@ except Exception as exc:
     load_research_job_intent = None
     load_research_job_intent_ledger = None
     load_rejection_analytics = None
+    load_market_regime_audit = None
     load_daily_flow_chart = None
     load_daily_metric_glossary = None
     load_research_diagnostics_chart = None
@@ -1444,6 +1447,17 @@ def daily_ohlcv_rejection_analytics():
         run = request.args.get('run')
         limit = request.args.get('limit', default=25, type=int)
         return jsonify(load_rejection_analytics(run=run, limit=limit))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/daily-ohlcv/market-regime-audit')
+def daily_ohlcv_market_regime_audit():
+    if load_market_regime_audit is None:
+        return jsonify({'error': 'Daily OHLCV market-regime audit helper is not available'}), 500
+    try:
+        run = request.args.get('run')
+        limit = request.args.get('limit', default=25, type=int)
+        return jsonify(load_market_regime_audit(run=run, limit=limit))
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 

@@ -406,6 +406,7 @@ export interface DailyRlEnvGuideResponse {
   readonly scenario_generator?: Readonly<Record<string, unknown>>;
   readonly signal_quality_audit_summary?: Readonly<Record<string, unknown>>;
   readonly market_regime_audit_readiness?: Readonly<Record<string, unknown>>;
+  readonly market_regime_audit?: Readonly<Record<string, unknown>>;
   readonly improvement_queue?: Readonly<Record<string, unknown>>;
   readonly scenario_comparison?: Readonly<Record<string, unknown>>;
   readonly page_maturity_report?: Readonly<Record<string, unknown>>;
@@ -524,6 +525,22 @@ export interface DailyRejectionAnalyticsResponse {
   readonly guardrail?: string;
 }
 
+export interface DailyMarketRegimeAuditResponse {
+  readonly schema_version?: string;
+  readonly status?: string;
+  readonly verdict?: string;
+  readonly run_id?: string;
+  readonly read_only?: boolean;
+  readonly promotion_allowed?: boolean;
+  readonly summary?: Readonly<Record<string, unknown>>;
+  readonly row_counts?: Readonly<Record<string, number>>;
+  readonly source_hashes?: Readonly<Record<string, unknown>>;
+  readonly artifact_hashes?: Readonly<Record<string, string>>;
+  readonly validation_errors?: readonly string[];
+  readonly guardrail?: string;
+}
+
+
 
 export const dailyOhlcvApi = {
   progress: () => fetchJson<DailyProgressResponse>('/api/daily-ohlcv/progress'),
@@ -553,6 +570,7 @@ export const dailyOhlcvApi = {
   researchJobs: () => fetchJson<DailyResearchJobIntentLedgerResponse>('/api/daily-ohlcv/research-jobs?limit=25'),
   researchJobDetail: (intentId: string) => fetchJson<DailyResearchJobIntentDetailResponse>(`/api/daily-ohlcv/research-jobs/${encodeURIComponent(intentId)}`),
   rejectionAnalytics: () => fetchJson<DailyRejectionAnalyticsResponse>('/api/daily-ohlcv/rejection-analytics?limit=25'),
+  marketRegimeAudit: () => fetchJson<DailyMarketRegimeAuditResponse>('/api/daily-ohlcv/market-regime-audit?limit=25'),
   flowChart: () => fetchJson<DailyVisualChartResponse>('/api/daily-ohlcv/charts/flow'),
   glossaryChart: () => fetchJson<DailyVisualChartResponse>('/api/daily-ohlcv/charts/glossary'),
   researchDiagnosticsChart: () => fetchJson<DailyVisualChartResponse>('/api/daily-ohlcv/charts/research-diagnostics'),

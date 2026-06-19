@@ -96,6 +96,10 @@
   const signalQualityArtifacts = (): [string, unknown][] => recordEntries(field(guide?.signal_quality_audit_summary, 'required_artifacts'));
   const scenarioComparisonRows = (): readonly Record<string, unknown>[] => rows(field(guide?.scenario_comparison, 'cards'));
   const marketRegimeReadinessRows = (): readonly Record<string, unknown>[] => rows(field(guide?.market_regime_audit_readiness, 'readiness_checks'));
+  const marketRegimeAuditSummary = (): Record<string, unknown> => nestedRecord(guide?.market_regime_audit, 'summary');
+  const marketRegimeAuditRowCounts = (): [string, unknown][] => recordEntries(field(guide?.market_regime_audit, 'row_counts'));
+  const marketRegimeAuditArtifacts = (): [string, unknown][] => recordEntries(field(guide?.market_regime_audit, 'artifact_paths'));
+  const marketRegimeAuditBlockers = (): string[] => stringItems(field(marketRegimeAuditSummary(), 'blocker_flags'));
   const improvementQueueRows = (): readonly Record<string, unknown>[] => rows(field(guide?.improvement_queue, 'items'));
   const maturityRows = (): readonly Record<string, unknown>[] => rows(field(guide?.page_maturity_report, 'priority_completion'));
   const researchWorkflowRows = (): readonly Record<string, unknown>[] => rows(field(guide?.research_workflow_catalog, 'workflows'));
@@ -753,6 +757,36 @@
     </div>
     <span class="pill warn"><span class="dot"></span>{formatScore(field(guide?.market_regime_audit_readiness, 'maturity_score_pct'))}</span>
   </div>
+  <div class="grid-4-kpi" style="margin-top:16px" data-daily-rl-market-regime-audit>
+    <div class="metric"><div class="metric-label">audit run</div><div class="metric-value">{String(field(guide?.market_regime_audit, 'run_id') ?? 'MISSING_MARKET_REGIME_AUDIT')}</div></div>
+    <div class="metric"><div class="metric-label">status</div><div class="metric-value">{String(field(guide?.market_regime_audit, 'status') ?? 'FAIL_CLOSED')}</div></div>
+    <div class="metric"><div class="metric-label">promotion</div><div class="metric-value">{boolText(field(guide?.market_regime_audit, 'promotion_allowed'))}</div></div>
+    <div class="metric"><div class="metric-label">source ref</div><div class="metric-value tnum">{String(field(guide?.market_regime_audit, 'source_ref') ?? '—')}</div></div>
+  </div>
+  <div class="signal-grid" style="margin-top:14px">
+    <article class="mini-chart-card">
+      <div class="text-eyebrow">Blockers stay visible</div>
+      {#each marketRegimeAuditBlockers() as blocker}
+        <span class="chip warn">{blocker}</span>
+      {/each}
+      <p class="text-muted" style="margin-top:8px">price basis: {String(field(marketRegimeAuditSummary(), 'price_basis_status') ?? 'UNKNOWN_CONFIRMED')}</p>
+    </article>
+    <article class="mini-chart-card">
+      <div class="text-eyebrow">Row counts</div>
+      {#each marketRegimeAuditRowCounts() as [name, value]}
+        <div class="kv-row"><span>{name}</span><b>{String(value)}</b></div>
+      {/each}
+    </article>
+    <article class="mini-chart-card">
+      <div class="text-eyebrow">Artifacts / hashes</div>
+      {#each marketRegimeAuditArtifacts().slice(0, 4) as [name, path]}
+        <div class="artifact-line"><b>{name}</b><span>{String(path)}</span></div>
+      {/each}
+    </article>
+  </div>
+  <p class="text-muted" style="margin-top:8px">
+    MARKET_REGIME_AUDIT_BINDING · 이 패널은 `/api/daily-ohlcv/market-regime-audit`를 읽는 증거 뷰어입니다. missing/malformed/stale이면 fail-closed이며 모델/페이퍼/실거래 unlock은 계속 금지됩니다.
+  </p>
   <div class="readiness-grid">
     {#each marketRegimeReadinessRows() as check}
       <article class="readiness-card" data-tone={tone(field(check, 'status'))}>

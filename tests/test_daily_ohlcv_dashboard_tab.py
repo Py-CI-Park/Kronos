@@ -36,6 +36,7 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "/api/daily-ohlcv/research-workflows" in api
     assert "/api/daily-ohlcv/charts/research-diagnostics" in api
     assert "/api/daily-ohlcv/charts/equity-overlay" in api
+    assert "/api/daily-ohlcv/market-regime-audit" in api
     assert "/api/daily-ohlcv/charts/walk-forward-heatmap" in api
     assert "/api/daily-ohlcv/charts/run-scatter" in api
     assert "/api/daily-ohlcv/charts/universe-breakdown" in api
@@ -282,6 +283,10 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "MISSING_SIGNAL_QUALITY_AUDIT" in guide
     assert "data-daily-rl-scenario-comparison" in guide
     assert "data-daily-rl-market-regime-readiness" in guide
+    assert "data-daily-rl-market-regime-audit" in guide
+    assert "MARKET_REGIME_AUDIT_BINDING" in guide
+    assert "marketRegimeAudit" in api
+    assert "/api/daily-ohlcv/market-regime-audit" in api
     assert "data-daily-rl-improvement-queue" in guide
     assert "data-daily-rl-page-maturity-report" in guide
     assert "scenario_platform_maturity_pct" in guide
