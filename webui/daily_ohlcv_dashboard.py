@@ -3201,6 +3201,7 @@ def _market_regime_fail_closed(
     run_dir: Path | None = None,
     errors: list[str] | None = None,
     artifact_hashes: dict[str, str] | None = None,
+    source_hashes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": "daily_ohlcv_market_regime_audit_dashboard.v1",
@@ -3211,6 +3212,7 @@ def _market_regime_fail_closed(
         "artifact_root": _path_text(DEFAULT_MARKET_REGIME_AUDIT_ROOT),
         "run_path": _path_text(run_dir),
         "artifact_hashes": artifact_hashes or {},
+        "source_hashes": source_hashes or {},
         "promotion_allowed": False,
         "model_build_allowed": False,
         "go_summary_allowed": False,
@@ -3417,6 +3419,7 @@ def load_market_regime_audit(*, run: str | None = None, limit: int = 25) -> dict
             run_dir=run_dir,
             errors=validation_errors,
             artifact_hashes=artifact_hashes,
+            source_hashes=manifest.get("source_hashes") if isinstance(manifest.get("source_hashes"), dict) else {},
         )
     summary = {
         "table_denominator_count": manifest.get("table_denominator_count"),

@@ -782,15 +782,15 @@
     </article>
     <article class="mini-chart-card">
       <div class="text-eyebrow">Artifacts / hashes</div>
-      {#each marketRegimeAuditArtifacts().slice(0, 4) as [name, path]}
+      {#each marketRegimeAuditArtifacts() as [name, path]}
         <div class="artifact-line"><b>{name}</b><span>{String(path)}</span></div>
       {/each}
       <div class="text-eyebrow" style="margin-top:10px">Artifact SHA-256</div>
-      {#each marketRegimeArtifactHashes().slice(0, 4) as [name, hash]}
+      {#each marketRegimeArtifactHashes() as [name, hash]}
         <div class="artifact-line"><b>{name}</b><span>{String(hash)}</span></div>
       {/each}
       <div class="text-eyebrow" style="margin-top:10px">Source SHA-256</div>
-      {#each marketRegimeSourceHashes().slice(0, 3) as [name, info]}
+      {#each marketRegimeSourceHashes() as [name, info]}
         <div class="artifact-line"><b>{name}</b><span>{sourceHashText(info)}</span></div>
       {/each}
     </article>

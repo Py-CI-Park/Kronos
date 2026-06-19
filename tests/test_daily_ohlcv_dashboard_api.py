@@ -962,6 +962,7 @@ def test_daily_ohlcv_market_regime_audit_invalid_artifacts_fail_closed(tmp_path,
     assert payload["promotion_allowed"] is False
     assert payload["model_build_allowed"] is False
     assert "MISSING_REQUIRED_ARTIFACT:price_basis_audit.json" in payload["errors"]
+    assert payload["source_hashes"] == {}
     assert "PROMOTION_ALLOWED_NOT_FALSE" in payload["errors"]
     assert "LOCK_NOT_FALSE:model_build_allowed" in payload["errors"]
 
@@ -1032,6 +1033,7 @@ def test_daily_ohlcv_market_regime_audit_rejects_malformed_csv_schema(tmp_path, 
     assert payload["status"] == "INVALID_MARKET_REGIME_AUDIT_ARTIFACTS"
     assert payload["promotion_allowed"] is False
     assert payload["model_build_allowed"] is False
+    assert "stom_rl/daily_market_regime_audit.py" in payload["source_hashes"]
     assert any(error.startswith("UNIVERSE_CSV_MISSING_COLUMNS:") for error in payload["errors"])
     assert any(error.startswith("PROXY_CSV_MISSING_COLUMNS:") for error in payload["errors"])
     assert any(error.startswith("CONTROL_CSV_MISSING_COLUMNS:") for error in payload["errors"])
