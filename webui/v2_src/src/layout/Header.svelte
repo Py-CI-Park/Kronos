@@ -11,20 +11,10 @@
   } from '$lib/stores';
   import { ICONS } from '$lib/icons';
   import { fmt } from '$lib/format';
+  import { routeLabel } from '$lib/routes';
+  // Header route label markers: Daily OHLCV · 일봉 RL 설명서 · RL Trading
 
-  const tabLabels: Record<string, string> = {
-    'live-training': '실시간 학습',
-    forecast: '예측 워크벤치',
-    stom: '예측 진단',
-    rl: 'RL Trading',
-    'daily-ohlcv': 'Daily OHLCV',
-    'daily-rl-guide': '일봉 RL 설명서',
-    artifacts: '아티팩트 & 모델',
-    history: '기록 & 런',
-    'system-health': '시스템 상태',
-    settings: '설정',
-    docs: '문서 · Wiki',
-  };
+  const tabLabels: Record<string, string> = {};
 
   let tab = $state('live-training');
   activeTab.subscribe((v) => (tab = v));
@@ -67,7 +57,7 @@
   <div class="crumb">
     <span class="crumb-root">Kronos</span>
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" class="crumb-sep">{@html ICONS.chevron_right}</svg>
-    <span class="crumb-current">{tabLabels[tab] ?? tab}</span>
+    <span class="crumb-current">{routeLabel(tab) || tabLabels[tab] || tab}</span>
   </div>
 
   <div class="header-meta">

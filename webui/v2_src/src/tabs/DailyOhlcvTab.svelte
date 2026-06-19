@@ -26,6 +26,7 @@
   import DailyVisualLabCard from './dailyOhlcv/DailyVisualLabCard.svelte';
   import DailyScenarioLabCard from './dailyOhlcv/DailyScenarioLabCard.svelte';
   import DailyScenarioRunLedgerCard from './dailyOhlcv/DailyScenarioRunLedgerCard.svelte';
+  import ResearchStatusShell from './ResearchStatusShell.svelte';
 
   let progress = $state<DailyProgressResponse | null>(null);
   let dbSummary = $state<DailyDbSummaryResponse | null>(null);
@@ -56,6 +57,26 @@
   let endpointErrors = $state<string[]>([]);
   let loading = $state(false);
 
+  const dailyStatusLocks = [
+    { label: 'live trading', value: 'false', tone: 'danger' },
+    { label: 'broker/order/account', value: 'false', tone: 'danger' },
+    { label: 'paper forward', value: 'false', tone: 'danger' },
+    { label: 'model build allowed', value: 'false', tone: 'danger' },
+    { label: 'go summary', value: 'false', tone: 'danger' },
+    { label: 'default cost', value: '23bp', tone: 'warn' },
+  ] as const;
+  const dailyStatusBlockers = [
+    'D0 price_basis / adjusted-price evidence is still a blocker for stronger claims.',
+    'D1 universe remains governance evidence; unknown instruments and Q-products stay quarantined.',
+    'D5 walk-forward gates remain NO-GO/blocked until fresh preregistered evidence passes.',
+  ] as const;
+  const dailyNextInspection = [
+    'D0-D9 progress timeline에서 PASS/WATCH/NOT_STARTED/BLOCKED를 먼저 확인합니다.',
+    '000250 같은 leading-zero 종목 코드는 문자열 그대로 drilldown합니다.',
+    '모델·수익·실거래 판단 전에 artifact hashes, stale/malformed fail-closed 상태를 확인합니다.',
+  ] as const;
+  const dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9'] as const;
+  const stageById = (id: string) => progress?.stages?.find((stage) => stage.id === id);
   async function loadDailyOhlcv(): Promise<void> {
     loading = true;
     try {
@@ -178,6 +199,42 @@
   {/if}
 </section>
 
+<ResearchStatusShell
+  pageId="daily-ohlcv"
+  eyebrow="Daily OHLCV · Research Command Center"
+  title="Daily OHLCV는 데이터·게이트 증거 화면입니다"
+  verdict="WATCH / RESEARCH_ONLY / D5 NO-GO locked"
+  summary="D0-D9 증거를 한 흐름으로 검토하되, 가격 기준·유니버스·워크포워드 blocker를 통과하기 전에는 모델 생성, paper-forward, live/broker/order, profit claim이 모두 잠금입니다."
+  locks={dailyStatusLocks}
+  blockers={dailyStatusBlockers}
+  nextActions={dailyNextInspection}
+/>
+<section class="panel daily-command-cockpit" data-daily-ohlcv-command-cockpit>
+  <div class="panel-head">
+    <div>
+      <div class="text-eyebrow">D0-D9 review cockpit · before raw cards</div>
+      <h2 class="text-h3">일봉 연구 상태를 한 줄로 먼저 확인</h2>
+      <p class="text-muted">API failure는 `API_UNAVAILABLE`로 따로 표시하고, 산출물이 없는 단계는 `NOT_STARTED`로 구분합니다. leading-zero code 예시는 문자열 `000250` 그대로 유지합니다.</p>
+    </div>
+    <span class="pill warn"><span class="dot"></span>{progress?.overall_status ?? 'RESEARCH_ONLY'}</span>
+  </div>
+  <div class="daily-stage-grid" data-daily-ohlcv-d0-d9-cockpit>
+    {#each dailyCockpitStages as id}
+      {@const stage = stageById(id)}
+      <article class="daily-stage-tile" data-status={stage?.status ?? 'NOT_STARTED'}>
+        <strong>{id}</strong>
+        <span>{stage?.label ?? 'not started'}</span>
+        <b>{stage?.status ?? 'NOT_STARTED'}</b>
+      </article>
+    {/each}
+  </div>
+  <div class="daily-review-grid" style="margin-top:14px">
+    <div><span>API failure vs NOT_STARTED</span><b>{endpointErrors.length ? `API_UNAVAILABLE: ${endpointErrors.join(', ')}` : 'API_OK; missing artifacts stay NOT_STARTED'}</b></div>
+    <div><span>leading-zero code</span><b>000250 string preserved</b></div>
+    <div><span>D5 gate</span><b>NO-GO / model_build_allowed=false</b></div>
+    <div><span>live/model/paper/profit</span><b>false / 0%</b></div>
+  </div>
+</section>
 <DailyProgressTimeline {progress} />
 <DailyScenarioLabCard {scenarioLab} />
 <DailyScenarioRunLedgerCard ledger={scenarioRuns} />
@@ -247,6 +304,18 @@
 </section>
 
 <style>
+  .daily-stage-grid { margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:8px; }
+  .daily-stage-tile { border:1px solid var(--border-faint); border-radius:14px; padding:10px; background:var(--surface); display:grid; gap:4px; }
+  .daily-stage-tile strong { font-family:var(--font-mono); font-size:13px; }
+  .daily-stage-tile span { color:var(--muted); font-size:11px; min-height:28px; }
+  .daily-stage-tile b { font-family:var(--font-mono); font-size:11px; }
+  .daily-stage-tile[data-status='PASS'] { border-color:rgba(34,197,94,0.45); background:rgba(34,197,94,0.07); }
+  .daily-stage-tile[data-status='WATCH'] { border-color:rgba(245,158,11,0.45); background:rgba(245,158,11,0.07); }
+  .daily-stage-tile[data-status='NO-GO'], .daily-stage-tile[data-status='BLOCKED'] { border-color:rgba(239,68,68,0.45); background:rgba(239,68,68,0.07); }
+  .daily-review-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; }
+  .daily-review-grid div { border:1px solid var(--border-faint); border-radius:14px; padding:12px; background:var(--surface-sunken); }
+  .daily-review-grid span { display:block; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:0.04em; }
+  .daily-review-grid b { display:block; margin-top:6px; font-size:13px; }
   table { width:100%; border-collapse:collapse; font-size:12px; }
   th, td { border-bottom:1px solid var(--border-faint); padding:7px; text-align:left; vertical-align:top; }
   .mono { font-family: var(--font-mono); font-size:11px; color:var(--muted); }

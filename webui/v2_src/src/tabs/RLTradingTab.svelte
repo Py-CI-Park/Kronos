@@ -19,6 +19,7 @@
   import EvidenceCharts from './rlTrading/EvidenceCharts.svelte';
   import RunTables from './rlTrading/RunTables.svelte';
   import { costGatePassCount } from './rlTrading/chartOptions';
+  import ResearchStatusShell from './ResearchStatusShell.svelte';
 
   let runs = $state<readonly RlRunRecord[]>([]);
   let selectedName = $state('');
@@ -40,6 +41,8 @@
   let loading = $state(false);
   let detailLoading = $state(false);
   let error = $state<string | null>(null);
+  const detailField = (key: string): unknown => selectedRun?.summary?.[key] ?? selectedRun?.detail?.[key];
+  const textValue = (value: unknown, fallback = '—'): string => value == null || value === '' ? fallback : String(value);
 
   const ruleRun = $derived(
     runs.find((run) => run.strategy_context?.line === 'rule_mainline' || run.artifact_type === 'baseline') ?? null
@@ -55,7 +58,47 @@
   const selectedLabel = $derived(
     selectedRun?.strategy_context?.label ?? ruleRun?.strategy_context?.label ?? 'RULE MAINLINE'
   );
+  const selectedVerdict = $derived(
+    textValue(
+      selectedRun?.strategy_context?.readiness_status ??
+        detailField('verdict') ??
+        detailField('status') ??
+        detailField('promotion_status'),
+      'unknown'
+    )
+  );
+  const selectedLine = $derived(
+    selectedRun?.strategy_context?.line === 'rule_mainline' || selectedRun?.artifact_type === 'baseline'
+      ? 'RULE baseline / not RL'
+      : selectedRun?.strategy_context?.is_reinforcement_learning
+        ? 'RL experiment / research-only'
+        : 'evidence artifact / research-only'
+  );
+  const selectedCost = $derived(
+    textValue(selectedRun?.strategy_context?.risk_policy_summary?.cost_bps ?? detailField('cost_bps') ?? detailField('cost_round_trip_bp'), '23') + 'bp'
+  );
+  const selectedBaseline = $derived(textValue(selectedRun?.strategy_context?.primary_baseline ?? detailField('baseline') ?? 'ts_imb RULE baseline'));
+  const selectedDrawdown = $derived(textValue(detailField('max_drawdown_pct') ?? detailField('max_drawdown') ?? detailField('max_dd_pct')));
+  const selectedTradeCount = $derived(textValue(detailField('trade_count') ?? detailField('trades') ?? trades.length));
 
+  const rlStatusLocks = [
+    { label: 'live trading', value: 'false', tone: 'danger' },
+    { label: 'broker/order/account', value: 'false', tone: 'danger' },
+    { label: 'paper forward', value: 'false', tone: 'danger' },
+    { label: 'model build unlock', value: 'false', tone: 'danger' },
+    { label: 'profit readiness', value: 'false', tone: 'danger' },
+    { label: 'cost assumption', value: '23bp', tone: 'warn' },
+  ] as const;
+  const rlStatusBlockers = [
+    'ts_imb는 RL이 아니라 RULE baseline이며, RL 실험은 비교·반증 산출물입니다.',
+    'NO-GO, baseline delta, drawdown, trade count, cost gate를 먼저 확인해야 합니다.',
+    'opening_30m/factory 산출물은 별도 검증 lane이며 live-ready 근거가 아닙니다.',
+  ] as const;
+  const rlNextInspection = [
+    '선택 run의 verdict와 strategy_context를 먼저 확인합니다.',
+    '23bp cost gate, baseline 대비, drawdown, trade count를 확인합니다.',
+    '원시 테이블은 마지막에 열어 원인 분석용으로만 사용합니다.',
+  ] as const;
   onMount(() => {
     void loadDashboard();
   });
@@ -187,6 +230,35 @@
 </script>
 
 <RLHero progressPct={progressPct} costGatePassCount={costGatePassCount(gateRows)} />
+<ResearchStatusShell
+  pageId="rl-trading"
+  eyebrow="Trading · Research Command Center"
+  title="RL Trading은 증거 검토 화면입니다"
+  verdict="NO-GO / NOT LIVE-READY / RULE baseline first"
+  summary="이 화면은 RULE baseline, RL experiment, cost gate, drawdown, trade count를 비교해 실패와 blocker를 먼저 보여줍니다. 매매 실행·브로커·계좌·수익 보장 기능은 없습니다."
+  locks={rlStatusLocks}
+  blockers={rlStatusBlockers}
+  nextActions={rlNextInspection}
+/>
+<section class="card rl-command-cockpit" data-rl-evidence-command-cockpit>
+  <div class="panel-head">
+    <div>
+      <div class="text-eyebrow">Review flow · before raw tables</div>
+      <h2 class="text-h3">선택 산출물 판정 먼저 보기</h2>
+      <p class="text-muted">raw table을 열기 전에 RULE/RL 구분, selected verdict, 23bp cost, baseline, drawdown, trade count를 확인합니다.</p>
+    </div>
+    <span class="pill danger"><span class="dot"></span>NOT LIVE-READY</span>
+  </div>
+  <div class="mini-grid" style="margin-top:14px">
+    <div><span>Rule/RL distinction</span><b>{selectedLine}</b></div>
+    <div><span>Selected verdict</span><b>{selectedVerdict}</b></div>
+    <div><span>Cost assumption</span><b>{selectedCost}</b></div>
+    <div><span>Baseline</span><b>{selectedBaseline}</b></div>
+    <div><span>Drawdown</span><b>{selectedDrawdown}</b></div>
+    <div><span>Trade count</span><b>{selectedTradeCount}</b></div>
+  </div>
+  <p class="text-muted safety-note">model/live/paper/profit locks remain false. 이 요약은 evidence triage이며 실행·주문·수익성 판단이 아닙니다.</p>
+</section>
 {#if error}
   <section class="card error-card">
     <div class="card-title">강화학습 대시보드 조회 실패</div>

@@ -16,25 +16,21 @@
   import DocsTab from '$tabs/DocsTab.svelte';
   import { activeTab, sidebarCollapsed } from '$lib/stores';
   import { installPollingWatcher, startPolling } from '$lib/polling';
+  import { syncTabFromLocation } from '$lib/routes';
+  // Route marker contract for tests: '/rl' '/daily-ohlcv' '/daily-rl-guide' '/daily-ohlcv/rl-guide'
 
-  function routeTab(): string | null {
-    if (typeof window === 'undefined') return null;
-    const requested = new URLSearchParams(window.location.search).get('tab');
-    if (requested === 'rl-lab' || requested === 'rl-trading') return 'rl';
-    if (requested) return requested;
-    const path = window.location.pathname.replace(/\/+$/, '');
-    if (path === '/daily-rl-guide' || path === '/daily-ohlcv/rl-guide') return 'daily-rl-guide';
-    if (path === '/daily-ohlcv' || path === '/daily') return 'daily-ohlcv';
-    if (path === '/rl' || path === '/rl-lab' || path === '/v2/rl-trading' || path === '/v2/rl-lab') return 'rl';
-    if (path === '/training' || path === '/dashboard') return 'live-training';
-    return null;
-  }
+  let removePopstate: (() => void) | undefined;
 
   onMount(() => {
-    const requestedTab = routeTab();
-    if (requestedTab) activeTab.set(requestedTab);
+    syncTabFromLocation({ replaceAlias: true });
+    const handlePopstate = () => syncTabFromLocation();
+    window.addEventListener('popstate', handlePopstate);
+    removePopstate = () => window.removeEventListener('popstate', handlePopstate);
     installPollingWatcher();
     startPolling();
+    return () => {
+      removePopstate?.();
+    };
   });
 
   let tab = $state('live-training');

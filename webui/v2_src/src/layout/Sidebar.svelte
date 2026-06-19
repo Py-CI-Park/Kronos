@@ -2,6 +2,7 @@
   import { activeTab, sidebarCollapsed, sidebarMobileOpen, trainingStatus, metricsLatest } from '$lib/stores';
   import { ICONS, type IconName } from '$lib/icons';
   import { fmt } from '$lib/format';
+  import { navigateToTab } from '$lib/routes';
 
   interface NavItem {
     id: string;
@@ -71,7 +72,7 @@
   metricsLatest.subscribe((v) => (m = v));
 
   function pick(id: string) {
-    activeTab.set(id);
+    navigateToTab(id);
     sidebarMobileOpen.set(false);
   }
 </script>

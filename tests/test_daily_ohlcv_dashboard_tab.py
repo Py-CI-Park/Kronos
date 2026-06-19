@@ -11,6 +11,8 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     tab = (SRC / 'tabs' / 'DailyOhlcvTab.svelte').read_text(encoding='utf-8')
     api = (SRC / 'lib' / 'dailyOhlcvApi.ts').read_text(encoding='utf-8')
     guide = (SRC / 'tabs' / 'DailyRlGuideTab.svelte').read_text(encoding='utf-8')
+    routes = (SRC / 'lib' / 'routes.ts').read_text(encoding='utf-8')
+    status_shell = (SRC / 'tabs' / 'ResearchStatusShell.svelte').read_text(encoding='utf-8')
 
     assert "DailyOhlcvTab" in app
     assert "'/daily-ohlcv'" in app
@@ -56,6 +58,44 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "DailyDatasetBuilderCard" in tab
     assert "data-daily-symbol-panel" in tab
     assert "000250" in tab
+    assert "DASHBOARD_ROUTES" in routes
+    assert "syncTabFromLocation" in routes
+    assert "navigateToTab" in routes
+    assert "history.pushState" in routes
+    assert "history.replaceState" in routes
+    assert "popstate" in app
+    assert "navigateToTab(id)" in sidebar
+    assert "routeLabel(tab)" in header
+    assert "path: '/rl'" in routes
+    assert "path: '/daily-ohlcv'" in routes
+    assert "path: '/daily-rl-guide'" in routes
+    assert "ResearchStatusShell" in tab
+    assert "ResearchStatusShell" in guide
+    assert "data-research-status-shell" in status_shell
+    assert "data-current-blockers" in status_shell
+    assert "data-next-inspection" in status_shell
+    assert "Daily OHLCV는 데이터·게이트 증거 화면입니다" in tab
+    assert "일봉 RL 설명서는 이해용·검토용 화면입니다" in guide
+    assert "NO LIVE · NO BROKER · NO PROFIT CLAIM" in status_shell
+    assert "data-daily-rl-guide-section-control" in guide
+    assert "DEFAULT_COMPACT_OVERVIEW" in guide
+    assert "activeGuideSection = $state('overview')" in guide
+    assert "isGuideSection('workflow')" in guide
+    assert "isGuideSection('rejection')" in guide
+    assert "isGuideSection('scenario')" in guide
+    assert "isGuideSection('replay')" in guide
+    assert "isGuideSection('raw')" in guide
+    assert "data-daily-rl-replay-controls" in guide
+    assert "replayPaused = $state(true)" in guide
+    assert "prefers-reduced-motion" in guide
+    assert "data-daily-ohlcv-command-cockpit" in tab
+    assert "data-daily-ohlcv-d0-d9-cockpit" in tab
+    assert "dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']" in tab
+    assert "API_UNAVAILABLE" in tab
+    assert "NOT_STARTED" in tab
+    assert "000250 string preserved" in tab
+    assert "NO-GO / model_build_allowed=false" in tab
+    assert "live/model/paper/profit" in tab
 
 
 def test_daily_ohlcv_cards_expose_guardrail_markers():

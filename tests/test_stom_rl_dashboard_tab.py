@@ -31,18 +31,34 @@ def test_official_dashboard_sources_register_stom_rl_trading_tab():
     app = (DASHBOARD_SRC / "App.svelte").read_text(encoding="utf-8")
     sidebar = (DASHBOARD_SRC / "layout" / "Sidebar.svelte").read_text(encoding="utf-8")
     header = (DASHBOARD_SRC / "layout" / "Header.svelte").read_text(encoding="utf-8")
+    routes = (DASHBOARD_SRC / "lib" / "routes.ts").read_text(encoding="utf-8")
+    status_shell = (DASHBOARD_SRC / "tabs" / "ResearchStatusShell.svelte").read_text(encoding="utf-8")
     source = _rl_source_text()
 
     assert "RLTradingTab" in app
     assert "tab === 'rl'" in app
-    assert "path === '/rl'" in app
-    assert "requested === 'rl-lab' || requested === 'rl-trading'" in app
+    assert "path: '/rl'" in routes
+    assert "'rl-lab'" in routes
+    assert "'rl-trading'" in routes
     assert "id: 'rl'" in sidebar
     assert "label: 'RL Trading'" in sidebar
-    assert "rl: 'RL Trading'" in header
+    assert "routeLabel(tab)" in header
     assert "data-rl-trading-tab" in source
     assert "data-rl-orderbook-readiness-card" in source
     assert "orderbook_rl_readiness" in source
+    assert "ResearchStatusShell" in source
+    assert "data-research-status-shell" in status_shell
+    assert "data-research-status-page={pageId}" in status_shell
+    assert "NO LIVE · NO BROKER · NO PROFIT CLAIM" in status_shell
+    assert "RL Trading은 증거 검토 화면입니다" in source
+    assert "data-rl-evidence-command-cockpit" in source
+    assert "Rule/RL distinction" in source
+    assert "Selected verdict" in source
+    assert "Cost assumption" in source
+    assert "Baseline" in source
+    assert "Drawdown" in source
+    assert "Trade count" in source
+    assert "model/live/paper/profit locks remain false" in source
 
 
 def test_official_dashboard_public_copy_has_no_version_or_lab_labels():

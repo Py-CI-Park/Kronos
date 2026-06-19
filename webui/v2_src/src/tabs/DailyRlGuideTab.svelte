@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { dailyOhlcvApi, type DailyRlEnvGuideResponse } from '$lib/dailyOhlcvApi';
+  import ResearchStatusShell from './ResearchStatusShell.svelte';
 
   let guide = $state<DailyRlEnvGuideResponse | null>(null);
   let loading = $state(false);
@@ -9,6 +10,17 @@
   let selectedLaneId = $state('D4_RL_RISK_OVERLAY');
   let selectedTemplateId = $state('D3_D4_SIGNAL_QUALITY_AUDIT');
   let selectedWorkflowId = $state('PAST_ONLY_MARKET_REGIME_AUDIT');
+  let activeGuideSection = $state('overview');
+  let replayPaused = $state(true);
+  const guideSections = [
+    { id: 'overview', label: '1. Overview', summary: 'verdict · state/action/reward loop' },
+    { id: 'workflow', label: '2. Workflow', summary: 'workflow center · intent ledger' },
+    { id: 'rejection', label: '3. Rejection', summary: 'early drop · false negatives' },
+    { id: 'scenario', label: '4. Scenario', summary: 'scenario generator · market regime' },
+    { id: 'replay', label: '5. Replay', summary: 'paused replay · performance' },
+    { id: 'raw', label: '6. Raw checks', summary: 'contracts · tables · provenance' },
+  ] as const;
+  const isGuideSection = (section: string): boolean => activeGuideSection === section;
 
   const rows = (items: unknown): readonly Record<string, unknown>[] => {
     if (!Array.isArray(items)) return [];
@@ -125,6 +137,24 @@
     return 'neutral';
   };
 
+  const guideStatusLocks = [
+    { label: 'live trading', value: 'false', tone: 'danger' },
+    { label: 'broker/order/account', value: 'false', tone: 'danger' },
+    { label: 'paper forward', value: 'false', tone: 'danger' },
+    { label: 'model build allowed', value: 'false', tone: 'danger' },
+    { label: 'profit readiness', value: 'false', tone: 'danger' },
+    { label: 'cost model', value: '23bp', tone: 'warn' },
+  ] as const;
+  const guideStatusBlockers = [
+    '환경 설명서는 학습 구조를 보여주는 guide이며 D5 통과나 profit evidence가 아닙니다.',
+    'market-regime audit은 blocker evidence로 남아 있고 promotion_allowed=false입니다.',
+    'workflow/intent/rejection/scenario/raw provenance는 검토용이며 실행 버튼이 아닙니다.',
+  ] as const;
+  const guideNextInspection = [
+    '먼저 overview에서 verdict, locks, D5 blocker를 확인합니다.',
+    '필요한 섹션만 열어 workflow, intent ledger, rejection analytics, scenario generator를 확인합니다.',
+    'raw JSON과 provenance는 마지막에 audit trail 확인용으로만 봅니다.',
+  ] as const;
 
   const processSteps = [
     {
@@ -176,8 +206,11 @@
 
   onMount(() => {
     void loadGuide();
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     const timer = window.setInterval(() => {
-      visualFrame = (visualFrame + 1) % 240;
+      if (!replayPaused && !reducedMotion) {
+        visualFrame = (visualFrame + 1) % 240;
+      }
     }, 1600);
     return () => window.clearInterval(timer);
   });
@@ -201,6 +234,42 @@
   </div>
 </section>
 
+<ResearchStatusShell
+  pageId="daily-rl-guide"
+  eyebrow="Daily RL Guide · Research Command Center"
+  title="일봉 RL 설명서는 이해용·검토용 화면입니다"
+  verdict="RESEARCH_ONLY_ENV_BUILT_NOT_PROFIT_READY"
+  summary="state/action/reward 구조를 설명하지만, D5 NO-GO와 false promotion locks가 유지됩니다. 이 화면은 실거래, broker/order/account, paper-forward, 모델 생성 GO, 수익 가능성 주장으로 해석하면 안 됩니다."
+  locks={guideStatusLocks}
+  blockers={guideStatusBlockers}
+  nextActions={guideNextInspection}
+/>
+<section class="panel guide-section-control" data-daily-rl-guide-section-control>
+  <div class="panel-head">
+    <div>
+      <div class="text-eyebrow">Progressive disclosure</div>
+      <h2 class="text-h3">필요한 검토 섹션만 열기</h2>
+      <p class="text-muted">기본은 overview만 표시합니다. workflow center, intent ledger, rejection analytics, scenario generator, replay/performance, raw checks는 아래 버튼으로 명시적으로 열어 확인합니다.</p>
+    </div>
+    <span class="pill warn"><span class="dot"></span>DEFAULT_COMPACT_OVERVIEW</span>
+  </div>
+  <div class="guide-section-grid" data-daily-rl-guide-section-buttons>
+    {#each guideSections as section}
+      <button
+        type="button"
+        class="guide-section-button"
+        data-active={activeGuideSection === section.id ? 'true' : 'false'}
+        data-guide-section={section.id}
+        onclick={() => (activeGuideSection = section.id)}
+      >
+        <strong>{section.label}</strong>
+        <span>{section.summary}</span>
+      </button>
+    {/each}
+  </div>
+</section>
+
+{#if isGuideSection('overview')}
 <section class="panel" data-daily-rl-env-verdict>
   <div class="panel-head">
     <div>
@@ -309,6 +378,9 @@
     {/each}
   </div>
 </section>
+{/if}
+
+{#if isGuideSection('workflow')}
 <section class="panel process-selector-panel" data-daily-rl-research-process-selector>
   <div class="panel-head">
     <div>
@@ -522,6 +594,9 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.research_workflow_catalog, 'guardrail') ?? 'workflow catalog is read-only')}</p>
 </section>
+{/if}
+
+{#if isGuideSection('rejection')}
 <section class="panel rejection-analytics-panel" data-daily-rl-rejection-analytics>
   <div class="panel-head">
     <div>
@@ -641,6 +716,9 @@
     이 완료율은 workflow center, inspector, safe config builder, intent ledger, rejection analytics, 문서/검증 표면에만 적용됩니다. 실거래·브로커 주문·페이퍼 포워드·모델 빌드·수익성 주장은 계속 0%/blocked입니다.
   </p>
 </section>
+{/if}
+
+{#if isGuideSection('scenario')}
 <section class="panel scenario-generator-panel" data-daily-rl-scenario-generator>
   <div class="panel-head">
     <div>
@@ -880,6 +958,9 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.page_maturity_report, 'guardrail') ?? 'page maturity is not trading readiness')}</p>
 </section>
+{/if}
+
+{#if isGuideSection('replay')}
 
 <section class="panel live-visualizer-panel" data-daily-rl-realtime-visualizer>
   <div class="panel-head">
@@ -893,6 +974,15 @@
     실제 계좌/주문 실시간 화면이 아니라, 저장된 D4 산출물의 <b>state_observations · reward_breakdown · policy_nav · action_distribution</b>을
     1.6초 단위로 재생합니다. 현재 tabular Q telemetry는 신경망 화면이나 가짜 확률처럼 꾸미지 않고 산출물 action rate와 보상 항목만 보여줍니다.
   </p>
+  <div class="replay-controls" data-daily-rl-replay-controls>
+    <button type="button" class="btn" onclick={() => (replayPaused = !replayPaused)}>
+      {replayPaused ? '리플레이 시작' : '리플레이 일시정지'}
+    </button>
+    <button type="button" class="btn ghost" onclick={() => (visualFrame = (visualFrame + 1) % 240)}>
+      다음 frame
+    </button>
+    <span class="text-muted">기본값은 paused입니다. prefers-reduced-motion에서는 자동 재생하지 않습니다.</span>
+  </div>
 
   <div class="live-rl-stage" aria-label="강화학습 산출물 리플레이">
     <article class="live-state-card">
@@ -1022,6 +1112,9 @@
 
   <p class="text-muted" style="margin-top:10px">{String(field(guide?.learning_performance, 'guardrail') ?? 'no profit guarantee, no live/broker/orders')}</p>
 </section>
+{/if}
+
+{#if isGuideSection('raw')}
 
 <section class="panel" data-daily-rl-env-visual-map>
   <div class="panel-head">
@@ -1124,8 +1217,15 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{guide?.guardrail ?? 'no profit guarantee, no live/broker/orders'}</p>
 </section>
+{/if}
 
 <style>
+  .guide-section-control { position:sticky; top:12px; z-index:2; }
+  .guide-section-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
+  .guide-section-button { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
+  .guide-section-button[data-active='true'] { border-color:rgba(20,184,166,0.68); background:linear-gradient(180deg, rgba(20,184,166,0.14), var(--surface)); }
+  .guide-section-button span { color:var(--muted); font-size:12px; line-height:1.45; }
+  .replay-controls { margin-top:14px; display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:12px; border:1px solid var(--border-faint); border-radius:16px; background:var(--surface-sunken); }
   .visual-panel { overflow:hidden; }
   .rl-loop-figure { margin-top:16px; border:1px solid var(--border-faint); border-radius:24px; background:radial-gradient(circle at 22% 28%, rgba(20,184,166,0.16), transparent 34%), radial-gradient(circle at 78% 20%, rgba(59,130,246,0.13), transparent 32%), linear-gradient(135deg, rgba(15,23,42,0.02), rgba(245,158,11,0.05)); overflow:auto; }
   .rl-loop-svg { display:block; width:100%; min-width:900px; height:auto; }
