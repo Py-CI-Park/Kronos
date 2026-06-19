@@ -1,4 +1,4 @@
-﻿"""Verify official dashboard canonical routes and legacy redirects."""
+"""Verify official dashboard canonical routes and legacy redirects."""
 from urllib.parse import urlparse
 
 from webui.app import app
@@ -49,6 +49,15 @@ def test_rl_canonical_route_returns_official_shell():
 
     assert resp.status_code == 200
     _assert_official_shell(resp.data.decode("utf-8"))
+
+
+def test_daily_ohlcv_route_returns_official_shell():
+    client = app.test_client()
+
+    for path in ("/daily-ohlcv", "/daily", "/daily-rl-guide", "/daily-ohlcv/rl-guide"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} broke"
+        _assert_official_shell(resp.data.decode("utf-8"))
 
 
 def test_legacy_v2_routes_redirect_to_canonical_routes():

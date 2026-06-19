@@ -56,6 +56,15 @@ def dashboard_rl():
     return _serve_dashboard_shell()
 
 
+@v2_bp.route("/daily-ohlcv")
+@v2_bp.route("/daily")
+@v2_bp.route("/daily-rl-guide")
+@v2_bp.route("/daily-ohlcv/rl-guide")
+def dashboard_daily_ohlcv():
+    """Serve the daily OHLCV research evidence dashboard."""
+    return _serve_dashboard_shell()
+
+
 @v2_bp.route("/rl-lab")
 @v2_bp.route("/v2/rl-trading")
 @v2_bp.route("/v2/rl-lab")

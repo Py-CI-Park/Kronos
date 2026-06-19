@@ -170,6 +170,166 @@ except Exception as exc:
 
 try:
     try:
+        from .rl_dashboard_factory import (
+            list_lane_runs,
+            load_factory_queue,
+            load_lane_calibration,
+            load_lane_edge_ledger,
+            list_forward_ledger_runs,
+            list_sizing_runs,
+            load_forward_ledger,
+            list_risk_policy_runs,
+            load_model_build_readiness,
+            list_fresh_validation_runs,
+        )
+    except ImportError:
+        from rl_dashboard_factory import (
+            list_lane_runs,
+            load_factory_queue,
+            load_lane_calibration,
+            load_lane_edge_ledger,
+            list_forward_ledger_runs,
+            list_sizing_runs,
+            load_forward_ledger,
+            list_risk_policy_runs,
+            load_model_build_readiness,
+            list_fresh_validation_runs,
+        )
+except Exception as exc:
+    print(f"Warning: STOM RL factory dashboard helpers cannot be imported ({exc})")
+    list_lane_runs = None
+    load_factory_queue = None
+    load_lane_calibration = None
+    load_lane_edge_ledger = None
+    list_forward_ledger_runs = None
+    list_sizing_runs = None
+    load_forward_ledger = None
+    list_risk_policy_runs = None
+    load_model_build_readiness = None
+    list_fresh_validation_runs = None
+
+try:
+    try:
+        from .daily_ohlcv_dashboard import (
+            list_universe_manifests,
+            list_dataset_artifacts,
+            load_coverage_chart,
+            load_decision_cockpit,
+            load_scenario_lab,
+            load_scenario_run_ledger,
+            load_daily_rl_env_guide,
+            load_research_workflow_catalog,
+            load_research_workflow_detail,
+            create_research_job_intent,
+            load_research_job_intent,
+            load_research_job_intent_ledger,
+            load_rejection_analytics,
+            load_daily_flow_chart,
+            load_daily_metric_glossary,
+            load_research_diagnostics_chart,
+            load_equity_overlay_chart,
+            load_dataset_chart,
+            load_prediction_chart,
+            load_prediction_latest,
+            load_portfolio_chart,
+            load_portfolio_latest,
+            load_walk_forward_chart,
+            load_walk_forward_latest,
+            load_registry_latest,
+            load_run_scatter_chart,
+            load_symbol_chart,
+            load_universe_breakdown_chart,
+            load_walk_forward_heatmap_chart,
+            load_dataset_latest,
+            load_daily_artifacts,
+            load_daily_db_summary,
+            load_daily_progress,
+            load_daily_symbol,
+            load_not_started_surface,
+            load_universe_chart,
+            load_universe_preview,
+        )
+    except ImportError:
+        from daily_ohlcv_dashboard import (
+            list_universe_manifests,
+            list_dataset_artifacts,
+            load_coverage_chart,
+            load_decision_cockpit,
+            load_scenario_lab,
+            load_scenario_run_ledger,
+            load_daily_rl_env_guide,
+            load_research_workflow_catalog,
+            load_research_workflow_detail,
+            create_research_job_intent,
+            load_research_job_intent,
+            load_research_job_intent_ledger,
+            load_rejection_analytics,
+            load_daily_flow_chart,
+            load_daily_metric_glossary,
+            load_research_diagnostics_chart,
+            load_equity_overlay_chart,
+            load_dataset_chart,
+            load_prediction_chart,
+            load_prediction_latest,
+            load_portfolio_chart,
+            load_portfolio_latest,
+            load_walk_forward_chart,
+            load_walk_forward_latest,
+            load_registry_latest,
+            load_run_scatter_chart,
+            load_symbol_chart,
+            load_universe_breakdown_chart,
+            load_walk_forward_heatmap_chart,
+            load_dataset_latest,
+            load_daily_artifacts,
+            load_daily_db_summary,
+            load_daily_progress,
+            load_daily_symbol,
+            load_not_started_surface,
+            load_universe_chart,
+            load_universe_preview,
+        )
+except Exception as exc:
+    print(f"Warning: Daily OHLCV dashboard helpers cannot be imported ({exc})")
+    list_universe_manifests = None
+    list_dataset_artifacts = None
+    load_coverage_chart = None
+    load_decision_cockpit = None
+    load_scenario_lab = None
+    load_scenario_run_ledger = None
+    load_daily_rl_env_guide = None
+    load_research_workflow_catalog = None
+    load_research_workflow_detail = None
+    create_research_job_intent = None
+    load_research_job_intent = None
+    load_research_job_intent_ledger = None
+    load_rejection_analytics = None
+    load_daily_flow_chart = None
+    load_daily_metric_glossary = None
+    load_research_diagnostics_chart = None
+    load_equity_overlay_chart = None
+    load_dataset_chart = None
+    load_prediction_chart = None
+    load_prediction_latest = None
+    load_portfolio_chart = None
+    load_portfolio_latest = None
+    load_walk_forward_chart = None
+    load_walk_forward_latest = None
+    load_registry_latest = None
+    load_run_scatter_chart = None
+    load_symbol_chart = None
+    load_universe_breakdown_chart = None
+    load_walk_forward_heatmap_chart = None
+    load_dataset_latest = None
+    load_daily_artifacts = None
+    load_daily_db_summary = None
+    load_daily_progress = None
+    load_daily_symbol = None
+    load_not_started_surface = None
+    load_universe_chart = None
+    load_universe_preview = None
+try:
+    try:
         from .v2 import v2_bp
     except ImportError:
         from v2 import v2_bp
@@ -812,6 +972,569 @@ def rl_run_cost_gate(run_name):
         return jsonify({'error': 'STOM RL dashboard helper is not available'}), 500
     try:
         return jsonify(load_rl_cost_gate(run_name, limit=_rl_table_limit()))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/rl/factory/queue')
+def rl_factory_queue():
+    if load_factory_queue is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_factory_queue())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/rl/factory/lane-runs')
+def rl_factory_lane_runs():
+    if list_lane_runs is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify({'runs': list_lane_runs()})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/rl/factory/sizing-runs')
+def rl_factory_sizing_runs():
+    if list_sizing_runs is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify({'runs': list_sizing_runs()})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rl/factory/risk-policy-runs')
+def rl_factory_risk_policy_runs():
+    if list_risk_policy_runs is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify({'runs': list_risk_policy_runs()})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rl/factory/fresh-validation-runs')
+def rl_factory_fresh_validation_runs():
+    if list_fresh_validation_runs is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify({'runs': list_fresh_validation_runs()})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rl/factory/model-build-readiness')
+def rl_factory_model_build_readiness():
+    if load_model_build_readiness is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_model_build_readiness())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rl/factory/forward-ledgers')
+def rl_factory_forward_ledgers():
+    if list_forward_ledger_runs is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify({'runs': list_forward_ledger_runs()})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rl/factory/forward-ledger/<run_name>')
+def rl_factory_forward_ledger(run_name):
+    if load_forward_ledger is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_forward_ledger(
+                run_name,
+                limit=_rl_table_limit(),
+                status=request.args.get('status') or None,
+            )
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/rl/factory/lane/<run_name>/calibration')
+def rl_factory_lane_calibration(run_name):
+    if load_lane_calibration is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_lane_calibration(run_name))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/rl/factory/lane/<run_name>/edge-ledger')
+def rl_factory_lane_edge_ledger(run_name):
+    if load_lane_edge_ledger is None:
+        return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_lane_edge_ledger(
+                run_name,
+                limit=_rl_table_limit(),
+                decision=request.args.get('decision') or None,
+            )
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+def _daily_limit(name='limit', default=100, maximum=5000):
+    try:
+        limit = int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        limit = default
+    return max(0, min(limit, maximum))
+
+
+@app.route('/api/daily-ohlcv/db-summary')
+def daily_ohlcv_db_summary():
+    if load_daily_db_summary is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_daily_db_summary(
+                run=request.args.get('run') or None,
+                table_limit=_daily_limit('table_limit', 100),
+                flag_limit=_daily_limit('flag_limit', 100),
+                window_limit=_daily_limit('window_limit', 50),
+            )
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/symbol/<path:code>')
+@app.route('/api/daily-ohlcv/symbol/<code>')
+def daily_ohlcv_symbol(code):
+    if load_daily_symbol is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_daily_symbol(code, sample_limit=_daily_limit('limit', 50, 200)))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/universe/preview')
+def daily_ohlcv_universe_preview():
+    if load_universe_preview is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_universe_preview(
+                run=request.args.get('run') or None,
+                limit=_daily_limit('limit', 200),
+                include=request.args.get('include') or None,
+            )
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/universe/manifests')
+def daily_ohlcv_universe_manifests():
+    if list_universe_manifests is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(list_universe_manifests(limit=_daily_limit('limit', 20, 200)))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/progress')
+def daily_ohlcv_progress():
+    if load_daily_progress is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_daily_progress())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/artifacts')
+def daily_ohlcv_artifacts():
+    if load_daily_artifacts is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_daily_artifacts(limit=_daily_limit('limit', 50, 500)))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/dataset/latest')
+def daily_ohlcv_dataset_latest():
+    if load_dataset_latest is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_dataset_latest(run=request.args.get('run') or None, sample_limit=_daily_limit('limit', 25, 500)))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/daily-ohlcv/prediction/latest')
+def daily_ohlcv_prediction_latest():
+    if load_prediction_latest is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_prediction_latest(run=request.args.get('run') or None, sample_limit=_daily_limit('limit', 25, 500)))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/portfolio/latest')
+def daily_ohlcv_portfolio_latest():
+    if load_portfolio_latest is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_portfolio_latest(run=request.args.get('run') or None, sample_limit=_daily_limit('limit', 25, 500)))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/walk-forward/latest')
+def daily_ohlcv_walk_forward_latest():
+    if load_walk_forward_latest is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_walk_forward_latest(run=request.args.get('run') or None, sample_limit=_daily_limit('limit', 25, 500)))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/registry/latest')
+def daily_ohlcv_registry_latest():
+    if load_registry_latest is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_registry_latest(run=request.args.get('run') or None, sample_limit=_daily_limit('limit', 25, 500)))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/dataset/artifacts')
+def daily_ohlcv_dataset_artifacts():
+    if list_dataset_artifacts is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(list_dataset_artifacts(limit=_daily_limit('limit', 20, 200)))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/dataset')
+def daily_ohlcv_chart_dataset():
+    if load_dataset_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_dataset_chart(run=request.args.get('run') or None))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/coverage')
+def daily_ohlcv_chart_coverage():
+    if load_coverage_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_coverage_chart())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/universe')
+def daily_ohlcv_chart_universe():
+    if load_universe_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_universe_chart())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/prediction')
+def daily_ohlcv_chart_prediction():
+    if load_prediction_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_prediction_chart(run=request.args.get('run') or None))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/portfolio')
+def daily_ohlcv_chart_portfolio():
+    if load_portfolio_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_portfolio_chart(run=request.args.get('run') or None))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/walk-forward')
+@app.route('/api/daily-ohlcv/gate/latest')
+def daily_ohlcv_gate_latest():
+    if load_walk_forward_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_walk_forward_chart(run=request.args.get('run') or None))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/daily-ohlcv/charts/decision-cockpit')
+def daily_ohlcv_chart_decision_cockpit():
+    if load_decision_cockpit is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_decision_cockpit())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/scenarios')
+def daily_ohlcv_scenario_lab():
+    if load_scenario_lab is None:
+        return jsonify({'error': 'Daily OHLCV scenario helper is not available'}), 500
+    try:
+        return jsonify(load_scenario_lab())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/scenario-runs')
+def daily_ohlcv_scenario_runs():
+    if load_scenario_run_ledger is None:
+        return jsonify({'error': 'Daily OHLCV scenario run ledger helper is not available'}), 500
+    try:
+        limit = request.args.get('limit', default=25, type=int)
+        return jsonify(load_scenario_run_ledger(limit=limit))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/daily-ohlcv/rl-env-guide')
+def daily_ohlcv_rl_env_guide():
+    if load_daily_rl_env_guide is None:
+        return jsonify({'error': 'Daily OHLCV RL environment guide helper is not available'}), 500
+    try:
+        return jsonify(load_daily_rl_env_guide())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@app.route('/api/daily-ohlcv/research-workflows')
+def daily_ohlcv_research_workflows():
+    if load_research_workflow_catalog is None:
+        return jsonify({'error': 'Daily OHLCV research workflow helper is not available'}), 500
+    try:
+        return jsonify(load_research_workflow_catalog())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/research-workflows/<workflow_id>')
+def daily_ohlcv_research_workflow_detail(workflow_id):
+    if load_research_workflow_detail is None:
+        return jsonify({'error': 'Daily OHLCV research workflow helper is not available'}), 500
+    try:
+        payload = load_research_workflow_detail(workflow_id)
+        status = 404 if payload.get('status') == 'UNKNOWN_WORKFLOW_ID' else 200
+        return jsonify(payload), status
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+@app.route('/api/daily-ohlcv/research-workflows/<workflow_id>/job-intents', methods=['POST'])
+def daily_ohlcv_research_workflow_job_intents(workflow_id):
+    if create_research_job_intent is None:
+        return jsonify({'error': 'Daily OHLCV research job intent helper is not available'}), 500
+    try:
+        payload = create_research_job_intent(workflow_id, request.get_json(silent=True) or {})
+        status = int(payload.get('http_status', 200))
+        return jsonify(payload), status
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/research-jobs')
+def daily_ohlcv_research_jobs():
+    if load_research_job_intent_ledger is None:
+        return jsonify({'error': 'Daily OHLCV research job intent ledger helper is not available'}), 500
+    try:
+        limit = request.args.get('limit', default=25, type=int)
+        return jsonify(load_research_job_intent_ledger(limit=limit))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/research-jobs/<intent_id>')
+def daily_ohlcv_research_job_detail(intent_id):
+    if load_research_job_intent is None:
+        return jsonify({'error': 'Daily OHLCV research job intent helper is not available'}), 500
+    try:
+        payload = load_research_job_intent(intent_id)
+        status = int(payload.get('http_status', 200))
+        return jsonify(payload), status
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+@app.route('/api/daily-ohlcv/rejection-analytics')
+def daily_ohlcv_rejection_analytics():
+    if load_rejection_analytics is None:
+        return jsonify({'error': 'Daily OHLCV rejection analytics helper is not available'}), 500
+    try:
+        run = request.args.get('run')
+        limit = request.args.get('limit', default=25, type=int)
+        return jsonify(load_rejection_analytics(run=run, limit=limit))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+
+
+@app.route('/api/daily-ohlcv/charts/flow')
+def daily_ohlcv_chart_flow():
+    if load_daily_flow_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_daily_flow_chart())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/glossary')
+def daily_ohlcv_chart_glossary():
+    if load_daily_metric_glossary is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_daily_metric_glossary())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/research-diagnostics')
+def daily_ohlcv_chart_research_diagnostics():
+    if load_research_diagnostics_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_research_diagnostics_chart())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/equity-overlay')
+def daily_ohlcv_chart_equity_overlay():
+    if load_equity_overlay_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_equity_overlay_chart(run=request.args.get('run') or None))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/walk-forward-heatmap')
+def daily_ohlcv_chart_walk_forward_heatmap():
+    if load_walk_forward_heatmap_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_walk_forward_heatmap_chart(run=request.args.get('run') or None))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/run-scatter')
+def daily_ohlcv_chart_run_scatter():
+    if load_run_scatter_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_run_scatter_chart())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/universe-breakdown')
+def daily_ohlcv_chart_universe_breakdown():
+    if load_universe_breakdown_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_universe_breakdown_chart())
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/symbol/<path:code>')
+@app.route('/api/daily-ohlcv/charts/symbol/<code>')
+def daily_ohlcv_chart_symbol(code):
+    if load_symbol_chart is None:
+        return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_symbol_chart(code, sample_limit=_daily_limit('limit', 160, 200)))
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except ValueError as exc:
