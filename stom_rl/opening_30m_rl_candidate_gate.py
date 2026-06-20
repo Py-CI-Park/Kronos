@@ -1,6 +1,9 @@
-﻿"""Controls, ablations, and promotion metrics for opening candidates."""
+"""Controls, ablations, and promotion metrics for opening candidates."""
 
 from __future__ import annotations
+
+import math
+import statistics
 
 from dataclasses import dataclass
 from typing import Mapping, Sequence
@@ -19,6 +22,7 @@ REQUIRED_CONTROLS = (
 REQUIRED_ABLATIONS = tuple(feature_set for feature_set in CANONICAL_FEATURE_SET_IDS if feature_set != "ts_imb_rule_baseline")
 BASELINE_CONTROL_SOURCES = {"baseline_same_split"}
 POLICY_CONTROL_SOURCES = {"policy_eval_oos", "label_shuffle_eval_oos", "time_session_shuffle_eval_oos"}
+DEGENERATE_POLICY_GUARDRAIL = "DEGENERATE_POLICY means training failure, not market evidence."
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +42,9 @@ class CandidateGateInput:
     trade_count: int
     max_drawdown_pct: float
     max_drawdown_limit_pct: float = -10.0
+    oos_action_distribution: Mapping[str, JsonValue] | None = None
+    ablation_rows: tuple[Mapping[str, JsonValue], ...] = ()
+    min_oos_trades: int = 0
 
 
 def build_control_artifact(
@@ -127,6 +134,57 @@ def build_ablation_artifact(
     }
 
 
+def build_policy_diagnostics(
+    *,
+    oos_action_distribution: Mapping[str, JsonValue] | None,
+    ablation_rows: Sequence[Mapping[str, JsonValue]],
+    dominant_threshold: float = 0.95,
+) -> dict[str, JsonValue]:
+    """Flag degenerate policies: single-action collapse or feature-insensitive ablations."""
+
+    distribution = oos_action_distribution or {}
+    raw_fraction = distribution.get("dominant_action_fraction")
+    raw_entropy = distribution.get("entropy")
+    dominant_action_fraction = float(raw_fraction) if raw_fraction is not None else None
+    action_entropy = float(raw_entropy) if raw_entropy is not None else None
+    single_action_dominant = dominant_action_fraction is not None and dominant_action_fraction >= float(dominant_threshold)
+    returns = [float(row["oos_net_return_pct"]) for row in ablation_rows if row.get("oos_net_return_pct") is not None]
+    ablations_all_identical = len(returns) >= 2 and all(
+        math.isclose(value, returns[0], abs_tol=1e-12) for value in returns[1:]
+    )
+    degenerate = bool(single_action_dominant or ablations_all_identical)
+    return {
+        "dominant_action_fraction": dominant_action_fraction,
+        "action_entropy": action_entropy,
+        "single_action_dominant": single_action_dominant,
+        "ablations_all_identical": ablations_all_identical,
+        "degenerate": degenerate,
+        "diagnostic_label": "DEGENERATE_POLICY" if degenerate else "",
+        "guardrail": DEGENERATE_POLICY_GUARDRAIL,
+    }
+
+
+def build_sample_power(
+    *,
+    oos_trade_count: int,
+    min_required: int = 100,
+    oos_returns_pct: Sequence[float] = (),
+) -> dict[str, JsonValue]:
+    """Report whether OOS trade volume can support any statistical claim."""
+
+    returns = [float(value) for value in oos_returns_pct]
+    ci_width_pct = None
+    if len(returns) >= 2:
+        ci_width_pct = float(1.96 * 2.0 * statistics.stdev(returns) / math.sqrt(len(returns)))
+    return {
+        "oos_trades": int(oos_trade_count),
+        "min_required": int(min_required),
+        "sufficient": int(oos_trade_count) >= int(min_required),
+        "ci_width_pct": ci_width_pct,
+        "guardrail": "Insufficient OOS trades mean no statistical claim, not market evidence.",
+    }
+
+
 def evaluate_candidate_gate(gate: CandidateGateInput) -> dict[str, JsonValue]:
     """Promote only candidates that pass every OOS/control/ablation/baseline gate."""
 
@@ -148,6 +206,12 @@ def evaluate_candidate_gate(gate: CandidateGateInput) -> dict[str, JsonValue]:
     if gate.max_drawdown_pct < gate.max_drawdown_limit_pct:
         reasons.append("failed_mdd")
     verdict = _verdict(reasons)
+    policy_diagnostics = build_policy_diagnostics(
+        oos_action_distribution=gate.oos_action_distribution,
+        ablation_rows=gate.ablation_rows,
+    )
+    sample_power = build_sample_power(oos_trade_count=int(gate.trade_count), min_required=int(gate.min_oos_trades))
+    degenerate_no_go = verdict.startswith("NO-GO") and bool(policy_diagnostics["degenerate"])
     return {
         "artifact_type": "opening_30m_candidate_promotion_gate",
         "candidate_id": gate.candidate_id,
@@ -155,6 +219,9 @@ def evaluate_candidate_gate(gate: CandidateGateInput) -> dict[str, JsonValue]:
         "verdict": verdict,
         "can_show_go_candidate": verdict == "GO_CANDIDATE",
         "blocking_reasons": reasons,
+        "diagnostic_label": "DEGENERATE_POLICY" if degenerate_no_go else "",
+        "policy_diagnostics": policy_diagnostics,
+        "sample_power": sample_power,
         "metrics": _metrics(gate),
         "equity_curve": _equity_curve(gate),
         "time_bucket_performance": _time_buckets(gate),

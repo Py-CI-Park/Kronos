@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -84,6 +85,7 @@ def _evaluate(model: Any, episodes: Sequence[OrderbookEpisode], config: Candidat
     min_cumulative = 0.0
     trade_count = 0
     rows = []
+    action_counts: dict[str, int] = {}
     for index, episode in enumerate(episodes):
         env = _make_env([episode], config)
         observation, info = env.reset(seed=int(config.seed) + index)
@@ -92,13 +94,38 @@ def _evaluate(model: Any, episodes: Sequence[OrderbookEpisode], config: Candidat
         last_info = dict(info)
         while not (terminated or truncated):
             action, _ = model.predict(observation, deterministic=True)
+            action_key = str(int(np.asarray(action).item()))
+            action_counts[action_key] = action_counts.get(action_key, 0) + 1
             observation, reward, terminated, truncated, last_info = env.step(action)
             total_reward += float(reward)
         cumulative += total_reward * 100.0
         min_cumulative = min(min_cumulative, cumulative)
         trade_count += int(last_info.get("trade_count", 0))
         rows.append({"episode_id": episode.episode_id, "net_return_pct": total_reward * 100.0})
-    return {"net_return_pct": cumulative, "trade_count": trade_count, "max_drawdown_pct": min_cumulative, "rows": rows}
+    return {
+        "net_return_pct": cumulative,
+        "trade_count": trade_count,
+        "max_drawdown_pct": min_cumulative,
+        "rows": rows,
+        "action_distribution": _action_distribution(action_counts),
+    }
+
+
+def _action_distribution(action_counts: Mapping[str, int]) -> dict[str, JsonValue]:
+    """Summarize predicted-action concentration for degenerate-policy diagnostics."""
+
+    counts = {str(key): int(count) for key, count in action_counts.items()}
+    total = sum(counts.values())
+    if total <= 0:
+        return {"counts": counts, "entropy": 0.0, "dominant_action_fraction": 0.0, "total_steps": 0}
+    fractions = [count / total for count in counts.values() if count > 0]
+    entropy = 0.0 if len(fractions) <= 1 else -sum(fraction * math.log(fraction) for fraction in fractions)
+    return {
+        "counts": counts,
+        "entropy": float(entropy),
+        "dominant_action_fraction": float(max(fractions)),
+        "total_steps": int(total),
+    }
 
 
 def _episodes_for_split(frames: Sequence[pd.DataFrame], split_manifest: Mapping[str, JsonValue], split: str) -> list[OrderbookEpisode]:
@@ -168,6 +195,8 @@ def _trained_row(
         "oos_net_return_pct": oos["net_return_pct"],
         "oos_trade_count": oos["trade_count"],
         "oos_max_drawdown_pct": oos["max_drawdown_pct"],
+        "validation_action_distribution": validation.get("action_distribution", {}),
+        "oos_action_distribution": oos.get("action_distribution", {}),
         "monitor_log_path": logs["validation_eval_json"],
         "eval_log_path": logs["oos_eval_json"],
         "selected_by": "validation",
@@ -186,6 +215,8 @@ def _failed_row(config: CandidateConfig, reason: str) -> dict[str, JsonValue]:
         "model_path": "",
         "validation_net_return_pct": 0.0,
         "oos_net_return_pct": None,
+        "validation_action_distribution": {},
+        "oos_action_distribution": {},
         "skip_reason": reason[:500],
         "selected_by": "validation",
     }

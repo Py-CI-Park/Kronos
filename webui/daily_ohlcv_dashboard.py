@@ -2507,9 +2507,9 @@ def _build_rl_guide_market_regime_readiness(
         },
         {
             "check": "past_only_proxy_contract",
-            "status": "PASS" if audit_complete and audit_summary.get("leakage_status") == "PASS" else "WATCH",
-            "completion_pct": 100 if audit_complete and audit_summary.get("leakage_status") == "PASS" else (70 if signal_available else 0),
-            "evidence": "market-regime audit emits past/current-only proxy rows and leakage PASS" if audit_complete else "blocked until market-regime artifacts exist",
+            "status": "BLOCKED" if not signal_available else ("PASS" if audit_complete and audit_summary.get("leakage_status") == "PASS" else "WATCH"),
+            "completion_pct": 100 if signal_available and audit_complete and audit_summary.get("leakage_status") == "PASS" else (70 if signal_available else 0),
+            "evidence": "blocked until signal-quality artifacts exist" if not signal_available else ("market-regime audit emits past/current-only proxy rows and leakage PASS" if audit_complete else "blocked until market-regime artifacts exist"),
         },
         {
             "check": "missing_malformed_stale_fail_closed",
@@ -2524,7 +2524,7 @@ def _build_rl_guide_market_regime_readiness(
     )
     return {
         "schema_version": "daily_rl_market_regime_readiness.v1",
-        "status": "COMPLETED_RESEARCH_ONLY_BLOCKERS_ACTIVE" if audit_complete else ("NEXT_RESEARCH_READY_FOR_PREREGISTRATION" if signal_available else "BLOCKED_MISSING_SIGNAL_QUALITY_AUDIT"),
+        "status": "BLOCKED_MISSING_SIGNAL_QUALITY_AUDIT" if not signal_available else ("COMPLETED_RESEARCH_ONLY_BLOCKERS_ACTIVE" if audit_complete else "NEXT_RESEARCH_READY_FOR_PREREGISTRATION"),
         "maturity_score_pct": maturity_score,
         "recommended_doc_path": "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_result_2026-06-19.md" if audit_complete else "docs/stom_daily_ohlcv_past_only_market_regime_data_quality_audit_prereg_2026-06-19.md",
         "source_signal_quality_run_id": signal_summary.get("run_id") if signal_available else None,
