@@ -78,6 +78,12 @@ def test_rl_trading_tab_uses_read_only_rl_api_contracts():
         "rlEpisodes",
         "rlTable",
         "rlCostGate",
+        "factorySizingRuns",
+        "factoryForwardLedgers",
+        "factoryForwardLedger",
+        "factoryRiskPolicyRuns",
+        "factoryModelBuildReadiness",
+        "factoryFreshValidationRuns",
     ]:
         assert marker in api
 
@@ -110,6 +116,22 @@ def test_rl_trading_tab_uses_read_only_rl_api_contracts():
         "markLine",
         "tooltipLines",
         "tooltipTitle",
+        "data-rl-factory-lineage-card",
+        "data-rl-sizing-risk-card",
+        "data-rl-forward-ledger-card",
+        "data-rl-model-build-readiness-card",
+        "MODEL BUILD READINESS",
+        "RL LOCK",
+        "LOCKED_FRESH_OOS_FORWARD_REQUIRED",
+        "factoryRiskPolicyRuns",
+        "factoryModelBuildReadiness",
+        "factoryFreshValidationRuns",
+        "data-rl-fresh-validation-table",
+        "FRESH_VALIDATION_REQUIRED",
+        "fresh_oos/fresh_forward",
+        "FILL-MODE ROBUSTNESS",
+        "P5_BLOCKED_BY_P2",
+        "FORWARD / PAPER LEDGER",
     ]:
         assert marker in source
     assert "Cumulative profit curve" not in source

@@ -16,6 +16,14 @@
   import RunDetailCard from './rlTrading/RunDetailCard.svelte';
   import OpeningWorkflowCard from './rlTrading/OpeningWorkflowCard.svelte';
   import ParticipantProxyCard from './rlTrading/ParticipantProxyCard.svelte';
+  import FactoryStatusCard from './rlTrading/FactoryStatusCard.svelte';
+  import FactoryLineageCard from './rlTrading/FactoryLineageCard.svelte';
+  import CalibrationCard from './rlTrading/CalibrationCard.svelte';
+  import EdgeLedgerCard from './rlTrading/EdgeLedgerCard.svelte';
+  import SizingRiskCard from './rlTrading/SizingRiskCard.svelte';
+  import ModelBuildReadinessCard from './rlTrading/ModelBuildReadinessCard.svelte';
+  import ForwardLedgerCard from './rlTrading/ForwardLedgerCard.svelte';
+  import SessionReplayCard from './rlTrading/SessionReplayCard.svelte';
   import EvidenceCharts from './rlTrading/EvidenceCharts.svelte';
   import RunTables from './rlTrading/RunTables.svelte';
   import { costGatePassCount } from './rlTrading/chartOptions';
@@ -194,6 +202,16 @@
   </section>
 {/if}
 <OrderbookReadinessCard run={readinessRun ?? openingCandidateRun} />
+<section class="factory-evidence" data-rl-factory-evidence-section>
+  <FactoryStatusCard />
+  <FactoryLineageCard />
+  <CalibrationCard />
+  <EdgeLedgerCard />
+  <SizingRiskCard />
+  <ModelBuildReadinessCard />
+  <ForwardLedgerCard />
+  <SessionReplayCard />
+</section>
 <section class="rl-layout">
   <RunSelector runs={runs} selectedName={selectedName} onSelect={(name) => void selectRun(name)} />
   <div class="stack" style="--gap:16px;min-width:0">
@@ -224,6 +242,11 @@
 </section>
 
 <style>
+  .factory-evidence {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
   .rl-layout {
     display: grid;
     grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
