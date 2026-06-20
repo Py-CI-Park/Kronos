@@ -1,4 +1,8 @@
-from stom_rl.opening_30m_rl_candidate_training import _make_env
+import math
+
+import pytest
+
+from stom_rl.opening_30m_rl_candidate_training import _action_distribution, _failed_row, _make_env, _trained_row
 from stom_rl.opening_30m_rl_candidates import default_candidate_configs, train_candidate_artifacts
 from stom_rl.opening_30m_rl_context import OPENING_RL_CONTEXT_FEATURE_NAMES
 from stom_rl.opening_30m_rl_feature_mask import feature_mask_details
@@ -80,3 +84,61 @@ def test_feature_mask_details_include_context_feature_groups():
     assert "orderbook_persistence_score" in details["zeroed_feature_names"]
     assert "overheat_score" in details["zeroed_feature_names"]
     assert "proxy_available_foreign_net_buy" in details["zeroed_feature_names"]
+
+
+def test_action_distribution_summary_handles_empty_single_and_mixed_actions():
+    empty = _action_distribution({})
+    single = _action_distribution({"0": 10})
+    mixed = _action_distribution({"0": 5, "1": 5})
+
+    assert empty == {"counts": {}, "entropy": 0.0, "dominant_action_fraction": 0.0, "total_steps": 0}
+    assert single["entropy"] == 0.0
+    assert single["dominant_action_fraction"] == 1.0
+    assert single["total_steps"] == 10
+    assert mixed["entropy"] == pytest.approx(math.log(2))
+    assert mixed["dominant_action_fraction"] == 0.5
+    assert mixed["total_steps"] == 10
+    assert mixed["counts"] == {"0": 5, "1": 5}
+
+
+def test_action_distribution_dominant_fraction_for_skewed_actions():
+    skewed = _action_distribution({"0": 96, "1": 4})
+
+    assert skewed["dominant_action_fraction"] == pytest.approx(0.96)
+    assert skewed["entropy"] == pytest.approx(-(0.96 * math.log(0.96) + 0.04 * math.log(0.04)))
+
+
+def test_trained_row_carries_action_distribution_fields(tmp_path):
+    config = default_candidate_configs("split123")[0]
+    validation = {
+        "net_return_pct": 1.0,
+        "trade_count": 2,
+        "max_drawdown_pct": -0.5,
+        "rows": [],
+        "action_distribution": {"counts": {"0": 3, "1": 1}, "entropy": 0.5623, "dominant_action_fraction": 0.75, "total_steps": 4},
+    }
+    oos = {
+        "net_return_pct": 0.5,
+        "trade_count": 1,
+        "max_drawdown_pct": -0.2,
+        "rows": [],
+        "action_distribution": {"counts": {"0": 4}, "entropy": 0.0, "dominant_action_fraction": 1.0, "total_steps": 4},
+    }
+    logs = {"validation_eval_json": "validation.json", "oos_eval_json": "oos.json"}
+
+    row = _trained_row(config, tmp_path / "missing_model.zip", validation, oos, logs)
+
+    assert row["validation_action_distribution"] == validation["action_distribution"]
+    assert row["oos_action_distribution"] == oos["action_distribution"]
+    assert row["validation_net_return_pct"] == 1.0
+    assert row["oos_net_return_pct"] == 0.5
+
+
+def test_failed_row_has_empty_action_distributions():
+    config = default_candidate_configs("split123")[0]
+
+    row = _failed_row(config, "boom")
+
+    assert row["status"] == "training_failed"
+    assert row["validation_action_distribution"] == {}
+    assert row["oos_action_distribution"] == {}
