@@ -16,7 +16,7 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
 
     assert "DailyOhlcvTab" in app
     assert "'/daily-ohlcv'" in app
-    assert "daily-ohlcv" in sidebar
+    assert "Trading Command Center" in sidebar
     assert "Daily OHLCV" in header
     assert "data-daily-ohlcv-tab" in tab
     assert "READ_ONLY" in tab
@@ -50,7 +50,7 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "DailyScenarioLabCard" in tab
     assert "DailyScenarioRunLedgerCard" in tab
     assert "DailyRlGuideTab" in app
-    assert "일봉 RL 설명서" in sidebar
+    assert "Trading Command Center" in sidebar
     assert "일봉 RL 설명서" in header
     assert "NO-GO/RESEARCH_ONLY" in tab
     assert "data-daily-api-error" in tab
@@ -67,8 +67,8 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "navigateToTab(id)" in sidebar
     assert "routeLabel(tab)" in header
     assert "path: '/rl'" in routes
-    assert "path: '/daily-ohlcv'" in routes
-    assert "path: '/daily-rl-guide'" in routes
+    assert "aliases: ['/daily-ohlcv', '/daily', '/daily-rl-guide', '/daily-ohlcv/rl-guide', '/rl-lab', '/v2/rl-trading', '/v2/rl-lab']" in routes
+    assert "'daily-rl-guide'" in routes
     assert "ResearchStatusShell" in tab
     assert "ResearchStatusShell" in guide
     assert "data-research-status-shell" in status_shell

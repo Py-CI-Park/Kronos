@@ -10,6 +10,10 @@ dist/
 # [REV-7] Vite 빌드 산출물은 prebuilt 정책으로 commit 한다 (위 dist/ 규칙의 예외)
 !webui/static/v2/dist/
 !webui/static/v2/dist/**
+# Next static export output for the research command-center frontend
+webui/trading_src/out/
+webui/trading_src/.next/
+webui/trading_src/node_modules/
 downloads/
 eggs/
 .eggs/

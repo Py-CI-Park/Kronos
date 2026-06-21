@@ -49,9 +49,7 @@
     {
       label: '트레이딩',
       items: [
-        { id: 'rl', label: 'RL Trading', icon: 'rocket', badge: '정규' },
-        { id: 'daily-ohlcv', label: 'Daily OHLCV', icon: 'database', badge: '일봉' },
-        { id: 'daily-rl-guide', label: '일봉 RL 설명서', icon: 'file', badge: 'Guide' },
+        { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: '정규' },
       ],
     },
   ];

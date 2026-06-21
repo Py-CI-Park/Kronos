@@ -668,8 +668,13 @@ def test_flask_factory_routes_smoke(tmp_path, monkeypatch):
 
     readiness = client.get("/api/rl/factory/model-build-readiness")
     assert readiness.status_code == 200
-    assert readiness.get_json()["restricted_rl_status"] == "LOCKED_FRESH_OOS_FORWARD_REQUIRED"
-    assert readiness.get_json()["fresh_validation_status"] == "FRESH_VALIDATION_REQUIRED"
+    readiness_payload = readiness.get_json()
+    assert readiness_payload["restricted_rl_status"] == "LOCKED_DASHBOARD_RESEARCH_ONLY"
+    assert readiness_payload["fresh_validation_status"] == "RESEARCH_ONLY_EVIDENCE_REVIEW"
+    assert readiness_payload["implementation_unlocked"] is False
+    assert readiness_payload["model_build_allowed"] is False
+    assert readiness_payload["research_only_guardrail"]["status"] == "NO-GO"
+    assert readiness_payload["research_only_guardrail"]["labels"] == ["NO-GO", "RESEARCH_ONLY", "23bp", "ts_imb RULE baseline"]
 
     forward_runs = client.get("/api/rl/factory/forward-ledgers")
     assert forward_runs.status_code == 200

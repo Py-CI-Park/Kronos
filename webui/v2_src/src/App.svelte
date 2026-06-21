@@ -6,7 +6,6 @@
   import LiveTrainingTab from '$tabs/LiveTrainingTab.svelte';
   import ForecastWorkbenchTab from '$tabs/ForecastWorkbenchTab.svelte';
   import StomDiagnosticsTab from '$tabs/StomDiagnosticsTab.svelte';
-  import RLTradingTab from '$tabs/RLTradingTab.svelte';
   import DailyOhlcvTab from '$tabs/DailyOhlcvTab.svelte';
   import DailyRlGuideTab from '$tabs/DailyRlGuideTab.svelte';
   import ArtifactsModelsTab from '$tabs/ArtifactsModelsTab.svelte';
@@ -52,7 +51,10 @@
       {:else if tab === 'stom'}
         <StomDiagnosticsTab />
       {:else if tab === 'rl'}
-        <RLTradingTab />
+        <section class="card" data-trading-command-center-redirect>
+          <h2>Trading Command Center</h2>
+          <p>트레이딩 화면은 Flask가 제공하는 React/Next command center인 <a href="/rl">/rl</a>에서 열립니다.</p>
+        </section>
       {:else if tab === 'daily-ohlcv'}
         <DailyOhlcvTab />
       {:else if tab === 'daily-rl-guide'}

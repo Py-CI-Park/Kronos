@@ -35,13 +35,19 @@ def test_official_dashboard_sources_register_stom_rl_trading_tab():
     status_shell = (DASHBOARD_SRC / "tabs" / "ResearchStatusShell.svelte").read_text(encoding="utf-8")
     source = _rl_source_text()
 
-    assert "RLTradingTab" in app
+    assert "data-trading-command-center-redirect" in app
     assert "tab === 'rl'" in app
     assert "path: '/rl'" in routes
-    assert "'rl-lab'" in routes
-    assert "'rl-trading'" in routes
+    for marker in ["'/daily-ohlcv'", "'/daily'", "'/daily-rl-guide'", "'/daily-ohlcv/rl-guide'", "'/rl-lab'", "'/v2/rl-lab'", "'/v2/rl-trading'"]:
+        assert marker in routes
+    for section in ["daily-gates", "workflow", "evidence"]:
+        assert section in routes
+    assert "id: 'daily-ohlcv'" not in routes
+    assert "id: 'daily-rl-guide'" not in routes
     assert "id: 'rl'" in sidebar
-    assert "label: 'RL Trading'" in sidebar
+    assert "label: 'Trading Command Center'" in sidebar
+    assert "id: 'daily-ohlcv'" not in sidebar
+    assert "id: 'daily-rl-guide'" not in sidebar
     assert "routeLabel(tab)" in header
     assert "data-rl-trading-tab" in source
     assert "data-rl-orderbook-readiness-card" in source
@@ -176,19 +182,12 @@ def test_v2_dist_contains_rl_trading_bundle_marker_when_built():
         path.read_text(encoding="utf-8", errors="ignore")
         for path in (dist / "assets").glob("index-*.js")
     )
-    assert "RULE / RL EVIDENCE" in bundle_text
-    assert "RULE MAINLINE" in bundle_text
-    assert "RL EXPERIMENT" in bundle_text
-    assert "ts_imb RULE baseline" in bundle_text
-    assert "NO-GO" in bundle_text
-    assert "not live-ready" in bundle_text
-    assert "23bp" in bundle_text
-    assert "data-rl-trading-tab" in bundle_text
-    assert "data-rl-orderbook-readiness-card" in bundle_text
-    assert "CUMULATIVE REWARD EVIDENCE" in bundle_text
+    assert "Trading Command Center" in bundle_text
+    assert "data-trading-command-center-redirect" in bundle_text
+    assert "RULE / RL EVIDENCE" not in bundle_text
+    assert "data-rl-trading-tab" not in bundle_text
+    assert "data-rl-orderbook-readiness-card" not in bundle_text
     assert "Cumulative profit curve" not in bundle_text
-    assert "ts_imb baseline" in bundle_text
-    assert "/api/rl/runs" in bundle_text
 
 
 def test_participant_proxy_card_uses_rule_filter_non_rl_label():

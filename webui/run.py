@@ -4,6 +4,7 @@ Kronos Web UI startup script
 """
 
 import os
+import glob
 import sys
 import subprocess
 import webbrowser
@@ -13,6 +14,103 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+def clear_stale_app_bytecode():
+    """Force app.py to be imported from source after dashboard edits."""
+    cache_pattern = os.path.join(os.path.dirname(os.path.abspath(__file__)), "__pycache__", "app.cpython-*.pyc")
+    for path in glob.glob(cache_pattern):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def enforce_runtime_research_locks(app):
+    """Defense-in-depth: never let launcher-served readiness imply model/live/profit readiness."""
+    endpoint = 'rl_factory_model_build_readiness'
+    original = app.view_functions.get(endpoint)
+    if original is None:
+        return False
+
+    def locked_model_build_readiness(*args, **kwargs):
+        from flask import jsonify
+
+        response = original(*args, **kwargs)
+        status_code = getattr(response, "status_code", 200)
+        if status_code != 200 or not hasattr(response, "get_json"):
+            return response
+        source = response.get_json(silent=True) or {}
+        guardrail = {
+            'status': 'NO-GO',
+            'mode': 'RESEARCH_ONLY',
+            'labels': ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
+            'cost_bps': 23,
+            'ts_imb': 'RULE baseline',
+            'live': False,
+            'broker': False,
+            'order': False,
+            'account': False,
+            'paper': False,
+            'model_build': False,
+            'profit': False,
+        }
+        steps = []
+        for step in source.get('readiness_steps', []):
+            safe_step = {
+                'id': step.get('id'),
+                'label': step.get('label'),
+                'status': step.get('status'),
+                'evidence': step.get('evidence'),
+            }
+            if safe_step['id'] == 'RL-implementation':
+                safe_step['status'] = 'LOCKED_DASHBOARD_RESEARCH_ONLY'
+                safe_step['evidence'] = 'Dashboard API never unlocks model-build, RL implementation, broker, order, account, paper, or profit readiness.'
+            steps.append(safe_step)
+        return jsonify({
+            'available': bool(source.get('available', True)),
+            'artifact_type': 'model_build_research_only_lock',
+            'strategy_label': 'model-build evidence lock - NOT an RL model and NOT readiness',
+            'baseline_label': 'ts_imb RULE baseline',
+            'guardrail': 'Read-only research evidence viewer; model-build/live/profit readiness remains locked false.',
+            'cost_bps': 23,
+            'status': 'MODEL_BUILD_RESEARCH_ONLY_NO_GO',
+            'restricted_rl_status': 'LOCKED_DASHBOARD_RESEARCH_ONLY',
+            'fresh_validation_status': 'RESEARCH_ONLY_EVIDENCE_REVIEW',
+            'p1_status': source.get('p1_status', 'UNKNOWN'),
+            'original_p2_status': source.get('original_p2_status', 'UNKNOWN'),
+            'risk_policy_status': source.get('risk_policy_status', 'UNKNOWN'),
+            'p3_status': source.get('p3_status', 'UNKNOWN'),
+            'p4_status': source.get('p4_status', 'UNKNOWN'),
+            'implementation_unlocked': False,
+            'model_build_allowed': False,
+            'live_trading_allowed': False,
+            'broker_order_account_allowed': False,
+            'paper_forward_allowed': False,
+            'profit_readiness': False,
+            'selected_policy_ids': source.get('selected_policy_ids', []),
+            'required_fill_modes': source.get('required_fill_modes', []),
+            'read_only_counts': {
+                'risk_policy_runs': len(source.get('risk_policy_runs', [])),
+                'fresh_validation_runs': len(source.get('fresh_validation_runs', [])),
+                'original_sizing_runs': len(source.get('original_sizing_runs', [])),
+                'forward_ledger_runs': len(source.get('forward_ledger_runs', [])),
+            },
+            'readiness_steps': steps,
+            'unlock_requirements': [
+                'Dashboard route remains NO-GO/research-only even when offline evidence improves.',
+                'Do not infer model-build, live, broker, order, account, paper, or profit readiness from this API.',
+                'Use offline preregistered validation artifacts as research evidence only.',
+            ],
+            'research_only_guardrail': guardrail,
+        })
+
+    app.view_functions[endpoint] = locked_model_build_readiness
+    return True
+
 
 def check_dependencies():
     """Check if dependencies are installed"""
@@ -57,7 +155,7 @@ def main():
     
     # Check model availability
     try:
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.append(PROJECT_ROOT)
         from model import Kronos, KronosTokenizer, KronosPredictor
         print("✅ Kronos model library available")
         model_available = True
@@ -74,7 +172,12 @@ def main():
     
     # Start server
     try:
-        from app import app
+        clear_stale_app_bytecode()
+        import webui.app as app_module
+        app = app_module.app
+        readiness_guarded = enforce_runtime_research_locks(app)
+        print(f"✅ Flask app module: {app_module.__file__}")
+        print(f"✅ Model-build readiness route guard: {'on' if readiness_guarded else 'off'}")
         host = os.environ.get("KRONOS_WEBUI_HOST", "127.0.0.1")
         port = int(os.environ.get("KRONOS_WEBUI_PORT", os.environ.get("PORT", "7070")))
         open_browser = os.environ.get("KRONOS_WEBUI_OPEN_BROWSER", "1").lower() not in {"0", "false", "no", "off"}

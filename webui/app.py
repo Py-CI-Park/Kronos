@@ -333,6 +333,39 @@ except Exception as exc:
     load_universe_preview = None
 try:
     try:
+        from .trading_command import (
+            create_trading_command_job,
+            list_trading_command_runs,
+            load_trading_command_audit,
+            load_trading_command_evidence,
+            load_trading_command_job,
+            load_trading_command_run_summary,
+            load_trading_command_status,
+            load_trading_command_workflow,
+        )
+    except ImportError:
+        from trading_command import (
+            create_trading_command_job,
+            list_trading_command_runs,
+            load_trading_command_audit,
+            load_trading_command_evidence,
+            load_trading_command_job,
+            load_trading_command_run_summary,
+            load_trading_command_status,
+            load_trading_command_workflow,
+        )
+except Exception as exc:
+    print(f"Warning: Trading command center helpers cannot be imported ({exc})")
+    create_trading_command_job = None
+    list_trading_command_runs = None
+    load_trading_command_audit = None
+    load_trading_command_evidence = None
+    load_trading_command_job = None
+    load_trading_command_run_summary = None
+    load_trading_command_status = None
+    load_trading_command_workflow = None
+try:
+    try:
         from .v2 import v2_bp
     except ImportError:
         from v2 import v2_bp
@@ -1035,7 +1068,71 @@ def rl_factory_model_build_readiness():
     if load_model_build_readiness is None:
         return jsonify({'error': 'STOM RL factory dashboard helper is not available'}), 500
     try:
-        return jsonify(load_model_build_readiness())
+        source = dict(load_model_build_readiness())
+        guardrail = {
+            'status': 'NO-GO',
+            'mode': 'RESEARCH_ONLY',
+            'labels': ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
+            'cost_bps': 23,
+            'ts_imb': 'RULE baseline',
+            'live': False,
+            'broker': False,
+            'order': False,
+            'account': False,
+            'paper': False,
+            'model_build': False,
+            'profit': False,
+        }
+        safe_steps = []
+        for step in source.get('readiness_steps', []):
+            safe_step = {
+                'id': step.get('id'),
+                'label': step.get('label'),
+                'status': step.get('status'),
+                'evidence': step.get('evidence'),
+            }
+            if safe_step['id'] == 'RL-implementation':
+                safe_step['status'] = 'LOCKED_DASHBOARD_RESEARCH_ONLY'
+                safe_step['evidence'] = 'Dashboard API never unlocks model-build, RL implementation, broker, order, account, paper, or profit readiness.'
+            safe_steps.append(safe_step)
+        payload = {
+            'available': bool(source.get('available', True)),
+            'artifact_type': 'model_build_research_only_lock',
+            'strategy_label': 'model-build evidence lock - NOT an RL model and NOT readiness',
+            'baseline_label': 'ts_imb RULE baseline',
+            'guardrail': 'Read-only research evidence viewer; model-build/live/profit readiness remains locked false.',
+            'cost_bps': 23,
+            'status': 'MODEL_BUILD_RESEARCH_ONLY_NO_GO',
+            'restricted_rl_status': 'LOCKED_DASHBOARD_RESEARCH_ONLY',
+            'fresh_validation_status': 'RESEARCH_ONLY_EVIDENCE_REVIEW',
+            'p1_status': source.get('p1_status', 'UNKNOWN'),
+            'original_p2_status': source.get('original_p2_status', 'UNKNOWN'),
+            'risk_policy_status': source.get('risk_policy_status', 'UNKNOWN'),
+            'p3_status': source.get('p3_status', 'UNKNOWN'),
+            'p4_status': source.get('p4_status', 'UNKNOWN'),
+            'implementation_unlocked': False,
+            'model_build_allowed': False,
+            'live_trading_allowed': False,
+            'broker_order_account_allowed': False,
+            'paper_forward_allowed': False,
+            'profit_readiness': False,
+            'selected_policy_ids': source.get('selected_policy_ids', []),
+            'required_fill_modes': source.get('required_fill_modes', []),
+            'read_only_counts': {
+                'risk_policy_runs': len(source.get('risk_policy_runs', [])),
+                'fresh_validation_runs': len(source.get('fresh_validation_runs', [])),
+                'original_sizing_runs': len(source.get('original_sizing_runs', [])),
+                'forward_ledger_runs': len(source.get('forward_ledger_runs', [])),
+            },
+            'readiness_steps': safe_steps,
+            'unlock_requirements': [
+                'Dashboard route remains NO-GO/research-only even when offline evidence improves.',
+                'Do not infer model-build, live, broker, order, account, paper, or profit readiness from this API.',
+                'Use offline preregistered validation artifacts as research evidence only.',
+            ],
+            'research_only_guardrail': guardrail,
+        }
+        return jsonify(payload)
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -1095,6 +1192,61 @@ def rl_factory_lane_edge_ledger(run_name):
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 
+
+def _trading_command_response(loader, *args):
+    if loader is None:
+        return jsonify({'error': 'Trading command center helper is not available'}), 500
+    try:
+        payload = loader(*args)
+        status = int(payload.get('http_status', 200)) if isinstance(payload, dict) else 200
+        return jsonify(payload), status
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/trading-command/status')
+def trading_command_status():
+    return _trading_command_response(load_trading_command_status)
+
+
+@app.route('/api/trading-command/workflow')
+def trading_command_workflow():
+    return _trading_command_response(load_trading_command_workflow)
+
+
+@app.route('/api/trading-command/runs')
+def trading_command_runs():
+    return _trading_command_response(list_trading_command_runs)
+
+
+@app.route('/api/trading-command/runs/<run_id>/summary')
+def trading_command_run_summary(run_id):
+    return _trading_command_response(load_trading_command_run_summary, run_id)
+
+
+@app.route('/api/trading-command/runs/<run_id>/evidence')
+def trading_command_run_evidence(run_id):
+    return _trading_command_response(load_trading_command_evidence, run_id)
+
+
+@app.route('/api/trading-command/runs/<run_id>/audit')
+def trading_command_run_audit(run_id):
+    return _trading_command_response(load_trading_command_audit, run_id)
+
+
+@app.route('/api/trading-command/audit')
+def trading_command_audit():
+    return _trading_command_response(load_trading_command_audit)
+
+
+@app.route('/api/trading-command/jobs', methods=['POST'])
+def trading_command_jobs():
+    return _trading_command_response(create_trading_command_job, request.get_json(silent=True) or {})
+
+
+@app.route('/api/trading-command/jobs/<job_id>')
+def trading_command_job_detail(job_id):
+    return _trading_command_response(load_trading_command_job, job_id)
 
 def _daily_limit(name='limit', default=100, maximum=5000):
     try:
