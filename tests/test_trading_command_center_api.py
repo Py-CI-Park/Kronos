@@ -47,7 +47,7 @@ def test_status_guardrails_and_first_viewport_six_card_order():
     assert payload["first_viewport"]["sections"] == ["status_locks", "workflow_process_map", "kpi_cards"]
     assert [card["id"] for card in payload["first_viewport"]["cards"]] == EXPECTED_CARD_ORDER
     assert len(payload["first_viewport"]["cards"]) == 6
-    assert payload["first_viewport"]["cards"][1]["label"] == "23bp vs ts_imb RULE baseline"
+    assert payload["first_viewport"]["cards"][1]["label"] == "23bp vs ts_imb 룰 기준선"
     assert payload["first_viewport"]["cards"][4]["status"] == "NOT_STARTED"
     assert payload["evidence_health"]["missing"]["status"] == "MISSING"
     assert payload["evidence_health"]["stale"]["status"] == "STALE"

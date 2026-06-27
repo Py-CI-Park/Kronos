@@ -89,13 +89,13 @@ const FALLBACK_STATUS: StatusPayload = {
     profit: false,
   },
   status_locks: {
-    live: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO live trading disabled' },
-    broker: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO broker disabled' },
-    order: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO order routing disabled' },
-    account: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO account access disabled' },
-    paper: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO paper trading disabled' },
-    model: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO model build disabled' },
-    profit: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO profit readiness disabled' },
+    live: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO · 실거래 경로 잠금' },
+    broker: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO · 브로커 연결 잠금' },
+    order: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO · 주문 전송 경로 잠금' },
+    account: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO · 계좌 접근 잠금' },
+    paper: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO · 페이퍼 트레이딩 잠금' },
+    model: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO · 모델 빌드 잠금' },
+    profit: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO · 수익 주장 경로 잠금' },
   },
   controls: {
     research_intent_record_allowed: false,
@@ -106,12 +106,12 @@ const FALLBACK_STATUS: StatusPayload = {
   first_viewport: {
     sections: ['status_locks', 'workflow_process_map', 'kpi_cards'],
     cards: [
-      { id: 'selected_run_verdict', title: 'Selected run verdict', value: 'NO-GO', status: 'NO_GO', label: 'NO-GO / RESEARCH_ONLY' },
-      { id: 'cost_baseline_delta_23bp', title: '23bp cost/baseline delta', value: null, status: 'API_UNAVAILABLE', label: '23bp vs ts_imb RULE baseline' },
-      { id: 'drawdown', title: 'Drawdown', value: null, status: 'API_UNAVAILABLE', label: 'Fail-closed drawdown' },
-      { id: 'trade_count_turnover', title: 'Trade count/turnover', value: { trade_count: 0, turnover: null }, status: 'API_UNAVAILABLE', label: 'Fail-closed turnover' },
-      { id: 'job_progress', title: 'Job progress', value: { active_job_count: 0, recorded_intent_count: 0, latest_status: 'NOT_STARTED' }, status: 'NOT_STARTED', label: 'Research intent only' },
-      { id: 'd0_d9_gate_status', title: 'D0-D9 gate status', value: 'NO-GO', status: 'NO_GO', label: 'D0-D9 gate remains NO-GO' },
+      { id: 'selected_run_verdict', title: '선택 산출물 판정', value: 'NO-GO', status: 'NO_GO', label: 'NO-GO / 연구 전용' },
+      { id: 'cost_baseline_delta_23bp', title: '23bp 비용·기준선 차이', value: null, status: 'API_UNAVAILABLE', label: '23bp vs ts_imb 룰 기준선' },
+      { id: 'drawdown', title: '최대 낙폭', value: null, status: 'API_UNAVAILABLE', label: '증거 없으면 차단' },
+      { id: 'trade_count_turnover', title: '거래 수·회전율', value: { trade_count: 0, turnover: null }, status: 'API_UNAVAILABLE', label: '회전율 증거 없으면 차단' },
+      { id: 'job_progress', title: '연구 의도 진행', value: { active_job_count: 0, recorded_intent_count: 0, latest_status: 'NOT_STARTED' }, status: 'NOT_STARTED', label: '연구 의도 기록만' },
+      { id: 'd0_d9_gate_status', title: 'D0-D9 증거 게이트', value: 'NO-GO', status: 'NO_GO', label: 'D0-D9 게이트 NO-GO 유지' },
     ],
   },
   evidence_health: {
@@ -128,7 +128,7 @@ const FALLBACK_WORKFLOW: WorkflowPayload = {
   labels: ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
   process_map: Array.from({ length: 10 }, (_, index) => ({
     step: `D${index}`,
-    name: `Evidence gate ${index}`,
+    name: ['데이터·증거 발견', '룰 기준선 비교', '23bp 비용 게이트', '낙폭 검토', '거래 수·회전율', '음성/셔플 통제', 'OOS 분리 검토', '감사 증거 묶음', '사람 연구 검토', '거래 준비 판정'][index] ?? `증거 게이트 ${index}`,
     status: index === 9 ? 'NO_GO' : 'API_UNAVAILABLE',
     allowed: index < 9,
   })),
@@ -155,11 +155,11 @@ const STATUS_LOCK_ORDER = ['live', 'broker', 'order', 'account', 'paper', 'model
 
 const NAV_ITEMS = [
   ['연구 홈', 'NO-GO 판정'],
-  ['실험 설정', 'preset · universe'],
-  ['연구 큐', 'intent only'],
-  ['결과 비교', 'charts'],
-  ['증거 감사', 'artifact manifest'],
-  ['사용 가이드', 'guardrails'],
+  ['실험 설정', '연구 전용'],
+  ['연구 큐', '의도 기록'],
+  ['결과 비교', '차트'],
+  ['증거 감사', '증거 묶음'],
+  ['사용 가이드', '잠금 유지'],
 ] as const;
 
 const EXPERIMENT_PRESETS: ExperimentPreset[] = [
@@ -205,7 +205,7 @@ const LOCK_COPY: Record<string, string> = {
   account: '계좌 접근',
   paper: '페이퍼 트레이딩',
   model: '모델 빌드',
-  profit: '수익 준비 판정',
+  profit: '수익 주장 차단',
 };
 
 const STAGE_COPY: Record<string, string> = {
