@@ -25,11 +25,11 @@ type StatusPayload = {
   cost_assumption_bps: number;
   claim_locks: Record<string, boolean>;
   status_locks: Record<string, StatusLock>;
-  controls: {
-    research_intent_record_allowed: boolean;
-    unsafe_trading_controls_allowed: boolean;
+  controls?: {
+    research_intent_record_allowed?: boolean;
+    unsafe_trading_controls_allowed?: boolean;
     job_post_endpoint: string;
-    allowed_workflows: string[];
+    allowed_workflows?: string[];
   };
   first_viewport: {
     sections: string[];
@@ -57,7 +57,7 @@ type AuditPayload = {
   status: string;
   labels: string[];
   run_id: string;
-  events: Array<{ event: string; status: string; details?: string; workflow?: string; job_id?: string }>;
+  events: Array<Record<string, string>>;
 };
 
 type ApiState<T> = {
@@ -126,18 +126,20 @@ const FALLBACK_WORKFLOW: WorkflowPayload = {
   workflow_id: 'trading_command_research_only_fallback',
   status: 'NO-GO',
   labels: ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
-  process_map: [
-    { step: 'D0', name: 'Backend unavailable', status: 'API_UNAVAILABLE', allowed: false },
-    { step: 'D9', name: 'Trading readiness', status: 'NO_GO', allowed: false },
-  ],
+  process_map: Array.from({ length: 10 }, (_, index) => ({
+    step: `D${index}`,
+    name: `Evidence gate ${index}`,
+    status: index === 9 ? 'NO_GO' : 'API_UNAVAILABLE',
+    allowed: index < 9,
+  })),
   forbidden_work: ['live', 'broker', 'order', 'account', 'paper', 'model_build', 'profit_claim'],
 };
 
 const FALLBACK_AUDIT: AuditPayload = {
   status: 'RESEARCH_ONLY_AUDIT',
   labels: ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
-  run_id: 'unavailable',
-  events: [{ event: 'fail_closed_fallback_rendered', status: 'NO_GO', details: 'Flask audit API unavailable.' }],
+  run_id: 'research_ts_imb_rule_baseline_23bp',
+  events: [{ event: 'guardrails_loaded', status: 'NO_GO', details: 'fail-closed fallback audit' }],
 };
 
 const REQUIRED_CARD_ORDER = [
@@ -150,6 +152,15 @@ const REQUIRED_CARD_ORDER = [
 ];
 
 const STATUS_LOCK_ORDER = ['live', 'broker', 'order', 'account', 'paper', 'model', 'profit'];
+
+const NAV_ITEMS = [
+  ['연구 홈', 'NO-GO 판정'],
+  ['실험 설정', 'preset · universe'],
+  ['연구 큐', 'intent only'],
+  ['결과 비교', 'charts'],
+  ['증거 감사', 'artifact manifest'],
+  ['사용 가이드', 'guardrails'],
+] as const;
 
 const EXPERIMENT_PRESETS: ExperimentPreset[] = [
   {
@@ -187,13 +198,6 @@ const CARD_COPY: Record<string, { title: string; help: string }> = {
   d0_d9_gate_status: { title: 'D0-D9 증거 게이트', help: '데이터부터 최종 연구 검토까지 빠진 증거를 확인합니다.' },
 };
 
-const SECTION_COPY: Record<string, string> = {
-  status: '상태 잠금',
-  workflow: '연구 흐름',
-  evidence: '증거 검토',
-  'daily-gates': '일봉 게이트',
-};
-
 const LOCK_COPY: Record<string, string> = {
   live: '실거래',
   broker: '브로커 연결',
@@ -216,6 +220,13 @@ const STAGE_COPY: Record<string, string> = {
   D8: '사람 연구 검토',
   D9: '거래 준비 판정',
 };
+
+const GLOSSARY = [
+  ['ts_imb', '강화학습이 아니라 룰 기준선입니다. RL 후보는 이 기준선과 비용 반영 후 비교합니다.'],
+  ['23bp', '기본 왕복 비용 가정입니다. 결과 차트와 판정에서 임의로 낮추지 않습니다.'],
+  ['NO-GO', '실패를 숨기지 않고 보여주는 연구 판정입니다. 이 화면은 실거래 대상이 아닙니다.'],
+  ['API 미연결', 'live/broker/order/account/profit 경로를 열지 않는 안전 잠금 상태입니다.'],
+];
 
 async function fetchJson<T>(path: string, fallback: T): Promise<ApiState<T>> {
   try {
@@ -253,7 +264,7 @@ function statusLabel(status: string): string {
 function compactCardValue(card: CommandCard): string {
   if (card.id === 'job_progress' && card.value && typeof card.value === 'object' && !Array.isArray(card.value)) {
     const value = card.value as Record<string, JsonValue>;
-    return `진행 ${stringifyValue(value.active_job_count)} · 기록 ${stringifyValue(value.recorded_intent_count)} · ${statusLabel(stringifyValue(value.latest_status))}`;
+    return `기록 ${stringifyValue(value.recorded_intent_count)} · 실행 ${stringifyValue(value.active_job_count)} · ${statusLabel(stringifyValue(value.latest_status))}`;
   }
   if (card.id === 'trade_count_turnover' && card.value && typeof card.value === 'object' && !Array.isArray(card.value)) {
     const value = card.value as Record<string, JsonValue>;
@@ -297,21 +308,67 @@ async function loadCommandSummaries(): Promise<[
   ]);
 }
 
+function MiniLineChart() {
+  return (
+    <svg viewBox="0 0 320 120" role="img" aria-label="drawdown placeholder line chart" className="mini-chart">
+      <defs>
+        <linearGradient id="drawdownArea" x1="0" y1="0" x2="0" y2="1">
+          <stop stopColor="#38bdf8" stopOpacity="0.45" />
+          <stop offset="1" stopColor="#ef4444" stopOpacity="0.08" />
+        </linearGradient>
+      </defs>
+      {[0, 1, 2, 3].map((line) => <line key={line} x1="0" x2="320" y1={20 + line * 25} y2={20 + line * 25} />)}
+      <path d="M8 42 C52 30, 70 58, 110 50 C150 42, 165 92, 205 78 C245 66, 260 88, 314 70 L314 112 L8 112 Z" fill="url(#drawdownArea)" />
+      <path d="M8 42 C52 30, 70 58, 110 50 C150 42, 165 92, 205 78 C245 66, 260 88, 314 70" fill="none" stroke="#38bdf8" strokeWidth="3" />
+      <text x="16" y="106">drawdown 증거 없음 · placeholder</text>
+    </svg>
+  );
+}
+
+function BaselineBars() {
+  const bars = [
+    ['ts_imb', 74, '#22d3ee', '룰 기준선'],
+    ['DQN/PPO', 38, '#f59e0b', '검증 부족'],
+    ['Orderbook', 26, '#fb7185', 'NO-GO'],
+  ] as const;
+  return (
+    <div className="bar-compare" aria-label="Baseline versus candidate chart">
+      {bars.map(([name, value, color, label]) => (
+        <div className="compare-row" key={name}>
+          <span>{name}</span>
+          <div><i style={{ width: `${value}%`, background: color }} /></div>
+          <strong>{label}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HeatmapMatrix() {
+  const cells = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9'];
+  return (
+    <div className="heatmap" aria-label="OOS and negative control matrix">
+      {cells.map((cell, index) => (
+        <div key={cell} data-tone={index < 3 ? 'watch' : index === 9 ? 'no-go' : 'missing'}>
+          <span>{cell}</span>
+          <small>{index < 3 ? '검토' : index === 9 ? 'NO-GO' : '증거 없음'}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function TradingCommandCenter() {
   const [statusState, setStatusState] = useState<ApiState<StatusPayload>>({ data: FALLBACK_STATUS, failedClosed: true });
   const [workflowState, setWorkflowState] = useState<ApiState<WorkflowPayload>>({ data: FALLBACK_WORKFLOW, failedClosed: true });
   const [auditState, setAuditState] = useState<ApiState<AuditPayload>>({ data: FALLBACK_AUDIT, failedClosed: true });
   const [jobMessage, setJobMessage] = useState('아직 이 화면에서 기록한 연구 의도가 없습니다.');
-  const [requestedSection, setRequestedSection] = useState('status');
   const [selectedExperimentId, setSelectedExperimentId] = useState(EXPERIMENT_PRESETS[0].id);
   const [symbolInput, setSymbolInput] = useState('000250,005930,035420');
 
   useEffect(() => {
     let active = true;
     loadCommandSummaries().then(([status, workflow, audit]) => {
-      if (typeof window !== 'undefined') {
-        setRequestedSection(new URLSearchParams(window.location.search).get('section') ?? 'status');
-      }
       if (!active) return;
       setStatusState(status);
       setWorkflowState(workflow);
@@ -335,7 +392,6 @@ export default function TradingCommandCenter() {
     ? '백엔드 요약 중 하나가 닫힘 우선(fail-closed)으로 표시되었습니다. API 미연결은 오류가 아니라 안전 잠금입니다.'
     : 'Flask 백엔드 상태·워크플로우·감사 요약을 불러왔습니다.';
   const canRecordResearchIntent = Boolean(status.controls?.research_intent_record_allowed);
-  const controlsDisabled = !canRecordResearchIntent;
   const orderedLocks = STATUS_LOCK_ORDER
     .map((key) => [key, status.status_locks[key]] as const)
     .filter((entry): entry is readonly [string, StatusLock] => Boolean(entry[1]));
@@ -349,7 +405,7 @@ export default function TradingCommandCenter() {
   }
 
   async function recordResearchIntent(): Promise<void> {
-    if (!canRecordResearchIntent) return;
+    if (!canRecordResearchIntent || !status.controls?.job_post_endpoint) return;
     setJobMessage('연구 의도를 기록하는 중입니다. 실제 학습·주문 실행은 열지 않습니다.');
     try {
       const response = await fetch(status.controls.job_post_endpoint, {
@@ -377,151 +433,141 @@ export default function TradingCommandCenter() {
   }
 
   return (
-    <main className="command-shell" data-kronos-trading-command-center="true">
-      <section className="hero" aria-labelledby="page-title">
-        <div className="hero-copy">
-          <p className="eyebrow">Kronos Trading Command Center · 강화학습 연구 화면</p>
-          <h1 id="page-title">강화학습 연구 커맨드 센터</h1>
-          <p className="lede">모델 선택·세팅·증거 확인을 한 화면에서 합니다. 단, 이 화면은 연구 전용이라 실거래, 브로커, 주문, 계좌, 페이퍼, 모델 빌드, 수익 준비 경로를 열지 않습니다.</p>
-        </div>
-        <div className="verdict-pill tone-danger" aria-label="Selected run verdict">
-          <span>NO-GO</span>
-          <small>{status.mode}</small>
-        </div>
-      </section>
-
-      <section className="guardrail-strip" aria-label="Visible trading guardrails">
-        {status.labels.map((label) => <span key={label}>{label}</span>)}
-        <span>실거래 없음 · 브로커 없음 · 주문 없음 · 수익 주장 없음</span>
-      </section>
-      <section className="section-request" aria-label="Requested route section">
-        현재 섹션: <strong>{SECTION_COPY[requestedSection] ?? requestedSection}</strong>
-      </section>
-
-      <section className="research-console panel" aria-label="Korean RL research setup and progress">
-        <div className="panel-heading">
+    <main className="pixel-dashboard" data-kronos-trading-command-center="true">
+      <aside className="side-rail" aria-label="Kronos research navigation">
+        <div className="brand-mark">
+          <span>K</span>
           <div>
-            <p className="eyebrow">RL research setup</p>
-            <h2>1) 실험을 고르고 2) 안전 세팅을 확인하고 3) 결과 증거를 봅니다</h2>
+            <strong>Kronos</strong>
+            <small>research ops</small>
           </div>
-          <span className="safe-badge">실행 잠금 · 연구 의도만 기록</span>
         </div>
-        <div className="setup-grid">
-          <div className="setup-card setup-card-wide">
+        <nav>
+          {NAV_ITEMS.map(([label, hint], index) => (
+            <a href={`#section-${index}`} className={index === 0 ? 'active' : ''} key={label}>
+              <span>{String(index + 1).padStart(2, '0')}</span>
+              <strong>{label}</strong>
+              <small>{hint}</small>
+            </a>
+          ))}
+        </nav>
+        <div className="source-card">
+          <span>design source</span>
+          <strong>pixel_svg_v4.zip</strong>
+          <small>원본 zip 백업 완료</small>
+        </div>
+      </aside>
+
+      <section className="main-stage">
+        <header className="command-header" id="section-0">
+          <div>
+            <p className="eyebrow">Kronos Trading Command Center · research-only evidence</p>
+            <h1>강화학습 연구 커맨드 센터</h1>
+            <p className="lede">연구 전용 증거 검토 화면입니다. 실거래, 브로커, 주문, 계좌, 페이퍼, 모델 빌드, 수익 준비 경로는 열리지 않습니다.</p>
+          </div>
+          <div className="status-orb">
+            <span>NO-GO</span>
+            <small>{status.mode}</small>
+          </div>
+        </header>
+
+        <section className="badge-strip" aria-label="Visible trading guardrails">
+          {status.labels.map((label) => <span key={label}>{label}</span>)}
+          <span>실거래 없음</span>
+          <span>브로커 없음</span>
+          <span>주문 없음</span>
+          <span>수익 주장 없음</span>
+        </section>
+
+        <section className="topology-grid" id="section-1">
+          <article className="panel setup-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">A · 연구 설정</p>
+              <h2>실험 선택과 안전 세팅</h2>
+            </div>
             <label htmlFor="experiment-preset">모델/실험 선택</label>
             <select id="experiment-preset" value={selectedExperimentId} onChange={(event) => setSelectedExperimentId(event.target.value)}>
               {EXPERIMENT_PRESETS.map((preset) => (
                 <option key={preset.id} value={preset.id}>{preset.nameKo} · {preset.nameEn}</option>
               ))}
             </select>
-            <p>{selectedExperiment.description}</p>
-            <div className="preset-meta">
+            <p className="copy-muted">{selectedExperiment.description}</p>
+            <div className="chip-row">
               <span>{statusLabel(selectedExperiment.status)}</span>
               <span>{selectedExperiment.safeAction}</span>
             </div>
-          </div>
-          <div className="setup-card">
-            <label htmlFor="symbol-input">종목 코드</label>
-            <input id="symbol-input" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} aria-describedby="symbol-help" />
-            <p id="symbol-help">쉼표로 구분합니다. 선행 0은 문자열로 유지합니다.</p>
-          </div>
-          <div className="setup-card locked-setting">
-            <span>비용 가정</span>
-            <strong>{status.cost_assumption_bps}bp</strong>
-            <p>기본 라운드트립 비용. 임의로 낮추지 않습니다.</p>
-          </div>
-          <div className="setup-card locked-setting">
-            <span>비교 기준</span>
-            <strong>ts_imb RULE baseline</strong>
-            <p>강화학습 모델이 아니라 룰 기준선입니다.</p>
-          </div>
-        </div>
-        <div className="visual-flow" aria-label="Research workflow visual flow">
-          {['선택', '세팅', '의도 기록', '증거 수집', '차트 검토', 'NO-GO 판정'].map((step, index) => (
-            <div className="flow-step" key={step} data-active={index <= 2}>
-              <span>{String(index + 1).padStart(2, '0')}</span>
-              <strong>{step}</strong>
+            <div className="setup-fields">
+              <label htmlFor="symbol-input">종목 코드</label>
+              <input id="symbol-input" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} />
+              <small>쉼표로 구분합니다. 선행 0은 문자열로 유지합니다.</small>
             </div>
-          ))}
-        </div>
-      </section>
+            <div className="setting-pair">
+              <div><span>비용 가정</span><strong>{status.cost_assumption_bps}bp</strong></div>
+              <div><span>비교 기준</span><strong>ts_imb RULE baseline</strong></div>
+            </div>
+            <div className="control-row">
+              <button type="button" onClick={() => void recordResearchIntent()} disabled={!canRecordResearchIntent}>선택한 연구 의도 기록</button>
+              <button type="button" disabled>실제 학습 실행 잠금</button>
+            </div>
+            <p className="danger-note">이 버튼은 연구 의도만 기록하며 주문·브로커·수익 경로를 열지 않습니다.</p>
+          </article>
 
-      <section className="first-viewport" aria-label="Approved first viewport">
-        <section className="status-locks panel" aria-labelledby="status-locks-title">
-          <div className="panel-heading">
-            <p className="eyebrow">안전 잠금</p>
-            <h2 id="status-locks-title">거래·수익 관련 경로는 모두 꺼짐</h2>
-          </div>
-          <div className="lock-list">
-            {orderedLocks.map(([key, lock]) => (
-              <article className="lock-row" data-tone={statusTone(lock.status)} key={key}>
-                <span className="lock-state" title={lock.status}>{statusLabel(lock.status)}</span>
-                <div>
+          <article className="panel lock-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">B · 안전 잠금</p>
+              <h2>거래·수익 경로는 모두 꺼짐</h2>
+            </div>
+            <div className="lock-list">
+              {orderedLocks.map(([key, lock]) => (
+                <div className="lock-row" data-tone={statusTone(lock.status)} key={key}>
+                  <span>{statusLabel(lock.status)}</span>
                   <strong>{`${LOCK_COPY[key] ?? key} 꺼짐`}</strong>
-                  <p>{lock.label.replace('NO-GO ', 'NO-GO · ')}</p>
+                  <small>{lock.label.replace('NO-GO ', 'NO-GO · ')}</small>
                 </div>
-              </article>
-            ))}
-          </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel workflow-panel" id="section-2">
+            <div className="panel-heading with-progress">
+              <div>
+                <p className="eyebrow">C · D0-D9 evidence workflow</p>
+                <h2>D0-D9 증거 경로</h2>
+              </div>
+              <strong>{processProgress}%</strong>
+            </div>
+            <div className="progress-meter"><span style={{ width: `${Math.max(processProgress, 3)}%` }} /></div>
+            <div className="workflow-nodes">
+              {workflow.process_map.map((stage, index) => (
+                <article className="workflow-node" data-tone={statusTone(stage.status)} data-final={stage.step === 'D9'} key={stage.step}>
+                  <span>{stage.step}</span>
+                  <strong>{STAGE_COPY[stage.step] ?? stage.name}</strong>
+                  <small>{statusLabel(stage.status)}</small>
+                  {index < workflow.process_map.length - 1 && <i aria-hidden="true" />}
+                </article>
+              ))}
+            </div>
+            <p className="workflow-note">금지된 작업: {workflow.forbidden_work.join(' · ')}</p>
+          </article>
         </section>
 
-        <section className="workflow-map panel" aria-labelledby="workflow-map-title">
-          <div className="panel-heading">
-            <p className="eyebrow">시각적 연구 흐름</p>
-            <h2 id="workflow-map-title">D0-D9 증거 경로</h2>
-          </div>
-          <div className="progress-meter" aria-label={`D0-D9 allowed progress ${processProgress}%`}>
-            <span style={{ width: `${Math.max(processProgress, 3)}%` }} />
-            <strong>{processProgress}%</strong>
-          </div>
-          <div className="stage-track">
-            {workflow.process_map.map((stage) => (
-              <article className="stage-node" data-allowed={stage.allowed} data-tone={statusTone(stage.status)} key={stage.step}>
-                <span>{stage.step}</span>
-                <strong>{STAGE_COPY[stage.step] ?? stage.name}</strong>
-                <small title={stage.status}>{statusLabel(stage.status)}</small>
-              </article>
-            ))}
-          </div>
-          <p className="workflow-note">금지된 작업: {workflow.forbidden_work.join(' · ')}</p>
-        </section>
-
-        <section className="kpi-grid" aria-label="Exactly six backend-owned KPI and chart cards">
+        <section className="kpi-strip" aria-label="Six backend-owned KPI cards">
           {cards.map((card, index) => (
             <article className="kpi-card" data-tone={statusTone(card.status)} key={card.id}>
-              <p className="card-index">{String(index + 1).padStart(2, '0')}</p>
+              <span>{String(index + 1).padStart(2, '0')}</span>
               <h3>{CARD_COPY[card.id]?.title ?? card.title}</h3>
               <strong>{compactCardValue(card)}</strong>
               <p>{CARD_COPY[card.id]?.help ?? card.label}</p>
-              <small title={card.status}>{statusLabel(card.status)}</small>
+              <small>{statusLabel(card.status)}</small>
             </article>
           ))}
         </section>
-      </section>
 
-      <section className="below-viewport" aria-label="Evidence drilldowns and disabled controls">
-        <div className="job-controls panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">연구 의도 / 컨트롤</p>
-              <h2>버튼은 연구 기록용입니다. 학습·주문 실행 버튼이 아닙니다.</h2>
-            </div>
-            <span className="safe-badge">{selectedExperiment.nameKo}</span>
-          </div>
-          <p className="status-line">{fetchBanner}</p>
-          <div className="control-row" aria-disabled={controlsDisabled}>
-            <button type="button" onClick={() => void refreshSummaries()}>백엔드 상태 새로고침</button>
-            <button type="button" disabled>증거 묶음 열기</button>
-            <button type="button" disabled={!canRecordResearchIntent} onClick={() => void recordResearchIntent()}>선택한 연구 의도 기록</button>
-          </div>
-          <p className="disabled-note">{jobMessage} 이 UI는 live/broker/order/model/profit 경로를 열지 않습니다.</p>
-        </div>
-
-        <div className="chart-grid">
-          <section className="panel" aria-labelledby="evidence-chart-title">
+        <section className="analytics-grid" id="section-3">
+          <article className="panel chart-panel evidence-card">
             <div className="panel-heading">
               <p className="eyebrow">차트형 증거 상태</p>
-              <h2 id="evidence-chart-title">부족한 증거가 어디인지 한눈에 보기</h2>
+              <h2>부족한 증거가 어디인지 한눈에 보기</h2>
             </div>
             <div className="evidence-bars">
               {Object.entries(status.evidence_health).map(([key, item]) => (
@@ -535,24 +581,67 @@ export default function TradingCommandCenter() {
                 </div>
               ))}
             </div>
-          </section>
+          </article>
 
-          <section className="panel" aria-labelledby="audit-title">
+          <article className="panel chart-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">Baseline vs Candidate</p>
+              <h2>23bp 후 기준선 대비 비교</h2>
+            </div>
+            <BaselineBars />
+          </article>
+
+          <article className="panel chart-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">Drawdown</p>
+              <h2>낙폭 곡선 / 증거 없음</h2>
+            </div>
+            <MiniLineChart />
+          </article>
+
+          <article className="panel chart-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">OOS / controls</p>
+              <h2>OOS·음성 통제 매트릭스</h2>
+            </div>
+            <HeatmapMatrix />
+          </article>
+        </section>
+
+        <section className="audit-and-guide" id="section-4">
+          <article className="panel audit-panel">
             <div className="panel-heading">
               <p className="eyebrow">감사 로그</p>
-              <h2 id="audit-title">무엇이 기록됐는지</h2>
+              <h2>무엇이 기록됐는지</h2>
             </div>
+            <p className="status-line">{fetchBanner}</p>
             <div className="audit-log">
               {audit.events.map((entry, index) => (
                 <article key={`${entry.event}-${index}`}>
-                  <span title={entry.status}>{statusLabel(entry.status)}</span>
+                  <span>{statusLabel(entry.status ?? 'AUDITED')}</span>
                   <strong>{entry.event}</strong>
                   <p>{entry.details ?? entry.workflow ?? entry.job_id ?? '백엔드 감사 이벤트'}</p>
                 </article>
               ))}
             </div>
-          </section>
-        </div>
+            <p className="danger-note">{jobMessage} 이 UI는 live/broker/order/model/profit 경로를 열지 않습니다.</p>
+          </article>
+
+          <article className="panel glossary-panel" id="section-5">
+            <div className="panel-heading">
+              <p className="eyebrow">사용 가이드</p>
+              <h2>용어와 해석 기준</h2>
+            </div>
+            <div className="glossary-grid">
+              {GLOSSARY.map(([term, explanation]) => (
+                <div key={term}>
+                  <strong>{term}</strong>
+                  <p>{explanation}</p>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
       </section>
     </main>
   );

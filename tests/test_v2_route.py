@@ -47,6 +47,8 @@ def _assert_trading_shell(body: str) -> None:
     assert "차트형 증거 상태" in body
     assert "실거래 없음" in body
     assert "실거래 꺼짐" in body
+    assert "실제 학습 실행 잠금" in body
+    assert "pixel_svg_v4.zip" in body
 
 
 def test_root_returns_official_dashboard_shell():
