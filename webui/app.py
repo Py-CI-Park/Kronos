@@ -336,8 +336,10 @@ try:
         from .trading_command import (
             create_trading_command_job,
             list_trading_command_runs,
+            list_trading_command_jobs,
             load_trading_command_audit,
             load_trading_command_evidence,
+            load_trading_command_drilldown,
             load_trading_command_job,
             load_trading_command_run_summary,
             load_trading_command_status,
@@ -347,8 +349,10 @@ try:
         from trading_command import (
             create_trading_command_job,
             list_trading_command_runs,
+            list_trading_command_jobs,
             load_trading_command_audit,
             load_trading_command_evidence,
+            load_trading_command_drilldown,
             load_trading_command_job,
             load_trading_command_run_summary,
             load_trading_command_status,
@@ -358,8 +362,10 @@ except Exception as exc:
     print(f"Warning: Trading command center helpers cannot be imported ({exc})")
     create_trading_command_job = None
     list_trading_command_runs = None
+    list_trading_command_jobs = None
     load_trading_command_audit = None
     load_trading_command_evidence = None
+    load_trading_command_drilldown = None
     load_trading_command_job = None
     load_trading_command_run_summary = None
     load_trading_command_status = None
@@ -1093,14 +1099,14 @@ def rl_factory_model_build_readiness():
             }
             if safe_step['id'] == 'RL-implementation':
                 safe_step['status'] = 'LOCKED_DASHBOARD_RESEARCH_ONLY'
-                safe_step['evidence'] = 'Dashboard API never unlocks model-build, RL implementation, broker, order, account, paper, or profit readiness.'
+                safe_step['evidence'] = 'Dashboard API never unlocks model-build, RL implementation, broker, order, account, paper, or profit-claim capability.'
             safe_steps.append(safe_step)
         payload = {
             'available': bool(source.get('available', True)),
             'artifact_type': 'model_build_research_only_lock',
             'strategy_label': 'model-build evidence lock - NOT an RL model and NOT readiness',
             'baseline_label': 'ts_imb RULE baseline',
-            'guardrail': 'Read-only research evidence viewer; model-build/live/profit readiness remains locked false.',
+            'guardrail': 'Read-only research evidence viewer; model-build/live/profit-claim capabilities remain locked false.',
             'cost_bps': 23,
             'status': 'MODEL_BUILD_RESEARCH_ONLY_NO_GO',
             'restricted_rl_status': 'LOCKED_DASHBOARD_RESEARCH_ONLY',
@@ -1127,7 +1133,7 @@ def rl_factory_model_build_readiness():
             'readiness_steps': safe_steps,
             'unlock_requirements': [
                 'Dashboard route remains NO-GO/research-only even when offline evidence improves.',
-                'Do not infer model-build, live, broker, order, account, paper, or profit readiness from this API.',
+                'Do not infer model-build, live, broker, order, account, paper, or profit-claim capability from this API.',
                 'Use offline preregistered validation artifacts as research evidence only.',
             ],
             'research_only_guardrail': guardrail,
@@ -1193,15 +1199,70 @@ def rl_factory_lane_edge_ledger(run_name):
         return jsonify({'error': str(exc)}), 500
 
 
+def _trading_command_safe_lock(label, reason):
+    return {
+        'locked': False,
+        'allowed': False,
+        'enabled': False,
+        'capability_state': 'BLOCKED',
+        'status': 'API_UNAVAILABLE',
+        'label': label,
+        'reason': reason,
+    }
+
+
+def _trading_command_fail_closed_payload(error_code='TRADING_COMMAND_API_UNAVAILABLE', http_status=503):
+    reason = '트레이딩 커맨드 센터 API가 안전 잠금 상태로 닫혔습니다. 실거래/브로커/주문/계좌/페이퍼/모델 빌드/수익 주장 경로는 열리지 않습니다.'
+    locks = {
+        'live': _trading_command_safe_lock('NO-GO · 실거래 경로 잠금', reason),
+        'broker': _trading_command_safe_lock('NO-GO · 브로커 연결 잠금', reason),
+        'order': _trading_command_safe_lock('NO-GO · 주문 전송 경로 잠금', reason),
+        'account': _trading_command_safe_lock('NO-GO · 계좌 접근 잠금', reason),
+        'paper': _trading_command_safe_lock('NO-GO · 페이퍼 트레이딩 잠금', reason),
+        'model': _trading_command_safe_lock('NO-GO · 모델 빌드 잠금', reason),
+        'profit': _trading_command_safe_lock('NO-GO · 수익 주장 경로 잠금', reason),
+    }
+    return {
+        'http_status': http_status,
+        'status': 'API_UNAVAILABLE',
+        'api_status': 'API_UNAVAILABLE',
+        'mode': 'RESEARCH_ONLY',
+        'labels': ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
+        'error_code': error_code,
+        'reason': reason,
+        'reason_ko': reason,
+        'claim_locks': {key: False for key in locks},
+        'status_locks': locks,
+        'controls': {
+            'research_intent_record_allowed': False,
+            'unsafe_trading_controls_allowed': False,
+            'job_post_endpoint': '/api/trading-command/jobs',
+            'allowed_workflows': [],
+        },
+        'queue_summary': {
+            'mode': 'RESEARCH_ONLY_QUEUE',
+            'active_job_count': 0,
+            'recorded_intent_count': 0,
+            'latest_status': 'API_UNAVAILABLE',
+            'latest_job_id': None,
+            'status_counts': {},
+            'allowed_workflows': [],
+            'unsafe_controls_allowed': False,
+        },
+    }
+
+
 def _trading_command_response(loader, *args):
     if loader is None:
-        return jsonify({'error': 'Trading command center helper is not available'}), 500
+        payload = _trading_command_fail_closed_payload('TRADING_COMMAND_HELPER_UNAVAILABLE')
+        return jsonify(payload), int(payload['http_status'])
     try:
         payload = loader(*args)
         status = int(payload.get('http_status', 200)) if isinstance(payload, dict) else 200
         return jsonify(payload), status
-    except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+    except Exception:
+        payload = _trading_command_fail_closed_payload('TRADING_COMMAND_EXCEPTION')
+        return jsonify(payload), int(payload['http_status'])
 
 
 @app.route('/api/trading-command/status')
@@ -1227,6 +1288,10 @@ def trading_command_run_summary(run_id):
 @app.route('/api/trading-command/runs/<run_id>/evidence')
 def trading_command_run_evidence(run_id):
     return _trading_command_response(load_trading_command_evidence, run_id)
+@app.route('/api/trading-command/runs/<run_id>/drilldown')
+def trading_command_run_drilldown(run_id):
+    return _trading_command_response(load_trading_command_drilldown, run_id)
+
 
 
 @app.route('/api/trading-command/runs/<run_id>/audit')
@@ -1239,8 +1304,10 @@ def trading_command_audit():
     return _trading_command_response(load_trading_command_audit)
 
 
-@app.route('/api/trading-command/jobs', methods=['POST'])
+@app.route('/api/trading-command/jobs', methods=['GET', 'POST'])
 def trading_command_jobs():
+    if request.method == 'GET':
+        return _trading_command_response(list_trading_command_jobs)
     return _trading_command_response(create_trading_command_job, request.get_json(silent=True) or {})
 
 
