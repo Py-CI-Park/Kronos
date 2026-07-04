@@ -88,8 +88,13 @@ def dashboard_rl():
 @v2_bp.route("/daily-ohlcv")
 @v2_bp.route("/daily")
 def dashboard_daily_gates_redirect():
-    """Redirect daily research bookmarks to the RL command-center gate section."""
-    return redirect("/rl?section=daily-gates", code=301)
+    """Redirect daily research bookmarks to the official Svelte Daily OHLCV tab.
+
+    Consolidation B1: the daily research surface now lives in the Svelte
+    dashboard (summary-first Daily OHLCV tab) instead of the Next.js command
+    center, so both bookmarks resolve to a single daily view.
+    """
+    return redirect("/?tab=daily-ohlcv", code=301)
 
 
 @v2_bp.route("/daily-rl-guide")

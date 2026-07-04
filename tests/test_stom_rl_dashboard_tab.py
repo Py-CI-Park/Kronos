@@ -42,11 +42,11 @@ def test_official_dashboard_sources_register_stom_rl_trading_tab():
         assert marker in routes
     for section in ["daily-gates", "workflow", "evidence"]:
         assert section in routes
-    assert "id: 'daily-ohlcv'" not in routes
+    assert "id: 'daily-ohlcv'" in routes  # B1 consolidation: daily is now a registered Svelte tab
     assert "id: 'daily-rl-guide'" not in routes
     assert "id: 'rl'" in sidebar
     assert "label: 'Trading Command Center'" in sidebar
-    assert "id: 'daily-ohlcv'" not in sidebar
+    assert "id: 'daily-ohlcv'" in sidebar  # B1 consolidation: daily is now a registered Svelte tab
     assert "id: 'daily-rl-guide'" not in sidebar
     assert "routeLabel(tab)" in header
     assert "data-rl-trading-tab" in source
