@@ -762,3 +762,130 @@ input[type="range"].rng::-moz-range-thumb {
 @media (max-width: 640px) {
   .grid-2, .grid-3, .grid-4, .grid-1-1-1-1 { grid-template-columns: 1fr; }
 }
+
+/* =================================================================
+   Panel / evidence primitives (global)
+   These class names were previously used by dailyOhlcv cards but were
+   either undefined or only defined as per-component scoped styles, so
+   cards like DailyCloseSlotCard rendered largely unstyled. Promoting
+   them to the shared layer fixes those cards without touching markup.
+   Sibling components that define their own scoped versions still win
+   locally (Svelte scoped selectors carry higher specificity).
+   ================================================================= */
+
+/* Panel = the card primitive under legacy `.panel` markup */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow-sm);
+}
+.panel.flat { box-shadow: none; }
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Notice / callout — no global callout primitive existed before */
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-faint);
+}
+.notice b, .notice strong { color: var(--fg-strong); }
+.notice.warn   { background: var(--warn-soft);   border-color: transparent; }
+.notice.danger { background: var(--danger-soft); border-color: transparent; }
+.notice.accent { background: var(--accent-soft); border-color: transparent; }
+
+/* KPI grid */
+.grid-4-kpi {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 1100px) { .grid-4-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px)  { .grid-4-kpi { grid-template-columns: 1fr; } }
+
+/* Evidence grid + box */
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.evidence-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  background: var(--surface);
+}
+.evidence-box .text-eyebrow { margin-bottom: 2px; }
+
+/* Compact key-value rows */
+.mini-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-faint);
+  font-size: 12px;
+}
+.mini-kv:last-child { border-bottom: 0; }
+.mini-kv > span { color: var(--muted); flex-shrink: 0; }
+.mini-kv > strong {
+  color: var(--fg);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+.mini-list { display: grid; gap: 4px; margin-top: 8px; font-size: 12px; }
+.mini-list > div { display: flex; justify-content: space-between; gap: 10px; }
+.mini-list span { color: var(--muted); }
+.mini-list strong { color: var(--fg); font-weight: 600; }
+
+/* Tag row (wraps pills) */
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Table wrap */
+.table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: auto;
+}
+.table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table-wrap th {
+  text-align: left;
+  font: 600 10.5px/1 var(--font-display);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 10px;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+}
+.table-wrap td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-faint);
+  color: var(--muted);
+  vertical-align: top;
+}
+.table-wrap tr:last-child td { border-bottom: 0; }
+.table-wrap .mono, .table-wrap td.mono { font-family: var(--font-mono); }

@@ -29,6 +29,7 @@
       label: '분석',
       items: [
         { id: 'stom', label: '예측 진단', icon: 'pulse', badge: null },
+        { id: 'daily-ohlcv', label: 'Daily OHLCV', icon: 'pulse', badge: '연구' },
         { id: 'artifacts', label: '아티팩트 & 모델', icon: 'package', badge: null },
         { id: 'history', label: '기록 & 런', icon: 'history', badge: null },
       ],

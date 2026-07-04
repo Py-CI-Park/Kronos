@@ -540,6 +540,238 @@ export interface DailyMarketRegimeAuditResponse {
   readonly guardrail?: string;
 }
 
+export interface DailyCloseSlotCostScenario {
+  readonly scenario_id?: string;
+  readonly sell_tax_bp?: number;
+  readonly buy_commission_bp?: number;
+  readonly sell_commission_bp?: number;
+  readonly buy_slippage_bp?: number;
+  readonly sell_slippage_bp?: number;
+  readonly total_bp?: number;
+}
+
+export interface DailyCloseSlotThresholdSelection {
+  readonly policy?: string;
+  readonly split?: string;
+  readonly threshold?: number;
+  readonly threshold_text?: string;
+  readonly metric?: string;
+  readonly oos_rows_used_for_fit?: number;
+  readonly max_slot_count?: number;
+  readonly selection_cardinality?: string;
+  readonly hold_cash_action?: boolean;
+  readonly tie_break?: readonly string[];
+}
+
+export interface DailyCloseSlotWalkForwardSummary {
+  readonly mode_id?: string;
+  readonly window_count?: number;
+  readonly threshold_grid_count?: number;
+  readonly oos_rows_used_for_fit?: number;
+  readonly held_out_replay_splits?: readonly string[];
+  readonly held_out_window_count?: number;
+  readonly windows?: readonly Record<string, unknown>[];
+}
+
+export interface DailyCloseSlotReplaySummary {
+  readonly mode_id?: string;
+  readonly episode_count?: number;
+  readonly split_counts?: Readonly<Record<string, number>>;
+  readonly slot_feedback_count?: number;
+  readonly held_out_feedback_used_for_fit_count?: number;
+}
+
+export interface DailyCloseSlotSelectedHoldRow {
+  readonly policy?: string;
+  readonly split?: string;
+  readonly cost_scenario_id?: string;
+  readonly selected_count?: number;
+  readonly hold_cash_count?: number;
+  readonly total_component_bp?: number;
+  readonly reward?: number;
+}
+
+export interface DailyCloseSlotSelectedHoldSummary {
+  readonly primary_cost_scenario_id?: string;
+  readonly max_slot_count?: number;
+  readonly selection_cardinality?: string;
+  readonly hold_cash_action?: boolean;
+  readonly rows?: readonly DailyCloseSlotSelectedHoldRow[];
+}
+
+export interface DailyCloseSlotPolicyScoreRow {
+  readonly date?: string;
+  readonly split?: string;
+  readonly table?: string;
+  readonly code?: string;
+  readonly score?: number | string;
+  readonly policy?: string;
+  readonly fill_mode?: string;
+  readonly execution_realism?: string;
+  readonly round_trip_cost_bp?: number | string;
+  readonly upstream_gate_blockers?: string;
+  readonly [key: string]: unknown;
+}
+
+export interface DailyCloseSlotSelectionRow {
+  readonly date?: string;
+  readonly policy?: string;
+  readonly action_label?: string;
+  readonly slot?: number | string;
+  readonly code?: string;
+  readonly status?: string;
+  readonly unfilled_reason?: string;
+  readonly shares?: number | string;
+  readonly entry_close?: number | string;
+  readonly next_close?: number | string;
+  readonly net_pnl_krw?: number | string;
+  readonly cost_krw?: number | string;
+  readonly fill_mode?: string;
+  readonly research_only?: boolean;
+  readonly [key: string]: unknown;
+}
+
+export interface DailyCloseSlotSamples {
+  readonly baseline_summary?: readonly Record<string, unknown>[];
+  readonly policy_scores?: readonly DailyCloseSlotPolicyScoreRow[];
+  readonly threshold_search?: readonly Record<string, unknown>[];
+  readonly cost_scenario_summary?: readonly Record<string, unknown>[];
+  readonly date_ledgers?: Record<string, unknown>;
+}
+
+export interface DailyCloseSlotDbAccess {
+  readonly access_mode?: string;
+  readonly sqlite_uri_mode?: string;
+  readonly pragma_query_only?: boolean;
+  readonly mutation_allowed?: boolean;
+  readonly connection_helper?: string;
+}
+
+
+export interface DailyCloseSlotLatestResponse {
+  readonly surface?: string;
+  readonly status?: string;
+  readonly readiness_status?: string;
+  readonly artifact_status?: string;
+  readonly dashboard_validation_status?: string;
+  readonly lineage_validation_status?: string;
+  readonly run_id?: string;
+  readonly read_only?: boolean;
+  readonly promotion_allowed?: boolean;
+  readonly model_build_allowed?: boolean;
+  readonly paper_forward_allowed?: boolean;
+  readonly live_broker_order_allowed?: boolean;
+  readonly profitability_claim_allowed?: boolean;
+  readonly go_summary_allowed?: boolean;
+  readonly labels?: readonly string[];
+  readonly guardrail?: string;
+  readonly read_only_dashboard_note?: string;
+  readonly source_run_ids?: Readonly<Record<string, unknown>>;
+  readonly train_schema_version?: number;
+  readonly cost_model_schema_version?: number;
+  readonly gate_report?: Readonly<Record<string, unknown>>;
+  readonly daily_db_access?: DailyCloseSlotDbAccess;
+  readonly dataset_db_access?: DailyCloseSlotDbAccess;
+  readonly gate_report_dataset_db_access?: DailyCloseSlotDbAccess;
+  readonly gate_report_train_dataset_db_access?: DailyCloseSlotDbAccess;
+  readonly fit_summary?: Readonly<Record<string, unknown>>;
+  readonly d3_comparator?: Readonly<Record<string, unknown>>;
+  readonly required_baselines?: readonly string[];
+  readonly present_baselines?: readonly string[];
+  readonly round_trip_cost_bp?: number;
+  readonly cost_sensitivity_bp?: readonly number[];
+  readonly slot_count?: number;
+  readonly primary_cost_scenario_id?: string;
+  readonly cost_components?: readonly string[];
+  readonly cost_scenarios?: Readonly<Record<string, DailyCloseSlotCostScenario>>;
+  readonly max_slot_count?: number;
+  readonly selection_cardinality?: string;
+  readonly hold_cash_action?: boolean;
+  readonly threshold_selection?: DailyCloseSlotThresholdSelection;
+  readonly walk_forward_summary?: DailyCloseSlotWalkForwardSummary;
+  readonly replay_summary?: DailyCloseSlotReplaySummary;
+  readonly selected_hold_summary?: DailyCloseSlotSelectedHoldSummary;
+  readonly false_locks?: Readonly<Record<string, boolean>>;
+  readonly no_claim_labels?: readonly string[];
+  readonly total_capital_krw?: number;
+  readonly integer_shares_primary?: boolean;
+  readonly fill_mode?: string;
+  readonly execution_realism?: string;
+  readonly price_basis?: string;
+  readonly price_basis_status?: string;
+  readonly decision_grade_return_status?: string;
+  readonly universe_verdict?: string;
+  readonly universe_review_status?: string;
+  readonly current_required_blockers?: readonly string[];
+  readonly upstream_gate_blockers?: readonly string[];
+  readonly dataset_lineage?: Readonly<Record<string, unknown>>;
+  readonly row_counts?: Readonly<Record<string, unknown>>;
+  readonly dataset_source_counts?: Readonly<Record<string, unknown>>;
+  readonly bounded_research_scope?: Readonly<Record<string, unknown>>;
+  readonly samples?: DailyCloseSlotSamples;
+  readonly artifact_selection_errors?: readonly string[];
+}
+
+export interface DailyCloseSlotArtifactsResponse {
+  readonly runs?: readonly Record<string, unknown>[];
+  readonly read_only_dashboard_note?: string;
+}
+
+export interface DailyCloseSlotEquityResponse {
+  readonly surface?: string;
+  readonly status?: string;
+  readonly readiness_status?: string;
+  readonly run_id?: string;
+  readonly source_run_ids?: Readonly<Record<string, unknown>>;
+  readonly labels?: readonly string[];
+  readonly round_trip_cost_bp?: number;
+  readonly fill_mode?: string;
+  readonly execution_realism?: string;
+  readonly read_only?: boolean;
+  readonly promotion_allowed?: boolean;
+  readonly model_build_allowed?: boolean;
+  readonly paper_forward_allowed?: boolean;
+  readonly live_broker_order_allowed?: boolean;
+  readonly profitability_claim_allowed?: boolean;
+  readonly go_summary_allowed?: boolean;
+  readonly guardrail?: string;
+  readonly series?: readonly {
+    readonly policy?: string;
+    readonly points?: readonly Record<string, unknown>[];
+  }[];
+  readonly artifact_selection_errors?: readonly string[];
+}
+
+export interface DailyCloseSlotSelectionResponse {
+  readonly surface?: string;
+  readonly status?: string;
+  readonly readiness_status?: string;
+  readonly run_id?: string;
+  readonly source_run_ids?: Readonly<Record<string, unknown>>;
+  readonly labels?: readonly string[];
+  readonly policy?: string;
+  readonly slot_count?: number;
+  readonly round_trip_cost_bp?: number;
+  readonly threshold_selection?: DailyCloseSlotThresholdSelection;
+  readonly selected_hold_summary?: DailyCloseSlotSelectedHoldSummary;
+  readonly cost_scenarios?: Readonly<Record<string, DailyCloseSlotCostScenario>>;
+  readonly cost_components?: readonly string[];
+  readonly false_locks?: Readonly<Record<string, boolean>>;
+  readonly no_claim_labels?: readonly string[];
+  readonly read_only?: boolean;
+  readonly promotion_allowed?: boolean;
+  readonly model_build_allowed?: boolean;
+  readonly paper_forward_allowed?: boolean;
+  readonly live_broker_order_allowed?: boolean;
+  readonly profitability_claim_allowed?: boolean;
+  readonly go_summary_allowed?: boolean;
+  readonly guardrail?: string;
+  readonly selection_rows?: readonly DailyCloseSlotSelectionRow[];
+  readonly policy_score_sample?: readonly DailyCloseSlotPolicyScoreRow[];
+  readonly artifact_selection_errors?: readonly string[];
+}
+
+
 
 
 export const dailyOhlcvApi = {
@@ -571,6 +803,11 @@ export const dailyOhlcvApi = {
   researchJobDetail: (intentId: string) => fetchJson<DailyResearchJobIntentDetailResponse>(`/api/daily-ohlcv/research-jobs/${encodeURIComponent(intentId)}`),
   rejectionAnalytics: () => fetchJson<DailyRejectionAnalyticsResponse>('/api/daily-ohlcv/rejection-analytics?limit=25'),
   marketRegimeAudit: () => fetchJson<DailyMarketRegimeAuditResponse>('/api/daily-ohlcv/market-regime-audit?limit=25'),
+  closeSlotLatest: () => fetchJson<DailyCloseSlotLatestResponse>('/api/daily-ohlcv/close-slot/latest?limit=15'),
+  closeSlotArtifacts: () => fetchJson<DailyCloseSlotArtifactsResponse>('/api/daily-ohlcv/close-slot/artifacts?limit=10'),
+  closeSlotGate: () => fetchJson<DailyCloseSlotLatestResponse>('/api/daily-ohlcv/close-slot/gate/latest'),
+  closeSlotEquity: () => fetchJson<DailyCloseSlotEquityResponse>('/api/daily-ohlcv/charts/close-slot-equity'),
+  closeSlotSelection: () => fetchJson<DailyCloseSlotSelectionResponse>('/api/daily-ohlcv/charts/close-slot-selection?limit=20'),
   flowChart: () => fetchJson<DailyVisualChartResponse>('/api/daily-ohlcv/charts/flow'),
   glossaryChart: () => fetchJson<DailyVisualChartResponse>('/api/daily-ohlcv/charts/glossary'),
   researchDiagnosticsChart: () => fetchJson<DailyVisualChartResponse>('/api/daily-ohlcv/charts/research-diagnostics'),

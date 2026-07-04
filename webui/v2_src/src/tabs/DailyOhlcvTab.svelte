@@ -4,6 +4,10 @@
     dailyOhlcvApi,
     type DailyArtifactsResponse,
     type DailyDatasetChartResponse,
+    type DailyCloseSlotArtifactsResponse,
+    type DailyCloseSlotEquityResponse,
+    type DailyCloseSlotLatestResponse,
+    type DailyCloseSlotSelectionResponse,
     type DailyDatasetResponse,
     type DailyDbSummaryResponse,
     type DailyModelChartResponse,
@@ -26,7 +30,9 @@
   import DailyVisualLabCard from './dailyOhlcv/DailyVisualLabCard.svelte';
   import DailyScenarioLabCard from './dailyOhlcv/DailyScenarioLabCard.svelte';
   import DailyScenarioRunLedgerCard from './dailyOhlcv/DailyScenarioRunLedgerCard.svelte';
+  import DailyCloseSlotCard from './dailyOhlcv/DailyCloseSlotCard.svelte';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let progress = $state<DailyProgressResponse | null>(null);
   let dbSummary = $state<DailyDbSummaryResponse | null>(null);
@@ -41,6 +47,11 @@
   let predictionChart = $state<DailyModelChartResponse | null>(null);
   let portfolioChart = $state<DailyModelChartResponse | null>(null);
   let walkForwardChart = $state<DailyModelChartResponse | null>(null);
+  let closeSlotLatest = $state<DailyCloseSlotLatestResponse | null>(null);
+  let closeSlotGate = $state<DailyCloseSlotLatestResponse | null>(null);
+  let closeSlotArtifacts = $state<DailyCloseSlotArtifactsResponse | null>(null);
+  let closeSlotEquity = $state<DailyCloseSlotEquityResponse | null>(null);
+  let closeSlotSelection = $state<DailyCloseSlotSelectionResponse | null>(null);
   let decisionCockpit = $state<DailyVisualChartResponse | null>(null);
   let scenarioLab = $state<DailyScenarioLabResponse | null>(null);
   let scenarioRuns = $state<DailyScenarioRunLedgerResponse | null>(null);
@@ -80,7 +91,36 @@
   async function loadDailyOhlcv(): Promise<void> {
     loading = true;
     try {
-      const [p, d, u, a, ds, dc, pred, port, wf, reg, predChart, portChart, wfChart, decision, scenarios, scenarioRunsResult, flow, glossary, diagnostics, equity, heatmap, scatter, universeBreakdown] = await Promise.all([
+      const [
+        p,
+        d,
+        u,
+        a,
+        ds,
+        dc,
+        pred,
+        port,
+        wf,
+        reg,
+        predChart,
+        portChart,
+        wfChart,
+        closeLatest,
+        closeGate,
+        closeArtifacts,
+        closeEquity,
+        closeSelection,
+        decision,
+        scenarios,
+        scenarioRunsResult,
+        flow,
+        glossary,
+        diagnostics,
+        equity,
+        heatmap,
+        scatter,
+        universeBreakdown,
+      ] = await Promise.all([
         dailyOhlcvApi.progress(),
         dailyOhlcvApi.dbSummary(),
         dailyOhlcvApi.universePreview(),
@@ -94,6 +134,11 @@
         dailyOhlcvApi.predictionChart(),
         dailyOhlcvApi.portfolioChart(),
         dailyOhlcvApi.walkForwardChart(),
+        dailyOhlcvApi.closeSlotLatest(),
+        dailyOhlcvApi.closeSlotGate(),
+        dailyOhlcvApi.closeSlotArtifacts(),
+        dailyOhlcvApi.closeSlotEquity(),
+        dailyOhlcvApi.closeSlotSelection(),
         dailyOhlcvApi.decisionCockpitChart(),
         dailyOhlcvApi.scenarios(),
         dailyOhlcvApi.scenarioRuns(),
@@ -119,6 +164,11 @@
         ['prediction-chart', predChart],
         ['portfolio-chart', portChart],
         ['walk-forward-chart', wfChart],
+        ['close-slot-latest', closeLatest],
+        ['close-slot-gate', closeGate],
+        ['close-slot-artifacts', closeArtifacts],
+        ['close-slot-equity', closeEquity],
+        ['close-slot-selection', closeSelection],
         ['decision-cockpit', decision],
         ['scenarios', scenarios],
         ['scenario-runs', scenarioRunsResult],
@@ -144,6 +194,11 @@
       predictionChart = predChart;
       portfolioChart = portChart;
       walkForwardChart = wfChart;
+      closeSlotLatest = closeLatest;
+      closeSlotGate = closeGate;
+      closeSlotArtifacts = closeArtifacts;
+      closeSlotEquity = closeEquity;
+      closeSlotSelection = closeSelection;
       decisionCockpit = decision;
       scenarioLab = scenarios;
       scenarioRuns = scenarioRunsResult;
@@ -236,24 +291,49 @@
   </div>
 </section>
 <DailyProgressTimeline {progress} />
-<DailyScenarioLabCard {scenarioLab} />
-<DailyScenarioRunLedgerCard ledger={scenarioRuns} />
-<DailyDbQualityCard summary={dbSummary} />
-<DailyUniverseCard {universe} onSymbolSelect={(code) => void loadSymbolDrilldown(code)} />
-<DailyDatasetBuilderCard {dataset} chart={datasetChart} />
-<DailyModelResultsCard {prediction} {portfolio} {walkForward} {predictionChart} {portfolioChart} {walkForwardChart} />
-<DailyVisualLabCard
-  decision={decisionCockpit}
-  flow={flowChart}
-  glossary={glossaryChart}
-  researchDiagnostics={researchDiagnosticsChart}
-  equityOverlay={equityOverlayChart}
-  heatmap={walkForwardHeatmapChart}
-  runScatter={runScatterChart}
-  universeBreakdown={universeBreakdownChart}
-  registry={registry}
-  symbolChart={selectedSymbolChart}
+
+<DailyCloseSlotCard
+  latest={closeSlotLatest}
+  gate={closeSlotGate}
+  artifacts={closeSlotArtifacts}
+  equity={closeSlotEquity}
+  selection={closeSlotSelection}
 />
+
+<div class="text-eyebrow" style="margin-top:4px">D0–D6 세부 증거 카드 · 필요할 때 펼치기</div>
+
+<Disclosure summary="D0 · DB 품질 점검" meta="RESEARCH_ONLY">
+  <DailyDbQualityCard summary={dbSummary} />
+</Disclosure>
+<Disclosure summary="D1 · 유니버스 미리보기" meta="WATCH">
+  <DailyUniverseCard {universe} onSymbolSelect={(code) => void loadSymbolDrilldown(code)} />
+</Disclosure>
+<Disclosure summary="D2 · 데이터셋 빌더">
+  <DailyDatasetBuilderCard {dataset} chart={datasetChart} />
+</Disclosure>
+<Disclosure summary="D3–D4 · 모델 · 포트폴리오 결과">
+  <DailyModelResultsCard {prediction} {portfolio} {walkForward} {predictionChart} {portfolioChart} {walkForwardChart} />
+</Disclosure>
+<Disclosure summary="D6 · 시각 랩 · 착시 방지">
+  <DailyVisualLabCard
+    decision={decisionCockpit}
+    flow={flowChart}
+    glossary={glossaryChart}
+    researchDiagnostics={researchDiagnosticsChart}
+    equityOverlay={equityOverlayChart}
+    heatmap={walkForwardHeatmapChart}
+    runScatter={runScatterChart}
+    universeBreakdown={universeBreakdownChart}
+    registry={registry}
+    symbolChart={selectedSymbolChart}
+  />
+</Disclosure>
+<Disclosure summary="시나리오 · 가정 생성 플랫폼" meta="RESEARCH_ONLY">
+  <DailyScenarioLabCard {scenarioLab} />
+</Disclosure>
+<Disclosure summary="시나리오 실행 원장 · 모델 비교">
+  <DailyScenarioRunLedgerCard ledger={scenarioRuns} />
+</Disclosure>
 
 <section class="panel" data-daily-symbol-panel>
   <div class="panel-head">

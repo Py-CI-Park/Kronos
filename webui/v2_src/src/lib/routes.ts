@@ -12,6 +12,7 @@ export const DASHBOARD_ROUTES: readonly DashboardRoute[] = [
   { id: 'live-training', label: '실시간 학습', path: '/', aliases: ['/training', '/dashboard'], queryTabs: ['live-training', 'training'] },
   { id: 'forecast', label: '예측 워크벤치', path: '/', queryTabs: ['forecast'] },
   { id: 'stom', label: '예측 진단', path: '/', queryTabs: ['stom'] },
+  { id: 'daily-ohlcv', label: 'Daily OHLCV', path: '/', queryTabs: ['daily-ohlcv', 'daily-ohlcv-panel'] },
   {
     id: 'rl',
     label: 'Trading Command Center',
