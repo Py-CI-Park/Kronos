@@ -7,6 +7,7 @@
   import W5GpuSparkline from '$widgets/W5_GpuSparkline.svelte';
   import W6LossVolatility from '$widgets/W6_LossVolatility.svelte';
   import W9LogTail from '$widgets/W9_LogTail.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   type SplitRow = {
     key: 'train' | 'val' | 'test';
@@ -472,6 +473,7 @@
 
 <!-- ===== 학습 데이터 범위 / 특징 요약 ===== -->
 {#if dataset?.available}
+  <Disclosure summary="학습 데이터 범위 · 특징 요약">
   <section class="card dataset-card glow" aria-label="STOM 학습 데이터 범위 요약">
     <div class="dataset-hero">
       <div>
@@ -567,6 +569,7 @@
       · Report: <span class="text-mono">{dataset.report_path ?? '-'}</span>
     </div>
   </section>
+  </Disclosure>
 {:else if dataset}
   <section class="card dataset-card dataset-card-warn" aria-label="STOM 학습 데이터 범위 요약 없음">
     <div class="dataset-hero">
@@ -590,10 +593,14 @@
 <W4EtaTimeline />
 
 <!-- ===== GPU 추세 ===== -->
-<W5GpuSparkline />
+<Disclosure summary="GPU 추세">
+  <W5GpuSparkline />
+</Disclosure>
 
 <!-- ===== 로그 tail ===== -->
-<W9LogTail />
+<Disclosure summary="로그 tail">
+  <W9LogTail />
+</Disclosure>
 
 <style>
   .metric-grid {

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { dailyOhlcvApi, type DailyRlEnvGuideResponse } from '$lib/dailyOhlcvApi';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let guide = $state<DailyRlEnvGuideResponse | null>(null);
   let loading = $state(false);
@@ -287,6 +288,8 @@
   </div>
 </section>
 
+<div class="text-eyebrow" style="margin-top:16px">세부 가이드 · 필요할 때 펼치기</div>
+<Disclosure summary="Agent가 하루씩 배우는 순환 구조">
 <section class="panel visual-panel" data-daily-rl-loop-diagram>
   <div class="panel-head">
     <div>
@@ -378,9 +381,11 @@
     {/each}
   </div>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('workflow')}
+<Disclosure summary="연구 프로세스 선택 · 한계·개선 방향" meta="RESEARCH_ONLY">
 <section class="panel process-selector-panel" data-daily-rl-research-process-selector>
   <div class="panel-head">
     <div>
@@ -463,7 +468,9 @@
     </div>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="연구 workflow 센터 · blocker 확인" meta="INTENT_ONLY">
 <section class="panel workflow-center-panel" data-daily-rl-workflow-center>
   <div class="panel-head">
     <div>
@@ -594,9 +601,11 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.research_workflow_catalog, 'guardrail') ?? 'workflow catalog is read-only')}</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('rejection')}
+<Disclosure summary="가설 탈락 · 조기 dropout 검토" meta="REVIEW_ONLY">
 <section class="panel rejection-analytics-panel" data-daily-rl-rejection-analytics>
   <div class="panel-head">
     <div>
@@ -661,6 +670,8 @@
     </div>
   </div>
 </section>
+</Disclosure>
+<Disclosure summary="비실거래 연구 플랫폼 완료 성과 · 남은 lock" meta="NON_LIVE_ONLY">
 <section class="panel final-completion-panel" data-daily-rl-final-completion-report>
   <div class="panel-head">
     <div>
@@ -716,9 +727,11 @@
     이 완료율은 workflow center, inspector, safe config builder, intent ledger, rejection analytics, 문서/검증 표면에만 적용됩니다. 실거래·브로커 주문·페이퍼 포워드·모델 빌드·수익성 주장은 계속 0%/blocked입니다.
   </p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('scenario')}
+<Disclosure summary="시나리오 생성 · JSON 초안" meta="READ_ONLY">
 <section class="panel scenario-generator-panel" data-daily-rl-scenario-generator>
   <div class="panel-head">
     <div>
@@ -778,7 +791,9 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.scenario_generator, 'guardrail') ?? 'read-only scenario generator')}</p>
 </section>
+</Disclosure>
 
+<Disclosure summary="최신 신호 품질 결과 · 시나리오 비교" meta="WATCH">
 <section class="panel" data-daily-rl-signal-quality-integration>
   <div class="panel-head">
     <div>
@@ -829,7 +844,9 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.scenario_comparison, 'guardrail') ?? 'WATCH/NO-GO diagnostics only')}</p>
 </section>
+</Disclosure>
 
+<Disclosure summary="Past-only 시장 국면 감사 준비도" meta="WATCH">
 <section class="panel" data-daily-rl-market-regime-readiness>
   <div class="panel-head">
     <div>
@@ -892,7 +909,9 @@
     <pre class="ai-format-box">{safeJson(field(guide?.market_regime_audit_readiness, 'ai_guidance_format'))}</pre>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="개선 큐 · 한계→행동→산출물→gate" meta="AI_READABLE">
 <section class="panel" data-daily-rl-improvement-queue>
   <div class="panel-head">
     <div>
@@ -915,7 +934,9 @@
   </div>
   <pre class="ai-format-box" style="margin-top:12px">{safeJson(field(guide?.improvement_queue, 'ai_guidance_format'))}</pre>
 </section>
+</Disclosure>
 
+<Disclosure summary="전체 페이지 성숙도 · 연구 준비도" meta="WATCH">
 <section class="panel" data-daily-rl-page-maturity-report>
   <div class="panel-head">
     <div>
@@ -958,10 +979,12 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.page_maturity_report, 'guardrail') ?? 'page maturity is not trading readiness')}</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('replay')}
 
+<Disclosure summary="저장된 산출물 RL 리플레이" meta="RESEARCH_ONLY">
 <section class="panel live-visualizer-panel" data-daily-rl-realtime-visualizer>
   <div class="panel-head">
     <div>
@@ -1044,7 +1067,9 @@
     </article>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="학습 성과 예시 · 수익금·수익률·리스크" meta="RESEARCH_ONLY">
 <section class="panel performance-panel" data-daily-rl-performance-example>
   <div class="panel-head">
     <div>
@@ -1112,10 +1137,12 @@
 
   <p class="text-muted" style="margin-top:10px">{String(field(guide?.learning_performance, 'guardrail') ?? 'no profit guarantee, no live/broker/orders')}</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('raw')}
 
+<Disclosure summary="D2 → D5 일봉 RL 흐름">
 <section class="panel" data-daily-rl-env-visual-map>
   <div class="panel-head">
     <div>
@@ -1138,7 +1165,9 @@
     {/each}
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="RL 구성 요소 · Agent·State·Action·Reward">
 <section class="panel" data-daily-rl-env-elements>
   <div class="panel-head">
     <div>
@@ -1155,7 +1184,9 @@
     {/each}
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="상태·행동·보상 공식">
 <section class="panel" data-daily-rl-state-action-reward>
   <div class="panel-head">
     <div>
@@ -1189,7 +1220,9 @@
     </div>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="PASS/WATCH 체크리스트">
 <section class="panel" data-daily-rl-env-checks>
   <div class="panel-head">
     <div>
@@ -1217,6 +1250,7 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{guide?.guardrail ?? 'no profit guarantee, no live/broker/orders'}</p>
 </section>
+</Disclosure>
 {/if}
 
 <style>

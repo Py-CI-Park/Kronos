@@ -4,6 +4,7 @@
   import { ICONS } from '$lib/icons';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
   import { theme } from '$lib/stores';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   // ── 모델 / 데이터 카탈로그 ──────────────────────────────────────
   let availableModels = $state<any>({});
@@ -414,6 +415,7 @@
     </div>
     <EChartsRenderer option={chartOption} height="380px" />
     {#if predictionResult.metrics}
+      <Disclosure summary="예측 지표 상세">
       <div class="row" style="gap:24px;border-top:1px solid var(--border-faint);padding-top:14px;margin-top:8px;flex-wrap:wrap">
         {#each Object.entries(predictionResult.metrics) as [k, v]}
           <div class="stack" style="gap:4px">
@@ -424,6 +426,7 @@
           </div>
         {/each}
       </div>
+      </Disclosure>
     {/if}
   </section>
 {/if}

@@ -2,6 +2,7 @@
   import { gpuStatus, gpuRing, systemStatus, refreshSeconds, lastUpdatedAt, theme } from '$lib/stores';
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let gpu = $state<any>(null);
   gpuStatus.subscribe((v) => (gpu = v));
@@ -295,6 +296,7 @@
 </section>
 
 <!-- ===== Detail + Polling ===== -->
+<Disclosure summary="하드웨어 상세 & 폴링 상태" meta="GPU 디바이스 · Flask 폴링">
 <section class="grid-2-detail">
   <div class="card">
     <div class="card-header">
@@ -351,6 +353,7 @@
     </div>
   </div>
 </section>
+</Disclosure>
 
 <style>
   .page-hero { padding: 8px 0; }

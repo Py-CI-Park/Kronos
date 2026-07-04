@@ -2,6 +2,7 @@
   import { artifacts } from '$lib/stores';
   import { fmt } from '$lib/format';
   import { ICONS } from '$lib/icons';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let a = $state<any>(null);
   artifacts.subscribe((v) => (a = v));
@@ -157,6 +158,7 @@
   </section>
 
   <!-- File list -->
+  <Disclosure summary="파일 목록" meta="Checkpoints · Model Weights · 최신순">
   <section class="card" style="padding:0">
     <div class="row spread" style="padding:18px 20px 8px">
       <div>
@@ -225,6 +227,7 @@
       {/if}
     </div>
   </section>
+  </Disclosure>
 {/if}
 
 <style>

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   interface StomSummary {
     compatible_stock_table_count?: number;
@@ -319,6 +320,7 @@
 {/if}
 
 {#if horizonRows.length}
+  <Disclosure summary="Horizon 비교" meta="30/60/120/300초">
   <section class="card horizon-card">
     <div class="section-head">
       <div>
@@ -365,6 +367,7 @@
       </table>
     </div>
   </section>
+  </Disclosure>
 {/if}
 
 <section class="card workspace">
@@ -453,6 +456,7 @@
         {/if}
 
         {#if predictionDetail?.recommendations?.length}
+          <Disclosure summary="Kronos 점수 상위 후보">
           <div class="card-eyebrow" style="margin:16px 0 8px">KRONOS 점수 상위 후보</div>
           <div class="table-scroll">
             <table class="result-table">
@@ -468,6 +472,7 @@
               </tbody>
             </table>
           </div>
+          </Disclosure>
         {/if}
       {:else if selectedArtifact}
         <div class="artifact-summary">
@@ -495,7 +500,9 @@
               <div class="eval-kpi"><span>coverage</span><strong>{ratioPct(selectedArtifact.best_filter.coverage, 2)}</strong></div>
             </div>
           {/if}
+          <Disclosure summary="원본 JSON" meta="raw">
           <pre class="diag-json">{JSON.stringify(selectedArtifact, null, 2).slice(0, 2000)}{JSON.stringify(selectedArtifact).length > 2000 ? '\n...' : ''}</pre>
+          </Disclosure>
         </div>
       {:else}
         <div class="empty detail-empty">왼쪽에서 산출물을 선택하세요.</div>

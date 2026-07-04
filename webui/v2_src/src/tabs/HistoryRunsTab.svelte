@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { activeTab } from '$lib/stores';
   import { fmt } from '$lib/format';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   interface TrainingRun {
     name: string;
@@ -187,6 +188,7 @@
     </div>
   </div>
 {:else}
+  <Disclosure summary="전체 런 목록" meta="finetune/outputs">
   <section class="runs-grid">
     {#each filtered as run}
       <div class="card run-card" data-status={run.status}>
@@ -222,6 +224,7 @@
       </div>
     {/each}
   </section>
+  </Disclosure>
 {/if}
 
 <style>

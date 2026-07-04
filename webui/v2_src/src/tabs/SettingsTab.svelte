@@ -1,5 +1,6 @@
 <script lang="ts">
   import { refreshSeconds, theme, sidebarCollapsed } from '$lib/stores';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let sec = $state(5);
   refreshSeconds.subscribe((v) => (sec = v));
@@ -146,6 +147,7 @@
 </section>
 
 <!-- ===== Notifications ===== -->
+<Disclosure summary="브라우저 알림" meta="NOTIFICATIONS">
 <section class="card">
   <div class="card-header">
     <div>
@@ -178,8 +180,10 @@
     {/if}
   </div>
 </section>
+</Disclosure>
 
 <!-- ===== Reset ===== -->
+<Disclosure summary="설정 초기화" meta="RESET">
 <section class="card">
   <div class="card-header">
     <div>
@@ -195,8 +199,10 @@
     <button class="btn danger" onclick={resetAll}>모든 설정 초기화</button>
   </div>
 </section>
+</Disclosure>
 
 <!-- ===== P2+ Roadmap ===== -->
+<Disclosure summary="차후 추가 예정 설정" meta="ROADMAP">
 <section class="card" style="background:var(--surface-sunken);border-color:var(--border-faint)">
   <div class="card-header">
     <div>
@@ -212,6 +218,7 @@
     <li>고급 / 진단 (디버그 패널, 캐시 강제 갱신, dist 파일 hash 표시)</li>
   </ul>
 </section>
+</Disclosure>
 
 <style>
   .page-hero { padding: 8px 0; }
