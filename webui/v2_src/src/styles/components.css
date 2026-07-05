@@ -227,22 +227,23 @@
 
 /* ---------- Card primitives ---------- */
 .card {
-  background: var(--surface);
+  background: var(--card-grad);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 20px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   position: relative;
+  box-shadow: var(--shadow-md), var(--card-highlight);
   transition: border-color var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out);
 }
 .card.compact { padding: 16px; gap: 12px; }
-.card.flat { box-shadow: none; }
-.card.raised { box-shadow: var(--shadow-md); }
-.card.glow { box-shadow: var(--shadow-glow); border-color: var(--accent-tint); }
+.card.flat { box-shadow: none; background: var(--surface); }
+.card.raised { box-shadow: var(--shadow-lg), var(--card-highlight); }
+.card.glow { box-shadow: var(--shadow-glow), var(--card-highlight); border-color: var(--accent-tint); }
 .card.tappable { cursor: pointer; }
-.card.tappable:hover { transform: translateY(-1px); border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.card.tappable:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--shadow-lg), var(--card-highlight); }
 
 .card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .card-title  { font: 600 14px/1.3 var(--font-display); letter-spacing: -0.005em; color: var(--fg-strong); }
@@ -269,6 +270,11 @@
 .pill.accent  { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
 [data-theme="dark"] .pill.warn { color: var(--warn); }
 [data-theme="dark"] .pill.accent { color: var(--accent); }
+.pill.success .dot { box-shadow: 0 0 7px var(--success); }
+.pill.warn .dot    { box-shadow: 0 0 7px var(--warn); }
+.pill.danger .dot  { box-shadow: 0 0 7px var(--danger); }
+.pill.info .dot    { box-shadow: 0 0 7px var(--info); }
+.pill.accent .dot  { box-shadow: 0 0 7px var(--accent); }
 
 .kbd {
   display: inline-flex; align-items: center; justify-content: center;
@@ -482,17 +488,18 @@ input[type="range"].rng::-moz-range-thumb {
   flex-direction: column;
   gap: 12px;
   padding: 18px 20px;
-  background: var(--surface);
+  background: var(--card-grad);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   position: relative;
   overflow: hidden;
+  box-shadow: var(--shadow-md), var(--card-highlight);
 }
 .metric-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .metric-label { font: 600 11.5px/1 var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .metric-value {
-  font: 700 28px/1.05 var(--font-display);
-  letter-spacing: -0.018em;
+  font: 800 30px/1.03 var(--font-display);
+  letter-spacing: -0.024em;
   color: var(--fg-strong);
   font-variant-numeric: tabular-nums;
 }
@@ -775,16 +782,16 @@ input[type="range"].rng::-moz-range-thumb {
 
 /* Panel = the card primitive under legacy `.panel` markup */
 .panel {
-  background: var(--surface);
+  background: var(--card-grad);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 20px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md), var(--card-highlight);
 }
-.panel.flat { box-shadow: none; }
+.panel.flat { box-shadow: none; background: var(--surface); }
 .panel-head {
   display: flex;
   align-items: flex-start;

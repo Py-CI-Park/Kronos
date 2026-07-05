@@ -12,7 +12,11 @@ body {
   font-size: 14px;
   line-height: 1.55;
   color: var(--fg);
-  background: var(--bg);
+  background:
+    radial-gradient(1100px 520px at 88% -10%, color-mix(in oklab, var(--accent) 9%, transparent), transparent 62%),
+    radial-gradient(920px 480px at -8% 110%, color-mix(in oklab, var(--accent) 6%, transparent), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -95,18 +99,21 @@ ul, ol { list-style: none; padding: 0; }
   --t-display:    64px;
 
   /* Radii */
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
+  --r-sm: 9px;
+  --r-md: 13px;
+  --r-lg: 18px;
   --r-xl: 24px;
   --r-pill: 999px;
 
-  /* Shadows */
+  /* Shadows — premium command-center depth */
   --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.05);
-  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.05);
-  --shadow-md: 0 4px 8px rgb(15 23 42 / 0.04), 0 2px 4px rgb(15 23 42 / 0.04);
-  --shadow-lg: 0 12px 24px rgb(15 23 42 / 0.07), 0 4px 8px rgb(15 23 42 / 0.04);
-  --shadow-glow: 0 0 0 1px var(--accent-tint), 0 8px 32px var(--accent-glow);
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.05), 0 3px 8px -3px rgb(15 23 42 / 0.09);
+  --shadow-md: 0 2px 6px -1px rgb(15 23 42 / 0.06), 0 14px 28px -14px rgb(15 23 42 / 0.22);
+  --shadow-lg: 0 8px 18px -8px rgb(15 23 42 / 0.12), 0 24px 50px -20px rgb(15 23 42 / 0.30);
+  --shadow-glow: 0 0 0 1px var(--accent-tint), 0 10px 42px -12px var(--accent-glow);
+  /* Card surface highlight (rim light) + gradient overlay for depth */
+  --card-highlight: inset 0 1px 0 rgb(255 255 255 / 0.55);
+  --card-grad: linear-gradient(180deg, var(--surface) 0%, color-mix(in oklab, var(--surface) 92%, #000 8%) 100%);
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 0.8, 0.36, 1);
@@ -156,10 +163,11 @@ ul, ol { list-style: none; padding: 0; }
   --info-soft:       oklch(28% 0.08 235);
 
   --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.30);
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.30), 0 1px 3px rgb(0 0 0 / 0.30);
-  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.36);
-  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.45);
-  --shadow-glow: 0 0 0 1px var(--accent-tint), 0 0 32px var(--accent-glow);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 8px -3px rgb(0 0 0 / 0.45);
+  --shadow-md: 0 2px 6px -1px rgb(0 0 0 / 0.40), 0 16px 30px -14px rgb(0 0 0 / 0.55);
+  --shadow-lg: 0 10px 22px -8px rgb(0 0 0 / 0.50), 0 28px 56px -20px rgb(0 0 0 / 0.60);
+  --shadow-glow: 0 0 0 1px var(--accent-tint), 0 0 40px -8px var(--accent-glow);
+  --card-highlight: inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
 
 /* ---------- Pretendard fallback CSS variable substitution ---------- */

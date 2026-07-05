@@ -108,8 +108,9 @@
   .mc { display: flex; flex-direction: column; gap: 4px; }
   .mc-h1 { font: 700 27px/1.15 var(--font-display); letter-spacing: -0.022em; color: var(--fg-strong); margin: 6px 0 4px; }
   .mc-lede { max-width: 74ch; }
-  .mc-posture { display: flex; align-items: center; gap: 16px; padding: 13px 18px; margin-top: 16px;
-    border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); flex-wrap: wrap; }
+  .mc-posture { display: flex; align-items: center; gap: 16px; padding: 15px 18px; margin-top: 16px;
+    border-radius: var(--r-lg); border: 1px solid var(--border); box-shadow: var(--shadow-md), var(--card-highlight); flex-wrap: wrap;
+    background: linear-gradient(100deg, color-mix(in oklab, var(--accent) 13%, var(--surface)) 0%, var(--surface) 52%); }
   .mc-posture .pp { font: 700 14px/1.1 var(--font-display); display: flex; align-items: center; gap: 10px; }
   .mc-posture .pp .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 4px var(--warn-soft); }
   .mc-posture .locks { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
@@ -122,19 +123,19 @@
   .mc-lines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
   @media (max-width: 820px) { .mc-lines { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 560px) { .mc-lines { grid-template-columns: 1fr; } }
-  .mc-line { text-align: left; cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
-    padding: 15px 15px 13px; position: relative; overflow: hidden; box-shadow: var(--shadow-sm);
+  .mc-line { text-align: left; cursor: pointer; background: var(--card-grad); border: 1px solid var(--border); border-radius: var(--r-lg);
+    padding: 17px 17px 14px; position: relative; overflow: hidden; box-shadow: var(--shadow-md), var(--card-highlight);
     transition: transform var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out), border-color var(--d-fast) var(--ease-out); }
-  .mc-line:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--border-strong); }
-  .mc-line::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--warn); }
-  .mc-line[data-v="danger"]::after { background: var(--danger); }
-  .mc-line[data-v="good"]::after { background: var(--success); }
-  .mc-line[data-v="idle"]::after { background: var(--dim); }
-  .mc-line[data-v="accent"]::after { background: var(--accent); }
+  .mc-line:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg), var(--card-highlight); border-color: var(--border-strong); }
+  .mc-line::after { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--warn), transparent 72%); }
+  .mc-line[data-v="danger"]::after { background: linear-gradient(90deg, var(--danger), transparent 72%); }
+  .mc-line[data-v="good"]::after { background: linear-gradient(90deg, var(--success), transparent 72%); }
+  .mc-line[data-v="idle"]::after { background: linear-gradient(90deg, var(--dim), transparent 72%); }
+  .mc-line[data-v="accent"]::after { background: linear-gradient(90deg, var(--accent), var(--accent-strong) 55%, transparent); }
   .mc-line .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .mc-line .nm { font: 650 14px/1.25 var(--font-display); color: var(--fg-strong); }
   .mc-line .sub { font: 500 11px/1.3 var(--font-mono); color: var(--muted); margin-top: 3px; }
-  .mc-line .big { font: 700 20px/1.1 var(--font-display); letter-spacing: -0.02em; color: var(--fg-strong); margin: 14px 0 2px; }
+  .mc-line .big { font: 800 22px/1.05 var(--font-display); letter-spacing: -0.03em; color: var(--fg-strong); margin: 15px 0 2px; }
   .mc-line .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; font: 600 11px/1.3 var(--font-mono); }
   .mc-line .bk { color: var(--muted); } .mc-line .go { color: var(--accent-strong); }
   .mc-rail { display: flex; flex-direction: column; gap: 16px; }
