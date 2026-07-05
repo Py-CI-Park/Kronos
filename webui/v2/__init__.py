@@ -29,11 +29,21 @@ def _official_ssr_fallback_requested() -> bool:
 
 
 def _serve_dashboard_shell():
-    """Serve the official Kronos dashboard shell."""
+    """Serve the official Kronos dashboard shell.
+
+    index.html is served no-cache so browsers always revalidate and pick up the
+    latest hashed asset bundle after a rebuild (the hashed assets themselves stay
+    cacheable). Without this, a stale cached index.html keeps loading an old JS
+    bundle and the dashboard appears "old" even though the server has the new one.
+    """
     dist_dir = os.path.join(current_app.static_folder or "", "v2", "dist")
     dist_index = os.path.join(dist_dir, "index.html")
     if os.path.exists(dist_index) and not _official_ssr_fallback_requested():
-        return send_from_directory(dist_dir, "index.html")
+        resp = send_from_directory(dist_dir, "index.html")
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     return render_template("v2_shell.html")
 
 @v2_bp.route("/")
