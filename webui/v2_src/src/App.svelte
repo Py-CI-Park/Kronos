@@ -3,6 +3,7 @@
   import Sidebar from '$layout/Sidebar.svelte';
   import Header from '$layout/Header.svelte';
   import HeroStrip from '$layout/HeroStrip.svelte';
+  import MissionControl from '$tabs/MissionControl.svelte';
   import LiveTrainingTab from '$tabs/LiveTrainingTab.svelte';
   import ForecastWorkbenchTab from '$tabs/ForecastWorkbenchTab.svelte';
   import StomDiagnosticsTab from '$tabs/StomDiagnosticsTab.svelte';
@@ -33,7 +34,7 @@
     };
   });
 
-  let tab = $state('live-training');
+  let tab = $state('mission-control');
   activeTab.subscribe((v) => (tab = v));
   let collapsed = $state(false);
   sidebarCollapsed.subscribe((v) => (collapsed = v));
@@ -44,7 +45,9 @@
   <div class="main">
     <Header />
     <div class="page">
-      {#if tab === 'live-training'}
+      {#if tab === 'mission-control'}
+        <MissionControl />
+      {:else if tab === 'live-training'}
         <HeroStrip />
         <LiveTrainingTab />
       {:else if tab === 'forecast'}

@@ -9,6 +9,7 @@ export interface DashboardRoute {
 }
 
 export const DASHBOARD_ROUTES: readonly DashboardRoute[] = [
+  { id: 'mission-control', label: 'Mission Control', path: '/', queryTabs: ['mission-control', 'mission', 'home'] },
   { id: 'live-training', label: '실시간 학습', path: '/', aliases: ['/training', '/dashboard'], queryTabs: ['live-training', 'training'] },
   { id: 'forecast', label: '예측 워크벤치', path: '/', queryTabs: ['forecast'] },
   { id: 'stom', label: '예측 진단', path: '/', queryTabs: ['stom'] },
@@ -72,7 +73,7 @@ export function routeUrl(tabId: string): string {
   const route = routeForTab(tabId);
   if (!route) return '/';
   if (route.path !== '/') return route.path;
-  return route.id === 'live-training' ? '/' : `/?tab=${encodeURIComponent(route.id)}`;
+  return route.id === 'mission-control' ? '/' : `/?tab=${encodeURIComponent(route.id)}`;
 }
 
 export function resolveRoute(locationLike: Location = window.location): DashboardRoute | null {
@@ -81,8 +82,8 @@ export function resolveRoute(locationLike: Location = window.location): Dashboar
 }
 
 export function syncTabFromLocation(options: { replaceAlias?: boolean } = {}): string {
-  if (typeof window === 'undefined') return 'live-training';
-  const route = resolveRoute(window.location) ?? routeForTab('live-training')!;
+  if (typeof window === 'undefined') return 'mission-control';
+  const route = resolveRoute(window.location) ?? routeForTab('mission-control')!;
   const canonical = canonicalUrlForRoute(route);
   const current = `${window.location.pathname}${window.location.search}`;
   if (shouldHardNavigate(route) && current !== canonical) {
