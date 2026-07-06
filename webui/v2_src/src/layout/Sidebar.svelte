@@ -17,8 +17,9 @@
     items: NavItem[];
   }
 
-  // Technique-based IA: command → forecast (Kronos foundation) → daily research
-  // → RL → outputs/system. Grouping mirrors the approved redesign draft.
+  // v3 "AI Quant" technique-based IA (code-grounded):
+  //   커맨드 → Kronos 예측(독립 파운데이션) → 트레이딩 리서치(일봉 D0–D9 ⊃ D4 RL·종가매매,
+  //   + 인트라데이 커맨드센터) → 라이브·시스템. Kronos와 RL은 독립 축(데이터만 공유).
   const groups: NavGroup[] = [
     {
       label: '커맨드',
@@ -27,31 +28,26 @@
       ],
     },
     {
-      label: '파운데이션 · 예측',
+      label: 'Kronos 예측',
       items: [
-        { id: 'live-training', label: '실시간 학습', icon: 'activity', badge: 'LIVE', status: 'live' },
         { id: 'forecast', label: '예측 워크벤치', icon: 'wand', badge: null },
         { id: 'stom', label: '예측 진단', icon: 'pulse', badge: null },
       ],
     },
     {
-      label: '일봉 연구',
+      label: '트레이딩 리서치',
       items: [
         { id: 'daily-ohlcv', label: 'Daily OHLCV', icon: 'pulse', badge: '연구' },
-      ],
-    },
-    {
-      label: '강화학습',
-      items: [
         { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: 'RL' },
       ],
     },
     {
-      label: '산출물 · 시스템',
+      label: '라이브 · 시스템',
       items: [
+        { id: 'live-training', label: '실시간 학습', icon: 'activity', badge: 'LIVE', status: 'live' },
+        { id: 'system-health', label: '시스템 상태', icon: 'cpu', badge: null },
         { id: 'artifacts', label: '아티팩트 & 모델', icon: 'package', badge: null },
         { id: 'history', label: '기록 & 런', icon: 'history', badge: null },
-        { id: 'system-health', label: '시스템 상태', icon: 'cpu', badge: null },
         { id: 'settings', label: '설정', icon: 'settings', badge: null },
         { id: 'docs', label: '문서 · Wiki', icon: 'file', badge: null },
       ],
