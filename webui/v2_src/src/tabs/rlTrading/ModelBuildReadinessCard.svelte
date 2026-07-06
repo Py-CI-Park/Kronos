@@ -164,5 +164,5 @@
   .fresh-validation-wrap { max-height: 320px; overflow: auto; }
   .step-cell { min-width: 190px; }
   .policy-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .unlock-list { margin: 8px 0 0; padding-left: 18px; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+  .unlock-list { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.55; }
 </style>

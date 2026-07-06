@@ -335,7 +335,7 @@
   :global(.run-list button) {
     border: 1px solid var(--border);
     border-radius: 12px;
-    background: var(--card);
+    background: var(--surface);
     padding: 10px;
     text-align: left;
     display: flex;
@@ -359,7 +359,7 @@
   }
   :global(.mini-grid span) {
     display: block;
-    color: var(--text-muted);
+    color: var(--muted);
     font-size: 12px;
     margin-bottom: 4px;
   }

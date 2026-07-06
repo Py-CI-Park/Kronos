@@ -124,7 +124,7 @@
   .replay-controls select {
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--card);
+    background: var(--surface);
     padding: 6px 8px;
     font: inherit;
     min-width: 140px;
@@ -136,7 +136,7 @@
   .step-btn {
     border: 1px solid var(--border);
     border-radius: 999px;
-    background: var(--card);
+    background: var(--surface);
     padding: 4px 12px;
     font: 600 11px/1 var(--font-display);
     cursor: pointer;
