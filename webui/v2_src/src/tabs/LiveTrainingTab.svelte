@@ -8,6 +8,7 @@
   import W6LossVolatility from '$widgets/W6_LossVolatility.svelte';
   import W9LogTail from '$widgets/W9_LogTail.svelte';
   import Disclosure from '$lib/Disclosure.svelte';
+  import LiveMonitorTiles from './LiveMonitorTiles.svelte';
 
   type SplitRow = {
     key: 'train' | 'val' | 'test';
@@ -317,6 +318,9 @@
     return { level: 'ok' as HealthLevel, label: '학습 정상 진행', message: '진행률·LR·loss·step·CPU 기준이 정상입니다.' };
   });
 </script>
+
+<!-- ===== 라이브 모니터 타일 (LOSS/GPU/RAM/RL EQUITY) ===== -->
+<LiveMonitorTiles />
 
 <!-- ===== 핵심 실시간 지표 ===== -->
 <section class="metric-grid">
