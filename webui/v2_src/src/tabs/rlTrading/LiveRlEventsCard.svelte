@@ -76,7 +76,7 @@
     }
     loading = true;
     try {
-      const extras = compareRuns.filter((name) => name !== '' && name !== run);
+      const extras = overlayNames;
       const payloads = await Promise.all([
         rlApi.rlEvents(run, 240),
         ...extras.map((name) => rlApi.rlEvents(name, 240)),
