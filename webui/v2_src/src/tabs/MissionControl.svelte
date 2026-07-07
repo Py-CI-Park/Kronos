@@ -222,7 +222,7 @@
   .gauge[data-t="accent"] .gh .dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .gauge .gk { font: 600 11px/1.2 var(--font-mono); color: var(--muted); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .gauge .gv { font: 800 21px/1.1 var(--font-display); letter-spacing: -0.03em; color: var(--fg-strong); margin-top: 9px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
   /* src tags — LIVE(파생) vs FACT(가드레일 사실) 정직 라벨 */
   .tag { font: 700 8.5px/1 var(--font-mono); letter-spacing: 0.06em; padding: 3px 5px; border-radius: 5px; margin-left: auto; flex: none; }
@@ -262,11 +262,11 @@
   .mc-line[data-v="danger"]::after { background: linear-gradient(90deg, var(--danger), transparent 72%); }
   .mc-line[data-v="success"]::after { background: linear-gradient(90deg, var(--success), transparent 72%); }
   .mc-line[data-v="accent"]::after { background: linear-gradient(90deg, var(--accent), var(--accent-strong) 55%, transparent); }
-  .mc-line .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-  .mc-line .ttl { min-width: 0; }
-  .mc-line .nm { font: 650 14px/1.25 var(--font-display); color: var(--fg-strong); }
-  .mc-line .sub { font: 500 11px/1.3 var(--font-mono); color: var(--muted); margin-top: 3px; }
-  .mc-line .pill { flex: none; }
+  .mc-line .top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .mc-line .ttl { min-width: 120px; flex: 1 1 auto; }
+  .mc-line .nm { font: 650 14px/1.25 var(--font-display); color: var(--fg-strong); word-break: keep-all; overflow-wrap: anywhere; }
+  .mc-line .sub { font: 500 11px/1.3 var(--font-mono); color: var(--muted); margin-top: 3px; word-break: keep-all; overflow-wrap: anywhere; }
+  .mc-line .pill { flex: none; max-width: 100%; overflow-wrap: anywhere; }
   .mc-line .pill .tag.inv { padding: 2px 4px; }
   .mc-line .big { display: flex; align-items: center; gap: 8px; font: 800 21px/1.05 var(--font-display); letter-spacing: -0.03em; color: var(--fg-strong); margin: 14px 0 2px; }
   .mc-line .big .tag { margin-left: 0; }
