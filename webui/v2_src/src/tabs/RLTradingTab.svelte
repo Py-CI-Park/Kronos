@@ -32,6 +32,8 @@
 
   let runs = $state<readonly RlRunRecord[]>([]);
   let selectedName = $state('');
+  // G4 — 라이브 tail equity 오버레이에 겹쳐 볼 비교 run 이름들 (additive, 기본 없음).
+  let compareNames = $state<string[]>([]);
   let selectedRun = $state<RlRunDetail | null>(null);
   let progress = $state<RlProgressResponse | null>(null);
   let costGate = $state<RlCostGateResponse | null>(null);
@@ -236,6 +238,13 @@
       detailLoading = false;
     }
   }
+
+  // G4 — 비교 run 을 오버레이 목록에 토글 (immutable 갱신).
+  function toggleCompare(name: string): void {
+    compareNames = compareNames.includes(name)
+      ? compareNames.filter((entry) => entry !== name)
+      : [...compareNames, name];
+  }
 </script>
 
 <RLHero progressPct={progressPct} costGatePassCount={costGatePassCount(gateRows)} />
@@ -310,7 +319,15 @@
       tradeRows={trades}
       {selectedName}
     />
-    <LiveRlEventsCard run={selectedName} />
+    <RunSelector
+      runs={runs}
+      multi
+      selectedNames={compareNames}
+      onToggle={toggleCompare}
+      eyebrow="OVERLAY COMPARE · RESEARCH_ONLY"
+      title="라이브 tail equity 오버레이 비교 run"
+    />
+    <LiveRlEventsCard run={selectedName} compareRuns={compareNames} />
     <RunTables leaderboardRows={leaderboardRows} tradeRows={trades} ruleFilterControlRows={ruleFilterControlRows} ruleFilterAblationRows={ruleFilterAblationRows} ruleFilterFailureRows={ruleFilterFailureRows} />
   </div>
 </section>
