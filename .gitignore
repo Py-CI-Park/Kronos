@@ -58,6 +58,9 @@ Desktop.ini
 *.parquet
 *.h5
 *.hdf5
+
+# Self-host MLflow file store (opt-in experiment tracking, no egress)
+artifacts/mlruns/
 _database/
 finetune_csv/data/stom_*.csv
 finetune_csv/data/stom_*.json
