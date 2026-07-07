@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Sidebar from '$layout/Sidebar.svelte';
   import Header from '$layout/Header.svelte';
+  import OpsStrip from '$layout/OpsStrip.svelte';
   import HeroStrip from '$layout/HeroStrip.svelte';
   import MissionControl from '$tabs/MissionControl.svelte';
   import LiveTrainingTab from '$tabs/LiveTrainingTab.svelte';
@@ -44,6 +45,7 @@
   <Sidebar />
   <div class="main">
     <Header />
+    <OpsStrip />
     <div class="page">
       {#if tab === 'mission-control'}
         <MissionControl />
