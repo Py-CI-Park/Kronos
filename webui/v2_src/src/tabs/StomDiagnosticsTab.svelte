@@ -3,6 +3,7 @@
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
   import Disclosure from '$lib/Disclosure.svelte';
+  import { theme } from '$lib/stores';
 
   interface StomSummary {
     compatible_stock_table_count?: number;
@@ -44,6 +45,9 @@
   let backtestReport = $state<any>(null);
   let loadingDiag = $state(false);
   let diagError = $state<string | null>(null);
+
+  let currentTheme = $state<'light' | 'dark'>('light');
+  theme.subscribe((v) => (currentTheme = v));
 
   onMount(() => {
     void loadSummary();
@@ -224,44 +228,64 @@
 
   const horizonRows = $derived(horizonComparison?.rows ?? []);
   const bestHorizon = $derived(horizonComparison?.best_by_rolling_net ?? horizonComparison?.best_by_direction ?? null);
+
+  let palette = $derived.by(() => {
+    void currentTheme;
+    if (typeof window === 'undefined') return null;
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      accent: cs.getPropertyValue('--accent').trim(),
+      success: cs.getPropertyValue('--success').trim(),
+      danger: cs.getPropertyValue('--danger').trim(),
+      c4: cs.getPropertyValue('--c-4').trim(),
+      grid: cs.getPropertyValue('--border-faint').trim(),
+      dim: cs.getPropertyValue('--dim').trim(),
+      muted: cs.getPropertyValue('--muted').trim(),
+      text: cs.getPropertyValue('--fg').trim(),
+    };
+  });
+
   const horizonChartOption = $derived.by(() => {
+    void currentTheme;
     const rows = horizonRows;
-    if (!rows.length) return {};
+    if (!rows.length || !palette) return {};
     return {
       backgroundColor: 'transparent',
       grid: { left: 52, right: 24, top: 42, bottom: 44 },
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, textStyle: { color: 'inherit' } },
-      xAxis: { type: 'category', data: rows.map((r: any) => `${r.horizon}s`), axisLabel: { color: '#64748b' } },
-      yAxis: { type: 'value', axisLabel: { formatter: '{value}%', color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.2)' } } },
+      legend: { top: 0, textStyle: { color: palette.dim } },
+      xAxis: { type: 'category', data: rows.map((r: any) => `${r.horizon}s`), axisLabel: { color: palette.dim } },
+      yAxis: { type: 'value', axisLabel: { formatter: '{value}%', color: palette.dim }, splitLine: { lineStyle: { color: palette.grid } } },
       series: [
-        { name: 'Kronos 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.direction_accuracy ?? 0) * 100), itemStyle: { color: '#2563eb' } },
-        { name: 'Random 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.random_direction_accuracy ?? 0) * 100), itemStyle: { color: '#94a3b8' } },
-        { name: 'Rolling net', type: 'line', data: rows.map((r: any) => Number(r.rolling_net_return_pct ?? 0)), lineStyle: { color: '#ef4444', width: 3 }, symbolSize: 8 },
+        { name: 'Kronos 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.direction_accuracy ?? 0) * 100), itemStyle: { color: palette.accent } },
+        { name: 'Random 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.random_direction_accuracy ?? 0) * 100), itemStyle: { color: palette.muted } },
+        { name: 'Rolling net', type: 'line', data: rows.map((r: any) => Number(r.rolling_net_return_pct ?? 0)), lineStyle: { color: palette.c4, width: 3 }, symbolSize: 8 },
       ],
     };
   });
 
   const actualPredictionOption = $derived.by(() => {
+    void currentTheme;
     const rows = predictionDetail?.visual?.window_series ?? [];
-    if (!rows.length) return {};
+    if (!rows.length || !palette) return {};
     return {
       backgroundColor: 'transparent',
       grid: { left: 52, right: 24, top: 34, bottom: 42 },
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, textStyle: { color: 'inherit' } },
-      xAxis: { type: 'category', data: rows.map((r: any) => String(r.timestamp).slice(11, 19)), axisLabel: { color: '#64748b' } },
-      yAxis: { type: 'value', scale: true, axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.22)' } } },
+      legend: { top: 0, textStyle: { color: palette.dim } },
+      xAxis: { type: 'category', data: rows.map((r: any) => String(r.timestamp).slice(11, 19)), axisLabel: { color: palette.dim } },
+      yAxis: { type: 'value', scale: true, axisLabel: { color: palette.dim }, splitLine: { lineStyle: { color: palette.grid } } },
       series: [
-        { name: '실제 종가', type: 'line', smooth: 0.25, symbol: 'none', data: rows.map((r: any) => r.actual_close), lineStyle: { color: '#0f172a', width: 2.2 } },
-        { name: 'Kronos 예측', type: 'line', smooth: 0.25, symbol: 'none', data: rows.map((r: any) => r.pred_close), lineStyle: { color: '#ef4444', width: 2, type: 'dashed' } },
+        { name: '실제 종가', type: 'line', smooth: 0.25, symbol: 'none', data: rows.map((r: any) => r.actual_close), lineStyle: { color: palette.text, width: 2.2 } },
+        { name: 'Kronos 예측', type: 'line', smooth: 0.25, symbol: 'none', data: rows.map((r: any) => r.pred_close), lineStyle: { color: palette.c4, width: 2, type: 'dashed' } },
       ],
     };
   });
 
   const returnScatterOption = $derived.by(() => {
+    void currentTheme;
     const rows = predictionDetail?.visual?.return_scatter ?? [];
-    if (!rows.length) return {};
+    if (!rows.length || !palette) return {};
     return {
       backgroundColor: 'transparent',
       grid: { left: 54, right: 24, top: 26, bottom: 46 },
@@ -272,15 +296,15 @@
           return `${r.symbol}<br/>예측 ${num(r.pred_return_window, 3)}%<br/>실제 ${num(r.actual_return_window, 3)}%<br/>${r.direction_hit_window ? '방향 적중' : '방향 실패'}`;
         },
       },
-      xAxis: { type: 'value', name: '예측 등락률 %', axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.2)' } } },
-      yAxis: { type: 'value', name: '실제 등락률 %', axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.2)' } } },
+      xAxis: { type: 'value', name: '예측 등락률 %', axisLabel: { color: palette.dim }, splitLine: { lineStyle: { color: palette.grid } } },
+      yAxis: { type: 'value', name: '실제 등락률 %', axisLabel: { color: palette.dim }, splitLine: { lineStyle: { color: palette.grid } } },
       series: [
         {
           name: 'window',
           type: 'scatter',
           symbolSize: 7,
           data: rows.map((r: any) => [r.pred_return_window, r.actual_return_window]),
-          itemStyle: { color: (p: any) => rows[p.dataIndex]?.direction_hit_window ? '#22c55e' : '#ef4444', opacity: 0.72 },
+          itemStyle: { color: (p: any) => rows[p.dataIndex]?.direction_hit_window ? palette!.success : palette!.danger, opacity: 0.72 },
         },
       ],
     };
