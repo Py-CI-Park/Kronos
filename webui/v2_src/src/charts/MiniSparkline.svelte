@@ -3,7 +3,7 @@
   // Data-source-agnostic: takes a plain number[] and a canonical color token so
   // a tile can feed it loss / GPU% / RAM% without this component owning any fetch.
   // Reuses EChartsRenderer + the theme-subscribe / getComputedStyle palette idiom
-  // used by LossCurveChart and W5_GpuSparkline (no charting reinvented here).
+  // used by W5_GpuSparkline (no charting reinvented here).
   // Fail-closed: empty series renders an explicit "—" placeholder, never a flat
   // fabricated baseline. RESEARCH_ONLY diagnostic — not a profit/live claim.
   import { onDestroy } from 'svelte';
