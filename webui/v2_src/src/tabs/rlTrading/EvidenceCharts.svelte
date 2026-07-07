@@ -1,6 +1,7 @@
 <script lang="ts">
   import EChartsRenderer from '../../charts/EChartsRenderer.svelte';
   import type { RlTableRow } from '$lib/rlApi';
+  import { theme } from '$lib/stores';
   import { actionPnlChartOption, costGateChartOption, equityChartOption, leaderboardChartOption, tradeChartOption } from './chartOptions';
 
   interface Props {
@@ -13,11 +14,17 @@
     readonly selectedName: string;
   }
   let { leaderboardRows, gateRows, equityRows, actionRows, episodeRows, tradeRows, selectedName }: Props = $props();
-  const leaderboardOption = $derived(leaderboardChartOption(leaderboardRows));
-  const costGateOption = $derived(costGateChartOption(gateRows));
-  const equityOption = $derived(equityChartOption(equityRows));
-  const actionPnlOption = $derived(actionPnlChartOption(actionRows, episodeRows, selectedName));
-  const tradeOption = $derived(tradeChartOption(tradeRows));
+
+  // chartOptions.ts resolves colors from CSS custom properties at build time;
+  // re-invoke the builders on theme flip so the resolved colors stay current.
+  let currentTheme = $state<'light' | 'dark'>('light');
+  theme.subscribe((v) => (currentTheme = v));
+
+  const leaderboardOption = $derived.by(() => { void currentTheme; return leaderboardChartOption(leaderboardRows); });
+  const costGateOption = $derived.by(() => { void currentTheme; return costGateChartOption(gateRows); });
+  const equityOption = $derived.by(() => { void currentTheme; return equityChartOption(equityRows); });
+  const actionPnlOption = $derived.by(() => { void currentTheme; return actionPnlChartOption(actionRows, episodeRows, selectedName); });
+  const tradeOption = $derived.by(() => { void currentTheme; return tradeChartOption(tradeRows); });
 </script>
 
 <section class="chart-grid">
