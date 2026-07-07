@@ -9,6 +9,7 @@ from flask_cors import CORS
 import sys
 import warnings
 import datetime
+from pathlib import Path
 warnings.filterwarnings('ignore')
 
 # Add project root directory to path
@@ -1210,6 +1211,24 @@ def rl_factory_lane_edge_ledger(run_name):
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+# G6 — read-only rliable reliability statistics (approved backend-frozen exception).
+# Serves the offline artifact produced by scripts/gen_rliable_stats.py. No DB, no
+# request parameters, no write capability. RESEARCH_ONLY: not a profitability or
+# GO/NO-GO claim.
+RLIABLE_STATS_PATH = Path(__file__).resolve().parents[1] / 'artifacts' / 'rl_runs_rliable.json'
+
+
+@app.route('/api/rl/rliable-stats')
+def rl_rliable_stats():
+    artifact_path = RLIABLE_STATS_PATH
+    if not artifact_path.is_file():
+        return jsonify({'error': 'rliable stats not generated yet', 'available': False}), 404
+    try:
+        return jsonify(json.loads(artifact_path.read_text(encoding='utf-8')))
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 

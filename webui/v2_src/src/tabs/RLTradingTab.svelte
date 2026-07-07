@@ -24,6 +24,7 @@
   import ModelBuildReadinessCard from './rlTrading/ModelBuildReadinessCard.svelte';
   import ForwardLedgerCard from './rlTrading/ForwardLedgerCard.svelte';
   import SessionReplayCard from './rlTrading/SessionReplayCard.svelte';
+  import RliableStatsCard from './rlTrading/RliableStatsCard.svelte';
   import EvidenceCharts from './rlTrading/EvidenceCharts.svelte';
   import LiveRlEventsCard from './rlTrading/LiveRlEventsCard.svelte';
   import RunTables from './rlTrading/RunTables.svelte';
@@ -293,6 +294,7 @@
   <ModelBuildReadinessCard />
   <ForwardLedgerCard />
   <SessionReplayCard />
+  <RliableStatsCard />
 </section>
 <section class="rl-layout">
   <RunSelector runs={runs} selectedName={selectedName} onSelect={(name) => void selectRun(name)} />

@@ -430,6 +430,41 @@ export interface RlFactoryForwardLedgerResponse {
 }
 
 
+export interface RlRliableMetric {
+  readonly point: number;
+  readonly ci_lower: number;
+  readonly ci_upper: number;
+}
+export interface RlRliableAggregate {
+  readonly median?: RlRliableMetric;
+  readonly iqm?: RlRliableMetric;
+  readonly mean?: RlRliableMetric;
+  readonly optimality_gap?: RlRliableMetric;
+}
+export interface RlRliableAlgoMetadata {
+  readonly run_ids?: readonly string[];
+  readonly seed_count?: number;
+  readonly cost_bps?: readonly number[] | null;
+  readonly run_scores?: Readonly<Record<string, number>>;
+}
+export interface RlRliableStatsResponse {
+  readonly schema?: string;
+  readonly generated_utc?: string;
+  readonly research_only?: boolean;
+  readonly note?: string;
+  readonly score_definition?: string;
+  readonly metric_names?: readonly string[];
+  readonly confidence_interval?: number;
+  readonly bootstrap_reps?: number;
+  readonly min_seeds?: number;
+  readonly scanned_file_count?: number;
+  readonly algorithms?: readonly string[];
+  readonly aggregates?: Readonly<Record<string, RlRliableAggregate>>;
+  readonly metadata?: Readonly<Record<string, RlRliableAlgoMetadata>>;
+  readonly available?: boolean;
+  readonly error?: string;
+}
+
 export const rlApi = {
   rlRuns: (limit: number = 20) => fetchJson<RlRunsResponse>(`/api/rl/runs?limit=${limit}`),
   rlProgress: () => fetchJson<RlProgressResponse>('/api/rl/progress'),
@@ -473,4 +508,5 @@ export const rlApi = {
     fetchJson<RlFactoryForwardLedgerResponse>(
       `/api/rl/factory/forward-ledger/${encodeURIComponent(run)}?limit=${limit}${status ? `&status=${status}` : ''}`
     ),
+  rliableStats: () => fetchJson<RlRliableStatsResponse>('/api/rl/rliable-stats'),
 };
