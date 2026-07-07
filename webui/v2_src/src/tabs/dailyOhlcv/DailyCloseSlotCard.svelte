@@ -6,6 +6,8 @@
     DailyCloseSlotSelectionResponse,
   } from '$lib/dailyOhlcvApi';
   import Disclosure from '$lib/Disclosure.svelte';
+  import CostSensitivityChart from '../../charts/CostSensitivityChart.svelte';
+  import EquityDrawdownChart from '../../charts/EquityDrawdownChart.svelte';
 
   interface Props {
     latest: DailyCloseSlotLatestResponse | null;
@@ -154,6 +156,21 @@
       {:else}
         <div class="notice">policy score sample 없음 · fail-closed or NOT_STARTED일 수 있습니다.</div>
       {/each}
+    </div>
+  </div>
+
+  <div class="evidence-grid" data-daily-close-slot-report-charts>
+    <div class="evidence-box">
+      <div class="text-eyebrow">비용 민감도 · 0/23/46bp (base_23bp 기준 · 통제군 대비)</div>
+      <CostSensitivityChart
+        rows={selectedHoldSummary.rows ?? []}
+        primaryScenarioId={selectedHoldSummary.primary_cost_scenario_id ?? latest?.primary_cost_scenario_id ?? 'base_23bp'}
+        {costScenarios}
+      />
+    </div>
+    <div class="evidence-box">
+      <div class="text-eyebrow">research equity + drawdown · 누적 순손익</div>
+      <EquityDrawdownChart {equity} />
     </div>
   </div>
 
