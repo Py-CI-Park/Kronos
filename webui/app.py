@@ -213,6 +213,11 @@ try:
         from .daily_ohlcv_dashboard import (
             list_universe_manifests,
             list_dataset_artifacts,
+            list_close_slot_artifacts,
+            load_close_slot_equity,
+            load_close_slot_gate,
+            load_close_slot_latest,
+            load_close_slot_selection,
             load_coverage_chart,
             load_decision_cockpit,
             load_scenario_lab,
@@ -254,6 +259,11 @@ try:
         from daily_ohlcv_dashboard import (
             list_universe_manifests,
             list_dataset_artifacts,
+            list_close_slot_artifacts,
+            load_close_slot_equity,
+            load_close_slot_gate,
+            load_close_slot_latest,
+            load_close_slot_selection,
             load_coverage_chart,
             load_decision_cockpit,
             load_scenario_lab,
@@ -295,6 +305,11 @@ except Exception as exc:
     print(f"Warning: Daily OHLCV dashboard helpers cannot be imported ({exc})")
     list_universe_manifests = None
     list_dataset_artifacts = None
+    list_close_slot_artifacts = None
+    load_close_slot_equity = None
+    load_close_slot_gate = None
+    load_close_slot_latest = None
+    load_close_slot_selection = None
     load_coverage_chart = None
     load_decision_cockpit = None
     load_scenario_lab = None
@@ -1486,6 +1501,87 @@ def daily_ohlcv_dataset_artifacts():
         return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
     try:
         return jsonify(list_dataset_artifacts(limit=_daily_limit('limit', 20, 200)))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/close-slot/latest')
+def daily_ohlcv_close_slot_latest():
+    if load_close_slot_latest is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_close_slot_latest(run=request.args.get('run') or None, sample_limit=_daily_limit('limit', 25, 500)))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/close-slot/artifacts')
+def daily_ohlcv_close_slot_artifacts():
+    if list_close_slot_artifacts is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(list_close_slot_artifacts(limit=_daily_limit('limit', 20, 200)))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/close-slot/gate/latest')
+@app.route('/api/daily-ohlcv/charts/close-slot-gate')
+@app.route('/api/daily-ohlcv/close-slot/gate')
+def daily_ohlcv_close_slot_gate():
+    if load_close_slot_gate is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_close_slot_gate(run=request.args.get('run') or None))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/close-slot-equity')
+@app.route('/api/daily-ohlcv/close-slot/equity')
+def daily_ohlcv_close_slot_equity():
+    if load_close_slot_equity is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_close_slot_equity(
+                run=request.args.get('run') or None,
+                policy=request.args.get('policy') or None,
+            )
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/close-slot-selection')
+@app.route('/api/daily-ohlcv/close-slot/selection')
+def daily_ohlcv_close_slot_selection():
+    if load_close_slot_selection is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_close_slot_selection(
+                run=request.args.get('run') or None,
+                policy=request.args.get('policy') or None,
+                limit=_daily_limit('limit', 25, 500),
+            )
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 
