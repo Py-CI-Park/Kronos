@@ -255,6 +255,17 @@
       "normalizers": [],
       "separator": "\n"
     },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyGateLadder.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyGateLadder.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
     "webui/v2_src/src/tabs/dailyOhlcv/DailyModelResultsCard.svelte": {
       "components": [
         {
@@ -538,10 +549,7 @@
       "NOT_STARTED",
       "READ_ONLY",
       "ResearchStatusShell",
-      "dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']",
       "data-daily-api-error",
-      "data-daily-ohlcv-command-cockpit",
-      "data-daily-ohlcv-d0-d9-cockpit",
       "data-daily-ohlcv-tab",
       "data-daily-symbol-panel",
       "live/model/paper/profit",
@@ -796,6 +804,11 @@
       "price_basis_required_evidence",
       "price_basis_status",
       "price_basis_user_guidance"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyGateLadder.svelte": [
+      "dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']",
+      "data-daily-ohlcv-command-cockpit",
+      "data-daily-ohlcv-d0-d9-cockpit"
     ],
     "webui/v2_src/src/tabs/dailyOhlcv/DailyModelResultsCard.svelte": [
       "0/23/46bp sensitivity",

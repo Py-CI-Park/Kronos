@@ -18,18 +18,24 @@
   // Static gate scaffold: the D0-D9 order + short labels are fixed research IA.
   // D4 carries the RL stage + 종가매매(close-slot) sub-lane; D0/D1/D5 are the
   // documented persistent blockers of the current research posture.
-  const GATES: readonly GateMeta[] = [
-    { id: 'D0', label: '가격기준 · DB', blocker: 'price_basis' },
-    { id: 'D1', label: '유니버스', blocker: 'universe' },
-    { id: 'D2', label: '데이터셋' },
-    { id: 'D3', label: '예측 베이스라인' },
-    { id: 'D4', label: '포트폴리오 RL', rl: true },
-    { id: 'D5', label: '워크포워드 게이트', blocker: 'walk-forward NO-GO' },
-    { id: 'D6', label: '시각화' },
-    { id: 'D7', label: '연구 진단' },
-    { id: 'D8', label: '레지스트리' },
-    { id: 'D9', label: '페이퍼 포워드' },
-  ];
+  // dailyCockpitStages is the single source of the D0-D9 id order — this ladder
+  // is the D0-D9 command cockpit (relocated here from the old duplicate grid).
+  const dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9'] as const;
+
+  const GATE_META: Record<string, { label: string; rl?: boolean; blocker?: string }> = {
+    D0: { label: '가격기준 · DB', blocker: 'price_basis' },
+    D1: { label: '유니버스', blocker: 'universe' },
+    D2: { label: '데이터셋' },
+    D3: { label: '예측 베이스라인' },
+    D4: { label: '포트폴리오 RL', rl: true },
+    D5: { label: '워크포워드 게이트', blocker: 'walk-forward NO-GO' },
+    D6: { label: '시각화' },
+    D7: { label: '연구 진단' },
+    D8: { label: '레지스트리' },
+    D9: { label: '페이퍼 포워드' },
+  };
+
+  const GATES: readonly GateMeta[] = dailyCockpitStages.map((id) => ({ id, ...GATE_META[id] }));
 
   // Map the live status vocabulary onto the status ramp. Missing/unknown stays
   // neutral (muted) — never fabricated green.
@@ -64,7 +70,7 @@
   ];
 </script>
 
-<section class="panel gate-ladder" data-daily-gate-ladder aria-labelledby="daily-gate-ladder-title">
+<section class="panel gate-ladder" data-daily-gate-ladder data-daily-ohlcv-command-cockpit aria-labelledby="daily-gate-ladder-title">
   <div class="panel-head">
     <div>
       <div class="text-eyebrow">D0–D9 Gate Ladder · 한눈 요약</div>
@@ -74,7 +80,7 @@
     <span class="pill warn"><span class="dot"></span>{progress?.overall_status ?? 'RESEARCH_ONLY'}</span>
   </div>
 
-  <div class="gate-rail" role="group" aria-label="D0 to D9 gate status ladder">
+  <div class="gate-rail" data-daily-ohlcv-d0-d9-cockpit role="group" aria-label="D0 to D9 gate status ladder">
     <ol class="gate-track">
       {#each ladder as gate, i (gate.id)}
         <li

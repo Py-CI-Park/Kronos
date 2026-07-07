@@ -87,8 +87,6 @@
     '000250 같은 leading-zero 종목 코드는 문자열 그대로 drilldown합니다.',
     '모델·수익·실거래 판단 전에 artifact hashes, stale/malformed fail-closed 상태를 확인합니다.',
   ] as const;
-  const dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9'] as const;
-  const stageById = (id: string) => progress?.stages?.find((stage) => stage.id === id);
   async function loadDailyOhlcv(): Promise<void> {
     loading = true;
     try {
@@ -266,32 +264,11 @@
   nextActions={dailyNextInspection}
 />
 <DailyGateLadder {progress} />
-<section class="panel daily-command-cockpit" data-daily-ohlcv-command-cockpit>
-  <div class="panel-head">
-    <div>
-      <div class="text-eyebrow">D0-D9 review cockpit · before raw cards</div>
-      <h2 class="text-h3">일봉 연구 상태를 한 줄로 먼저 확인</h2>
-      <p class="text-muted">API failure는 `API_UNAVAILABLE`로 따로 표시하고, 산출물이 없는 단계는 `NOT_STARTED`로 구분합니다. leading-zero code 예시는 문자열 `000250` 그대로 유지합니다.</p>
-    </div>
-    <span class="pill warn"><span class="dot"></span>{progress?.overall_status ?? 'RESEARCH_ONLY'}</span>
-  </div>
-  <div class="daily-stage-grid" data-daily-ohlcv-d0-d9-cockpit>
-    {#each dailyCockpitStages as id}
-      {@const stage = stageById(id)}
-      <article class="daily-stage-tile" data-status={stage?.status ?? 'NOT_STARTED'}>
-        <strong>{id}</strong>
-        <span>{stage?.label ?? 'not started'}</span>
-        <b>{stage?.status ?? 'NOT_STARTED'}</b>
-      </article>
-    {/each}
-  </div>
-  <div class="daily-review-grid" style="margin-top:14px">
-    <div><span>API failure vs NOT_STARTED</span><b>{endpointErrors.length ? `API_UNAVAILABLE: ${endpointErrors.join(', ')}` : 'API_OK; missing artifacts stay NOT_STARTED'}</b></div>
-    <div><span>leading-zero code</span><b>000250 string preserved</b></div>
-    <div><span>D5 gate</span><b>NO-GO / model_build_allowed=false</b></div>
-    <div><span>live/model/paper/profit</span><b>false / 0%</b></div>
-  </div>
-</section>
+<div class="daily-review-grid" style="margin-top:14px">
+  <div><span>leading-zero code</span><b>000250 string preserved</b></div>
+  <div><span>D5 gate</span><b>NO-GO / model_build_allowed=false</b></div>
+  <div><span>live/model/paper/profit</span><b>false / 0%</b></div>
+</div>
 <DailyProgressTimeline {progress} />
 
 <DailyCloseSlotCard
@@ -386,14 +363,6 @@
 </section>
 
 <style>
-  .daily-stage-grid { margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:8px; }
-  .daily-stage-tile { border:1px solid var(--border-faint); border-radius:14px; padding:10px; background:var(--surface); display:grid; gap:4px; }
-  .daily-stage-tile strong { font-family:var(--font-mono); font-size:13px; }
-  .daily-stage-tile span { color:var(--muted); font-size:11px; min-height:28px; }
-  .daily-stage-tile b { font-family:var(--font-mono); font-size:11px; }
-  .daily-stage-tile[data-status='PASS'] { border-color:rgba(34,197,94,0.45); background:rgba(34,197,94,0.07); }
-  .daily-stage-tile[data-status='WATCH'] { border-color:rgba(245,158,11,0.45); background:rgba(245,158,11,0.07); }
-  .daily-stage-tile[data-status='NO-GO'], .daily-stage-tile[data-status='BLOCKED'] { border-color:rgba(239,68,68,0.45); background:rgba(239,68,68,0.07); }
   .daily-review-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; }
   .daily-review-grid div { border:1px solid var(--border-faint); border-radius:14px; padding:12px; background:var(--surface-sunken); }
   .daily-review-grid span { display:block; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:0.04em; }

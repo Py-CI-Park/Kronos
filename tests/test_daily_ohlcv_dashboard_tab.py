@@ -13,6 +13,7 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     guide = (SRC / 'tabs' / 'DailyRlGuideTab.svelte').read_text(encoding='utf-8')
     routes = (SRC / 'lib' / 'routes.ts').read_text(encoding='utf-8')
     status_shell = (SRC / 'tabs' / 'ResearchStatusShell.svelte').read_text(encoding='utf-8')
+    gate_ladder = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyGateLadder.svelte').read_text(encoding='utf-8')
 
     assert "DailyOhlcvTab" in app
     assert "'/daily-ohlcv'" in app
@@ -94,9 +95,12 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "data-daily-rl-replay-controls" in guide
     assert "replayPaused = $state(true)" in guide
     assert "prefers-reduced-motion" in guide
-    assert "data-daily-ohlcv-command-cockpit" in tab
-    assert "data-daily-ohlcv-d0-d9-cockpit" in tab
-    assert "dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']" in tab
+    # Consolidation G1: the D0-D9 command cockpit is now DailyGateLadder — the gate
+    # ladder replaces the redundant duplicate D0-D9 card grid (relocation, not
+    # weakening: same literals, new owner — DailyGateLadder is the real cockpit).
+    assert "data-daily-ohlcv-command-cockpit" in gate_ladder
+    assert "data-daily-ohlcv-d0-d9-cockpit" in gate_ladder
+    assert "dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']" in gate_ladder
     assert "API_UNAVAILABLE" in tab
     assert "NOT_STARTED" in tab
     assert "000250 string preserved" in tab
