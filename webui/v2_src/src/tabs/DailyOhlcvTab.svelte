@@ -31,6 +31,7 @@
   import DailyScenarioLabCard from './dailyOhlcv/DailyScenarioLabCard.svelte';
   import DailyScenarioRunLedgerCard from './dailyOhlcv/DailyScenarioRunLedgerCard.svelte';
   import DailyCloseSlotCard from './dailyOhlcv/DailyCloseSlotCard.svelte';
+  import DailyGateLadder from './dailyOhlcv/DailyGateLadder.svelte';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
   import Disclosure from '$lib/Disclosure.svelte';
 
@@ -264,6 +265,7 @@
   blockers={dailyStatusBlockers}
   nextActions={dailyNextInspection}
 />
+<DailyGateLadder {progress} />
 <section class="panel daily-command-cockpit" data-daily-ohlcv-command-cockpit>
   <div class="panel-head">
     <div>
