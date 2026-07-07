@@ -25,6 +25,7 @@
   import ForwardLedgerCard from './rlTrading/ForwardLedgerCard.svelte';
   import SessionReplayCard from './rlTrading/SessionReplayCard.svelte';
   import EvidenceCharts from './rlTrading/EvidenceCharts.svelte';
+  import LiveRlEventsCard from './rlTrading/LiveRlEventsCard.svelte';
   import RunTables from './rlTrading/RunTables.svelte';
   import { costGatePassCount } from './rlTrading/chartOptions';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
@@ -309,6 +310,7 @@
       tradeRows={trades}
       {selectedName}
     />
+    <LiveRlEventsCard run={selectedName} />
     <RunTables leaderboardRows={leaderboardRows} tradeRows={trades} ruleFilterControlRows={ruleFilterControlRows} ruleFilterAblationRows={ruleFilterAblationRows} ruleFilterFailureRows={ruleFilterFailureRows} />
   </div>
 </section>
