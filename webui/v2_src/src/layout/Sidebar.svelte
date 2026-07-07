@@ -38,6 +38,7 @@
       label: '트레이딩 리서치',
       items: [
         { id: 'daily-ohlcv', label: 'Daily OHLCV', icon: 'pulse', badge: '연구' },
+        { id: 'daily-rl-guide', label: '일봉 RL 설명서', icon: 'file', badge: null },
         { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: 'RL' },
       ],
     },
