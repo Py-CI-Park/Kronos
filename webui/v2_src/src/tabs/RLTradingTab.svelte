@@ -30,6 +30,7 @@
   import RunTables from './rlTrading/RunTables.svelte';
   import { costGatePassCount } from './rlTrading/chartOptions';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let runs = $state<readonly RlRunRecord[]>([]);
   let selectedName = $state('');
@@ -284,17 +285,37 @@
     <p class="text-muted">{error}</p>
   </section>
 {/if}
-<OrderbookReadinessCard run={readinessRun ?? openingCandidateRun} />
+<Disclosure summary="오더북 RL 준비도 · orderbook_rl_readiness" meta="RESEARCH_ONLY">
+  <OrderbookReadinessCard run={readinessRun ?? openingCandidateRun} />
+</Disclosure>
 <section class="factory-evidence" data-rl-factory-evidence-section>
-  <FactoryStatusCard />
-  <FactoryLineageCard />
-  <CalibrationCard />
-  <EdgeLedgerCard />
-  <SizingRiskCard />
-  <ModelBuildReadinessCard />
-  <ForwardLedgerCard />
-  <SessionReplayCard />
-  <RliableStatsCard />
+  <Disclosure summary="팩토리 큐 · read-only evidence" meta="RESEARCH_ONLY">
+    <FactoryStatusCard />
+  </Disclosure>
+  <Disclosure summary="팩토리 리니지 · fill-mode robustness (supervised gate · NOT RL)" meta="RESEARCH_ONLY">
+    <FactoryLineageCard />
+  </Disclosure>
+  <Disclosure summary="확률 레인 캘리브레이션 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+    <CalibrationCard />
+  </Disclosure>
+  <Disclosure summary="엣지 원장 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+    <EdgeLedgerCard />
+  </Disclosure>
+  <Disclosure summary="사이징 · 리스크 · P2 gate (P5 blocked by P2)" meta="RESEARCH_ONLY">
+    <SizingRiskCard />
+  </Disclosure>
+  <Disclosure summary="모델 빌드 준비도 · RL lock" meta="RESEARCH_ONLY">
+    <ModelBuildReadinessCard />
+  </Disclosure>
+  <Disclosure summary="포워드 · 페이퍼 원장 · read-only" meta="RESEARCH_ONLY">
+    <ForwardLedgerCard />
+  </Disclosure>
+  <Disclosure summary="세션 리플레이 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+    <SessionReplayCard />
+  </Disclosure>
+  <Disclosure summary="rliable 신뢰도 통계 · research-only" meta="RESEARCH_ONLY">
+    <RliableStatsCard />
+  </Disclosure>
 </section>
 <section class="rl-layout">
   <RunSelector runs={runs} selectedName={selectedName} onSelect={(name) => void selectRun(name)} />
@@ -302,25 +323,6 @@
     {#if loading && !runs.length}
       <section class="card"><p class="text-muted">강화학습 산출물을 불러오는 중...</p></section>
     {/if}
-    <RiskSummaryCard ruleRun={ruleRun} selectedLabel={selectedLabel} />
-    <RunDetailCard run={selectedRun} loading={detailLoading} />
-    <OpeningWorkflowCard run={selectedRun} {progress} />
-    <ParticipantProxyCard
-      run={selectedRun}
-      proxyRows={participantProxyRows}
-      orderbookRows={orderbookPersistenceRows}
-      studyRows={participantStudyRows}
-      ablationRows={featureAblationRows}
-    />
-    <EvidenceCharts
-      {leaderboardRows}
-      gateRows={gateRows}
-      equityRows={equity}
-      actionRows={actions}
-      episodeRows={episodes}
-      tradeRows={trades}
-      {selectedName}
-    />
     <RunSelector
       runs={runs}
       multi
@@ -330,7 +332,38 @@
       title="라이브 tail equity 오버레이 비교 run"
     />
     <LiveRlEventsCard run={selectedName} compareRuns={compareNames} />
-    <RunTables leaderboardRows={leaderboardRows} tradeRows={trades} ruleFilterControlRows={ruleFilterControlRows} ruleFilterAblationRows={ruleFilterAblationRows} ruleFilterFailureRows={ruleFilterFailureRows} />
+    <Disclosure summary="RULE 메인라인 리스크 · ts_imb baseline sizing" meta="RESEARCH_ONLY">
+      <RiskSummaryCard ruleRun={ruleRun} selectedLabel={selectedLabel} />
+    </Disclosure>
+    <Disclosure summary="선택 run 상세 · selected run detail" meta="RESEARCH_ONLY">
+      <RunDetailCard run={selectedRun} loading={detailLoading} />
+    </Disclosure>
+    <Disclosure summary="오프닝 30분 워크플로 · opening_30m evidence" meta="RESEARCH_ONLY">
+      <OpeningWorkflowCard run={selectedRun} {progress} />
+    </Disclosure>
+    <Disclosure summary="참여자 프록시 · orderbook persistence · feature ablation" meta="RESEARCH_ONLY">
+      <ParticipantProxyCard
+        run={selectedRun}
+        proxyRows={participantProxyRows}
+        orderbookRows={orderbookPersistenceRows}
+        studyRows={participantStudyRows}
+        ablationRows={featureAblationRows}
+      />
+    </Disclosure>
+    <Disclosure summary="증거 차트 · leaderboard · cost gate · equity · trades" meta="RESEARCH_ONLY">
+      <EvidenceCharts
+        {leaderboardRows}
+        gateRows={gateRows}
+        equityRows={equity}
+        actionRows={actions}
+        episodeRows={episodes}
+        tradeRows={trades}
+        {selectedName}
+      />
+    </Disclosure>
+    <Disclosure summary="원시 run 테이블 · leaderboard · trades (원인 분석 마지막 단계)" meta="RESEARCH_ONLY">
+      <RunTables leaderboardRows={leaderboardRows} tradeRows={trades} ruleFilterControlRows={ruleFilterControlRows} ruleFilterAblationRows={ruleFilterAblationRows} ruleFilterFailureRows={ruleFilterFailureRows} />
+    </Disclosure>
   </div>
 </section>
 
