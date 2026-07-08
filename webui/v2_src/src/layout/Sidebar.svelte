@@ -10,6 +10,7 @@
     icon: IconName;
     badge?: string | null;
     status?: 'live' | 'warn' | null;
+    children?: NavItem[];
   }
 
   interface NavGroup {
@@ -37,8 +38,16 @@
     {
       label: '트레이딩 리서치',
       items: [
-        { id: 'daily-ohlcv', label: 'Daily OHLCV', icon: 'pulse', badge: '연구' },
-        { id: 'daily-rl-guide', label: '일봉 RL 설명서', icon: 'file', badge: null },
+        {
+          id: 'daily-ohlcv',
+          label: 'Daily OHLCV',
+          icon: 'pulse',
+          badge: '연구',
+          // daily-rl-guide는 daily-ohlcv 라인의 하위(자식) 항목으로 귀속.
+          children: [
+            { id: 'daily-rl-guide', label: '일봉 RL 설명서', icon: 'file', badge: null },
+          ],
+        },
         { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: 'RL' },
       ],
     },
@@ -116,6 +125,28 @@
               {/if}
             {/if}
           </button>
+          {#if !collapsed && item.children}
+            {#each item.children as child}
+              <button
+                type="button"
+                class="nav-item nav-item--child"
+                data-tab={child.id}
+                data-nav-child="true"
+                data-active={current === child.id ? 'true' : 'false'}
+                data-status={child.status ?? ''}
+                aria-current={current === child.id ? 'page' : undefined}
+                onclick={() => pick(child.id)}
+              >
+                <span class="nav-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">{@html ICONS[child.icon]}</svg>
+                </span>
+                <span class="nav-label">{child.label}</span>
+                {#if child.badge}
+                  <span class="nav-badge">{child.badge}</span>
+                {/if}
+              </button>
+            {/each}
+          {/if}
         {/each}
       </div>
     </div>

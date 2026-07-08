@@ -110,6 +110,17 @@
 .nav-item[data-active="true"] .nav-badge { background: var(--accent-tint); color: var(--accent-strong); }
 .nav-item[data-status="warn"] .nav-badge { background: var(--warn-soft); color: var(--warn); }
 
+/* Nested child nav rows (e.g. daily-rl-guide under daily-ohlcv): indented, lighter. */
+.nav-item--child {
+  padding-left: 30px;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--dim);
+}
+.nav-item--child .nav-icon { opacity: 0.75; }
+.nav-item--child:hover .nav-icon { opacity: 1; }
+
 .sidebar-footer {
   margin-top: auto;
   padding: 12px;
