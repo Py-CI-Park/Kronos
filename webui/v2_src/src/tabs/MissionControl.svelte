@@ -64,53 +64,54 @@
     { k: '학습 predictor', v: trainState, tone: toneOf(trainState), src: 'live' },
   ]);
 
-  // ── 연구 라인 카드 · v3 4-필러 IA 순서 ───────────────────────────
+  // ── 연구 라인 카드 · 단일 통합 그리드 (한눈 스캔) ────────────────
   interface Card {
     tab: string; nm: string; sub: string; tone: Tone;
     verdict: string; vsrc: Src; big: string; bsrc: Src; foot: string;
+    scroll?: string;
   }
-  interface Pillar { label: string; note: string; cards: Card[]; }
 
-  const pillars = $derived<Pillar[]>([
-    {
-      label: 'Kronos 예측',
-      note: '독립 파운데이션 · 데이터만 공유',
-      cards: [
-        { tab: 'forecast', nm: '예측 워크벤치', sub: 'Kronos · K-line 추론', tone: 'accent',
-          verdict: '추론', vsrc: 'fact', big: 'Kronos predictor', bsrc: 'fact',
-          foot: 'tokenizer → predictor · 독립 축' },
-      ],
-    },
-    {
-      label: '트레이딩 리서치',
-      note: '일봉 D0–D9 ⊃ D4 종가매매 · 인트라데이',
-      cards: [
-        { tab: 'daily-ohlcv', nm: '일봉 연구 D0–D9', sub: 'daily-ohlcv · 파이프라인 게이트', tone: toneOf(dailyVerdict),
-          verdict: dailyVerdict, vsrc: 'live', big: 'D5 · NO-GO', bsrc: 'fact',
-          foot: 'blocker · D0 price_basis / D1 universe' },
-        { tab: 'daily-ohlcv', nm: '종가매매 close-slot', sub: '일봉 D4 · contextual bandit', tone: toneOf(closeVerdict),
-          verdict: closeVerdict, vsrc: 'live', big: closeMetric, bsrc: 'live',
-          foot: '⚠ 정규화 버그 · contextual_bandit 0종목 선택' },
-        { tab: 'rl', nm: '강화학습 · 인트라데이', sub: 'intraday · ts_imb RULE baseline', tone: 'danger',
-          verdict: 'NO-GO', vsrc: 'fact', big: 'RESEARCH_ONLY', bsrc: 'fact',
-          foot: 'D9 gate · locks 7 off' },
-      ],
-    },
-    {
-      label: '라이브 · 시스템',
-      note: 'predictor · 학습 텔레메트리',
-      cards: [
-        { tab: 'system-health', nm: '학습 · 시스템', sub: 'predictor · live-training', tone: toneOf(trainState),
-          verdict: trainState, vsrc: 'live', big: trainMetric, bsrc: 'live',
-          foot: runName ?? 'stom predictor' },
-      ],
-    },
+  // 미해결 blocker — D0–D9 게이트 롤업(FACT). 요약 카드와 상세 rail 이 같은 원천을 공유.
+  interface Blocker { g: string; id: string; text: string; }
+  const blockers: Blocker[] = [
+    { g: 'D0', id: 'price_basis', text: 'price_basis 미검증 — 조정가격 증거 필요 (일봉·종가매매)' },
+    { g: 'D1', id: 'universe', text: 'universe 비공식 — governance 증거 · Q-products 격리' },
+    { g: 'D5', id: 'WF', text: 'walk-forward NO-GO — 사전등록 증거 통과 전 잠금' },
+  ];
+  const blockerSummary = blockers.map((b) => b.id).join(' · ');
+
+  // 모든 연구 라인 + blocker 롤업을 동일 가중치 카드로 한 배열에 통합.
+  // 데이터 파생(LIVE dailyVerdict/closeVerdict/trainState, FACT 가드레일)은 그대로 보존.
+  const lines = $derived<Card[]>([
+    { tab: 'forecast', nm: '예측 워크벤치', sub: 'Kronos · K-line 추론', tone: 'accent',
+      verdict: '추론', vsrc: 'fact', big: 'Kronos predictor', bsrc: 'fact',
+      foot: 'tokenizer → predictor · 독립 축' },
+    { tab: 'daily-ohlcv', nm: '일봉 연구 D0–D9', sub: 'daily-ohlcv · 파이프라인 게이트', tone: toneOf(dailyVerdict),
+      verdict: dailyVerdict, vsrc: 'live', big: 'D5 · NO-GO', bsrc: 'fact',
+      foot: 'blocker · D0 price_basis / D1 universe' },
+    { tab: 'daily-ohlcv', nm: '종가매매 close-slot', sub: '일봉 D4 · contextual bandit', tone: toneOf(closeVerdict),
+      verdict: closeVerdict, vsrc: 'live', big: closeMetric, bsrc: 'live',
+      foot: '⚠ 정규화 버그 · contextual_bandit 0종목 선택' },
+    { tab: 'rl', nm: '강화학습 · 인트라데이', sub: 'intraday · ts_imb RULE baseline', tone: 'danger',
+      verdict: 'NO-GO', vsrc: 'fact', big: 'RESEARCH_ONLY', bsrc: 'fact',
+      foot: 'D9 gate · locks 7 off' },
+    { tab: 'system-health', nm: '학습 · 시스템', sub: 'predictor · live-training', tone: toneOf(trainState),
+      verdict: trainState, vsrc: 'live', big: trainMetric, bsrc: 'live',
+      foot: runName ?? 'stom predictor' },
+    { tab: 'daily-ohlcv', nm: '미해결 blocker', sub: 'D0–D9 게이트 롤업', tone: 'warn',
+      verdict: `${blockers.length} open`, vsrc: 'fact', big: `${blockers.length} blocker`, bsrc: 'fact',
+      foot: blockerSummary, scroll: 'mc-blockers' },
   ]);
 
-  const lineCount = $derived(pillars.reduce((n, p) => n + p.cards.length, 0));
+  const lineCount = $derived(lines.length);
 
   function open(tab: string) {
     navigateToTab(tab);
+  }
+
+  function scrollToId(id: string) {
+    if (typeof document === 'undefined') return;
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 </script>
 
@@ -140,35 +141,30 @@
     <div class="mc-main">
       <div class="mc-sec">
         <h2>연구 라인</h2>
-        <span>{lineCount} lines · 4-pillar IA</span>
+        <span>{lineCount} cards · 단일 그리드</span>
         <span class="legend"><i class="lg live"></i>LIVE 파생 <i class="lg fact"></i>FACT 가드레일</span>
       </div>
 
-      {#each pillars as p}
-        <div class="pillar">
-          <div class="pl"><span class="pl-name">{p.label}</span><span class="pl-note">{p.note}</span></div>
-          <div class="mc-lines">
-            {#each p.cards as ln}
-              <button type="button" class="mc-line" data-v={ln.tone} onclick={() => open(ln.tab)}>
-                <div class="top">
-                  <div class="ttl"><div class="nm">{ln.nm}</div><div class="sub">{ln.sub}</div></div>
-                  <span class="pill {ln.tone === 'idle' ? '' : ln.tone}"><span class="dot"></span>{ln.verdict}<span class="tag {ln.vsrc} inv">{ln.vsrc === 'live' ? 'LIVE' : 'FACT'}</span></span>
-                </div>
-                <div class="big">{ln.big}<span class="tag {ln.bsrc}">{ln.bsrc === 'live' ? 'LIVE' : 'FACT'}</span></div>
-                <div class="foot"><span class="bk">{ln.foot}</span><span class="go">열기 →</span></div>
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/each}
+      <div class="mc-lines">
+        {#each lines as ln}
+          <button type="button" class="mc-line" data-v={ln.tone} onclick={() => (ln.scroll ? scrollToId(ln.scroll) : open(ln.tab))}>
+            <div class="top">
+              <div class="ttl"><div class="nm">{ln.nm}</div><div class="sub">{ln.sub}</div></div>
+              <span class="pill {ln.tone === 'idle' ? '' : ln.tone}"><span class="dot"></span>{ln.verdict}<span class="tag {ln.vsrc} inv">{ln.vsrc === 'live' ? 'LIVE' : 'FACT'}</span></span>
+            </div>
+            <div class="big">{ln.big}<span class="tag {ln.bsrc}">{ln.bsrc === 'live' ? 'LIVE' : 'FACT'}</span></div>
+            <div class="foot"><span class="bk">{ln.foot}</span><span class="go">열기 →</span></div>
+          </button>
+        {/each}
+      </div>
     </div>
 
     <div class="mc-rail">
-      <div class="panel">
+      <div class="panel" id="mc-blockers">
         <h3>미해결 blocker <span class="rc">FACT</span></h3>
-        <div class="blk"><span class="g">D0</span><span>price_basis 미검증 — 조정가격 증거 필요 (일봉·종가매매)</span></div>
-        <div class="blk"><span class="g">D1</span><span>universe 비공식 — governance 증거 · Q-products 격리</span></div>
-        <div class="blk"><span class="g">D5</span><span>walk-forward NO-GO — 사전등록 증거 통과 전 잠금</span></div>
+        {#each blockers as b}
+          <div class="blk"><span class="g">{b.g}</span><span>{b.text}</span></div>
+        {/each}
       </div>
       <div class="panel">
         <h3>다음 확인</h3>
@@ -242,12 +238,6 @@
   .mc-sec { display: flex; align-items: baseline; gap: 10px; }
   .mc-sec h2 { font: 650 15px/1 var(--font-display); letter-spacing: -0.01em; color: var(--fg-strong); }
   .mc-sec > span { font: 500 12px/1 var(--font-mono); color: var(--muted); }
-
-  /* pillar group */
-  .pillar { display: flex; flex-direction: column; gap: 11px; }
-  .pl { display: flex; align-items: baseline; gap: 9px; padding-left: 1px; }
-  .pl-name { font: 650 12px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--fg-strong); text-transform: uppercase; }
-  .pl-note { font: 500 11px/1 var(--font-mono); color: var(--dim); }
 
   .mc-lines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; }
   @media (max-width: 820px) { .mc-lines { grid-template-columns: repeat(2, 1fr); } }
