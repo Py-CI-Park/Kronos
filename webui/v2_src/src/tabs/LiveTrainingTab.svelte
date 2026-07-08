@@ -322,57 +322,8 @@
 <!-- ===== 라이브 모니터 타일 (LOSS/GPU/RAM/RL EQUITY) ===== -->
 <LiveMonitorTiles />
 
-<!-- ===== 핵심 실시간 지표 ===== -->
-<section class="metric-grid">
-  <div class="metric glow">
-    <div class="metric-head">
-      <span class="metric-label">현재 손실</span>
-      {#if trend.dir !== 'flat'}
-        <span class="delta {trend.dir === 'down' ? 'down' : 'up'}">
-          {trend.dir === 'down' ? '↓ 개선' : '↑ 상승'} {fmt.num(trend.pct, 1)}%
-        </span>
-      {:else}
-        <span class="delta flat">→ 0.0%</span>
-      {/if}
-    </div>
-    <div class="metric-value tnum">
-      {m.loss != null ? m.loss.toFixed(4) : '-'}<span class="metric-unit">최근값</span>
-    </div>
-    <div class="metric-foot">
-      평균 <span class="text-mono" style="color:var(--fg)">{stats.mean != null ? stats.mean.toFixed(4) : '-'}</span>
-      ± <span class="text-mono" style="color:var(--fg)">{stats.std != null ? stats.std.toFixed(4) : '-'}</span>
-    </div>
-  </div>
-
-  <div class="metric">
-    <div class="metric-head">
-      <span class="metric-label">처리 속도</span>
-      <span class="pill success" style="padding:2px 8px;font-size:10px">live</span>
-    </div>
-    <div class="metric-value tnum">
-      {fmt.num(m.samplesPerSec, 1)}<span class="metric-unit">samples/s</span>
-    </div>
-    <div class="metric-foot">
-      step <span class="text-mono" style="color:var(--fg)">{fmt.int(status?.latest_stage?.step)}</span>
-      / {fmt.int(status?.latest_stage?.total_steps)} · 현재 batch 기준
-    </div>
-  </div>
-
-  <div class="metric">
-    <div class="metric-head">
-      <span class="metric-label">Learning Rate</span>
-      <span class="pill" style="padding:2px 8px;font-size:10px">scheduled</span>
-    </div>
-    <div class="metric-value mono tnum">
-      {lr != null ? lr.toExponential(2) : '-'}
-    </div>
-    <div class="metric-foot">
-      소수 표기 <span class="text-mono" style="color:var(--fg)">{lr != null ? lr.toFixed(6) : '-'}</span>
-    </div>
-  </div>
-</section>
-
 <!-- ===== 학습 정상 범위 점검 ===== -->
+<Disclosure summary="현재 학습이 잘 진행 중인지 기준과 함께 확인합니다" meta="TRAINING HEALTH">
 <section class="card training-health-card glow" aria-label="학습 정상 범위와 현재 상태 점검">
   <div class="training-health-head">
     <div>
@@ -404,8 +355,10 @@
     {/each}
   </div>
 </section>
+</Disclosure>
 
 <!-- ===== 단계 구간이 보이는 전체 진행률 가로 바 ===== -->
+<Disclosure summary="전체 진행률을 한 줄 단계 바로 봅니다" meta="STAGE-AWARE PROGRESS">
 <section class="card progress-card stage-timeline-card glow" aria-label="단계별 전체 진행률 가로 막대">
   <div class="stage-progress-head">
     <div>
@@ -474,6 +427,7 @@
     {/each}
   </div>
 </section>
+</Disclosure>
 
 <!-- ===== 학습 데이터 범위 / 특징 요약 ===== -->
 {#if dataset?.available}
@@ -607,11 +561,6 @@
 </Disclosure>
 
 <style>
-  .metric-grid {
-    display: grid;
-    grid-template-columns: 1.18fr 1fr 0.95fr;
-    gap: 16px;
-  }
   .grid-3-1 {
     display: grid;
     grid-template-columns: 3fr 1fr;
@@ -1086,7 +1035,6 @@
   }
 
   @media (max-width: 1200px) {
-    .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .grid-3-1 { grid-template-columns: 1fr; }
     .training-health-head { grid-template-columns: 1fr; }
     .health-check-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1103,7 +1051,6 @@
     .split-row { min-width: 740px; }
   }
   @media (max-width: 560px) {
-    .metric-grid { grid-template-columns: 1fr; }
     .dataset-metrics { grid-template-columns: 1fr; }
   }
 </style>
