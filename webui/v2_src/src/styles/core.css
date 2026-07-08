@@ -101,7 +101,7 @@ ul, ol { list-style: none; padding: 0; }
   /* Radii */
   --r-sm: 9px;
   --r-md: 13px;
-  --r-lg: 18px;
+  --r-lg: 14px;
   --r-xl: 24px;
   --r-pill: 999px;
 
@@ -123,7 +123,7 @@ ul, ol { list-style: none; padding: 0; }
   --d-slow: 400ms;
 
   /* Layout */
-  --sidebar-w: 232px;
+  --sidebar-w: 210px;
   --sidebar-w-collapsed: 72px;
   --header-h: 64px;
   --content-max: 1480px;
