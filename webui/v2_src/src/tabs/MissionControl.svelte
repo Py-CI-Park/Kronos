@@ -7,6 +7,7 @@
   import { dailyOhlcvApi } from '$lib/dailyOhlcvApi';
   import { trainingStatus, metricsLatest } from '$lib/stores';
   import { navigateToTab } from '$lib/routes';
+  import { humanizeVerdict } from '$lib/verdictLabel';
 
   type Tone = 'warn' | 'danger' | 'success' | 'accent' | 'idle';
   type Src = 'live' | 'fact';
@@ -37,31 +38,6 @@
     if (t.includes('WATCH') || t.includes('RESEARCH') || t.includes('PENDING') || t.includes('확인')) return 'warn';
     if (t.includes('PASS') || t.includes('READY') || t.includes('OK')) return 'success';
     return 'idle';
-  }
-
-  // 백엔드 raw status enum(SNAKE_CASE)을 사람이 읽는 라벨로 변환.
-  // tone 판정(toneOf)은 원본 문자열로 그대로 하고, 화면 표시에만 적용한다.
-  const KNOWN_VERDICTS: Record<string, string> = {
-    D0_D9_EVIDENCE_VISIBLE_MODEL_BUILD_NO_GO: 'D0–D9 증거 확인 · NO-GO',
-    D0_D2_DATASET_READY_WATCH_D3_LOCKED: 'D0–D2 준비 · WATCH (D3 잠금)',
-    MODEL_BUILD_LOCKED_NO_GO: '모델 빌드 잠금 · NO-GO',
-    REVIEW_REQUIRED: '검토 필요',
-    WATCH_RESEARCH_ONLY: 'WATCH · 연구 전용',
-    NOT_STARTED: '시작 전',
-    BLOCKED_INVALID_LATEST_ARTIFACT: '아티팩트 무효 · 잠금',
-    BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT: 'close-slot 아티팩트 무효 · 잠금',
-    D3_WATCH_RESEARCH_ONLY: 'D3 · WATCH (연구 전용)',
-    D4_RESEARCH_ONLY_DIAGNOSTICS: 'D4 · 연구 전용 진단',
-    D5_NO_GO_RESEARCH_ONLY_GATE: 'D5 · NO-GO 게이트',
-    UNIVERSE_ARTIFACT_SELECTION_FAILED_CLOSED: 'universe 선정 실패 · fail-closed',
-    DATASET_ARTIFACT_SELECTION_FAILED_CLOSED: '데이터셋 선정 실패 · fail-closed',
-  };
-  function humanize(raw: string): string {
-    if (!raw || raw === PENDING) return raw;
-    const known = KNOWN_VERDICTS[raw];
-    if (known) return known;
-    if (!/^[A-Z0-9_.-]+$/.test(raw)) return raw; // 이미 사람이 쓴 문구면 그대로
-    return raw.replace(/_/g, ' ');
   }
 
   // ── 라이브 파생 (fail-open → PENDING) ─────────────────────────────
@@ -157,7 +133,7 @@
     {#each gauges as g}
       <div class="gauge" data-t={g.tone}>
         <div class="gh"><span class="dot"></span><span class="gk">{g.k}</span><span class="tag {g.src}">{g.src === 'live' ? 'LIVE' : 'FACT'}</span></div>
-        <div class="gv">{humanize(g.v)}</div>
+        <div class="gv">{humanizeVerdict(g.v)}</div>
       </div>
     {/each}
   </div>
@@ -175,7 +151,7 @@
           <button type="button" class="mc-line" data-v={ln.tone} onclick={() => (ln.scroll ? scrollToId(ln.scroll) : open(ln.tab))}>
             <div class="top">
               <div class="ttl"><div class="nm">{ln.nm}</div><div class="sub">{ln.sub}</div></div>
-              <span class="pill {ln.tone === 'idle' ? '' : ln.tone}"><span class="dot"></span>{humanize(ln.verdict)}<span class="tag {ln.vsrc} inv">{ln.vsrc === 'live' ? 'LIVE' : 'FACT'}</span></span>
+              <span class="pill {ln.tone === 'idle' ? '' : ln.tone}"><span class="dot"></span>{humanizeVerdict(ln.verdict)}<span class="tag {ln.vsrc} inv">{ln.vsrc === 'live' ? 'LIVE' : 'FACT'}</span></span>
             </div>
             <div class="big">{ln.big}<span class="tag {ln.bsrc}">{ln.bsrc === 'live' ? 'LIVE' : 'FACT'}</span></div>
             <div class="foot"><span class="bk">{ln.foot}</span><span class="go">열기 →</span></div>
