@@ -9,6 +9,7 @@
     type RlTableRow,
   } from '$lib/rlApi';
   import { errorMessage } from '$lib/rlRows';
+  import { humanizeVerdict } from '$lib/verdictLabel';
   import RLHero from './rlTrading/RLHero.svelte';
   import OrderbookReadinessCard from './rlTrading/OrderbookReadinessCard.svelte';
   import RiskSummaryCard from './rlTrading/RiskSummaryCard.svelte';
@@ -271,7 +272,7 @@
   </div>
   <div class="mini-grid" style="margin-top:14px">
     <div><span>Rule/RL distinction</span><b>{selectedLine}</b></div>
-    <div><span>Selected verdict</span><b>{selectedVerdict}</b></div>
+    <div><span>Selected verdict</span><b>{humanizeVerdict(selectedVerdict)}</b></div>
     <div><span>Cost assumption</span><b>{selectedCost}</b></div>
     <div><span>Baseline</span><b>{selectedBaseline}</b></div>
     <div><span>Drawdown</span><b>{selectedDrawdown}</b></div>

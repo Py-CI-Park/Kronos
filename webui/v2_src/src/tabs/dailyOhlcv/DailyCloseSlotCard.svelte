@@ -6,6 +6,7 @@
     DailyCloseSlotSelectionResponse,
   } from '$lib/dailyOhlcvApi';
   import Disclosure from '$lib/Disclosure.svelte';
+  import { humanizeVerdict } from '$lib/verdictLabel';
   import CostSensitivityChart from '../../charts/CostSensitivityChart.svelte';
   import EquityDrawdownChart from '../../charts/EquityDrawdownChart.svelte';
 
@@ -112,7 +113,7 @@
       <div class="text-eyebrow">Close-slot max-10 threshold/replay experiment · read-only evidence</div>
       <h2 class="text-h3">종가 매수 → 익일 종가 매도 10-slot 실험 증거</h2>
     </div>
-    <span class="pill {tone(displayStatus)}" data-daily-close-slot-status><span class="dot"></span>연구용 · {displayStatus} · 실거래 아님</span>
+    <span class="pill {tone(displayStatus)}" data-daily-close-slot-status><span class="dot"></span>연구용 · {humanizeVerdict(displayStatus)} · 실거래 아님</span>
   </div>
 
   <p class="text-muted" style="font-size:12px; margin-top:-4px">서버가 검증한 close-slot 산출물만 표시 · no live/broker/account/order/paper-forward/profitability/model-build/GO claim.</p>

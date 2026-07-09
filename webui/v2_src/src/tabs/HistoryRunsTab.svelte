@@ -3,6 +3,7 @@
   import { activeTab } from '$lib/stores';
   import { fmt } from '$lib/format';
   import Disclosure from '$lib/Disclosure.svelte';
+  import { humanizeLifecycle } from '$lib/verdictLabel';
 
   interface TrainingRun {
     name: string;
@@ -96,12 +97,6 @@
     return '';
   }
 
-  function statusLabel(s: string): string {
-    if (s === 'completed' || s === 'complete' || s === 'success') return '완료';
-    if (s === 'failed' || s === 'error') return '실패';
-    if (s === 'running' || s === 'active') return '진행 중';
-    return s || '미상';
-  }
 </script>
 
 <section class="page-hero">
@@ -200,7 +195,7 @@
             </div>
           </div>
           <span class="pill {statusKind(run.status)}" style="flex-shrink:0">
-            <span class="dot"></span>{statusLabel(run.status)}
+            <span class="dot"></span>{humanizeLifecycle(run.status)}
           </span>
         </div>
 
