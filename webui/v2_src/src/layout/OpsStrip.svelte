@@ -59,7 +59,12 @@
   <div class="ops-row">
     <span class="ops-lead" title="라이브 상태">
       <span class="ops-pulse" class:live={freshness.live}></span>
-      <span class="ops-lead-text">OPS</span>
+      <span class="ops-lead-text">LIVE</span>
+    </span>
+
+    <span class="ops-cell" title="마지막 화면 갱신 이후 경과 (데이터 신선도)">
+      <span class="ops-key">DATA</span>
+      <span class="ops-val tnum" data-tone={freshness.tone}>{freshness.text}</span>
     </span>
 
     <span class="ops-cell" title="GPU 활용률 (/api/training/gpu)">
@@ -77,12 +82,10 @@
       <span class="ops-val tnum">{sec}<span class="ops-unit">s</span></span>
     </span>
 
-    <span class="ops-cell" title="마지막 화면 갱신 이후 경과 (데이터 신선도)">
-      <span class="ops-key">DATA</span>
-      <span class="ops-val tnum" data-tone={freshness.tone}>{freshness.text}</span>
+    <span class="ops-cell" title="자세(posture) — 연구 전용">
+      <span class="ops-key">자세</span>
+      <span class="ops-val" title="RESEARCH_ONLY">연구전용</span>
     </span>
-
-    <span class="ops-chip" title="연구 전용 — 실거래·브로커·주문 없음">RESEARCH_ONLY</span>
   </div>
 </div>
 
@@ -138,8 +141,7 @@
     gap: 6px;
     flex: 0 0 auto;
   }
-  .ops-cell + .ops-cell,
-  .ops-chip {
+  .ops-cell + .ops-cell {
     position: relative;
   }
   .ops-cell + .ops-cell::before {
@@ -175,18 +177,6 @@
   }
   .ops-val[data-tone='warn'] {
     color: var(--warn);
-  }
-  .ops-chip {
-    flex: 0 0 auto;
-    margin-left: auto;
-    padding: 2px 10px;
-    border-radius: var(--r-pill);
-    border: 1px solid var(--accent-tint);
-    background: var(--accent-soft);
-    color: var(--accent-strong);
-    font: 600 10px/1.6 var(--font-mono);
-    letter-spacing: 0.06em;
-    font-variant-numeric: tabular-nums;
   }
   @keyframes ops-pulse {
     0%,
