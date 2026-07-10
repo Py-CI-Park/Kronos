@@ -90,6 +90,16 @@
   const frameReward = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'reward');
   const frameLearning = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'learning');
   const frameNav = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'nav');
+  const frameActionExecuted = (): string => {
+    const executed = field(frameAction(), 'executed');
+    return executed === undefined || executed === null || executed === '' ? '—' : String(executed);
+  };
+  const frameRewardPenaltiesTotal = (): number | null => {
+    const penaltyKeys = ['drawdown_penalty', 'concentration_penalty', 'invalid_action_penalty', 'churn_penalty'];
+    const parts = penaltyKeys.map((key) => numberValue(field(frameReward(), key)));
+    if (parts.some((value) => value === null)) return null;
+    return parts.reduce((sum, value) => sum + (value ?? 0), 0);
+  };
   const actionDistributionRows = (): readonly Record<string, unknown>[] => rows(field(guide?.active_replay, 'action_distribution'));
   const activeActionDistributionRows = (): readonly Record<string, unknown>[] => {
     const currentAction = String(field(frameAction(), 'executed') ?? '');
@@ -288,8 +298,7 @@
   </div>
 </section>
 
-<div class="text-eyebrow" style="margin-top:16px">세부 가이드 · 필요할 때 펼치기</div>
-<Disclosure summary="Agent가 하루씩 배우는 순환 구조">
+<div class="text-eyebrow" style="margin-top:16px">오늘의 순환 구조 · 실데이터 상시 노출</div>
 <section class="panel visual-panel" data-daily-rl-loop-diagram>
   <div class="panel-head">
     <div>
@@ -325,17 +334,18 @@
       <text class="svg-title" x="78" y="166">D2/D3 데이터</text>
       <text class="svg-body" x="78" y="192">feature · split · rank</text>
 
-      <rect class="svg-card state-card" x="320" y="78" width="200" height="145" rx="20" />
+      <rect class="svg-card state-card" x="320" y="78" width="200" height="162" rx="20" />
       <text class="svg-kicker" x="346" y="116">STATE</text>
       <text class="svg-title" x="346" y="145">현재 관측</text>
-      <text class="svg-body" x="346" y="174">position_count</text>
-      <text class="svg-body" x="346" y="198">top_score_bucket</text>
+      <text class="svg-body" x="346" y="168">position_count {String(field(frameState(), 'position_count') ?? '—')}</text>
+      <text class="svg-body" x="346" y="190">top_score_bucket {String(field(frameState(), 'top_score_bucket') ?? '—')}</text>
+      <text class="svg-body" x="346" y="212">top_candidate_code {String(field(frameState(), 'top_candidate_code') ?? '—')}</text>
 
       <rect class="svg-card agent-card" x="610" y="78" width="230" height="145" rx="20" />
       <text class="svg-kicker" x="638" y="116">AGENT / POLICY</text>
       <text class="svg-title" x="638" y="145">행동 선택</text>
-      <text class="svg-body" x="638" y="174">hold · buy · add</text>
-      <text class="svg-body" x="638" y="198">sell · reduce</text>
+      <text class="svg-body" x="638" y="174"><tspan class={frameActionExecuted() === 'hold' ? 'svg-action-active' : ''}>hold</tspan> · <tspan class={frameActionExecuted() === 'buy' ? 'svg-action-active' : ''}>buy</tspan> · <tspan class={frameActionExecuted() === 'add' ? 'svg-action-active' : ''}>add</tspan></text>
+      <text class="svg-body" x="638" y="198"><tspan class={frameActionExecuted() === 'sell' ? 'svg-action-active' : ''}>sell</tspan> · <tspan class={frameActionExecuted() === 'reduce' ? 'svg-action-active' : ''}>reduce</tspan></text>
 
       <rect class="svg-card mask-card" x="610" y="290" width="230" height="135" rx="20" />
       <text class="svg-kicker" x="638" y="328">ENVIRONMENT</text>
@@ -345,8 +355,8 @@
       <rect class="svg-card reward-card" x="320" y="292" width="230" height="135" rx="20" />
       <text class="svg-kicker" x="348" y="330">REWARD</text>
       <text class="svg-title" x="348" y="359">점수 계산</text>
-      <text class="svg-body" x="348" y="388">future_return_1d</text>
-      <text class="svg-body" x="348" y="412">- 23bp - penalties</text>
+      <text class="svg-body" x="348" y="388">{formatNumber(field(frameReward(), 'net_return_after_cost'), 3)} − {formatNumber(field(frameReward(), 'turnover_cost'), 3)} − {formatNumber(frameRewardPenaltiesTotal(), 3)}</text>
+      <text class="svg-body" x="348" y="412">= reward {formatNumber(field(frameReward(), 'reward'), 3)}</text>
 
       <rect class="svg-card gate-card" x="55" y="292" width="180" height="135" rx="20" />
       <text class="svg-kicker" x="78" y="330">D5 GATE</text>
@@ -359,11 +369,12 @@
       <path class="svg-arrow warn" d="M725 223 C725 250 725 263 725 290" marker-end="url(#rlArrow)" />
       <path class="svg-arrow warn" d="M610 360 C590 360 570 360 550 360" marker-end="url(#rlArrow)" />
       <path class="svg-arrow" d="M320 360 C280 360 260 360 235 360" marker-end="url(#rlArrow)" />
-      <path class="svg-arrow loop" d="M435 292 C435 250 420 245 420 223" marker-end="url(#rlArrow)" />
+      <path class="svg-arrow loop" d="M435 292 C435 265 420 250 420 240" marker-end="url(#rlArrow)" />
       <path class="svg-arrow loop" d="M550 330 C585 265 595 235 625 205" marker-end="url(#rlArrow)" />
 
       <text class="svg-annotation" x="560" y="276">mask 적용 후 체결/보유 상태 갱신</text>
       <text class="svg-annotation" x="452" y="265">보상은 다음 state 학습 신호</text>
+      <text class="svg-callout" x="330" y="452">{guide?.cost_round_trip_bp ?? 23}bp 왕복 비용</text>
       <text class="svg-footer" x="55" y="470">실거래 주문이 아니라, 연구용 일봉 데이터로 “상태 → 행동 → 보상 → 검증”을 반복하는 폐쇄 루프입니다.</text>
     </svg>
   </div>
@@ -380,8 +391,34 @@
       {/if}
     {/each}
   </div>
+
+  <div class="today-cycle-strip" data-daily-rl-today-cycle>
+    <div class="today-cycle-head">
+      <span class="text-eyebrow">오늘의 한 사이클 · 최신 active_replay frame</span>
+      <span class="pill warn"><span class="dot"></span>{String(field(guide?.active_replay, 'status') ?? 'MISSING_REPLAY_ARTIFACT')}</span>
+    </div>
+    <div class="today-cycle-grid">
+      <article class="today-cycle-card" data-cycle-role="state">
+        <div class="step-badge">S</div>
+        <h3>state 피처</h3>
+        <p>position_count {String(field(frameState(), 'position_count') ?? '—')}</p>
+        <p>top_score_bucket {String(field(frameState(), 'top_score_bucket') ?? '—')}</p>
+      </article>
+      <div class="process-connector" aria-hidden="true">→</div>
+      <article class="today-cycle-card" data-cycle-role="action">
+        <div class="step-badge">A</div>
+        <h3>{frameActionExecuted()}</h3>
+        <p>{frameActionExecuted() === '—' ? '—' : frameActionExecuted() === 'hold' ? '포지션 유지 (hold)' : `선택 종목 ${String(field(frameState(), 'top_candidate_code') ?? '—')}`}</p>
+      </article>
+      <div class="process-connector" aria-hidden="true">→</div>
+      <article class="today-cycle-card" data-cycle-role="reward">
+        <div class="step-badge">R</div>
+        <h3>{formatNumber(field(frameReward(), 'reward'), 4)}</h3>
+        <p>익일수익 {formatNumber(field(frameReward(), 'net_return_after_cost'), 4)} − {guide?.cost_round_trip_bp ?? 23}bp</p>
+      </article>
+    </div>
+  </div>
 </section>
-</Disclosure>
 {/if}
 
 {#if isGuideSection('workflow')}
@@ -1282,6 +1319,8 @@
   .svg-arrow.warn { stroke:rgba(245,158,11,0.86); }
   .svg-arrow.loop { stroke:rgba(59,130,246,0.78); stroke-dasharray:8 8; }
   .svg-arrow-head { fill:rgba(20,184,166,0.86); }
+  .svg-action-active { fill:rgb(29,78,216); font-weight:900; }
+  .svg-callout { fill:rgb(180,83,9); font-family:var(--font-mono); font-size:12px; font-weight:800; letter-spacing:0.02em; }
   .process-strip { margin-top:16px; display:flex; align-items:stretch; gap:8px; overflow-x:auto; padding:4px 0 2px; }
   .process-step { min-width:180px; flex:1; border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:var(--surface); box-shadow:var(--shadow-sm); position:relative; }
   .process-step[data-step-tone='pass'] { border-color:rgba(34,197,94,0.42); background:linear-gradient(180deg, rgba(34,197,94,0.08), var(--surface)); }
@@ -1292,6 +1331,15 @@
   .process-step h3 { margin:0 0 6px; font-size:15px; }
   .process-step p { margin:0; color:var(--muted); font-size:12px; line-height:1.55; }
   .process-connector { align-self:center; color:var(--muted); font-size:24px; font-weight:900; padding:0 2px; }
+  .today-cycle-strip { margin-top:18px; }
+  .today-cycle-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .today-cycle-grid { margin-top:10px; display:flex; align-items:stretch; gap:8px; overflow-x:auto; padding:4px 0 2px; }
+  .today-cycle-card { min-width:200px; flex:1; border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:var(--surface); box-shadow:var(--shadow-sm); }
+  .today-cycle-card[data-cycle-role='state'] { border-color:rgba(20,184,166,0.42); background:linear-gradient(180deg, rgba(20,184,166,0.08), var(--surface)); }
+  .today-cycle-card[data-cycle-role='action'] { border-color:rgba(59,130,246,0.42); background:linear-gradient(180deg, rgba(59,130,246,0.08), var(--surface)); }
+  .today-cycle-card[data-cycle-role='reward'] { border-color:rgba(245,158,11,0.42); background:linear-gradient(180deg, rgba(245,158,11,0.08), var(--surface)); }
+  .today-cycle-card h3 { margin:4px 0 6px; font-size:17px; font-family:var(--font-mono); }
+  .today-cycle-card p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.5; }
   .performance-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:12px; }
   .performance-card { border:1px solid var(--border-faint); border-radius:18px; padding:16px; background:var(--surface); box-shadow:var(--shadow-sm); }
   .performance-card[data-card-tone='pass'] { border-color:rgba(34,197,94,0.40); }
