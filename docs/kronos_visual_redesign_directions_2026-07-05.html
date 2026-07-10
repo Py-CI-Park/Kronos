@@ -1,0 +1,167 @@
+<style>
+  :root{
+    --page:#eef1f5; --ink:#0d1526; --ink2:#3f4a5c; --muted:#727d8c; --line:#e2e6ec; --card:#fff;
+    /* premium redesign tokens */
+    --p-bg:#eaf0f6; --p-surface:#ffffff; --p-ink:#0a1020; --p-ink2:#46536a; --p-muted:#7a8698; --p-line:#e6ebf2;
+    --p-accent:#0ea5a0; --p-accent2:#22d3ee; --p-indigo:#5b6ff5; --p-violet:#8b5cf6;
+    --p-warn:#e08a1e; --p-danger:#e04a5a; --p-good:#12a879; --p-warnbg:#fdf1df; --p-dangerbg:#fdeaec; --p-goodbg:#e4f7ef;
+    --mono:"JetBrains Mono","D2Coding","Consolas",ui-monospace,monospace;
+    --sans:"Pretendard Variable",Pretendard,system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --page:#0b0f19; --ink:#eef2f8; --ink2:#aab4c4; --muted:#7a8496; --line:#232c3c; --card:#141a27;
+    --p-bg:#080c15; --p-surface:#121a2b; --p-ink:#f2f6fc; --p-ink2:#aebacd; --p-muted:#78859b; --p-line:#233046;
+    --p-accent:#2dd4bf; --p-accent2:#38e0f5; --p-indigo:#7c8cff; --p-violet:#a78bfa;
+    --p-warn:#f0b45a; --p-danger:#f07785; --p-good:#3ddb9e; --p-warnbg:#2a2113; --p-dangerbg:#2b1519; --p-goodbg:#0e2a20;
+  }}
+  :root[data-theme="dark"]{ --page:#0b0f19; --ink:#eef2f8; --ink2:#aab4c4; --muted:#7a8496; --line:#232c3c; --card:#141a27;
+    --p-bg:#080c15; --p-surface:#121a2b; --p-ink:#f2f6fc; --p-ink2:#aebacd; --p-muted:#78859b; --p-line:#233046;
+    --p-accent:#2dd4bf; --p-accent2:#38e0f5; --p-indigo:#7c8cff; --p-violet:#a78bfa; --p-warn:#f0b45a; --p-danger:#f07785; --p-good:#3ddb9e; --p-warnbg:#2a2113; --p-dangerbg:#2b1519; --p-goodbg:#0e2a20; }
+  :root[data-theme="light"]{ --page:#eef1f5; --ink:#0d1526; --ink2:#3f4a5c; --muted:#727d8c; --line:#e2e6ec; --card:#fff;
+    --p-bg:#eaf0f6; --p-surface:#fff; --p-ink:#0a1020; --p-ink2:#46536a; --p-muted:#7a8698; --p-line:#e6ebf2;
+    --p-accent:#0ea5a0; --p-accent2:#22d3ee; --p-indigo:#5b6ff5; --p-violet:#8b5cf6; --p-warn:#e08a1e; --p-danger:#e04a5a; --p-good:#12a879; --p-warnbg:#fdf1df; --p-dangerbg:#fdeaec; --p-goodbg:#e4f7ef; }
+
+  *{box-sizing:border-box;} body{margin:0;}
+  .wrap{font-family:var(--sans); background:var(--page); color:var(--ink); padding:34px 22px 80px; -webkit-font-smoothing:antialiased;}
+  .col{max-width:1080px; margin:0 auto;}
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .kick{font:600 12px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--p-accent);}
+  h1{font:700 27px/1.15 var(--sans); letter-spacing:-.022em; margin:10px 0 8px; text-wrap:balance;}
+  .lede{color:var(--ink2); font-size:15px; max-width:74ch;} .lede b{color:var(--ink);}
+  .tt{position:fixed; top:14px; right:14px; z-index:9; font:600 12px/1 var(--mono); border:1px solid var(--line); background:var(--card); color:var(--muted); border-radius:9px; padding:8px 11px; cursor:pointer;}
+  h2.sec{font:600 13px/1 var(--sans); letter-spacing:.02em; margin:38px 0 4px; display:flex; align-items:center; gap:10px;}
+  h2.sec .tag{font:700 10px/1 var(--mono); padding:4px 8px; border-radius:6px;}
+  .tag.before{background:var(--line); color:var(--muted);} .tag.after{background:linear-gradient(90deg,var(--p-accent),var(--p-accent2)); color:#04121a;}
+  .sub{color:var(--muted); font-size:13px; margin:2px 0 14px;}
+
+  /* ============ BEFORE (current flat look) ============ */
+  .before-box{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px;}
+  .b-lines{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  @media(max-width:720px){.b-lines{grid-template-columns:1fr;}}
+  .b-card{border:1px solid var(--line); border-radius:12px; padding:13px; background:var(--card); position:relative;}
+  .b-card::after{content:""; position:absolute; inset:0 auto 0 0; width:3px; background:#d3902a;}
+  .b-card.n::after{background:#c94a58;} .b-card.g::after{background:#2fa06e;}
+  .b-nm{font:600 13px/1.2 var(--sans); color:var(--ink);} .b-sub{font:500 10.5px/1 var(--mono); color:var(--muted); margin-top:2px;}
+  .b-big{font:700 18px/1 var(--sans); margin:10px 0 2px;}
+  .b-pill{float:right; font:600 10px/1 var(--sans); padding:3px 8px; border-radius:999px; background:#fbe9d3; color:#a6741d;}
+  .b-pill.n{background:#fbe0e3; color:#b23c48;} .b-foot{font:600 10px/1 var(--mono); color:var(--muted); margin-top:9px;}
+
+  /* ============ AFTER (premium redesign) ============ */
+  .after-stage{background:
+      radial-gradient(1200px 420px at 90% -8%, color-mix(in srgb,var(--p-accent) 12%,transparent), transparent 60%),
+      radial-gradient(900px 400px at -6% 108%, color-mix(in srgb,var(--p-indigo) 12%,transparent), transparent 60%),
+      var(--p-bg);
+    border:1px solid var(--p-line); border-radius:22px; padding:22px; color:var(--p-ink);}
+  .a-posture{display:flex; align-items:center; gap:14px; padding:15px 18px; border-radius:16px; flex-wrap:wrap;
+    background:linear-gradient(100deg, color-mix(in srgb,var(--p-accent) 14%,var(--p-surface)), var(--p-surface) 55%);
+    border:1px solid var(--p-line); box-shadow:0 10px 30px -18px rgba(8,16,32,.5);}
+  .a-posture .big{font:750 15px/1 var(--sans); letter-spacing:-.01em; display:flex; align-items:center; gap:10px;}
+  .a-posture .big .orb{width:12px; height:12px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#fff,var(--p-warn)); box-shadow:0 0 0 5px color-mix(in srgb,var(--p-warn) 22%,transparent),0 0 18px var(--p-warn);}
+  .a-locks{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto;}
+  .a-lock{font:600 10px/1 var(--mono); padding:5px 10px; border-radius:999px; background:color-mix(in srgb,var(--p-danger) 12%,transparent); color:var(--p-danger); border:1px solid color-mix(in srgb,var(--p-danger) 28%,transparent);}
+  .a-sec{display:flex; align-items:baseline; gap:10px; margin:20px 0 12px;} .a-sec h3{font:700 15px/1 var(--sans); letter-spacing:-.01em; color:var(--p-ink);} .a-sec span{font:500 12px/1 var(--mono); color:var(--p-muted);}
+  .a-lines{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+  @media(max-width:820px){.a-lines{grid-template-columns:repeat(2,1fr);}} @media(max-width:560px){.a-lines{grid-template-columns:1fr;}}
+  .a-card{position:relative; border-radius:18px; padding:18px 18px 16px; overflow:hidden;
+    background:linear-gradient(180deg, color-mix(in srgb,var(--p-surface) 100%, transparent), color-mix(in srgb,var(--p-surface) 92%, #000));
+    border:1px solid var(--p-line);
+    box-shadow:0 1px 0 color-mix(in srgb,#fff 60%,transparent) inset, 0 18px 40px -26px rgba(8,16,32,.6);}
+  .a-card::before{content:""; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--p-warn),transparent 70%); opacity:.9;}
+  .a-card.danger::before{background:linear-gradient(90deg,var(--p-danger),transparent 70%);}
+  .a-card.good::before{background:linear-gradient(90deg,var(--p-good),transparent 70%);}
+  .a-card.accent::before{background:linear-gradient(90deg,var(--p-accent),var(--p-accent2) 60%,transparent);}
+  .a-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .a-nm{font:700 14.5px/1.25 var(--sans); letter-spacing:-.01em; color:var(--p-ink);} .a-subl{font:500 11px/1.3 var(--mono); color:var(--p-muted); margin-top:3px;}
+  .a-pill{font:700 10.5px/1 var(--sans); padding:5px 11px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;}
+  .a-pill .d{width:6px; height:6px; border-radius:50%;}
+  .a-pill.warn{background:var(--p-warnbg); color:var(--p-warn);} .a-pill.warn .d{background:var(--p-warn); box-shadow:0 0 8px var(--p-warn);}
+  .a-pill.danger{background:var(--p-dangerbg); color:var(--p-danger);} .a-pill.danger .d{background:var(--p-danger); box-shadow:0 0 8px var(--p-danger);}
+  .a-pill.good{background:var(--p-goodbg); color:var(--p-good);} .a-pill.good .d{background:var(--p-good); box-shadow:0 0 8px var(--p-good);}
+  .a-pill.accent{background:linear-gradient(90deg,color-mix(in srgb,var(--p-accent) 20%,transparent),color-mix(in srgb,var(--p-accent2) 20%,transparent)); color:var(--p-accent);} .a-pill.accent .d{background:var(--p-accent); box-shadow:0 0 8px var(--p-accent);}
+  .a-big{font:800 22px/1.05 var(--sans); letter-spacing:-.03em; color:var(--p-ink); margin:16px 0 2px;} .a-big small{font:600 13px/1 var(--sans); color:var(--p-muted); letter-spacing:0;}
+  .a-foot{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:12px; font:600 11px/1.3 var(--mono);}
+  .a-foot .bk{color:var(--p-muted);} .a-foot .go{color:var(--p-accent); display:inline-flex; align-items:center; gap:4px;}
+  .a-spark{height:34px; width:100%; margin-top:8px; display:block;}
+  .delta{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin-top:16px; font-size:13.5px; color:var(--ink2);}
+  .delta b{color:var(--ink);} .delta ul{margin:8px 0 0; padding-left:18px;} .delta li{margin:4px 0;} .delta li b{color:var(--p-accent);}
+</style>
+
+<button class="tt" id="tt">◐ theme</button>
+<div class="wrap"><div class="col">
+
+  <div class="kick">시각 재설계 · 방향 제안 · 2026-07-05</div>
+  <h1>"재배치만 됐다"가 맞습니다 — 이제 룩을 바꿉니다</h1>
+  <p class="lede">지금까지는 <b>구조(IA·Mission Control·접이식)</b>만 바꾸고 <b>시각 언어(색·카드·타이포)</b>는 기존 그대로였습니다. 그래서 "같아 보임"이 정확합니다. 아래는 <b>같은 내용, 다른 시각 언어</b> — 진짜 시각 재설계가 어떤 것인지 Before/After로 보여드립니다.</p>
+
+  <h2 class="sec"><span class="tag before">BEFORE</span> 현재 — 플랫 라이트 · 기존 디자인 시스템</h2>
+  <p class="sub">얇은 테두리 · 좌측 색막대 · 플랫 카드 · 균일한 타이포. (구조만 바뀐 지금 상태)</p>
+  <div class="before-box">
+    <div class="b-lines">
+      <div class="b-card"><span class="b-pill">WATCH</span><div class="b-nm">일봉 연구 D0–D9</div><div class="b-sub">daily-ohlcv</div><div class="b-big">D5 · NO-GO</div><div class="b-foot">blocker 2 · D0·D1</div></div>
+      <div class="b-card n"><span class="b-pill n">NO-GO</span><div class="b-nm">강화학습 · 트레이딩</div><div class="b-sub">ts_imb RULE</div><div class="b-big">23bp · D9</div><div class="b-foot">locks 7 off</div></div>
+      <div class="b-card g"><span class="b-pill" style="background:#dcf3e8;color:#2c8f61">ok</span><div class="b-nm">시스템 · 학습</div><div class="b-sub">predictor</div><div class="b-big">100.0%</div><div class="b-foot">정상</div></div>
+    </div>
+  </div>
+
+  <h2 class="sec"><span class="tag after">AFTER</span> 재설계 — 프리미엄 커맨드센터</h2>
+  <p class="sub">깊이감 있는 서피스 · 그라디언트 accent·글로우 · 큰 타이포 위계 · 그라디언트 스파크라인 · 넉넉한 여백.</p>
+  <div class="after-stage">
+    <div class="a-posture">
+      <div class="big"><span class="orb"></span>연구 전용 · 실거래 경로 전부 잠금</div>
+      <div class="a-locks">
+        <span class="a-lock">실거래 ✕</span><span class="a-lock">브로커 ✕</span><span class="a-lock">주문 ✕</span><span class="a-lock">계좌 ✕</span><span class="a-lock">페이퍼 ✕</span><span class="a-lock">모델빌드 ✕</span><span class="a-lock">수익주장 ✕</span>
+      </div>
+    </div>
+    <div class="a-sec"><h3>연구 라인</h3><span>5 lines · live posture</span></div>
+    <div class="a-lines">
+      <div class="a-card">
+        <div class="a-top"><div><div class="a-nm">일봉 연구 D0–D9</div><div class="a-subl">daily-ohlcv</div></div><span class="a-pill warn"><span class="d"></span>WATCH</span></div>
+        <div class="a-big">D5 <small>· NO-GO locked</small></div>
+        <svg class="a-spark" viewBox="0 0 120 34" preserveAspectRatio="none"><defs><linearGradient id="gw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--p-warn)" stop-opacity=".28"/><stop offset="1" stop-color="var(--p-warn)" stop-opacity="0"/></linearGradient></defs><path d="M0,24 20,22 40,23 60,16 80,17 100,12 120,13 120,34 0,34Z" fill="url(#gw)"/><polyline points="0,24 20,22 40,23 60,16 80,17 100,12 120,13" fill="none" stroke="var(--p-warn)" stroke-width="2"/></svg>
+        <div class="a-foot"><span class="bk">blocker 2 · D0·D1</span><span class="go">열기 →</span></div>
+      </div>
+      <div class="a-card danger">
+        <div class="a-top"><div><div class="a-nm">강화학습 · 트레이딩</div><div class="a-subl">intraday · ts_imb RULE</div></div><span class="a-pill danger"><span class="d"></span>NO-GO</span></div>
+        <div class="a-big">23<small>bp · D9 gate</small></div>
+        <svg class="a-spark" viewBox="0 0 120 34" preserveAspectRatio="none"><defs><linearGradient id="gd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--p-danger)" stop-opacity=".26"/><stop offset="1" stop-color="var(--p-danger)" stop-opacity="0"/></linearGradient></defs><path d="M0,19 20,20 40,18 60,19 80,17 100,18 120,17 120,34 0,34Z" fill="url(#gd)"/><polyline points="0,19 20,20 40,18 60,19 80,17 100,18 120,17" fill="none" stroke="var(--p-danger)" stroke-width="2"/></svg>
+        <div class="a-foot"><span class="bk">locks 7 off</span><span class="go">열기 →</span></div>
+      </div>
+      <div class="a-card good">
+        <div class="a-top"><div><div class="a-nm">시스템 · 학습</div><div class="a-subl">predictor</div></div><span class="a-pill good"><span class="d"></span>ok</span></div>
+        <div class="a-big">100.0<small>%</small></div>
+        <svg class="a-spark" viewBox="0 0 120 34" preserveAspectRatio="none"><defs><linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--p-good)" stop-opacity=".3"/><stop offset="1" stop-color="var(--p-good)" stop-opacity="0"/></linearGradient></defs><path d="M0,26 20,21 40,17 60,14 80,11 100,9 120,7 120,34 0,34Z" fill="url(#gg)"/><polyline points="0,26 20,21 40,17 60,14 80,11 100,9 120,7" fill="none" stroke="var(--p-good)" stroke-width="2"/></svg>
+        <div class="a-foot"><span class="bk">정상</span><span class="go">열기 →</span></div>
+      </div>
+      <div class="a-card accent">
+        <div class="a-top"><div><div class="a-nm">예측 · Kronos</div><div class="a-subl">K-line 추론 · foundation</div></div><span class="a-pill accent"><span class="d"></span>inference</span></div>
+        <div class="a-big" style="font-size:17px">Kronos predictor</div>
+        <svg class="a-spark" viewBox="0 0 120 34" preserveAspectRatio="none"><defs><linearGradient id="ga" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="var(--p-accent)"/><stop offset="1" stop-color="var(--p-accent2)"/></linearGradient></defs><polyline points="0,22 20,18 40,20 60,13 80,15 100,10 120,8" fill="none" stroke="url(#ga)" stroke-width="2.5"/></svg>
+        <div class="a-foot"><span class="bk">tokenizer → predictor</span><span class="go">열기 →</span></div>
+      </div>
+      <div class="a-card">
+        <div class="a-top"><div><div class="a-nm">종가매매 (close-slot)</div><div class="a-subl">일봉 D4 · bandit</div></div><span class="a-pill warn"><span class="d"></span>WATCH</span></div>
+        <div class="a-big">10 <small>slots · 23bp</small></div>
+        <svg class="a-spark" viewBox="0 0 120 34" preserveAspectRatio="none"><path d="M0,16 20,16 40,24 60,11 80,16 100,16 120,16 120,34 0,34Z" fill="url(#gw)"/><polyline points="0,16 20,16 40,24 60,11 80,16 100,16 120,16" fill="none" stroke="var(--p-warn)" stroke-width="2"/></svg>
+        <div class="a-foot"><span class="bk">⚠ 정규화 필요</span><span class="go">열기 →</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="delta">
+    <b>무엇이 시각적으로 달라졌나 (구조가 아니라 룩)</b>
+    <ul>
+      <li><b>깊이감</b> — 플랫 카드 → 그라디언트 서피스 + 다층 그림자 + 상단 하이라이트</li>
+      <li><b>accent</b> — 단색 좌측 막대 → 그라디언트 상단 바 + 상태 글로우(pill·orb)</li>
+      <li><b>타이포 위계</b> — 균일 → 큰 값(800 weight) + 또렷한 라벨 대비</li>
+      <li><b>데이터 시각</b> — 없음 → 그라디언트 스파크라인 + area fill</li>
+      <li><b>공간·배경</b> — 균일 여백 → 넉넉한 여백 + 미묘한 radial 그라디언트 배경</li>
+      <li><b>정체성 유지</b> — Kronos 민트/틸 DNA는 유지하되 시안·인디고로 확장</li>
+    </ul>
+  </div>
+
+  <div class="delta" style="border-color:color-mix(in srgb,var(--p-accent) 30%,transparent)">
+    이 방향이 맞으면 → 이 시각 토큰을 <b>실제 앱 core.css에 적용</b>하면 <b>모든 탭이 한 번에</b> 이 룩으로 바뀝니다 (토큰 기반). 다른 방향(더 다크한 네온 커맨드센터 / 더 조밀한 프로 터미널 / 더 미니멀)도 가능 — 말씀만 주세요.
+  </div>
+
+</div></div>
+<script>(function(){var r=document.documentElement;document.getElementById('tt').addEventListener('click',function(){var c=r.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');r.setAttribute('data-theme',c==='dark'?'light':'dark');});})();</script>
