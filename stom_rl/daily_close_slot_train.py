@@ -35,8 +35,10 @@ from .daily_close_slot_env import (
     COST_SCENARIOS,
     evaluate_close_slot_day,
 )
+from .rl_events import RlLiveEventWriter
 
 DEFAULT_CLOSE_SLOT_TRAIN_ROOT = REPO_ROOT / "webui" / "rl_runs" / "daily_close_slot_train"
+LIVE_EVENTS_FILE_NAME = "rl_live_events.jsonl"
 CLOSE_SLOT_TRAIN_SCHEMA_VERSION = 2
 TRAIN_LINEAGE_SCHEMA_VERSION = 1
 RUN_ID_RE = re.compile(r"^(?=.*[0-9A-Za-z])[0-9A-Za-z_.-]+$")
@@ -743,6 +745,10 @@ def _episode_ledgers_from_policy_payload(
                 "selected_count": ledger.get("selected_count"),
                 "hold_cash_count": ledger.get("hold_cash_count"),
                 "cost_scenario_id": ledger.get("cost_scenario_id"),
+                "reward": ledger.get("reward"),
+                "net_pnl_krw": ledger.get("net_pnl_krw"),
+                "cost_krw": ledger.get("cost_krw"),
+                "filled_slots": ledger.get("filled_slots"),
                 "slot_feedback": slot_feedback,
                 "next_window_update": split == "train",
                 "oos_rows_used_for_fit": 0,
@@ -755,6 +761,8 @@ def _expanding_refit_artifacts(
     rows: Sequence[Mapping[str, Any]],
     feature_names: Sequence[str],
     config: CloseSlotTrainConfig,
+    *,
+    event_writer: "RlLiveEventWriter | None" = None,
 ) -> dict[str, Any]:
     by_date = _group_by_date(rows)
     train_dates = [
@@ -821,6 +829,17 @@ def _expanding_refit_artifacts(
         replay_episode_ledgers.extend(
             _episode_ledgers_from_policy_payload(replay_payload, replay_rows, window_id=window_id)
         )
+        replay_date_ledgers = replay_payload["date_ledgers"]
+        replay_selected_counts = [int(ledger.get("selected_count") or 0) for ledger in replay_date_ledgers]
+        if event_writer is not None:
+            event_writer.write_step(
+                algorithm="contextual_bandit",
+                phase="walk_forward",
+                global_step=window_index,
+                reward=replay_payload.get("mean_reward"),
+                source="daily_close_slot_train",
+                info={"window_id": window_id, "threshold_text": str(chosen["threshold_text"])},
+            )
         feedback_weights.update(_feedback_weight_by_key(replay_payload))
         windows.append(
             {
@@ -838,6 +857,12 @@ def _expanding_refit_artifacts(
                 "feedback_weighted_refit_used": bool(feedback_weights),
                 "feedback_weighted_train_rows": len(feedback_weights),
                 "oos_rows_used_for_fit": 0,
+                "replay_mean_reward_base_23bp": replay_payload.get("mean_reward"),
+                "replay_cumulative_reward": replay_payload.get("cumulative_reward"),
+                "mean_selected_count": (
+                    sum(replay_selected_counts) / len(replay_selected_counts) if replay_selected_counts else 0.0
+                ),
+                "date_count": replay_payload.get("date_count"),
             }
         )
         if fit_count >= len(train_dates):
@@ -971,7 +996,11 @@ def _cost_scenario_summary_rows(
     return rows
 
 
-def run_close_slot_training(config: CloseSlotTrainConfig) -> dict[str, Any]:
+def run_close_slot_training(
+    config: CloseSlotTrainConfig,
+    *,
+    event_writer: "RlLiveEventWriter | None" = None,
+) -> dict[str, Any]:
     dataset = load_close_slot_dataset_run(
         dataset_artifact_root=config.dataset_artifact_root,
         dataset_run_id=config.dataset_run_id,
@@ -982,7 +1011,24 @@ def run_close_slot_training(config: CloseSlotTrainConfig) -> dict[str, Any]:
     if int(config.cost_bp) != ROUND_TRIP_COST_BP:
         raise ValueError("close-slot training primary cost must remain 23bp; use gate sensitivity for 0/46bp variants")
     feature_names = _row_feature_names(rows, dataset_manifest)
-    refit_artifacts = _expanding_refit_artifacts(rows, feature_names, config)
+
+    # Hoisted ahead of the (expensive) expanding refit so a live-events file can
+    # be written to output_dir while training runs (F4). The non-empty-dir guard
+    # allows exactly one pre-existing file here: the live-events log itself.
+    rid = _validate_run_id(config.run_id or f"close_slot_train_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
+    output_root = Path(config.output_root).resolve()
+    output_dir = (output_root / rid).resolve()
+    try:
+        output_dir.relative_to(output_root)
+    except ValueError as exc:
+        raise ValueError("train run_id escapes output root") from exc
+    if output_dir.exists():
+        unexpected_names = {path.name for path in output_dir.iterdir()} - {LIVE_EVENTS_FILE_NAME}
+        if unexpected_names and not config.overwrite:
+            raise FileExistsError(f"close-slot train run already exists: {rid}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    refit_artifacts = _expanding_refit_artifacts(rows, feature_names, config, event_writer=event_writer)
     weights = refit_artifacts["weights"]
     chosen_threshold = refit_artifacts["chosen_threshold"]
     threshold_search_rows = refit_artifacts["threshold_search_rows"]
@@ -1038,6 +1084,20 @@ def run_close_slot_training(config: CloseSlotTrainConfig) -> dict[str, Any]:
         threshold_text=str(chosen_threshold["threshold_text"]),
         lineage="primary_train_threshold_frozen_replay",
     )
+    if event_writer is not None:
+        running_net_pnl_krw = 0.0
+        for step_index, ledger in enumerate(policies[POLICY_CONTEXTUAL_BANDIT]["date_ledgers"]):
+            running_net_pnl_krw += float(ledger.get("net_pnl_krw") or 0.0)
+            event_writer.write_step(
+                algorithm="contextual_bandit",
+                phase="primary_eval",
+                global_step=step_index,
+                reward=ledger.get("reward"),
+                equity=running_net_pnl_krw,
+                timestamp=str(ledger.get("date") or ""),
+                source="daily_close_slot_train",
+                info={"threshold_text": str(chosen_threshold["threshold_text"])},
+            )
     # F2 diagnostic: what the fitted score would pick if forced to take the top
     # slots each day (no threshold). Separates "signal too weak to clear 23bp"
     # (threshold honestly picks cash) from "score degenerate". Research-only,
@@ -1073,16 +1133,6 @@ def run_close_slot_training(config: CloseSlotTrainConfig) -> dict[str, Any]:
         d3_payload["selected_by_date"] = selected_by_date
         policies[POLICY_D3_FROZEN] = d3_payload
 
-    rid = _validate_run_id(config.run_id or f"close_slot_train_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
-    output_root = Path(config.output_root).resolve()
-    output_dir = (output_root / rid).resolve()
-    try:
-        output_dir.relative_to(output_root)
-    except ValueError as exc:
-        raise ValueError("train run_id escapes output root") from exc
-    if output_dir.exists() and any(output_dir.iterdir()) and not config.overwrite:
-        raise FileExistsError(f"close-slot train run already exists: {rid}")
-    output_dir.mkdir(parents=True, exist_ok=True)
     replay_episode_ledgers = list(refit_artifacts["replay_episode_ledgers"])
     walk_forward_windows = dict(refit_artifacts["walk_forward_windows"])
     replay_episode_ledgers.extend(

@@ -808,6 +808,15 @@ def _close_slot_cost_summary_errors(rows: list[dict[str, Any]], *, split_date_co
 def _close_slot_walk_forward_summary(payload: dict[str, Any]) -> dict[str, Any]:
     windows = payload.get("windows") if isinstance(payload.get("windows"), list) else []
     held_out = [row for row in windows if isinstance(row, dict) and row.get("feedback_source_split") == "none_frozen_held_out"]
+    # F4/WP-R2: train-replay windows now carry per-round reward fields
+    # (replay_mean_reward_base_23bp/replay_cumulative_reward/mean_selected_count/
+    # date_count) so the live card can show "does the round-by-round replay
+    # reward improve" — train-replay only, not an OOS profitability claim (C3).
+    reward_rounds = [
+        row
+        for row in windows
+        if isinstance(row, dict) and row.get("replay_mean_reward_base_23bp") is not None
+    ]
     return {
         "mode_id": payload.get("mode_id"),
         "window_count": len(windows),
@@ -815,6 +824,17 @@ def _close_slot_walk_forward_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "oos_rows_used_for_fit": payload.get("oos_rows_used_for_fit"),
         "held_out_replay_splits": sorted({str(split) for row in held_out for split in (row.get("held_out_replay_splits") or [])}),
         "held_out_window_count": len(held_out),
+        "replay_reward_round_count": len(reward_rounds),
+        "replay_reward_rounds": [
+            {
+                "window_id": row.get("window_id"),
+                "replay_mean_reward_base_23bp": row.get("replay_mean_reward_base_23bp"),
+                "replay_cumulative_reward": row.get("replay_cumulative_reward"),
+                "mean_selected_count": row.get("mean_selected_count"),
+                "date_count": row.get("date_count"),
+            }
+            for row in reward_rounds
+        ],
         "windows": windows,
     }
 
