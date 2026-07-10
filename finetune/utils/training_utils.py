@@ -1,6 +1,9 @@
+import json
 import os
 import random
 import datetime
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -128,6 +131,19 @@ def reduce_tensor(tensor: torch.Tensor, world_size: int, op=dist.ReduceOp.SUM) -
     if op == dist.ReduceOp.AVG:
         rt /= world_size
     return rt
+
+
+def append_metrics_jsonl(save_dir: str, record: dict) -> None:
+    """Append one JSON line to ``<save_dir>/metrics.jsonl``.
+
+    Writes independently of KRONOS_USE_COMET so training curves survive locally
+    even when the optional Comet logger is disabled. Called from the master
+    process only (rank 0) by train_predictor.py / train_tokenizer.py.
+    """
+    path = Path(save_dir) / "metrics.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def format_time(seconds: float) -> str:

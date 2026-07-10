@@ -203,6 +203,36 @@ class TrainingProgressTracker:
         self.progress_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return payload
 
+    def _env_value(self, key: str, default: str) -> str:
+        env = self.spec.get("env") or {}
+        value = env.get(key)
+        return str(value) if value not in (None, "") else default
+
+    def _predictor_save_folder(self) -> str:
+        return self._env_value("KRONOS_PREDICTOR_SAVE_FOLDER", "finetune_predictor")
+
+    def _tokenizer_save_folder(self) -> str:
+        return self._env_value("KRONOS_TOKENIZER_SAVE_FOLDER", "finetune_tokenizer")
+
+    def _stage_save_dir(self) -> Optional[Path]:
+        """Directory the currently-running stage (tokenizer or predictor) writes to."""
+        save_path = self.spec.get("save_path")
+        if not save_path:
+            return None
+        folder = (
+            self._tokenizer_save_folder()
+            if self.spec.get("train_stage") == "tokenizer"
+            else self._predictor_save_folder()
+        )
+        return Path(str(save_path)) / folder
+
+    def _predictor_checkpoint_dir(self) -> Optional[Path]:
+        """finetune_predictor/checkpoints/best_model dir for this run, regardless of active stage."""
+        save_path = self.spec.get("save_path")
+        if not save_path:
+            return None
+        return Path(str(save_path)) / self._predictor_save_folder() / "checkpoints" / "best_model"
+
     def snapshot(self, last_event: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
         elapsed_seconds = max(0.0, (datetime.now(timezone.utc) - self.started_at).total_seconds())
         batch_size = _safe_int(self.spec.get("env", {}).get("KRONOS_BATCH_SIZE"), default=1)
@@ -240,6 +270,14 @@ class TrainingProgressTracker:
         else:
             eta_seconds = None
 
+        # WP-R5d: surface the local metrics.jsonl curve (independent of Comet) and
+        # a readiness-gating signal (does a trained predictor checkpoint exist yet).
+        stage_save_dir = self._stage_save_dir()
+        metrics_jsonl_path = stage_save_dir / "metrics.jsonl" if stage_save_dir is not None else None
+        metrics_jsonl_exists = bool(metrics_jsonl_path and metrics_jsonl_path.exists())
+        checkpoint_dir = self._predictor_checkpoint_dir()
+        checkpoint_exists = bool(checkpoint_dir and checkpoint_dir.exists())
+
         payload: Dict[str, Any] = {
             "schema_version": 1,
             "created_at": self.created_at,
@@ -247,6 +285,8 @@ class TrainingProgressTracker:
             "status": self.status,
             "returncode": self.returncode,
             "pid": self.pid,
+            "checkpoint_exists": checkpoint_exists,
+            "metrics_jsonl_exists": metrics_jsonl_exists,
             "run_name": self.spec.get("run_name"),
             "horizon": self.spec.get("horizon"),
             "mode": self.spec.get("mode"),
@@ -301,6 +341,7 @@ class TrainingProgressTracker:
                 "stdout_log": str(self.stdout_path),
                 "stderr_log": str(self.stderr_path),
                 "manifest": str(self.manifest_path),
+                "metrics_jsonl": str(metrics_jsonl_path) if metrics_jsonl_path is not None else None,
             },
             "last_line": self.last_line,
         }

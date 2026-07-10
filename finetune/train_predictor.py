@@ -30,7 +30,8 @@ from utils.training_utils import (
     cleanup_ddp,
     set_seed,
     get_model_size,
-    format_time
+    format_time,
+    append_metrics_jsonl,
 )
 
 
@@ -142,6 +143,21 @@ def train_model(model, tokenizer, device, config, save_dir, logger, rank, world_
                     f"[Rank {rank}, Epoch {epoch_idx + 1}/{config['epochs']}, Step {i + 1}/{len(train_loader)}] "
                     f"LR {lr:.6f}, Loss: {loss.item():.4f}"
                 )
+                # Persist locally regardless of KRONOS_USE_COMET (WP-R5d).
+                append_metrics_jsonl(
+                    save_dir,
+                    {
+                        "event": "train_step",
+                        "step": batch_idx_global + 1,
+                        "epoch": epoch_idx + 1,
+                        "epochs": config['epochs'],
+                        "lr": lr,
+                        "loss": loss.item(),
+                        "s1_loss": s1_loss.item(),
+                        "s2_loss": s2_loss.item(),
+                        "timestamp": strftime("%Y-%m-%dT%H:%M:%SZ", gmtime()),
+                    },
+                )
             if rank == 0 and logger:
                 lr = optimizer.param_groups[0]['lr']
                 logger.log_metric('train_predictor_loss_batch', loss.item(), step=batch_idx_global)
@@ -191,6 +207,17 @@ def train_model(model, tokenizer, device, config, save_dir, logger, rank, world_
             print(f"Validation Loss: {avg_val_loss:.4f}")
             print(f"Time This Epoch: {format_time(time.time() - epoch_start_time)}")
             print(f"Total Time Elapsed: {format_time(time.time() - start_time)}\n")
+            # Persist locally regardless of KRONOS_USE_COMET (WP-R5d).
+            append_metrics_jsonl(
+                save_dir,
+                {
+                    "event": "validation",
+                    "epoch": epoch_idx + 1,
+                    "epochs": config['epochs'],
+                    "val_loss": avg_val_loss,
+                    "timestamp": strftime("%Y-%m-%dT%H:%M:%SZ", gmtime()),
+                },
+            )
             if logger:
                 logger.log_metric('val_predictor_loss_epoch', avg_val_loss, epoch=epoch_idx)
 

@@ -364,11 +364,26 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--modes", default="kronos,persistence,random")
     parser.add_argument("--seed", type=int, default=100)
+    parser.add_argument(
+        "--sample-count",
+        type=int,
+        default=5,
+        help="Kronos decoding sample count (matches config.py inference_sample_count).",
+    )
+    parser.add_argument("--temperature", type=float, default=0.6, help="Kronos decoding temperature (T).")
+    parser.add_argument("--top-p", type=float, default=0.9, help="Kronos decoding nucleus sampling top_p.")
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
+    np.random.seed(args.seed)
+    try:
+        import torch
+
+        torch.manual_seed(args.seed)
+    except ImportError:
+        pass
     data = load_pickle_dataset(Path(args.dataset_path), split="test")
     windows = select_aligned_windows(
         data,
@@ -389,6 +404,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             device=args.device,
             predict_window=args.predict_window,
             batch_size=args.batch_size,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            sample_count=args.sample_count,
         )
         frames["kronos"] = rows_from_predictions(windows, kronos, mode="kronos")
     if "persistence" in modes:
@@ -404,6 +422,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result["tokenizer_path"] = args.tokenizer_path
     result["lookback_window"] = args.lookback_window
     result["predict_window"] = args.predict_window
+    result["sample_count"] = args.sample_count
+    result["temperature"] = args.temperature
+    result["top_p"] = args.top_p
+    result["seed"] = args.seed
     result["selected_windows"] = len(windows)
     result["asof_timestamps"] = sorted({window.history["timestamps"].iloc[-1].isoformat() for window in windows})
     comparison_path = Path(result["comparison_path"])

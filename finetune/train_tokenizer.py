@@ -39,6 +39,7 @@ from utils.training_utils import (
     set_seed,
     get_model_size,
     format_time,
+    append_metrics_jsonl,
 )
 
 
@@ -228,6 +229,22 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
                     f"[Rank {rank}, Epoch {epoch_idx + 1}/{config['epochs']}, Step {i + 1}/{len(train_loader)}] "
                     f"LR {optimizer.param_groups[0]['lr']:.6f}, Loss: {avg_loss:.4f}"
                 )
+                # Persist locally regardless of KRONOS_USE_COMET (WP-R5d).
+                append_metrics_jsonl(
+                    save_dir,
+                    {
+                        "event": "train_step",
+                        "step": batch_idx_global_train + 1,
+                        "epoch": epoch_idx + 1,
+                        "epochs": config['epochs'],
+                        "lr": optimizer.param_groups[0]['lr'],
+                        "loss": avg_loss,
+                        "bsq_loss": bsq_loss.item(),
+                        "recon_loss_pre": recon_loss_pre.item(),
+                        "recon_loss_all": recon_loss_all.item(),
+                        "timestamp": strftime("%Y-%m-%dT%H:%M:%SZ", gmtime()),
+                    },
+                )
             if rank == 0 and logger:
                 avg_loss = current_batch_total_loss / config['accumulation_steps']
                 logger.log_metric('train_tokenizer_loss_batch', avg_loss, step=batch_idx_global_train)
@@ -339,6 +356,17 @@ def train_model(model, device, config, save_dir, logger, rank, world_size):
             print(f"Validation Loss: {avg_val_loss:.4f}")
             print(f"Time This Epoch: {format_time(time.time() - epoch_start_time)}")
             print(f"Total Time Elapsed: {format_time(time.time() - start_time)}\n")
+            # Persist locally regardless of KRONOS_USE_COMET (WP-R5d).
+            append_metrics_jsonl(
+                save_dir,
+                {
+                    "event": "validation",
+                    "epoch": epoch_idx + 1,
+                    "epochs": config['epochs'],
+                    "val_loss": avg_val_loss,
+                    "timestamp": strftime("%Y-%m-%dT%H:%M:%SZ", gmtime()),
+                },
+            )
             if logger:
                 logger.log_metric('val_tokenizer_loss_epoch', avg_val_loss, epoch=epoch_idx)
 
