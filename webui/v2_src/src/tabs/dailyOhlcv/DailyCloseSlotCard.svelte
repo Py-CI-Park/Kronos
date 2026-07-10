@@ -69,6 +69,24 @@
   const sourceCounts = $derived(latest?.dataset_source_counts ?? {});
   const boundedScope = $derived(latest?.bounded_research_scope ?? {});
 
+  // 0-symbol defect gloss (WP-S3): only rendered when the primary base_23bp
+  // row actually selected 0 symbols. After WP-R1 the manifest may carry
+  // chosen_is_no_trade_sentinel — branch the wording when readable, else
+  // keep the known-defect copy (MissionControl.svelte wording, reused verbatim).
+  const primarySelectedCount = $derived.by(() => {
+    const rows = selectedHoldSummary.rows ?? [];
+    const primaryId = selectedHoldSummary.primary_cost_scenario_id ?? latest?.primary_cost_scenario_id ?? 'base_23bp';
+    const match = rows.find((row) => row.cost_scenario_id === primaryId) ?? rows[0];
+    return match?.selected_count;
+  });
+  const isZeroSelectionDefect = $derived(typeof primarySelectedCount === 'number' && primarySelectedCount === 0);
+  const sentinelValue = $derived((thresholdSelection as unknown as Record<string, unknown>)?.chosen_is_no_trade_sentinel);
+  const zeroSelectionGloss = $derived(
+    sentinelValue === true
+      ? '23bp 하 무거래가 정직한 최적 (chosen_is_no_trade_sentinel=true)'
+      : '피처 정규화 버그 · contextual_bandit 0종목 선택 (알려진 결함, FACT)'
+  );
+
   function flagText(value: unknown): string {
     return value === false ? 'false' : value === true ? 'true' : 'MISSING';
   }
@@ -140,6 +158,9 @@
       <div class="mini-kv"><span>split / OOS fit rows</span><strong>{text(thresholdSelection.split, 'train')} · {numberText(thresholdSelection.oos_rows_used_for_fit ?? 0)}</strong></div>
       <div class="mini-kv"><span>threshold</span><strong>{text(thresholdSelection.threshold_text ?? thresholdSelection.threshold)} · metric {text(thresholdSelection.metric, 'mean_daily_reward_base_23bp')}</strong></div>
       <div class="mini-kv"><span>cardinality</span><strong>{numberText(thresholdSelection.max_slot_count ?? latest?.max_slot_count ?? latest?.slot_count ?? 10)} slots · {text(thresholdSelection.selection_cardinality ?? latest?.selection_cardinality, 'threshold_selected_0_to_10')} · hold_cash_action={text(thresholdSelection.hold_cash_action ?? latest?.hold_cash_action, 'true')}</strong></div>
+      {#if isZeroSelectionDefect}
+        <div class="notice warn" style="margin-top:8px; font-size:11.5px">{zeroSelectionGloss}</div>
+      {/if}
     </div>
 
     <div class="evidence-box" data-daily-close-slot-cost-components>

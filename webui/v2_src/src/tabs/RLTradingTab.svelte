@@ -27,7 +27,7 @@
   import SessionReplayCard from './rlTrading/SessionReplayCard.svelte';
   import RliableStatsCard from './rlTrading/RliableStatsCard.svelte';
   import EvidenceCharts from './rlTrading/EvidenceCharts.svelte';
-  import LiveRlEventsCard from './rlTrading/LiveRlEventsCard.svelte';
+  import RlLiveScreen from './rlTrading/RlLiveScreen.svelte';
   import RunTables from './rlTrading/RunTables.svelte';
   import { costGatePassCount } from './rlTrading/chartOptions';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
@@ -118,7 +118,14 @@
   });
 
   function choosePreferredRun(candidates: readonly RlRunRecord[]): RlRunRecord | undefined {
+    // WP-S1 (F20/F21) — RlLiveScreen이 콜드 로드부터 빈 IDLE 화면을 보여주지 않도록
+    // live_event_count>0 인 run을 최우선으로 고른다. 기존 RULE 아티팩트 우선 순서는
+    // 그대로 유지하되(그 뒤에서 폴백), 라이브 이벤트가 있는 run이 있으면 그것을 먼저
+    // 선택한다.
+    const hasLiveEvents = (candidate: RlRunRecord): boolean =>
+      Number(candidate.summary?.live_event_count ?? 0) > 0;
     return (
+      candidates.find(hasLiveEvents) ??
       candidates.find((run) => run.artifact_type === 'opening_30m_rule_filter') ??
       candidates.find((run) => run.artifact_type === 'opening_30m_rl_workflow' && run.name.includes('oos_candidate')) ??
       candidates.find((run) => run.artifact_type === 'opening_30m_rl_workflow') ??
@@ -261,6 +268,15 @@
   blockers={rlStatusBlockers}
   nextActions={rlNextInspection}
 />
+<RunSelector
+  runs={runs}
+  multi
+  selectedNames={compareNames}
+  onToggle={toggleCompare}
+  eyebrow="OVERLAY COMPARE · RESEARCH_ONLY"
+  title="라이브 tail equity 오버레이 비교 run"
+/>
+<RlLiveScreen run={selectedName} compareRuns={compareNames} equityRows={equity} episodeRows={episodes} />
 <section class="card rl-command-cockpit" data-rl-evidence-command-cockpit>
   <div class="panel-head">
     <div>
@@ -324,15 +340,6 @@
     {#if loading && !runs.length}
       <section class="card"><p class="text-muted">강화학습 산출물을 불러오는 중...</p></section>
     {/if}
-    <RunSelector
-      runs={runs}
-      multi
-      selectedNames={compareNames}
-      onToggle={toggleCompare}
-      eyebrow="OVERLAY COMPARE · RESEARCH_ONLY"
-      title="라이브 tail equity 오버레이 비교 run"
-    />
-    <LiveRlEventsCard run={selectedName} compareRuns={compareNames} />
     <Disclosure summary="RULE 메인라인 리스크 · ts_imb baseline sizing" meta="RESEARCH_ONLY">
       <RiskSummaryCard ruleRun={ruleRun} selectedLabel={selectedLabel} />
     </Disclosure>

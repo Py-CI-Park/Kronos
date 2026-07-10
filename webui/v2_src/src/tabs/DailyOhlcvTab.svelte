@@ -31,6 +31,7 @@
   import DailyScenarioLabCard from './dailyOhlcv/DailyScenarioLabCard.svelte';
   import DailyScenarioRunLedgerCard from './dailyOhlcv/DailyScenarioRunLedgerCard.svelte';
   import DailyCloseSlotCard from './dailyOhlcv/DailyCloseSlotCard.svelte';
+  import CloseSlotAgentScreen from './dailyOhlcv/CloseSlotAgentScreen.svelte';
   import DailyGateLadder from './dailyOhlcv/DailyGateLadder.svelte';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
   import Disclosure from '$lib/Disclosure.svelte';
@@ -270,6 +271,13 @@
   <div><span>live/model/paper/profit</span><b>false / 0%</b></div>
 </div>
 <DailyProgressTimeline {progress} />
+
+<CloseSlotAgentScreen
+  latest={closeSlotLatest}
+  gate={closeSlotGate}
+  equity={closeSlotEquity}
+  selection={closeSlotSelection}
+/>
 
 <DailyCloseSlotCard
   latest={closeSlotLatest}

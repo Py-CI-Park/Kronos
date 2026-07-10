@@ -140,6 +140,33 @@
   };
   const selectedWorkflowBlockers = (): string[] => stringItems(field(selectedResearchWorkflow(), 'blocked_by'));
   const selectedWorkflowArtifacts = (): string[] => stringItems(field(selectedResearchWorkflow(), 'artifact_dependencies'));
+
+  // WP-S4(B) — workflow/scenario 섹션이 공유하는 raw JSON payload 접근자.
+  // 원위치에는 사람이 읽는 key-value 요약만 남기고, 동일 payload의 원본 JSON은
+  // raw checks 섹션(6. Raw checks · isGuideSection('raw'))으로만 옮긴다. 데이터 원천은 그대로다.
+  const selectedLaneGuidance = (): Record<string, unknown> => asRecord(field(selectedResearchLane(), 'ai_guidance_format'));
+  const selectedScenarioPlan = (): Record<string, unknown> => asRecord(field(selectedScenarioTemplate(), 'plan_json_draft'));
+  const marketRegimeGuidance = (): Record<string, unknown> => asRecord(field(guide?.market_regime_audit_readiness, 'ai_guidance_format'));
+  const improvementQueueGuidance = (): Record<string, unknown> => asRecord(field(guide?.improvement_queue, 'ai_guidance_format'));
+  const safeConfigPreview = (): Record<string, unknown> => ({
+    workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
+    default_cost_bp: field(selectedResearchWorkflow(), 'default_cost_bp') ?? 23,
+    cost_sensitivity_bp: field(selectedResearchWorkflow(), 'cost_sensitivity_bp') ?? [0, 23, 46],
+    approval_required: field(selectedResearchWorkflow(), 'approval_required') ?? true,
+    execution_allowed_from_browser: field(selectedResearchWorkflow(), 'execution_allowed_from_browser') ?? false,
+    forbidden_fields: field(guide?.research_workflow_catalog, 'forbidden_fields'),
+  });
+  const jobIntentTemplate = (): Record<string, unknown> => ({
+    schema_version: 'daily_ohlcv_research_job_intent.v1',
+    approval_status: 'APPROVED_FOR_RESEARCH_INTENT',
+    idempotency_key: 'safe-operator-key',
+    config: {
+      workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
+      default_cost_bp: 23,
+      cost_sensitivity_bp: [0, 23, 46],
+      controls: ['no_trade', 'shuffle_control', 'frozen_d3_baseline'],
+    },
+  });
   const tone = (status: unknown): string => {
     const normalized = String(status ?? '').toUpperCase();
     if (normalized === 'PASS' || normalized === 'INPUT') return 'pass';
@@ -501,7 +528,10 @@
     <div class="mini-chart-card">
       <div class="text-eyebrow">AI-readable / AI 개선 지시 고정 포맷</div>
       <p class="text-muted" style="margin-bottom:8px">선택한 연구 lane의 한계·개선 방향을 AI Agent가 그대로 읽고 다음 실험 계획으로 사용할 수 있는 고정 JSON입니다.</p>
-      <pre class="ai-format-box">{selectedLaneJson()}</pre>
+      <div class="kv-row"><span>lane / status</span><b>{String(field(selectedLaneGuidance(), 'lane_id') ?? '—')} · {String(field(selectedLaneGuidance(), 'status') ?? '—')}</b></div>
+      <div class="kv-row"><span>research question</span><b>{String(field(selectedLaneGuidance(), 'research_question') ?? '—')}</b></div>
+      <div class="kv-row"><span>metrics to watch</span><b>{listText(field(selectedLaneGuidance(), 'metrics_to_watch'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </div>
   </div>
 </section>
@@ -563,14 +593,10 @@
     </article>
     <aside class="selected-process-side" data-daily-rl-workflow-safe-config-preview>
       <h3>Safe config preview</h3>
-      <pre class="ai-format-box">{safeJson({
-        workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
-        default_cost_bp: field(selectedResearchWorkflow(), 'default_cost_bp') ?? 23,
-        cost_sensitivity_bp: field(selectedResearchWorkflow(), 'cost_sensitivity_bp') ?? [0, 23, 46],
-        approval_required: field(selectedResearchWorkflow(), 'approval_required') ?? true,
-        execution_allowed_from_browser: field(selectedResearchWorkflow(), 'execution_allowed_from_browser') ?? false,
-        forbidden_fields: field(guide?.research_workflow_catalog, 'forbidden_fields')
-      })}</pre>
+      <div class="kv-row"><span>workflow / cost</span><b>{String(field(safeConfigPreview(), 'workflow_id') ?? '—')} · {String(field(safeConfigPreview(), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>approval / browser 실행</span><b>{boolText(field(safeConfigPreview(), 'approval_required'))} · {boolText(field(safeConfigPreview(), 'execution_allowed_from_browser'))}</b></div>
+      <div class="kv-row"><span>forbidden fields</span><b>{listText(field(safeConfigPreview(), 'forbidden_fields'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
   </div>
 
@@ -591,17 +617,10 @@
     <aside class="selected-process-side">
       <h3>Rejected request fields</h3>
       <p class="text-muted">command · shell · argv · env · cwd · broker · account · order · live · paper_forward · model_build · model_build_allowed · paper_forward_allowed · live_broker_order_allowed · arbitrary_path</p>
-      <pre class="ai-format-box">{safeJson({
-        schema_version: 'daily_ohlcv_research_job_intent.v1',
-        approval_status: 'APPROVED_FOR_RESEARCH_INTENT',
-        idempotency_key: 'safe-operator-key',
-        config: {
-          workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
-          default_cost_bp: 23,
-          cost_sensitivity_bp: [0, 23, 46],
-          controls: ['no_trade', 'shuffle_control', 'frozen_d3_baseline']
-        }
-      })}</pre>
+      <div class="kv-row"><span>schema / approval</span><b>{String(field(jobIntentTemplate(), 'schema_version'))} · {String(field(jobIntentTemplate(), 'approval_status'))}</b></div>
+      <div class="kv-row"><span>workflow / cost</span><b>{String(field(nestedRecord(jobIntentTemplate(), 'config'), 'workflow_id') ?? '—')} · {String(field(nestedRecord(jobIntentTemplate(), 'config'), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>controls</span><b>{listText(field(nestedRecord(jobIntentTemplate(), 'config'), 'controls'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
   </div>
 
@@ -823,7 +842,10 @@
     </article>
     <aside class="selected-process-side">
       <h3>Fixed plan JSON draft</h3>
-      <pre class="ai-format-box">{selectedScenarioPlanJson()}</pre>
+      <div class="kv-row"><span>template / cost</span><b>{String(field(selectedScenarioPlan(), 'template_id') ?? '—')} · {String(field(selectedScenarioPlan(), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>scenarios</span><b>{rows(field(selectedScenarioPlan(), 'scenarios')).length}개 draft</b></div>
+      <div class="kv-row"><span>guardrails</span><b>{listText(field(selectedScenarioPlan(), 'guardrails'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.scenario_generator, 'guardrail') ?? 'read-only scenario generator')}</p>
@@ -943,7 +965,10 @@
   </div>
   <div class="mini-chart-card" style="margin-top:12px">
     <div class="text-eyebrow">AI-readable next-action guidance</div>
-    <pre class="ai-format-box">{safeJson(field(guide?.market_regime_audit_readiness, 'ai_guidance_format'))}</pre>
+    <div class="kv-row"><span>next lane</span><b>{String(field(marketRegimeGuidance(), 'next_research_lane') ?? '—')}</b></div>
+    <div class="kv-row"><span>objective</span><b>{String(field(marketRegimeGuidance(), 'objective') ?? '—')}</b></div>
+    <div class="kv-row"><span>acceptance gate</span><b>{String(field(marketRegimeGuidance(), 'acceptance_gate') ?? '—')}</b></div>
+    <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
   </div>
 </section>
 </Disclosure>
@@ -969,7 +994,10 @@
       </article>
     {/each}
   </div>
-  <pre class="ai-format-box" style="margin-top:12px">{safeJson(field(guide?.improvement_queue, 'ai_guidance_format'))}</pre>
+  <div class="kv-row" style="margin-top:12px"><span>queue policy</span><b>{String(field(improvementQueueGuidance(), 'queue_policy') ?? '—')}</b></div>
+  <div class="kv-row"><span>allowed next action</span><b>{String(field(improvementQueueGuidance(), 'allowed_next_action') ?? '—')}</b></div>
+  <div class="kv-row"><span>blocked actions</span><b>{listText(field(improvementQueueGuidance(), 'blocked_actions'))}</b></div>
+  <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
 </section>
 </Disclosure>
 
@@ -1286,6 +1314,45 @@
     <div class="contract-box danger"><h3>아직 불가능한 용도</h3><p>{listText(guide?.not_good_enough_for)}</p></div>
   </div>
   <p class="text-muted" style="margin-top:8px">{guide?.guardrail ?? 'no profit guarantee, no live/broker/orders'}</p>
+</section>
+</Disclosure>
+
+<Disclosure summary="Workflow · scenario AI-guidance 원본 JSON" meta="RAW_JSON_PROVENANCE">
+<section class="panel" data-daily-rl-raw-ai-guidance-json>
+  <div class="panel-head">
+    <div>
+      <div class="text-eyebrow">Raw JSON provenance</div>
+      <h2 class="text-h3">workflow · scenario 섹션 원본 JSON</h2>
+    </div>
+    <span class="pill"><span class="dot"></span>audit trail only</span>
+  </div>
+  <p class="text-muted" style="margin-top:8px">
+    2. Workflow · 4. Scenario 섹션은 사람이 읽는 key-value 요약만 보여줍니다. 아래는 같은 payload의 고정 JSON 원본이며 audit trail 확인용입니다 (실행 버튼 아님).
+  </p>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">연구 lane · AI 개선 지시 고정 포맷</div>
+    <pre class="ai-format-box">{selectedLaneJson()}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Workflow safe config preview</div>
+    <pre class="ai-format-box">{safeJson(safeConfigPreview())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Job intent template (rejected request fields 예시)</div>
+    <pre class="ai-format-box">{safeJson(jobIntentTemplate())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Scenario fixed plan JSON draft</div>
+    <pre class="ai-format-box">{selectedScenarioPlanJson()}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Market-regime readiness · next-action guidance</div>
+    <pre class="ai-format-box">{safeJson(marketRegimeGuidance())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Improvement queue · AI guidance format</div>
+    <pre class="ai-format-box">{safeJson(improvementQueueGuidance())}</pre>
+  </div>
 </section>
 </Disclosure>
 {/if}

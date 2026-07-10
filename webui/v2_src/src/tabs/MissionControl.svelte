@@ -5,6 +5,8 @@
   //       정규화 버그로 0종목 선택)은 파생하지 않고 FACT 로 라벨링해 정직하게 표기.
   import { onMount } from 'svelte';
   import { dailyOhlcvApi } from '$lib/dailyOhlcvApi';
+  import { rlApi } from '$lib/rlApi';
+  import { num, pct, rowNumber } from '$lib/rlRows';
   import { trainingStatus, metricsLatest } from '$lib/stores';
   import { navigateToTab } from '$lib/routes';
   import { humanizeVerdict } from '$lib/verdictLabel';
@@ -16,6 +18,9 @@
   let closeSlot = $state<any>(null);
   let train = $state<any>(null);
   let metrics = $state<any>({});
+  // WP-S4(A) — RL 인트라데이 카드의 LIVE 서브라인. rlApi.rlEvents tail의 마지막
+  // 행(latest global_step + reward)만 읽는다. NO-GO FACT 판정과는 무관한 관측치.
+  let rlLiveEvent = $state<{ step: string; reward: string } | null>(null);
   trainingStatus.subscribe((v) => (train = v));
   metricsLatest.subscribe((v) => (metrics = v));
 
@@ -27,6 +32,23 @@
         closeSlot = cs;
       } catch {
         /* fail-open: 라이브 값은 '확인 중'으로 남고 가드레일 사실은 아래에서 그대로 유효 */
+      }
+    })();
+    void (async () => {
+      try {
+        const runsResp = await rlApi.rlRuns(5);
+        const latestRunName = runsResp?.runs?.[0]?.name;
+        if (!latestRunName) return;
+        const eventsResp = await rlApi.rlEvents(latestRunName, 20);
+        const latestRow = eventsResp?.rows?.length ? eventsResp.rows[eventsResp.rows.length - 1] : null;
+        if (latestRow) {
+          rlLiveEvent = {
+            step: num(rowNumber(latestRow, 'global_step'), 0),
+            reward: pct(rowNumber(latestRow, 'reward') * 100, 4),
+          };
+        }
+      } catch {
+        /* fail-open: rl runs/events 조회 실패 시 rlLiveEvent는 null로 남고 아래에서 PENDING('확인 중')으로 표시 */
       }
     })();
   });
@@ -53,6 +75,9 @@
       : (train?.status ?? PENDING) as string
   );
   const runName = $derived((metrics?.runName ?? null) as string | null);
+  // WP-S4(A) — RL LIVE 서브라인 표시 문자열. rlLiveEvent가 없으면(로딩 중/실패)
+  // 기존 PENDING 패턴('확인 중')으로 fail-open한다. NO-GO FACT 판정에는 영향 없음.
+  const rlLiveLine = $derived(rlLiveEvent ? `step ${rlLiveEvent.step} · reward ${rlLiveEvent.reward}` : PENDING);
 
   // ── 계기판 게이지 (한눈 스캔) ────────────────────────────────────
   const locks = ['실거래', '브로커', '주문', '계좌', '페이퍼', '모델빌드', '수익주장'] as const;
@@ -70,6 +95,10 @@
     tab: string; nm: string; sub: string; tone: Tone;
     verdict: string; vsrc: Src; big: string; bsrc: Src; foot: string;
     scroll?: string;
+    // WP-S4(A) — optional LIVE sub-line (RL 카드 전용: latest step/reward) + 두 번째
+    // 클릭 타깃(가이드 보기). 지정되지 않은 카드는 기존 렌더링과 동일하게 유지된다.
+    liveSub?: string;
+    guideTab?: string;
   }
 
   // 미해결 blocker — D0–D9 게이트 롤업(FACT). 요약 카드와 상세 rail 이 같은 원천을 공유.
@@ -95,7 +124,7 @@
       foot: '⚠ 정규화 버그 · contextual_bandit 0종목 선택' },
     { tab: 'rl', nm: '강화학습 · 인트라데이', sub: 'intraday · ts_imb RULE baseline', tone: 'danger',
       verdict: 'NO-GO', vsrc: 'fact', big: 'RESEARCH_ONLY', bsrc: 'fact',
-      foot: 'D9 gate · locks 7 off' },
+      foot: 'D9 gate · locks 7 off', liveSub: rlLiveLine, guideTab: 'daily-rl-guide' },
     { tab: 'system-health', nm: '학습 · 시스템', sub: 'predictor · live-training', tone: toneOf(trainState),
       verdict: trainState, vsrc: 'live', big: trainMetric, bsrc: 'live',
       foot: runName ?? 'stom predictor' },
@@ -108,6 +137,13 @@
 
   function open(tab: string) {
     navigateToTab(tab);
+  }
+
+  // WP-S4(A) — 가이드 보기: 두 번째 클릭 타깃. 부모 .mc-line 버튼과 중첩되지 않는
+  // 형제 버튼에서 호출하므로 stopPropagation으로 부모의 open(ln.tab)을 막는다.
+  function openGuide(tab: string | undefined, event: MouseEvent): void {
+    event.stopPropagation();
+    if (tab) navigateToTab(tab);
   }
 
   function scrollToId(id: string) {
@@ -148,14 +184,27 @@
 
       <div class="mc-lines">
         {#each lines as ln}
-          <button type="button" class="mc-line" data-v={ln.tone} onclick={() => (ln.scroll ? scrollToId(ln.scroll) : open(ln.tab))}>
-            <div class="top">
-              <div class="ttl"><div class="nm">{ln.nm}</div><div class="sub">{ln.sub}</div></div>
-              <span class="pill {ln.tone === 'idle' ? '' : ln.tone}"><span class="dot"></span>{humanizeVerdict(ln.verdict)}<span class="tag {ln.vsrc} inv">{ln.vsrc === 'live' ? 'LIVE' : 'FACT'}</span></span>
-            </div>
-            <div class="big">{ln.big}<span class="tag {ln.bsrc}">{ln.bsrc === 'live' ? 'LIVE' : 'FACT'}</span></div>
-            <div class="foot"><span class="bk">{ln.foot}</span><span class="go">열기 →</span></div>
-          </button>
+          <div class="mc-line-wrap">
+            <button type="button" class="mc-line" data-v={ln.tone} onclick={() => (ln.scroll ? scrollToId(ln.scroll) : open(ln.tab))}>
+              <div class="top">
+                <div class="ttl"><div class="nm">{ln.nm}</div><div class="sub">{ln.sub}</div></div>
+                <span class="pill {ln.tone === 'idle' ? '' : ln.tone}"><span class="dot"></span>{humanizeVerdict(ln.verdict)}<span class="tag {ln.vsrc} inv">{ln.vsrc === 'live' ? 'LIVE' : 'FACT'}</span></span>
+              </div>
+              <div class="big">{ln.big}<span class="tag {ln.bsrc}">{ln.bsrc === 'live' ? 'LIVE' : 'FACT'}</span></div>
+              {#if ln.liveSub}
+                <div class="mc-live-sub" data-mc-rl-live-sub><span class="tag live">LIVE</span><span>{ln.liveSub}</span></div>
+              {/if}
+              <div class="foot"><span class="bk">{ln.foot}</span><span class="go">열기 →</span></div>
+            </button>
+            {#if ln.guideTab}
+              <button
+                type="button"
+                class="mc-line-guide-btn"
+                data-mc-rl-guide-link
+                onclick={(event) => openGuide(ln.guideTab, event)}
+              >가이드 보기 →</button>
+            {/if}
+          </div>
         {/each}
       </div>
     </div>
@@ -243,6 +292,18 @@
   .mc-lines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; }
   @media (max-width: 820px) { .mc-lines { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 560px) { .mc-lines { grid-template-columns: 1fr; } }
+
+  /* WP-S4(A) — wrapper holds the primary .mc-line button plus an optional sibling
+     "가이드 보기" button. Two independent button click targets must not nest. */
+  .mc-line-wrap { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .mc-line-wrap .mc-line { flex: 1; }
+  .mc-live-sub { display: flex; align-items: center; gap: 7px; margin-top: 10px; padding-top: 10px;
+    border-top: 1px dashed var(--border-faint); font: 600 11.5px/1.3 var(--font-mono); color: var(--fg); }
+  .mc-live-sub .tag.live { margin-left: 0; }
+  .mc-line-guide-btn { align-self: flex-start; text-align: left; cursor: pointer; font: 650 11.5px/1 var(--font-mono);
+    color: var(--accent-strong); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-pill);
+    padding: 7px 12px; transition: border-color var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out); }
+  .mc-line-guide-btn:hover { border-color: var(--accent-strong); transform: translateY(-1px); }
 
   .mc-line { text-align: left; cursor: pointer; background: var(--card-grad); border: 1px solid var(--border); border-radius: var(--r-lg);
     padding: 16px 16px 13px; position: relative; overflow: hidden; box-shadow: var(--shadow-md), var(--card-highlight);
