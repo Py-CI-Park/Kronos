@@ -10,6 +10,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from stom_rl.daily_rl_train import (  # noqa: E402
+    _verdict_for_d4,
     build_action_prior_values,
     build_action_filter_decision,
     build_action_distribution,
@@ -17,6 +18,7 @@ from stom_rl.daily_rl_train import (  # noqa: E402
     run_daily_rl,
     write_rl_artifacts,
 )
+from stom_rl.rl_events import RlLiveEventWriter  # noqa: E402
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -469,3 +471,107 @@ def test_d3_failed_or_skipped_forces_research_override(tmp_path: Path, monkeypat
     assert verdict["gate_dependency"] == "D3_FAILED_OR_SKIPPED"
     assert verdict["d3_status_normalized"] == "SKIPPED"
     assert verdict["go_summary_allowed"] is False
+
+
+def test_non_improving_verdict_fires():
+    declining_curve = [
+        {"episode": episode, "val_nav": nav}
+        for episode, nav in enumerate([1.05, 1.03, 1.01, 0.99, 0.97, 0.95], start=1)
+    ]
+    verdict = _verdict_for_d4(
+        prediction_verdict={"status": "WATCH"},
+        manifest={},
+        eval_metrics={"invalid_action_rate": 0.0},
+        learning_curve=declining_curve,
+    )
+    assert "TRAINING_CURVE_NON_IMPROVING" in verdict["reasons"]
+    assert verdict["val_nav_slope"] is not None
+    assert verdict["val_nav_slope"] <= 0
+    assert verdict["go_summary_allowed"] is False
+    assert verdict["model_build_allowed"] is False
+
+    improving_curve = [
+        {"episode": episode, "val_nav": nav}
+        for episode, nav in enumerate([0.95, 0.97, 0.99, 1.01, 1.03, 1.05], start=1)
+    ]
+    improving_verdict = _verdict_for_d4(
+        prediction_verdict={"status": "WATCH"},
+        manifest={},
+        eval_metrics={"invalid_action_rate": 0.0},
+        learning_curve=improving_curve,
+    )
+    assert "TRAINING_CURVE_NON_IMPROVING" not in improving_verdict["reasons"]
+    assert improving_verdict["val_nav_slope"] is not None
+    assert improving_verdict["val_nav_slope"] > 0
+
+    no_data_verdict = _verdict_for_d4(
+        prediction_verdict={"status": "WATCH"},
+        manifest={},
+        eval_metrics={"invalid_action_rate": 0.0},
+        learning_curve=None,
+    )
+    assert "TRAINING_CURVE_NON_IMPROVING" not in no_data_verdict["reasons"]
+    assert no_data_verdict["val_nav_slope"] is None
+
+
+def test_learning_curve_has_val_nav(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import stom_rl.daily_rl_train as rl_train
+
+    prediction_root = tmp_path / "webui" / "rl_runs" / "daily_ohlcv_prediction"
+    portfolio_root = tmp_path / "webui" / "rl_runs" / "daily_ohlcv_portfolio"
+    run_dir = _create_prediction_run(prediction_root, verdict_status="WATCH")
+    monkeypatch.setattr(rl_train, "DEFAULT_PREDICTION_ROOT", prediction_root)
+    monkeypatch.setattr(rl_train, "DEFAULT_PORTFOLIO_ROOT", portfolio_root)
+
+    result = run_daily_rl(prediction_run_dir=run_dir, episodes=3, candidate_limit=2, max_positions=2, seed=3)
+
+    assert result["learning_curve"]
+    assert "val_nav" in result["learning_curve"][0]
+    assert "final_shaped_equity" in result["learning_curve"][0]
+    assert any(row["val_nav"] is not None for row in result["learning_curve"])
+    assert any(row.get("val_nav") is not None for row in result["episode_metrics"])
+
+    written = write_rl_artifacts(result, run_id="portfolio_val_nav_unit")
+    curve_rows = list(csv.DictReader(Path(written["learning_curve_path"]).open("r", encoding="utf-8", newline="")))
+    assert "val_nav" in curve_rows[0]
+    assert "final_shaped_equity" in curve_rows[0]
+    episode_rows = list(csv.DictReader(Path(written["episode_metrics_path"]).open("r", encoding="utf-8", newline="")))
+    assert "val_nav" in episode_rows[0]
+    assert "final_shaped_equity" in episode_rows[0]
+
+
+def test_daily_rl_writer_none_byte_identical(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import stom_rl.daily_rl_train as rl_train
+
+    prediction_root = tmp_path / "webui" / "rl_runs" / "daily_ohlcv_prediction"
+    run_dir = _create_prediction_run(prediction_root, verdict_status="WATCH")
+    monkeypatch.setattr(rl_train, "DEFAULT_PREDICTION_ROOT", prediction_root)
+
+    result_default = run_daily_rl(prediction_run_dir=run_dir, episodes=3, candidate_limit=2, max_positions=2, seed=3)
+
+    writer_path = tmp_path / "unused_events.jsonl"
+    writer = RlLiveEventWriter(writer_path, run_id="writer-parity-unit")
+    writer.reset()
+    result_with_writer = run_daily_rl(
+        prediction_run_dir=run_dir,
+        episodes=3,
+        candidate_limit=2,
+        max_positions=2,
+        seed=3,
+        event_writer=writer,
+    )
+
+    # Passing an active event_writer must not change any computed training/eval data --
+    # it is a side-channel telemetry stream only (C6/C10: event_writer default None is
+    # byte-identical to any other event_writer value for the returned result).
+    assert result_default["policy_metrics"]["q_policy_rows"] == result_with_writer["policy_metrics"]["q_policy_rows"]
+    assert result_default["episode_metrics"] == result_with_writer["episode_metrics"]
+    assert result_default["reward_breakdown"] == result_with_writer["reward_breakdown"]
+    assert result_default["learning_curve"] == result_with_writer["learning_curve"]
+    assert result_default["manifest"]["verdict"]["reasons"] == result_with_writer["manifest"]["verdict"]["reasons"]
+
+    written_events = writer_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(written_events) > 0
+    first_event = json.loads(written_events[0])
+    assert first_event["schema_version"] == "stom_rl_live_event.v1"
+    assert first_event["source"] == "daily_rl_train"
