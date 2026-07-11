@@ -132,3 +132,34 @@
 ## Open questions
 - [ ] 학습 완료 후 예측-실제 비교 대시보드에서 기본 정렬 기준을 loss/방향정확도/종목별 MAE 중 무엇으로 둘지 결정 필요.
 - [ ] 1초봉 pred30/pred60/pred120 비교를 같은 화면에서 토글할지, 별도 실험 페이지로 분리할지 결정 필요.
+
+## S1-S4 RL visibility screens (dashboard-v3)
+
+The four critical RL-visibility screens audited for responsive layout, dark
+contrast, keyboard semantics, and chart accessibility (Todo 10 / scorecard B1-B2).
+All four must satisfy `scrollWidth <= clientWidth` at 375 / 768 / 1280 px in both
+themes, and every chart must carry an accessible name, a trend summary, and a
+data-table alternative. RESEARCH_ONLY — no live / broker / profit / GO claim.
+
+### Screen map (route → surface → primary components)
+- **S1** `/?tab=rl` — RL live monitor / evidence: `RLTradingTab`, `rlTrading/RlLiveScreen`, `rlTrading/EvidenceCharts`, `charts/EChartsRenderer`.
+- **S2** `/?tab=daily-rl-guide` — RL env→action→reward guide: `DailyRlGuideTab` (guide sections, replay controls, RL-loop figure, policy/scenario cards).
+- **S3** `/?tab=daily-ohlcv` — daily close-slot agent: `DailyOhlcvTab`, `dailyOhlcv/DailyProgressTimeline`, `dailyOhlcv/DailyGateLadder`, `dailyOhlcv/CloseSlotAgentScreen`.
+- **S4** `/` — Mission Control: `MissionControl`, `ResearchStatusShell`, `layout/OpsStrip`.
+
+### Primitives (S1-S4 shared)
+- **Lifecycle status pill**: `lib/runLifecycle.deriveDisplayStatus` → RUNNING/COMPLETED/STALE/REPLAY/IDLE/MISSING. LIVE only on an explicit running state with an advancing, fresh event file; never inferred from `polling && events.length`.
+- **Metric renderer**: `lib/runMetrics` — reward/equity kind+unit come from the event contract; null stays NOT_RECORDED (never coerced to 0/HOLD); `×100` only for `fraction` units.
+- **Chart** (`charts/EChartsRenderer` + `charts/chartA11y`): `role="img"` + `aria-label` (accessible name), plus a screen-reader `<figcaption>` carrying a derived trend summary and a data-table alternative built only from real series/axis data (no fabricated points). `caption`/`summary`/`dataTable` props override the derivation.
+- **Request gate** (`lib/requestGate`): generation tokens + AbortController so a stale older run's late response can never overwrite a newer selection; each card owns independent loading/error/empty/stale state.
+- **Segmented toggles**: native `<button>` with `data-active` AND `aria-pressed` so selected state is announced; `:focus-visible` outline preserved.
+
+### States (each screen must render truthfully)
+- loading · empty · error/retry (timeout → ERROR/RETRY, never MISSING) · populated · stale · replay · live · completed. Missing values show `-` / NOT_RECORDED, never a fabricated zero, HOLD, "today", or GO.
+
+### Tokens (mandatory; no new design system)
+- Surfaces: `--surface`, `--surface-raised`, `--surface-sunken`, `--surface-elev`. **Raw light-surface literals (`rgba(255,255,255,…)`, `rgba(248,250,252,…)`, near-opaque light tints) are prohibited** — they break dark theme. Semantic tints use `color-mix(in oklab, var(--success|warn|danger) N%, var(--surface))`.
+- Text: `--fg`, `--fg-strong`, `--muted`, `--dim`; status text uses `--success` / `--warn` / `--danger` / `--info` (never arbitrary `text-[#hex]`).
+- Borders: `--border`, `--border-strong`, `--border-faint`.
+- Responsive: desktop-first; ≤1200 px → 2 columns, ≤680 px → stack. Fixed/`max-content` column tracks that can exceed the viewport must live inside an `overflow-x:auto` rail or collapse via a `@media (max-width: 680px)` single-column rule. Floating utility strips (`OpsStrip`) scroll horizontally rather than clip.
+- Accessibility: WCAG 2.1 AA contrast in both themes; keyboard-only traversal with visible `:focus-visible`; toggle state via `aria-pressed`; charts via the primitive above.

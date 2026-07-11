@@ -272,7 +272,7 @@
       <span class="legend"><span class="swatch" style="background:var(--c-4)"></span>온도 °C</span>
     </div>
   </div>
-  <EChartsRenderer option={multiOption} height="280px" />
+  <EChartsRenderer option={multiOption} height="280px" caption="시스템 리소스 추이 · GPU/CPU/온도" />
   <div class="row" style="border-top:1px solid var(--border-faint);padding-top:14px;margin-top:8px;flex-wrap:wrap;gap:24px">
     <div class="stack" style="gap:4px">
       <span class="text-eyebrow">평균 활용률</span>

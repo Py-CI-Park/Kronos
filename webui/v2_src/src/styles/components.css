@@ -822,8 +822,12 @@ input[type="range"].rng::-moz-range-thumb {
   color: var(--fg);
   background: var(--surface-sunken);
   border: 1px solid var(--border-faint);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .notice b, .notice strong { color: var(--fg-strong); }
+/* Long snake_case evidence tokens must break, not force horizontal overflow. */
+.notice > * { min-width: 0; overflow-wrap: anywhere; }
 .notice.warn   { background: var(--warn-soft);   border-color: transparent; }
 .notice.danger { background: var(--danger-soft); border-color: transparent; }
 .notice.accent { background: var(--accent-soft); border-color: transparent; }
@@ -870,10 +874,12 @@ input[type="range"].rng::-moz-range-thumb {
   font-weight: 600;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  word-break: break-word;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .mini-list { display: grid; gap: 4px; margin-top: 8px; font-size: 12px; }
-.mini-list > div { display: flex; justify-content: space-between; gap: 10px; }
+.mini-list > div { display: flex; justify-content: space-between; gap: 10px; min-width: 0; }
+.mini-list > div > * { min-width: 0; overflow-wrap: anywhere; }
 .mini-list span { color: var(--muted); }
 .mini-list strong { color: var(--fg); font-weight: 600; }
 

@@ -161,7 +161,7 @@
 
 <div class="equity-drawdown-chart" data-equity-drawdown-chart>
   {#if points.length}
-    <EChartsRenderer option={chartOption} {height} />
+    <EChartsRenderer option={chartOption} {height} caption="에쿼티 / 낙폭 곡선 · 연구 전용" />
   {:else}
     <div class="equity-empty" data-equity-drawdown-empty>
       {loading ? 'equity 로딩 중 · 연구 전용' : error ? error : 'equity series 없음 · 연구 전용 · fail-closed'}

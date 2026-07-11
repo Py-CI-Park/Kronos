@@ -149,8 +149,8 @@
   <!-- Toolbar -->
   <section class="row" style="gap:10px;flex-wrap:wrap">
     <div class="tabs" data-tab-group="art">
-      <button data-active={view === 'ckpt' ? 'true' : 'false'} onclick={() => (view = 'ckpt')}>Checkpoints</button>
-      <button data-active={view === 'weight' ? 'true' : 'false'} onclick={() => (view = 'weight')}>Model Weights</button>
+      <button data-active={view === 'ckpt' ? 'true' : 'false'} aria-pressed={view === 'ckpt'} onclick={() => (view = 'ckpt')}>Checkpoints</button>
+      <button data-active={view === 'weight' ? 'true' : 'false'} aria-pressed={view === 'weight'} onclick={() => (view = 'weight')}>Model Weights</button>
     </div>
     <span class="text-caption" style="margin-left:auto">
       총 {view === 'ckpt' ? recentCk.length : recentMw.length}개 표시 · 정렬 최신순

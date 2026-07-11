@@ -2,13 +2,26 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import * as echarts from 'echarts';
 
+  import { chartAccessibleName, deriveChartSummary, deriveChartTable, type ChartDataTable } from './chartA11y';
+
   interface Props {
     option: any;
     height?: string;
     className?: string;
+    /** Explicit accessible name; falls back to option.title, then a generic label. */
+    caption?: string;
+    /** Explicit trend summary; falls back to a derivation over the option's series. */
+    summary?: string;
+    /** Explicit data-table alternative; `undefined` derives from the option, `null` suppresses it. */
+    dataTable?: ChartDataTable | null;
   }
 
-  let { option, height = '320px', className = '' }: Props = $props();
+  let { option, height = '320px', className = '', caption, summary, dataTable }: Props = $props();
+
+  const accessibleName = $derived(chartAccessibleName(option, caption));
+  const trendSummary = $derived(summary ?? deriveChartSummary(option, caption));
+  const altTable = $derived(dataTable !== undefined ? dataTable : deriveChartTable(option));
+  const hasAlt = $derived(hasRenderableOption(option));
 
   let container: HTMLDivElement | undefined = $state();
   let chart: echarts.ECharts | null = null;
@@ -77,4 +90,63 @@
   });
 </script>
 
-<div bind:this={container} class={className} style="width: 100%; height: {height};"></div>
+<figure class="echarts-figure">
+  <div
+    bind:this={container}
+    class={className}
+    role="img"
+    aria-label={accessibleName}
+    style="width: 100%; height: {height};"
+  ></div>
+  {#if hasAlt}
+    <figcaption class="echarts-a11y-alt">
+      <p>{trendSummary}</p>
+      {#if altTable}
+        <table>
+          <caption>{accessibleName} · 데이터 표</caption>
+          <thead>
+            <tr>
+              {#each altTable.columns as col}
+                <th scope="col">{col}</th>
+              {/each}
+            </tr>
+          </thead>
+          <tbody>
+            {#each altTable.rows as row}
+              <tr>
+                {#each row as cell, ci}
+                  {#if ci === 0}
+                    <th scope="row">{cell}</th>
+                  {:else}
+                    <td>{cell}</td>
+                  {/if}
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </figcaption>
+  {/if}
+</figure>
+
+<style>
+  .echarts-figure {
+    margin: 0;
+  }
+  /* Screen-reader-only data alternative: keeps the accessible name + trend
+     summary + data table available to AT without altering visual layout or
+     the responsive fit (position:absolute, 1px clip). */
+  .echarts-a11y-alt {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>

@@ -505,7 +505,7 @@
       </div>
     {:else}
       <div class="live-chart" data-rl-live-screen-chart>
-        <EChartsRenderer option={liveChartOption} height="300px" />
+        <EChartsRenderer option={liveChartOption} height="300px" caption={`라이브 학습 곡선 · ${run}`} />
       </div>
       {#if isOverlay}
         <p class="text-caption overlay-note" data-rl-live-screen-overlay>
@@ -546,7 +546,7 @@
   <div class="live-screen-section" data-rl-live-screen-daily-equity>
     <div class="text-eyebrow">일별 수익/에쿼티 곡선 · portfolio 런 · research-only</div>
     {#if equityRows.length}
-      <EChartsRenderer option={dailyEquityOption} height="220px" />
+      <EChartsRenderer option={dailyEquityOption} height="220px" caption="일별 수익/에쿼티 곡선 · portfolio 런" />
     {:else}
       <div class="live-empty">일별 에쿼티 곡선 없음 · 연구 전용</div>
     {/if}

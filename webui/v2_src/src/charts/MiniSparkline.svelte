@@ -16,8 +16,9 @@
     readonly colorVar?: string;
     readonly height?: string;
     readonly area?: boolean;
+    readonly caption?: string;
   }
-  let { values = [], colorVar = '--accent', height = '40px', area = true }: Props = $props();
+  let { values = [], colorVar = '--accent', height = '40px', area = true, caption = '미니 추세 스파크라인' }: Props = $props();
 
   let currentTheme = $state<'light' | 'dark'>('light');
   const unsubscribeTheme = theme.subscribe((value) => (currentTheme = value));
@@ -65,7 +66,7 @@
 </script>
 
 {#if clean.length}
-  <EChartsRenderer {option} {height} />
+  <EChartsRenderer {option} {height} {caption} />
 {:else}
   <div class="spark-empty" data-mini-sparkline-empty style="height:{height}">—</div>
 {/if}

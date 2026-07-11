@@ -90,4 +90,11 @@
   .provenance-row { display:grid; grid-template-columns: 48px 96px minmax(180px, 1fr) minmax(220px, 2fr); gap:8px; align-items:start; border-top:1px solid var(--border-faint); padding:8px 0; font-size:12px; }
   .provenance-row code { white-space:normal; word-break:break-word; color:var(--muted); }
   .command-list { display:grid; gap:4px; }
+  /* Narrow screens: stack the provenance columns so the fixed 48/96px + 180/220px
+     minimums cannot force horizontal overflow (Todo 10 / B1). */
+  @media (max-width: 680px) {
+    .provenance-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .provenance-row > strong,
+    .provenance-row > span { overflow-wrap: anywhere; }
+  }
 </style>

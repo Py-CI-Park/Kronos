@@ -150,15 +150,15 @@
 <!-- ===== Toolbar ===== -->
 <section class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
   <div class="tabs">
-    <button data-active={filter === 'all' ? 'true' : 'false'} onclick={() => (filter = 'all')}>전체 ({counts.total})</button>
-    <button data-active={filter === 'completed' ? 'true' : 'false'} onclick={() => (filter = 'completed')}>완료 ({counts.completed})</button>
-    <button data-active={filter === 'failed' ? 'true' : 'false'} onclick={() => (filter = 'failed')}>실패 ({counts.failed})</button>
-    <button data-active={filter === 'running' ? 'true' : 'false'} onclick={() => (filter = 'running')}>진행 중 ({counts.running})</button>
+    <button data-active={filter === 'all' ? 'true' : 'false'} aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>전체 ({counts.total})</button>
+    <button data-active={filter === 'completed' ? 'true' : 'false'} aria-pressed={filter === 'completed'} onclick={() => (filter = 'completed')}>완료 ({counts.completed})</button>
+    <button data-active={filter === 'failed' ? 'true' : 'false'} aria-pressed={filter === 'failed'} onclick={() => (filter = 'failed')}>실패 ({counts.failed})</button>
+    <button data-active={filter === 'running' ? 'true' : 'false'} aria-pressed={filter === 'running'} onclick={() => (filter = 'running')}>진행 중 ({counts.running})</button>
   </div>
   <div class="seg" style="margin-left:auto">
-    <button data-active={sortBy === 'recent' ? 'true' : 'false'} onclick={() => (sortBy = 'recent')}>최신순</button>
-    <button data-active={sortBy === 'name' ? 'true' : 'false'} onclick={() => (sortBy = 'name')}>이름순</button>
-    <button data-active={sortBy === 'progress' ? 'true' : 'false'} onclick={() => (sortBy = 'progress')}>진척순</button>
+    <button data-active={sortBy === 'recent' ? 'true' : 'false'} aria-pressed={sortBy === 'recent'} onclick={() => (sortBy = 'recent')}>최신순</button>
+    <button data-active={sortBy === 'name' ? 'true' : 'false'} aria-pressed={sortBy === 'name'} onclick={() => (sortBy = 'name')}>이름순</button>
+    <button data-active={sortBy === 'progress' ? 'true' : 'false'} aria-pressed={sortBy === 'progress'} onclick={() => (sortBy = 'progress')}>진척순</button>
   </div>
   <button class="btn ghost sm" onclick={load} disabled={loading}>
     {loading ? '갱신 중…' : '새로고침'}

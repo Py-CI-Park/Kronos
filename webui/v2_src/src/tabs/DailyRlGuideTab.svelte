@@ -297,6 +297,7 @@
         type="button"
         class="guide-section-button"
         data-active={activeGuideSection === section.id ? 'true' : 'false'}
+        aria-pressed={activeGuideSection === section.id}
         data-guide-section={section.id}
         onclick={() => (activeGuideSection = section.id)}
       >
@@ -468,6 +469,7 @@
         type="button"
         class="lane-select-card"
         data-active={String(field(lane, 'id')) === String(field(selectedResearchLane(), 'id'))}
+        aria-pressed={String(field(lane, 'id')) === String(field(selectedResearchLane(), 'id'))}
         onclick={() => { selectedLaneId = String(field(lane, 'id') ?? 'D4_RL_RISK_OVERLAY'); }}
       >
         <span>{String(field(lane, 'stage') ?? 'stage')}</span>
@@ -566,6 +568,7 @@
         type="button"
         class="template-card"
         data-active={String(field(workflow, 'workflow_id')) === String(field(selectedResearchWorkflow(), 'workflow_id'))}
+        aria-pressed={String(field(workflow, 'workflow_id')) === String(field(selectedResearchWorkflow(), 'workflow_id'))}
         onclick={() => { selectedWorkflowId = String(field(workflow, 'workflow_id') ?? 'PAST_ONLY_MARKET_REGIME_AUDIT'); }}
       >
         <span>{String(field(workflow, 'stage') ?? 'stage')}</span>
@@ -816,6 +819,7 @@
         type="button"
         class="template-card"
         data-active={String(field(template, 'template_id')) === String(field(selectedScenarioTemplate(), 'template_id'))}
+        aria-pressed={String(field(template, 'template_id')) === String(field(selectedScenarioTemplate(), 'template_id'))}
         onclick={() => { selectedTemplateId = String(field(template, 'template_id') ?? 'D3_D4_SIGNAL_QUALITY_AUDIT'); }}
       >
         <span>{String(field(template, 'lane_id') ?? 'lane')}</span>
@@ -1367,7 +1371,7 @@
   .visual-panel { overflow:hidden; }
   .rl-loop-figure { margin-top:16px; border:1px solid var(--border-faint); border-radius:24px; background:radial-gradient(circle at 22% 28%, rgba(20,184,166,0.16), transparent 34%), radial-gradient(circle at 78% 20%, rgba(59,130,246,0.13), transparent 32%), linear-gradient(135deg, rgba(15,23,42,0.02), rgba(245,158,11,0.05)); overflow:auto; }
   .rl-loop-svg { display:block; width:100%; min-width:900px; height:auto; }
-  .svg-backdrop { fill:rgba(255,255,255,0.64); stroke:var(--border-faint); }
+  .svg-backdrop { fill:var(--surface); stroke:var(--border-faint); }
   .svg-card { fill:var(--surface); stroke:var(--border-faint); stroke-width:1.5; filter:drop-shadow(0 14px 22px rgba(15,23,42,0.10)); }
   .state-card { fill:url(#stateGlow); stroke:rgba(20,184,166,0.50); }
   .agent-card { stroke:rgba(59,130,246,0.48); }
@@ -1494,7 +1498,7 @@
   .live-state-card h3, .live-reward-card h3 { margin:6px 0 12px; font-size:18px; }
   .live-state-card p { margin:12px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
   .state-meter-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0; }
-  .state-meter-grid div { border:1px solid var(--border-faint); border-radius:12px; padding:10px; background:rgba(255,255,255,0.55); }
+  .state-meter-grid div { border:1px solid var(--border-faint); border-radius:12px; padding:10px; background:var(--surface-raised); }
   .state-meter-grid dt, .live-reward-card dt { color:var(--muted); font-size:11px; font-family:var(--font-mono); }
   .state-meter-grid dd, .live-reward-card dd { margin:4px 0 0; font-weight:900; font-family:var(--font-mono); }
   .action-probabilities { margin-top:12px; display:grid; gap:7px; }

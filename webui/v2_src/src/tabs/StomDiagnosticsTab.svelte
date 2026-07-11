@@ -366,7 +366,7 @@
         <span class="pill accent">Rolling net {pct(bestHorizon.rolling_net_return_pct, 3)}</span>
       {/if}
     </div>
-    <EChartsRenderer option={horizonChartOption} height="320px" />
+    <EChartsRenderer option={horizonChartOption} height="320px" caption="호라이즌별 예측 성능" />
     <div class="table-scroll">
       <table class="result-table">
         <thead>
@@ -468,14 +468,14 @@
                 <span class="pill accent">{predictionDetail.visual.selected_window.symbol} · window {predictionDetail.visual.selected_window.window_id}</span>
               {/if}
             </div>
-            <EChartsRenderer option={actualPredictionOption} height="320px" />
+            <EChartsRenderer option={actualPredictionOption} height="320px" caption="선택 window 실제 종가 vs Kronos 예측 종가" />
           </div>
           <div class="chart-section">
             <div class="chart-title">
               <div><div class="card-eyebrow">RETURN SCATTER</div><h3>전체 window 예측 등락률 vs 실제 등락률</h3></div>
               <span class="text-caption">초록=방향 적중 · 빨강=방향 실패</span>
             </div>
-            <EChartsRenderer option={returnScatterOption} height="320px" />
+            <EChartsRenderer option={returnScatterOption} height="320px" caption="예측 등락률 vs 실제 등락률 산점도" />
           </div>
         {/if}
 
@@ -569,11 +569,11 @@
     margin: 14px 0;
     border-radius: 16px;
     border: 1px solid rgba(148,163,184,.24);
-    background: rgba(248,250,252,.72);
+    background: var(--surface-sunken);
   }
-  .verdict-card.success { border-color: rgba(34,197,94,.35); background: rgba(240,253,244,.72); }
-  .verdict-card.warn { border-color: rgba(245,158,11,.35); background: rgba(255,251,235,.8); }
-  .verdict-card.danger { border-color: rgba(239,68,68,.35); background: rgba(254,242,242,.78); }
+  .verdict-card.success { border-color: rgba(34,197,94,.35); background: color-mix(in oklab, var(--success) 12%, var(--surface)); }
+  .verdict-card.warn { border-color: rgba(245,158,11,.35); background: color-mix(in oklab, var(--warn) 12%, var(--surface)); }
+  .verdict-card.danger { border-color: rgba(239,68,68,.35); background: color-mix(in oklab, var(--danger) 12%, var(--surface)); }
   .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .tabs button,
   .ghost {
@@ -584,7 +584,7 @@
     padding: 8px 14px;
     cursor: pointer;
   }
-  .tabs button.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .tabs button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   .workspace-grid { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 16px; }
   .file-list { border-right: 1px solid var(--border); padding-right: 14px; max-height: 980px; overflow: auto; }
   .file-row {
@@ -606,12 +606,12 @@
   .filter-card,
   .eval-kpi {
     border: 1px solid var(--border);
-    background: rgba(255,255,255,.72);
+    background: var(--surface);
     border-radius: 14px;
     padding: 12px;
   }
   .filter-card strong { display:block; font-size: 22px; margin: 4px 0; }
-  .chart-section { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: rgba(255,255,255,.62); }
+  .chart-section { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
   .table-scroll { overflow: auto; margin-top: 10px; }
   .result-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .result-table th,

@@ -75,7 +75,7 @@ ul, ol { list-style: none; padding: 0; }
   --fg:              oklch(22% 0.02 240);
   --fg-strong:       oklch(15% 0.025 240);
   --muted:           oklch(48% 0.018 240);
-  --dim:             oklch(62% 0.014 240);
+  --dim:             oklch(50% 0.016 240);
   --faint:           oklch(78% 0.01 240);
   --on-accent:       oklch(99% 0.005 170);
 
@@ -91,13 +91,13 @@ ul, ol { list-style: none; padding: 0; }
   --warm-soft:       oklch(95% 0.04 35);
 
   /* Status */
-  --success:         oklch(58% 0.15 150);
+  --success:         oklch(48% 0.15 150);
   --success-soft:    oklch(94% 0.05 150);
-  --warn:            oklch(72% 0.16 75);
+  --warn:            oklch(52% 0.12 70);
   --warn-soft:       oklch(96% 0.06 75);
-  --danger:          oklch(58% 0.21 25);
+  --danger:          oklch(50% 0.19 25);
   --danger-soft:     oklch(96% 0.05 25);
-  --info:            oklch(60% 0.14 235);
+  --info:            oklch(50% 0.14 235);
   --info-soft:       oklch(96% 0.04 235);
 
   /* Chart palette */
@@ -172,7 +172,7 @@ ul, ol { list-style: none; padding: 0; }
   --fg:              oklch(94% 0.005 240);
   --fg-strong:       oklch(98% 0.003 240);
   --muted:           oklch(72% 0.014 240);
-  --dim:             oklch(58% 0.018 240);
+  --dim:             oklch(66% 0.016 240);
   --faint:           oklch(40% 0.02 240);
   --on-accent:       oklch(15% 0.02 170);
 
@@ -185,9 +185,16 @@ ul, ol { list-style: none; padding: 0; }
   --warm:            oklch(72% 0.16 35);
   --warm-soft:       oklch(30% 0.08 35);
 
+  /* AA-compliant status foregrounds for dark surfaces (Todo 10 / B2):
+     the light-theme mid-tone status colors are too dark on dark bg, so
+     dark theme defines lighter variants instead of inheriting them. */
+  --success:         oklch(76% 0.15 152);
   --success-soft:    oklch(28% 0.08 150);
+  --warn:            oklch(82% 0.13 82);
   --warn-soft:       oklch(30% 0.10 75);
+  --danger:          oklch(72% 0.17 25);
   --danger-soft:     oklch(28% 0.10 25);
+  --info:            oklch(76% 0.13 235);
   --info-soft:       oklch(28% 0.08 235);
 
   --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.30);

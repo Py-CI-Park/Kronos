@@ -193,7 +193,7 @@
 
 <div class="cost-sensitivity-chart" data-cost-sensitivity-chart>
   {#if resolvedBars.length}
-    <EChartsRenderer option={chartOption} {height} />
+    <EChartsRenderer option={chartOption} {height} caption="비용 민감도 · base_23bp vs 통제군" />
     <p class="cost-legend text-caption">
       <span class="swatch primary" aria-hidden="true"></span>★ base_23bp 기준(primary)
       <span class="swatch control" aria-hidden="true"></span>0bp / 46bp 통제군(control) · RESEARCH_ONLY · 수익 주장 아님

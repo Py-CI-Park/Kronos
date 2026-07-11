@@ -413,7 +413,7 @@
         {/if}
       </div>
     </div>
-    <EChartsRenderer option={chartOption} height="380px" />
+    <EChartsRenderer option={chartOption} height="380px" caption="예측 vs 실제 종가 · 예측 워크벤치" />
     {#if predictionResult.metrics}
       <Disclosure summary="예측 지표 상세">
       <div class="row" style="gap:24px;border-top:1px solid var(--border-faint);padding-top:14px;margin-top:8px;flex-wrap:wrap">

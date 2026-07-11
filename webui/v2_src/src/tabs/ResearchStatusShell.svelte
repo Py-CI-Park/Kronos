@@ -102,7 +102,7 @@
   .status-tile {
     border: 1px solid var(--border);
     border-radius: 16px;
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--surface);
     padding: 12px;
   }
   .status-tile span {
@@ -128,7 +128,7 @@
   .status-column {
     border: 1px solid var(--border);
     border-radius: 18px;
-    background: rgba(248, 250, 252, 0.78);
+    background: var(--surface-sunken);
     padding: 14px;
   }
   .status-column ul,
