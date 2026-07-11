@@ -1,0 +1,424 @@
+{
+  "schema_version": "1.0.0",
+  "scorecard_id": "kronos_90_to_95",
+  "source_plan": "docs/kronos_90_to_95_completion_master_plan_2026-07-11.md",
+  "base_branch": "dashboard-v3",
+  "base_sha": "044b5468be2baa11ef451da32ff3999c7c8ab83b",
+  "point_value_total": 100,
+  "check_kinds": [
+    "contract",
+    "happy_test",
+    "failure_test",
+    "runtime_evidence",
+    "independent_review_hash"
+  ],
+  "check_kind_labels": {
+    "contract": "contract/implementation exists",
+    "happy_test": "happy-path automated test passes",
+    "failure_test": "failure-path automated test passes",
+    "runtime_evidence": "real runtime/canonical evidence captured",
+    "independent_review_hash": "independent review plus evidence hash"
+  },
+  "scoring_rules": {
+    "criterion_points": "integer 0-5 = count of passed binary checks",
+    "category_points": "integer 0-20 = sum of its four criteria",
+    "total_points": "integer 0-100 = sum of five categories",
+    "no_partial": true,
+    "no_rounding": true,
+    "no_alpha_bonus": true,
+    "passed_check_requires_evidence_ref": true
+  },
+  "outputs": {
+    "dashboard_release": {
+      "categories": [
+        "A",
+        "B",
+        "E"
+      ],
+      "max": 60,
+      "contributes_to_gate": true
+    },
+    "research_pipeline": {
+      "categories": [
+        "C",
+        "D"
+      ],
+      "max": 40,
+      "contributes_to_gate": true
+    },
+    "model_verdict": {
+      "scored": false,
+      "values": [
+        "GO",
+        "WATCH",
+        "NO-GO",
+        "INCONCLUSIVE",
+        "NON_IMPROVING"
+      ],
+      "note": "Separate verdict; contributes zero engineering points; positive alpha earns no bonus."
+    }
+  },
+  "categories": {
+    "A": {
+      "name": "Evidence truth",
+      "criteria": [
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "max": 20,
+      "floor": {
+        "gate_90": 19,
+        "gate_95": 19
+      }
+    },
+    "B": {
+      "name": "UI/performance/accessibility",
+      "criteria": [
+        "B1",
+        "B2",
+        "B3",
+        "B4"
+      ],
+      "max": 20,
+      "floor": {
+        "gate_90": 18,
+        "gate_95": 19
+      }
+    },
+    "C": {
+      "name": "Research engineering",
+      "criteria": [
+        "C1",
+        "C2",
+        "C3",
+        "C4"
+      ],
+      "max": 20,
+      "floor": {
+        "gate_90": 17,
+        "gate_95": 19
+      }
+    },
+    "D": {
+      "name": "Research integrity/reproducibility",
+      "criteria": [
+        "D1",
+        "D2",
+        "D3",
+        "D4"
+      ],
+      "max": 20,
+      "floor": {
+        "gate_90": 18,
+        "gate_95": 19
+      }
+    },
+    "E": {
+      "name": "Release/security/quality",
+      "criteria": [
+        "E1",
+        "E2",
+        "E3",
+        "E4"
+      ],
+      "max": 20,
+      "floor": {
+        "gate_90": 18,
+        "gate_95": 19
+      }
+    }
+  },
+  "gates": {
+    "gate_90": {
+      "total_min": 90,
+      "requires_all_floors": true,
+      "blocks_on_caps_below": [
+        90
+      ]
+    },
+    "gate_95": {
+      "total_min": 95,
+      "requires_all_floors": true,
+      "blocks_on_caps_below": [
+        90,
+        95
+      ]
+    }
+  },
+  "hard_caps": [
+    {
+      "id": "failed_test_or_build",
+      "caps_below": 90,
+      "description": "any failed test or build"
+    },
+    {
+      "id": "p0_evidence_fabrication",
+      "caps_below": 90,
+      "description": "P0 evidence fabrication"
+    },
+    {
+      "id": "missing_required_oos_or_control",
+      "caps_below": 90,
+      "description": "missing required OOS/control evidence"
+    },
+    {
+      "id": "unapproved_frozen_or_api_change",
+      "caps_below": 90,
+      "description": "unapproved frozen-file/API change"
+    },
+    {
+      "id": "dirty_release_tree",
+      "caps_below": 90,
+      "description": "dirty release tree"
+    },
+    {
+      "id": "cherry_pick_or_trainval_as_oos",
+      "caps_below": 95,
+      "description": "cherry-picking or presenting train/val as OOS"
+    }
+  ],
+  "criteria": {
+    "A1": {
+      "category": "A",
+      "title": "Freshness-aware run lifecycle status",
+      "checks": {
+        "contract": "Run discovery/detail derives LIVE only from an explicit running state plus an advancing event file within two poll intervals; finished/stale/replay runs are typed COMPLETED/STALE/REPLAY, never LIVE.",
+        "happy_test": "Automated test proves a running, advancing stream renders RUNNING then deterministically transitions to COMPLETED.",
+        "failure_test": "Automated test proves a static historical JSONL (rows present, no advance) renders STALE/REPLAY and never LIVE.",
+        "runtime_evidence": "Live browser capture records at least two advancing steps and the RUNNING->COMPLETED/STALE transition on the real built surface.",
+        "independent_review_hash": "Independent reviewer confirms no polling/row-presence/fetch-time path can mark LIVE, and the API fixture + capture bundle hash is recorded."
+      },
+      "required_evidence": "API fixture + live browser transition capture"
+    },
+    "A2": {
+      "category": "A",
+      "title": "Explicit action availability and metric kind/unit",
+      "checks": {
+        "contract": "Adapters preserve null action as NOT_RECORDED/-- and carry explicit reward_kind/reward_unit/equity_kind/equity_unit; no null-to-zero/HOLD coercion exists.",
+        "happy_test": "Automated test proves a stream declaring units renders the declared reward/equity kind and unit correctly.",
+        "failure_test": "Automated test proves a null-action row renders NOT_RECORDED and a cross-unit overlay (NAV vs KRW) is rejected/separated.",
+        "runtime_evidence": "Populated UI capture shows NOT_RECORDED and declared units on real data through the built surface.",
+        "independent_review_hash": "Independent reviewer confirms schema/adapter tests plus UI capture, and records the evidence bundle hash."
+      },
+      "required_evidence": "schema/adapter tests + populated UI capture"
+    },
+    "A3": {
+      "category": "A",
+      "title": "Authoritative test-OOS latest/today selection",
+      "checks": {
+        "contract": "latest/today selection uses explicit authority/status/completion (mtime only as final tie-break), test OOS is primary, and disposable smoke cannot become production latest.",
+        "happy_test": "Isolated-root API test proves a canonical test-OOS run wins latest and today matches date/policy/split/authority.",
+        "failure_test": "Isolated-root API test proves a newer disposable smoke or older/first-aggregate row cannot steal latest/primary.",
+        "runtime_evidence": "Canonical-vs-smoke scenario on the real surface shows the authoritative test-OOS headline, not the smoke.",
+        "independent_review_hash": "Independent reviewer confirms isolated-root tests and the canonical/smoke scenario, recording the bundle hash."
+      },
+      "required_evidence": "isolated-root API tests + canonical/smoke failure scenario"
+    },
+    "A4": {
+      "category": "A",
+      "title": "Selected-run verdict, blockers, and freshness visibility",
+      "checks": {
+        "contract": "Selected-run payload surfaces verdict, the full API blocker list, D0/D1/D5, cost, seed, split, and artifact freshness without hardcoded counts/text.",
+        "happy_test": "Automated payload assertion proves verdict/blockers/seed/split/cost/date/artifact-age are present for a selected run.",
+        "failure_test": "Automated test proves a run with a different blocker list is not rendered with a hardcoded count or stale normalization text.",
+        "runtime_evidence": "Selected-run browser capture shows the verdict/blocker/freshness fields populated from the API on the real surface.",
+        "independent_review_hash": "Independent reviewer confirms payload assertion + browser capture and records the bundle hash."
+      },
+      "required_evidence": "selected-run browser capture + payload assertion"
+    },
+    "B1": {
+      "category": "B",
+      "title": "Responsive fit and CJK integrity on four audited pages",
+      "checks": {
+        "contract": "Four audited pages use controlled widths/tokens so content fits 375/768/1280 in light/dark with no clipping or CJK collapse.",
+        "happy_test": "Automated DOM measurement asserts scrollWidth<=clientWidth for four pages x three widths x two themes.",
+        "failure_test": "Automated fixture injects an overlong Korean run ID and rejects overflow or one-character collapse.",
+        "runtime_evidence": "24 fresh production-build captures (4 pages x 3 widths x 2 themes) show no overflow/clipping.",
+        "independent_review_hash": "Independent visual reviewer confirms the measurements and 24 captures and records the bundle hash."
+      },
+      "required_evidence": "automated measurements + 24 fresh captures"
+    },
+    "B2": {
+      "category": "B",
+      "title": "WCAG AA contrast, keyboard, and chart alternatives",
+      "checks": {
+        "contract": "Text/status controls meet AA contrast; interactive elements expose aria state and focus-visible order; charts provide a text/data alternative.",
+        "happy_test": "axe/DOM assertions pass for contrast, aria-pressed/state, and focus order on the audited pages.",
+        "failure_test": "Automated test proves a chart without an accessible name/summary/data alternative fails the a11y gate.",
+        "runtime_evidence": "Keyboard-only traversal trace reaches and announces every interactive control on the real surface.",
+        "independent_review_hash": "Independent reviewer confirms axe results + keyboard trace and records the bundle hash."
+      },
+      "required_evidence": "axe/DOM assertions + keyboard trace"
+    },
+    "B3": {
+      "category": "B",
+      "title": "Independent per-card loading/error/empty states",
+      "checks": {
+        "contract": "Run selection uses request-generation/abort tokens and each card owns independent loading/error/empty/stale state so mixed state cannot render.",
+        "happy_test": "Delayed/out-of-order request test proves rapidly switching runs ends with only the newest run's data.",
+        "failure_test": "Automated test proves a stalled non-critical endpoint renders ERROR/RETRY for that card while others hydrate (not MISSING).",
+        "runtime_evidence": "Browser trace under injected latency shows no mixed-run state and per-card independent states.",
+        "independent_review_hash": "Independent reviewer confirms the race test + browser trace and records the bundle hash."
+      },
+      "required_evidence": "delayed/out-of-order request test + browser trace"
+    },
+    "B4": {
+      "category": "B",
+      "title": "Quantitative page and API latency targets",
+      "checks": {
+        "contract": "Critical loaders are split and backend validation/tail reads are bounded/memoized so latency targets are achievable.",
+        "happy_test": "Repeatable timing script asserts first meaningful card <=3s and full critical hydration <=10s on the recorded corpus.",
+        "failure_test": "Timing test proves a warm critical API breaching <=2s (or cold <=5s) fails the latency gate rather than passing silently.",
+        "runtime_evidence": "JSON timing results from the representative corpus record the measured card/API latencies.",
+        "independent_review_hash": "Independent reviewer confirms the timing script + JSON results and records the bundle hash."
+      },
+      "required_evidence": "repeatable timing script + JSON results"
+    },
+    "C1": {
+      "category": "C",
+      "title": "Honest close-slot CLI accounting and identity",
+      "checks": {
+        "contract": "The standard close-slot CLI writes live events, reserves buy-side costs when sizing, honors the documented tie-break, and uses honest algorithm identity (no misused contextual-bandit label).",
+        "happy_test": "Unit/integration tests prove cash reserves buy costs, tie_score is deterministic, and the default CLI emits truthful events.",
+        "failure_test": "Test proves an aggregate-positive/test-negative fixture cannot obtain GO or a primary positive headline.",
+        "runtime_evidence": "Bounded real-data smoke manifest shows nonempty truthful events and a complete test ledger.",
+        "independent_review_hash": "Independent reviewer confirms tests + smoke manifest and records the bundle hash."
+      },
+      "required_evidence": "unit/integration tests + smoke manifest"
+    },
+    "C2": {
+      "category": "C",
+      "title": "Genuine daily R3b SB3 adapter and training path",
+      "checks": {
+        "contract": "A daily R3b adapter maps official daily predictions with 23bp defaults, fold-specific fit, configurable device, and a >=200k/seed path distinct from the tabular lane.",
+        "happy_test": "E2E test trains a short test model through the adapter and discovers it under the default dashboard root.",
+        "failure_test": "Test proves shuffled/missing-hash/wrong-cost input fails before model.learn.",
+        "runtime_evidence": "Real model artifact, events, and device/lineage summary exist for the 5k smoke and the full path.",
+        "independent_review_hash": "Independent reviewer confirms adapter tests + artifact/lineage summary and records the bundle hash."
+      },
+      "required_evidence": "tests, model artifact, events, device/lineage summary"
+    },
+    "C3": {
+      "category": "C",
+      "title": "Deterministic R5 attribution and reconstruction",
+      "checks": {
+        "contract": "R5 produces deterministic pretrained/finetuned/random zero-shot comparison and base-vs-finetuned tokenizer reconstruction on the exact lineage.",
+        "happy_test": "Deterministic rerun yields identical comparison metrics within the preregistered tolerance.",
+        "failure_test": "Corrupt/missing comparison input returns INCONCLUSIVE without interpreting partial metrics.",
+        "runtime_evidence": "Dated result + JSON with seed42/sample5, reconstruction MSE, and input/output hashes exist.",
+        "independent_review_hash": "Independent reviewer confirms the deterministic result + hashes and records the bundle hash."
+      },
+      "required_evidence": "dated result, JSON, hashes, seed42/sample5"
+    },
+    "C4": {
+      "category": "C",
+      "title": "Authoritative multi-seed governance consumers",
+      "checks": {
+        "contract": "Registry/aliases, the R6 sweep, optional Aim, and R7 rliable consume authoritative identical-config multi-seed outputs only.",
+        "happy_test": "Test proves the registry returns one authoritative row per real run and rliable accepts only identical-config seeds.",
+        "failure_test": "Test proves duplicate run IDs from one seed are rejected as rliable/seed inputs.",
+        "runtime_evidence": "SQLite query, stability JSON, Aim capture, and IQM/CI report from the real seeds exist.",
+        "independent_review_hash": "Independent reviewer confirms the governance consumers + reports and records the bundle hash."
+      },
+      "required_evidence": "SQLite query, stability JSON, Aim capture, IQM/CI report"
+    },
+    "D1": {
+      "category": "D",
+      "title": "Preregistration, cost controls, and chronological hygiene",
+      "checks": {
+        "contract": "Each experiment has a prereg, 23bp primary with 0/46 controls, chronological purge/embargo, and recorded seed and source hashes.",
+        "happy_test": "Manifest/gate validation passes for a compliant run (prereg + 23bp/0/46 + purge/embargo + hashes).",
+        "failure_test": "Validation rejects a run missing prereg, controls, embargo, or source hashes.",
+        "runtime_evidence": "Real manifest/gate output records the prereg reference, controls, and hashes.",
+        "independent_review_hash": "Independent reviewer confirms the manifest/gate validation and records the bundle hash."
+      },
+      "required_evidence": "manifest/gate validation"
+    },
+    "D2": {
+      "category": "D",
+      "title": "Complete baselines and negative/shuffle controls",
+      "checks": {
+        "contract": "Test OOS plus no-trade, momentum/RULE, buy-hold where relevant, and shuffle/negative controls are all present for alpha claims.",
+        "happy_test": "Baseline/control tables assert every required baseline and control is computed on test OOS.",
+        "failure_test": "Gate proves an alpha claim missing a shuffle/negative control or the test-OOS baseline fails.",
+        "runtime_evidence": "Real baseline/control tables and gate results exist for the evaluated run.",
+        "independent_review_hash": "Independent reviewer confirms baseline/control coverage and records the bundle hash."
+      },
+      "required_evidence": "baseline/control tables and gate results"
+    },
+    "D3": {
+      "category": "D",
+      "title": "Multi-seed stability and bootstrap uncertainty",
+      "checks": {
+        "contract": ">=3 identical-config SB3 seeds plus the planned 5x3 D4 sweep report MDD and bootstrap uncertainty.",
+        "happy_test": "Stability report reproduces one seed summary from raw ledgers and aggregates all seeds.",
+        "failure_test": "Test proves a seed with negative test OOS or high MDD cannot be omitted from the aggregate.",
+        "runtime_evidence": "Real stability and rliable reports with IQM/CI and MDD exist.",
+        "independent_review_hash": "Independent reviewer confirms stability/rliable reproducibility and records the bundle hash."
+      },
+      "required_evidence": "stability and rliable reports"
+    },
+    "D4": {
+      "category": "D",
+      "title": "Explicit promotion and preserved NO-GO",
+      "checks": {
+        "contract": "Artifact promotion is explicit/hashable; NO-GO/NON_IMPROVING is never softened; a positive result earns no bonus.",
+        "happy_test": "Promotion-manifest test proves canonical promotion is explicit and verdict-labeled.",
+        "failure_test": "Audit proves a softened NO-GO or an unlabeled bulk promotion is rejected.",
+        "runtime_evidence": "Real promotion manifest + docs/AGENTS honesty audit output exist.",
+        "independent_review_hash": "Independent reviewer confirms promotion + honesty audit and records the bundle hash."
+      },
+      "required_evidence": "promotion manifest + docs/AGENTS audit"
+    },
+    "E1": {
+      "category": "E",
+      "title": "Green tests, build, and changed-file static checks",
+      "checks": {
+        "contract": "Targeted and full tests, npm check/build, and changed-file LSP/static checks are wired and runnable.",
+        "happy_test": "Targeted + full pytest and npm check/build pass with recorded logs/JUnit.",
+        "failure_test": "A deliberately failing test/build or error-severity diagnostic causes the gate to fail (no suppression).",
+        "runtime_evidence": "Real logs/JUnit/LSP JSON/build hashes from this SHA exist.",
+        "independent_review_hash": "Independent reviewer confirms the logs/JUnit/LSP/build evidence and records the bundle hash."
+      },
+      "required_evidence": "logs/JUnit/LSP JSON/build hashes"
+    },
+    "E2": {
+      "category": "E",
+      "title": "Trusted-local security boundary",
+      "checks": {
+        "contract": "Loopback binding, restricted CORS/path roots, debug-off default, sanitized docs, and bounded heavy inputs are enforced.",
+        "happy_test": "Security tests prove an allowed root + loopback origin succeeds.",
+        "failure_test": "Security tests reject arbitrary absolute paths, disallowed origins, oversized params, and remote debug.",
+        "runtime_evidence": "Runtime probes confirm debug off, loopback binding, and inert docs rendering.",
+        "independent_review_hash": "Independent security reviewer confirms tests + probes and records the bundle hash."
+      },
+      "required_evidence": "security tests + runtime probes"
+    },
+    "E3": {
+      "category": "E",
+      "title": "Dependency advisory disposition",
+      "checks": {
+        "contract": "No high/critical advisories remain; production-reachable moderates are fixed or explicitly isolated with owner/deadline.",
+        "happy_test": "npm audit --json shows zero high/critical (or an explicit 90-gate temporary reachability disposition).",
+        "failure_test": "An unmitigated production-reachable moderate without owner/deadline fails the disposition check.",
+        "runtime_evidence": "Real npm audit/outdated output plus the disposition record exist.",
+        "independent_review_hash": "Independent reviewer confirms the audit + disposition and records the bundle hash."
+      },
+      "required_evidence": "npm audit/outdated + disposition"
+    },
+    "E4": {
+      "category": "E",
+      "title": "Clean release state and final reviews",
+      "checks": {
+        "contract": "Clean tree, source/generated separation, and a current dated handoff are in place.",
+        "happy_test": "Git audit proves a clean tree and source/generated separation at the release SHA.",
+        "failure_test": "A dirty tree, bulk generated commit, or ack-only reviewer fails the release check.",
+        "runtime_evidence": "Final four review receipts and two visual review receipts (all APPROVE) exist.",
+        "independent_review_hash": "Independent reviewer confirms git audit + all reviewer receipts and records the bundle hash."
+      },
+      "required_evidence": "git audit + reviewer receipts"
+    }
+  }
+}
