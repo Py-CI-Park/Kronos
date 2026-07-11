@@ -6,6 +6,8 @@
   // no JS theme subscription is required.
   import { onMount, onDestroy } from 'svelte';
   import { gpuStatus, systemStatus, refreshSeconds, lastUpdatedAt } from '$lib/stores';
+  import { rlApi } from '$lib/rlApi';
+  import { deriveDisplayStatus, isLive as isRunningStatus, type RunLifecycle } from '$lib/runLifecycle';
 
   // Same subscribe + $state pattern SystemHealthTab uses.
   let gpu = $state<any>(null);
@@ -27,11 +29,55 @@
   // 1s ticker keeps freshness + stale detection live between polls.
   let nowTick = $state(Date.now());
   let timer: number | undefined;
+
+  // Todo6 — the LIVE pulse must reflect the monitored run's SOURCE lifecycle
+  // (RUNNING, derived from cross-poll global_step advance + freshness), NOT the
+  // screen-refresh `ageSec` used by the DATA cell below. OpsStrip has no run
+  // context prop, so it self-fetches the latest run's lifecycle minimally.
+  let rlLifecycle = $state<RunLifecycle | null>(null);
+  let rlPrevStep = $state<number | null>(null);
+  let rlCurrentStep = $state<number | null>(null);
+  let rlWasRunning = $state(false);
+  let rlPolling = $state(false);
+  let rlTimer: number | undefined;
+
+  async function pollRlLifecycle(): Promise<void> {
+    try {
+      const runsResp = await rlApi.rlRuns(1);
+      const latestRun = runsResp?.runs?.[0];
+      rlLifecycle = latestRun?.lifecycle ?? null;
+      const newStep = rlLifecycle?.last_step ?? null;
+      rlPrevStep = rlCurrentStep;
+      rlCurrentStep = newStep;
+    } catch {
+      rlLifecycle = null;
+      rlPrevStep = null;
+      rlCurrentStep = null;
+    } finally {
+      rlPolling = true;
+      if (
+        isRunningStatus(
+          deriveDisplayStatus(rlLifecycle, {
+            prevStep: rlPrevStep,
+            currentStep: rlCurrentStep,
+            polling: rlPolling,
+            wasRunning: rlWasRunning,
+          })
+        )
+      ) {
+        rlWasRunning = true;
+      }
+    }
+  }
+
   onMount(() => {
     timer = window.setInterval(() => (nowTick = Date.now()), 1000);
+    void pollRlLifecycle();
+    rlTimer = window.setInterval(() => void pollRlLifecycle(), Math.max(3, sec) * 1000);
   });
   onDestroy(() => {
     if (timer != null) clearInterval(timer);
+    if (rlTimer != null) clearInterval(rlTimer);
   });
 
   // ── Compute readouts — null-safe, no fabrication ──
@@ -43,12 +89,27 @@
     lastTs == null ? null : Math.max(0, Math.round((nowTick - lastTs) / 1000)),
   );
   // Stale once the last screen refresh is older than 3× the poll interval.
+  // NOTE: this is DATA (screen-refresh) freshness only — it is deliberately
+  // NOT used for the LIVE pulse (Todo6: fetch-time freshness != source RUNNING).
   let staleThreshold = $derived(Math.max(3, sec * 3));
   let freshness = $derived.by(() => {
-    if (ageSec == null) return { text: 'no data', tone: 'warn' as const, live: false };
-    if (ageSec > staleThreshold) return { text: 'stale', tone: 'warn' as const, live: false };
-    return { text: `${ageSec}s ago`, tone: 'ok' as const, live: true };
+    if (ageSec == null) return { text: 'no data', tone: 'warn' as const };
+    if (ageSec > staleThreshold) return { text: 'stale', tone: 'warn' as const };
+    return { text: `${ageSec}s ago`, tone: 'ok' as const };
   });
+  // Todo6 — the pulse is live ONLY when the monitored run's SOURCE lifecycle is
+  // actually RUNNING (cross-poll step-advance + freshness), never from
+  // screen-refresh ageSec.
+  let sourceLive = $derived(
+    isRunningStatus(
+      deriveDisplayStatus(rlLifecycle, {
+        prevStep: rlPrevStep,
+        currentStep: rlCurrentStep,
+        polling: rlPolling,
+        wasRunning: rlWasRunning,
+      })
+    )
+  );
 
   function pct(v: number | null | undefined): string {
     return v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toFixed(0);
@@ -58,7 +119,7 @@
 <div class="ops-strip" data-ops-strip aria-label="시스템 운영 상태 요약">
   <div class="ops-row">
     <span class="ops-lead" title="라이브 상태">
-      <span class="ops-pulse" class:live={freshness.live}></span>
+      <span class="ops-pulse" class:live={sourceLive}></span>
       <span class="ops-lead-text">LIVE</span>
     </span>
 

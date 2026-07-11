@@ -1,3 +1,4 @@
+import type { RunLifecycle } from './runLifecycle';
 import { fetchJson } from './http';
 
 export type RlArtifactType =
@@ -49,6 +50,7 @@ export interface RlRunRecord {
   readonly summary?: JsonObject;
   readonly strategy_context?: RlStrategyContext;
   readonly policies?: readonly string[];
+  readonly lifecycle?: RunLifecycle;
 }
 
 export interface RlRunDetail extends RlRunRecord {

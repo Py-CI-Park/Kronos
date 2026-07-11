@@ -10,6 +10,7 @@
   import { trainingStatus, metricsLatest } from '$lib/stores';
   import { navigateToTab } from '$lib/routes';
   import { humanizeVerdict } from '$lib/verdictLabel';
+  import { deriveDisplayStatus, statusLabel, statusTone, type LifecycleStatus } from '$lib/runLifecycle';
 
   type Tone = 'warn' | 'danger' | 'success' | 'accent' | 'idle';
   type Src = 'live' | 'fact';
@@ -21,6 +22,11 @@
   // WP-S4(A) — RL 인트라데이 카드의 LIVE 서브라인. rlApi.rlEvents tail의 마지막
   // 행(latest global_step + reward)만 읽는다. NO-GO FACT 판정과는 무관한 관측치.
   let rlLiveEvent = $state<{ step: string; reward: string } | null>(null);
+  // Todo6 — 최신 run 의 backend lifecycle 스냅샷으로부터 도출한 정직한 상태.
+  // Mission Control 은 cross-poll 관측(step 진행)을 하지 않으므로 polling=false 로
+  // 고정한다 — 즉 이 화면은 절대 RUNNING(LIVE)을 표기하지 않고, 백엔드 스냅샷 그대로
+  // COMPLETED/REPLAY/IDLE/MISSING 중 하나만 정직하게 보여준다.
+  let rlLifecycleStatus = $state<LifecycleStatus>('MISSING');
   trainingStatus.subscribe((v) => (train = v));
   metricsLatest.subscribe((v) => (metrics = v));
 
@@ -37,7 +43,14 @@
     void (async () => {
       try {
         const runsResp = await rlApi.rlRuns(5);
-        const latestRunName = runsResp?.runs?.[0]?.name;
+        const latestRun = runsResp?.runs?.[0];
+        rlLifecycleStatus = deriveDisplayStatus(latestRun?.lifecycle ?? null, {
+          prevStep: null,
+          currentStep: null,
+          polling: false,
+          wasRunning: false,
+        });
+        const latestRunName = latestRun?.name;
         if (!latestRunName) return;
         const eventsResp = await rlApi.rlEvents(latestRunName, 20);
         const latestRow = eventsResp?.rows?.length ? eventsResp.rows[eventsResp.rows.length - 1] : null;
@@ -48,7 +61,8 @@
           };
         }
       } catch {
-        /* fail-open: rl runs/events 조회 실패 시 rlLiveEvent는 null로 남고 아래에서 PENDING('확인 중')으로 표시 */
+        /* fail-open: rl runs/events 조회 실패 시 rlLiveEvent는 null로 남고 아래에서 PENDING('확인 중')으로 표시.
+           rlLifecycleStatus 는 초기값 'MISSING' 으로 남는다(정직한 fail-closed). */
       }
     })();
   });
@@ -78,6 +92,11 @@
   // WP-S4(A) — RL LIVE 서브라인 표시 문자열. rlLiveEvent가 없으면(로딩 중/실패)
   // 기존 PENDING 패턴('확인 중')으로 fail-open한다. NO-GO FACT 판정에는 영향 없음.
   const rlLiveLine = $derived(rlLiveEvent ? `step ${rlLiveEvent.step} · reward ${rlLiveEvent.reward}` : PENDING);
+  // Todo6 — 서브라인 태그 문구/톤은 하드코딩 'LIVE' 대신 백엔드 lifecycle 스냅샷에서
+  // 정직하게 도출한다(polling=false 이므로 절대 RUNNING 이 아님 — COMPLETED/REPLAY/
+  // IDLE/MISSING 중 하나).
+  const rlLifecycleLabel = $derived(statusLabel(rlLifecycleStatus));
+  const rlLifecycleTone = $derived(statusTone(rlLifecycleStatus));
 
   // ── 계기판 게이지 (한눈 스캔) ────────────────────────────────────
   const locks = ['실거래', '브로커', '주문', '계좌', '페이퍼', '모델빌드', '수익주장'] as const;
@@ -98,6 +117,10 @@
     // WP-S4(A) — optional LIVE sub-line (RL 카드 전용: latest step/reward) + 두 번째
     // 클릭 타깃(가이드 보기). 지정되지 않은 카드는 기존 렌더링과 동일하게 유지된다.
     liveSub?: string;
+    // Todo6 — liveSub 태그의 정직한 라벨/톤. lifecycle 도출값이 'accent'(RUNNING)일
+    // 때만 눈에 띄는 live 스타일을 쓰고, 그 외에는 FACT 톤 스타일로 표기한다.
+    liveSubLabel?: string;
+    liveSubTone?: 'accent' | 'warn' | 'ok' | 'danger' | 'idle';
     guideTab?: string;
   }
 
@@ -124,7 +147,8 @@
       foot: '⚠ 정규화 버그 · contextual_bandit 0종목 선택' },
     { tab: 'rl', nm: '강화학습 · 인트라데이', sub: 'intraday · ts_imb RULE baseline', tone: 'danger',
       verdict: 'NO-GO', vsrc: 'fact', big: 'RESEARCH_ONLY', bsrc: 'fact',
-      foot: 'D9 gate · locks 7 off', liveSub: rlLiveLine, guideTab: 'daily-rl-guide' },
+      foot: 'D9 gate · locks 7 off', liveSub: rlLiveLine, liveSubLabel: rlLifecycleLabel, liveSubTone: rlLifecycleTone,
+      guideTab: 'daily-rl-guide' },
     { tab: 'system-health', nm: '학습 · 시스템', sub: 'predictor · live-training', tone: toneOf(trainState),
       verdict: trainState, vsrc: 'live', big: trainMetric, bsrc: 'live',
       foot: runName ?? 'stom predictor' },
@@ -192,7 +216,7 @@
               </div>
               <div class="big">{ln.big}<span class="tag {ln.bsrc}">{ln.bsrc === 'live' ? 'LIVE' : 'FACT'}</span></div>
               {#if ln.liveSub}
-                <div class="mc-live-sub" data-mc-rl-live-sub><span class="tag live">LIVE</span><span>{ln.liveSub}</span></div>
+                <div class="mc-live-sub" data-mc-rl-live-sub><span class="tag {ln.liveSubTone === 'accent' ? 'live' : 'fact'}">{ln.liveSubLabel ?? 'FACT'}</span><span>{ln.liveSub}</span></div>
               {/if}
               <div class="foot"><span class="bk">{ln.foot}</span><span class="go">열기 →</span></div>
             </button>

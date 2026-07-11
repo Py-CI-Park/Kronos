@@ -9,6 +9,7 @@
   import { onDestroy } from 'svelte';
   import EChartsRenderer from '../../charts/EChartsRenderer.svelte';
   import { rlApi, type RlTableRow } from '$lib/rlApi';
+  import { deriveDisplayStatus, statusLabel, statusTone, isLive as isRunning, type RunLifecycle } from '$lib/runLifecycle';
   import { errorMessage, num, pct, rowNumber, text } from '$lib/rlRows';
   import { tooltipLines, tooltipText, tooltipTitle } from '$lib/safeHtml';
   import { theme } from '$lib/stores';
@@ -50,6 +51,12 @@
   let timer: number | null = null;
   let activeRun = '';
   let activeCompareKey = '';
+  // WP-S1/Todo6 — lifecycle 스냅샷(백엔드 단일 스냅샷은 RUNNING/STALE 을 절대 방출하지
+  // 않는다) + cross-poll 관측(prevStep/wasRunning)으로 client 가 RUNNING/STALE 을
+  // 도출한다. run 이 바뀌면 관측 상태를 리셋한다.
+  let lifecycle = $state<RunLifecycle | null>(null);
+  let prevStep = $state<number | null>(null);
+  let wasRunning = $state(false);
 
   const overlayNames = $derived(compareRuns.filter((name) => name !== '' && name !== run));
   const isOverlay = $derived(overlayNames.length > 0);
@@ -64,7 +71,6 @@
   );
   const visibleEvents = $derived(events.slice(0, frame));
   const isLiveFrame = $derived(frameOverride == null || frame >= totalFrames);
-  const isLive = $derived(polling && events.length > 0);
 
   const latest = $derived(visibleEvents.length ? visibleEvents[visibleEvents.length - 1] : null);
   const latestStep = $derived(latest ? num(rowNumber(latest, 'global_step'), 0) : '—');
@@ -72,6 +78,14 @@
   const latestEquity = $derived(latest ? num(rowNumber(latest, 'equity'), 2) : '—');
   const latestPhase = $derived(latest ? text(latest, 'phase', 'research') : '—');
   const latestAlgorithm = $derived(latest ? text(latest, 'algorithm', 'research') : '—');
+  // WP-S1/Todo6 — 파생 상태: 백엔드 스냅샷 + cross-poll 관측을 결합한 정직한 상태.
+  // RUNNING 은 오직 polling && step advancing && event freshness 조건을 모두
+  // 만족할 때만 성립한다 (row-존재/polling 만으로는 절대 LIVE 로 표기하지 않는다).
+  let currentStep = $state<number | null>(null);
+  const displayStatus = $derived(
+    deriveDisplayStatus(lifecycle, { prevStep, currentStep, polling, wasRunning })
+  );
+  const displayLive = $derived(isRunning(displayStatus));
 
   async function refresh(): Promise<void> {
     if (!run) {
@@ -79,14 +93,20 @@
       truncated = false;
       compareSeries = [];
       emptyMessage = null;
+      lifecycle = null;
+      prevStep = null;
+      currentStep = null;
       return;
     }
     loading = true;
     try {
       const extras = overlayNames;
-      const payloads = await Promise.all([
-        rlApi.rlEvents(run, 240),
-        ...extras.map((name) => rlApi.rlEvents(name, 240)),
+      const [payloads, detail] = await Promise.all([
+        Promise.all([
+          rlApi.rlEvents(run, 240),
+          ...extras.map((name) => rlApi.rlEvents(name, 240)),
+        ]),
+        rlApi.rlRun(run).catch(() => null),
       ]);
       const primary = payloads[0];
       const rows = primary?.rows ?? [];
@@ -98,6 +118,11 @@
       compareSeries = extras.map((name, idx) => ({ name, rows: payloads[idx + 1]?.rows ?? [] }));
       error = null;
       lastUpdated = new Date().toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' });
+      lifecycle = detail?.lifecycle ?? null;
+      const newStepRaw = rows.length ? rowNumber(rows[rows.length - 1], 'global_step', NaN) : NaN;
+      prevStep = currentStep;
+      currentStep = Number.isFinite(newStepRaw) ? newStepRaw : null;
+      if (displayStatus === 'RUNNING') wasRunning = true;
     } catch (caught) {
       error = errorMessage(caught, `${run} live events load failed`);
       events = [];
@@ -125,10 +150,15 @@
     timer = window.setInterval(() => void refresh(), Math.max(3, pollSeconds) * 1000);
   }
 
-  // run 이 바뀌면 폴링을 재시작한다 (setInterval, onDestroy 에서 정리).
+  // run 이 바뀌면 폴링을 재시작한다 (setInterval, onDestroy 에서 정리) — 이전 run 의
+  // lifecycle 관측(prevStep/currentStep/wasRunning)은 새 run 에 이월하지 않는다.
   $effect(() => {
     if (run === activeRun) return;
     activeRun = run;
+    lifecycle = null;
+    prevStep = null;
+    currentStep = null;
+    wasRunning = false;
     startTimer();
   });
 
@@ -337,6 +367,14 @@
     if (name === 'sell') return 'action-sell';
     return 'action-hold';
   }
+  // statusTone() vocabulary (accent/warn/ok/danger/idle) maps onto this file's
+  // existing `.pill.*` CSS classes (success/warn/danger/accent; idle -> no
+  // extra class, matches the plain default pill look).
+  function statusPillClass(tone: ReturnType<typeof statusTone>): string {
+    if (tone === 'ok') return 'success';
+    if (tone === 'idle') return '';
+    return tone;
+  }
 
   const emptyStateText = $derived(loading ? '이벤트 로딩 중 · 연구 전용' : (emptyMessage ?? '이벤트 없음 · 연구 전용'));
 </script>
@@ -349,11 +387,11 @@
     </div>
     <div class="live-screen-status">
       <span class="pill" data-rl-live-screen-run>{run || '선택된 run 없음'}</span>
-      <span class="pill {isLive ? 'accent' : 'warn'}" data-rl-live-screen-pill>
-        {#if isLive}
-          <span class="live-dot" aria-hidden="true"></span>LIVE
+      <span class="pill {statusPillClass(statusTone(displayStatus))}" data-rl-live-screen-pill>
+        {#if displayLive}
+          <span class="live-dot" aria-hidden="true"></span>{statusLabel(displayStatus)}
         {:else}
-          <span class="dot"></span>IDLE
+          <span class="dot"></span>{statusLabel(displayStatus)}
         {/if}
       </span>
     </div>
