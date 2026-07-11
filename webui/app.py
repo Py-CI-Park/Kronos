@@ -396,7 +396,7 @@ except Exception as exc:
     v2_bp = None
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=[origin.strip() for origin in os.environ.get("KRONOS_WEBUI_CORS_ORIGINS", f"http://127.0.0.1:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))},http://localhost:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))}").split(",") if _re.fullmatch(r"https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?", origin.strip())], supports_credentials=False)
 if v2_bp is not None:
     app.register_blueprint(v2_bp)
 
@@ -2067,94 +2067,93 @@ def get_data_files():
     data_files = load_data_files()
     return jsonify(data_files)
 
+def _approved_data_file(file_path):
+    if not isinstance(file_path, str) or not file_path.strip():
+        return None
+    repo_root = Path(__file__).resolve().parents[1]
+    configured = [value.strip() for value in os.environ.get("KRONOS_WEBUI_DATA_ROOTS", "").split(os.pathsep) if value.strip()]
+    roots = (
+        repo_root / "_database",
+        repo_root / "finetune" / "qlib_exports",
+        repo_root / "finetune_csv" / "data",
+        repo_root / "data",
+        *((Path(value) if Path(value).is_absolute() else repo_root / value) for value in configured),
+    )
+    try:
+        submitted = Path(file_path).expanduser()
+        candidate = (submitted if submitted.is_absolute() else repo_root / submitted).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not candidate.is_file():
+        return None
+    return str(candidate) if any(candidate.is_relative_to(root.resolve()) for root in roots) else None
+
 @app.route('/api/load-data', methods=['POST'])
 def load_data():
     """Load data file"""
     try:
-        data = request.get_json()
-        file_path = data.get('file_path')
-        
-        if not file_path:
-            return jsonify({'error': '파일 경로가 비어 있습니다'}), 400
-        
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': '요청 본문은 JSON 객체여야 합니다'}), 400
+        file_path = _approved_data_file(data.get('file_path'))
+        if file_path is None:
+            return jsonify({'error': '승인된 데이터 루트 안의 일반 파일만 사용할 수 있습니다'}), 400
         df, error = load_data_file(file_path)
         if error:
             return jsonify({'error': error}), 400
-        
-        # Detect data time frequency
-        def detect_timeframe(df):
-            if len(df) < 2:
+        def detect_timeframe(frame):
+            if len(frame) < 2:
                 return "알 수 없음"
-            
-            time_diffs = []
-            for i in range(1, min(10, len(df))):  # Check first 10 time differences
-                diff = df['timestamps'].iloc[i] - df['timestamps'].iloc[i-1]
-                time_diffs.append(diff)
-            
-            if not time_diffs:
+            diffs = [frame['timestamps'].iloc[i] - frame['timestamps'].iloc[i - 1] for i in range(1, min(10, len(frame)))]
+            if not diffs:
                 return "알 수 없음"
-            
-            # Calculate average time difference
-            avg_diff = sum(time_diffs, pd.Timedelta(0)) / len(time_diffs)
-            
-            # Convert to readable format
+            avg_diff = sum(diffs, pd.Timedelta(0)) / len(diffs)
             if avg_diff < pd.Timedelta(minutes=1):
                 return f"{avg_diff.total_seconds():.0f}초"
-            elif avg_diff < pd.Timedelta(hours=1):
+            if avg_diff < pd.Timedelta(hours=1):
                 return f"{avg_diff.total_seconds() / 60:.0f}분"
-            elif avg_diff < pd.Timedelta(days=1):
+            if avg_diff < pd.Timedelta(days=1):
                 return f"{avg_diff.total_seconds() / 3600:.0f}시간"
-            else:
-                return f"{avg_diff.days}일"
-        
-        # Return data information
+            return f"{avg_diff.days}일"
         data_info = {
             'rows': len(df),
             'columns': list(df.columns),
             'start_date': df['timestamps'].min().isoformat() if 'timestamps' in df.columns else 'N/A',
             'end_date': df['timestamps'].max().isoformat() if 'timestamps' in df.columns else 'N/A',
-            'price_range': {
-                'min': float(df[['open', 'high', 'low', 'close']].min().min()),
-                'max': float(df[['open', 'high', 'low', 'close']].max().max())
-            },
+            'price_range': {'min': float(df[['open', 'high', 'low', 'close']].min().min()), 'max': float(df[['open', 'high', 'low', 'close']].max().max())},
             'prediction_columns': ['open', 'high', 'low', 'close'] + (['volume'] if 'volume' in df.columns else []),
-            'timeframe': detect_timeframe(df)
+            'timeframe': detect_timeframe(df),
         }
-        
-        return jsonify({
-            'success': True,
-            'data_info': data_info,
-            'message': f'데이터를 성공적으로 불러왔습니다. 총 {len(df)}행'
-        })
-        
+        return jsonify({'success': True, 'data_info': data_info, 'message': f'데이터를 성공적으로 불러왔습니다. 총 {len(df)}행'})
     except Exception as e:
         return jsonify({'error': f'데이터 로드 실패: {str(e)}'}), 500
+
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
     """Perform prediction"""
     try:
-        data = request.get_json()
-        file_path = data.get('file_path')
-        lookback = int(data.get('lookback', 400))
-        pred_len = int(data.get('pred_len', 120))
-        
-        # Get prediction quality parameters
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': '요청 본문은 JSON 객체여야 합니다'}), 400
+        file_path = _approved_data_file(data.get('file_path'))
+        if file_path is None:
+            return jsonify({'error': '승인된 데이터 루트 안의 일반 파일만 사용할 수 있습니다'}), 400
+        def bounded_int(value, default, maximum):
+            value = default if value is None else value
+            return value if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= maximum else None
+        lookback = bounded_int(data.get('lookback'), 400, 4096)
+        pred_len = bounded_int(data.get('pred_len'), 120, 1024)
+        sample_count = bounded_int(data.get('sample_count'), 1, 16)
+        if None in (lookback, pred_len, sample_count):
+            return jsonify({'error': 'lookback, pred_len, sample_count는 허용 범위의 양의 정수여야 합니다'}), 400
         temperature = float(data.get('temperature', 1.0))
         top_p = float(data.get('top_p', 0.9))
-        sample_count = int(data.get('sample_count', 1))
-        
-        if not file_path:
-            return jsonify({'error': '파일 경로가 비어 있습니다'}), 400
-        
-        # Load data
         df, error = load_data_file(file_path)
         if error:
             return jsonify({'error': error}), 400
-        
         if len(df) < lookback:
             return jsonify({'error': f'데이터 길이가 부족합니다. 최소 {lookback}행이 필요합니다'}), 400
-        
         # Perform prediction
         if MODEL_AVAILABLE and predictor is not None:
             try:
@@ -2356,27 +2355,27 @@ def predict():
 def load_model():
     """Load Kronos model"""
     global tokenizer, model, predictor
-    
+
     try:
-        if not ensure_kronos_imported():
-            return jsonify({'error': f'Kronos 모델 라이브러리를 사용할 수 없습니다: {MODEL_IMPORT_ERROR}'}), 400
-        
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': '요청 본문은 JSON 객체여야 합니다'}), 400
+        if any("path" in key.lower() or key.lower().endswith("id") for key in data):
+            return jsonify({'error': '모델 경로 또는 ID 재정의는 허용되지 않습니다'}), 400
+        configured_models = os.environ.get("KRONOS_WEBUI_MODEL_ALLOWLIST", "")
+        allowed_models = {key.strip() for key in configured_models.split(",") if key.strip()} if configured_models else set(AVAILABLE_MODELS)
         model_key = data.get('model_key', 'kronos-small')
         device = data.get('device', 'cpu')
-        
-        if model_key not in AVAILABLE_MODELS:
+        if not isinstance(model_key, str) or model_key not in AVAILABLE_MODELS or model_key not in allowed_models:
             return jsonify({'error': f'지원하지 않는 모델입니다: {model_key}'}), 400
-        
+        if not isinstance(device, str) or not _re.fullmatch(r'(?:cpu|mps|cuda(?::[0-9]+)?)', device):
+            return jsonify({'error': f'지원하지 않는 장치입니다: {device}'}), 400
+        if not ensure_kronos_imported():
+            return jsonify({'error': f'Kronos 모델 라이브러리를 사용할 수 없습니다: {MODEL_IMPORT_ERROR}'}), 400
         model_config = AVAILABLE_MODELS[model_key]
-        
-        # Load tokenizer and model
         tokenizer = KronosTokenizer.from_pretrained(model_config['tokenizer_id'])
         model = Kronos.from_pretrained(model_config['model_id'])
-        
-        # Create predictor
         predictor = KronosPredictor(model, tokenizer, device=device, max_context=model_config['context_length'])
-        
         return jsonify({
             'success': True,
             'message': f'모델을 성공적으로 불러왔습니다: {model_config["name"]} ({model_config["params"]}) / 장치 {device}',
@@ -2387,7 +2386,7 @@ def load_model():
                 'description': model_config['description']
             }
         })
-        
+
     except Exception as e:
         return jsonify({'error': f'모델 로드 실패: {str(e)}'}), 500
 

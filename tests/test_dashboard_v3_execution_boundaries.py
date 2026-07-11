@@ -182,3 +182,24 @@ def test_missing_declared_archival_branch_fails_the_gate():
     report = vb.verify_boundaries(_REPO_ROOT, archival_branches=("definitely/not/a/real/branch",))
     assert "definitely/not/a/real/branch" in report["missing_archival_branches"]
     assert report["gates"]["all_archival_are_ancestors"] is False
+
+
+def test_git_output_is_decoded_as_utf8_on_non_utf8_windows_locale(monkeypatch):
+    captured = {}
+
+    class Completed:
+        returncode = 0
+        stdout = "한글 diff"
+        stderr = ""
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        return Completed()
+
+    monkeypatch.setattr(vb.subprocess, "run", fake_run)
+    code, output = vb._git(_REPO_ROOT, "diff")
+
+    assert code == 0
+    assert output == "한글 diff"
+    assert captured["encoding"] == "utf-8"
+    assert captured["errors"] == "replace"

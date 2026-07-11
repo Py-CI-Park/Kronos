@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pickle
 import random
 import sys
@@ -64,11 +65,50 @@ def _to_prediction_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return out[["timestamps", "open", "high", "low", "close", "volume", "amount"]]
 
 
+_PICKLE_TRUST_ENV = "KRONOS_TRUST_PICKLE"
+
+
+def _assert_trusted_pickle(path: Path) -> Path:
+    """Guard pickle deserialization (arbitrary-code-execution risk).
+
+    ``pickle.load`` executes arbitrary code embedded in the file. This loader is
+    for TRUSTED, locally-generated STOM/Qlib dataset pickles ONLY — never point it
+    at a pickle of unknown provenance (downloaded, shared, or attacker-influenced).
+
+    Refuses symlinks and non-regular files, and refuses any path that resolves
+    OUTSIDE the project tree unless the operator explicitly confirms the unknown
+    provenance via ``KRONOS_TRUST_PICKLE=1``.
+    """
+    if path.is_symlink():
+        raise PermissionError(
+            f"Refusing to unpickle via a symlink (untrusted provenance): {path}"
+        )
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Pickle is not a regular file: {resolved}")
+    trusted_root = PROJECT_ROOT.resolve()
+    within_project = trusted_root == resolved or trusted_root in resolved.parents
+    if not within_project and os.environ.get(_PICKLE_TRUST_ENV, "").lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        raise PermissionError(
+            "Refusing to unpickle a file of unknown provenance outside the project "
+            f"tree: {resolved}. pickle executes arbitrary code; set "
+            f"{_PICKLE_TRUST_ENV}=1 only if you fully trust this file's source."
+        )
+    return resolved
+
+
 def load_pickle_dataset(dataset_path: Path, split: str = "test") -> Dict[str, pd.DataFrame]:
     path = dataset_path / f"{split}_data.pkl"
     if not path.exists():
         raise FileNotFoundError(f"Dataset split pickle not found: {path}")
+    path = _assert_trusted_pickle(path)
     with path.open("rb") as f:
+        # Trusted-local dataset only; provenance guarded by _assert_trusted_pickle.
         data = pickle.load(f)
     if not isinstance(data, dict):
         raise ValueError(f"Expected dict pickle at {path}")

@@ -16,6 +16,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "dompurify": "^3.4.12",
     "echarts": "^5.5.0",
     "marked": "^18.0.3"
   },

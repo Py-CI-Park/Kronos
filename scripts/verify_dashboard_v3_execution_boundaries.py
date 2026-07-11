@@ -109,6 +109,8 @@ def _git(repo_root: Path, *args: str) -> Tuple[int, str]:
         cwd=str(repo_root),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 

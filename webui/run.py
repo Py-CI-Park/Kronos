@@ -186,7 +186,10 @@ def main():
         # change constantly, which would otherwise restart the server in a loop
         # and re-open the browser tab on every restart. Opt back in with
         # KRONOS_WEBUI_RELOAD=1 when editing server code.
-        debug_mode = os.environ.get("KRONOS_WEBUI_DEBUG", "1").lower() not in {"0", "false", "no", "off"}
+        # Security: debug defaults OFF (no Werkzeug interactive debugger / no
+        # code eval on unhandled exceptions for a loopback research tool). Opt in
+        # with KRONOS_WEBUI_DEBUG=1 only for local server-code debugging.
+        debug_mode = os.environ.get("KRONOS_WEBUI_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
         use_reloader = os.environ.get("KRONOS_WEBUI_RELOAD", "0").lower() in {"1", "true", "yes", "on"}
         # In the reloader child process Werkzeug sets WERKZEUG_RUN_MAIN; never
         # re-open the browser there, otherwise each restart spawns a new tab.
