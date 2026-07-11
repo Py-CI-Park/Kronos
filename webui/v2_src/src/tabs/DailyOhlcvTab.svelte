@@ -35,6 +35,7 @@
   import DailyGateLadder from './dailyOhlcv/DailyGateLadder.svelte';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
   import Disclosure from '$lib/Disclosure.svelte';
+  import { createRequestGate } from '$lib/requestGate';
 
   let progress = $state<DailyProgressResponse | null>(null);
   let dbSummary = $state<DailyDbSummaryResponse | null>(null);
@@ -70,6 +71,38 @@
   let endpointErrors = $state<string[]>([]);
   let loading = $state(false);
 
+  // G009 Todo 9 — critical (always-visible, not behind a Disclosure) cards
+  // get INDEPENDENT loaders + own {loading, error} state so one slow/failed
+  // card (progress, or the close-slot group) can never block the other from
+  // rendering. A timed-out or failed card renders an explicit ERROR/RETRY
+  // state below — it is never silently masked as NOT_STARTED/MISSING.
+  interface CriticalCardState {
+    loading: boolean;
+    error: string | null;
+  }
+  let progressCardState = $state<CriticalCardState>({ loading: false, error: null });
+  let closeSlotCardState = $state<CriticalCardState>({ loading: false, error: null });
+  const progressGate = createRequestGate();
+  const closeSlotGateReq = createRequestGate();
+  const CARD_TIMEOUT_MS = 20000;
+
+  function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | 'TIMEOUT'> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve('TIMEOUT');
+      }, ms);
+      void promise.then((value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      });
+    });
+  }
+
   const dailyStatusLocks = [
     { label: 'live trading', value: 'false', tone: 'danger' },
     { label: 'broker/order/account', value: 'false', tone: 'danger' },
@@ -88,127 +121,158 @@
     '000250 같은 leading-zero 종목 코드는 문자열 그대로 drilldown합니다.',
     '모델·수익·실거래 판단 전에 artifact hashes, stale/malformed fail-closed 상태를 확인합니다.',
   ] as const;
+  // G009 Todo 9 — progress card: INDEPENDENT loader with its own
+  // loading/error state. A timeout resolves to 'TIMEOUT' (never hangs
+  // forever) and renders as an explicit ERROR/RETRY state, never as
+  // NOT_STARTED/MISSING.
+  async function loadProgressCard(): Promise<void> {
+    const token = progressGate.next();
+    progressCardState = { loading: true, error: null };
+    const result = await withTimeout(dailyOhlcvApi.progress(), CARD_TIMEOUT_MS);
+    if (!progressGate.isCurrent(token)) return;
+    if (result === 'TIMEOUT') {
+      progressCardState = { loading: false, error: 'progress card request timed out' };
+      return;
+    }
+    progress = result;
+    progressCardState = { loading: false, error: result === null ? 'progress card data unavailable' : null };
+  }
+
+  // G009 Todo 9 — close-slot card group (CloseSlotAgentScreen +
+  // DailyCloseSlotCard): INDEPENDENT loader with its own loading/error
+  // state, decoupled from the progress card and the secondary (Disclosure)
+  // cards so a slow/timed-out endpoint in one group can never block another.
+  async function loadCloseSlotCard(): Promise<void> {
+    const token = closeSlotGateReq.next();
+    closeSlotCardState = { loading: true, error: null };
+    const [latestR, gateR, artifactsR, equityR, selectionR] = await Promise.all([
+      withTimeout(dailyOhlcvApi.closeSlotLatest(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.closeSlotGate(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.closeSlotArtifacts(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.closeSlotEquity(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.closeSlotSelection(), CARD_TIMEOUT_MS),
+    ]);
+    if (!closeSlotGateReq.isCurrent(token)) return;
+    const anyTimedOut = [latestR, gateR, artifactsR, equityR, selectionR].some((r) => r === 'TIMEOUT');
+    closeSlotLatest = latestR === 'TIMEOUT' ? null : latestR;
+    closeSlotGate = gateR === 'TIMEOUT' ? null : gateR;
+    closeSlotArtifacts = artifactsR === 'TIMEOUT' ? null : artifactsR;
+    closeSlotEquity = equityR === 'TIMEOUT' ? null : equityR;
+    closeSlotSelection = selectionR === 'TIMEOUT' ? null : selectionR;
+    const primaryUnavailable = closeSlotLatest === null && closeSlotGate === null;
+    closeSlotCardState = {
+      loading: false,
+      error: anyTimedOut
+        ? 'close-slot card request timed out'
+        : primaryUnavailable
+          ? 'close-slot card data unavailable'
+          : null,
+    };
+  }
+
+  // G009 Todo 9 — the remaining D0-D9/artifacts/symbol evidence cards all
+  // live behind collapsed <Disclosure> sections (not immediately visible),
+  // so they stay batched together for simplicity, but that batch itself now
+  // runs independently of (never blocked by, never blocking) the two
+  // critical cards above, and every fetch is timeout-bounded so a hang here
+  // cannot stall the whole page either.
+  async function loadSecondaryCards(): Promise<void> {
+    const [
+      d, u, a, ds, dc, pred, port, wf, reg, predChart, portChart, wfChart,
+      decision, scenarios, scenarioRunsResult, flow, glossary, diagnostics,
+      equity, heatmap, scatter, universeBreakdown,
+    ] = await Promise.all([
+      withTimeout(dailyOhlcvApi.dbSummary(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.universePreview(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.artifacts(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.datasetLatest(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.datasetChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.predictionLatest(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.portfolioLatest(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.walkForwardLatest(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.registryLatest(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.predictionChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.portfolioChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.walkForwardChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.decisionCockpitChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.scenarios(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.scenarioRuns(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.flowChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.glossaryChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.researchDiagnosticsChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.equityOverlayChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.walkForwardHeatmapChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.runScatterChart(), CARD_TIMEOUT_MS),
+      withTimeout(dailyOhlcvApi.universeBreakdownChart(), CARD_TIMEOUT_MS),
+    ]);
+    const resolved = [
+      ['db-summary', d],
+      ['universe', u],
+      ['artifacts', a],
+      ['dataset', ds],
+      ['dataset-chart', dc],
+      ['prediction', pred],
+      ['portfolio', port],
+      ['walk-forward', wf],
+      ['registry', reg],
+      ['prediction-chart', predChart],
+      ['portfolio-chart', portChart],
+      ['walk-forward-chart', wfChart],
+      ['decision-cockpit', decision],
+      ['scenarios', scenarios],
+      ['scenario-runs', scenarioRunsResult],
+      ['flow-chart', flow],
+      ['glossary-chart', glossary],
+      ['research-diagnostics', diagnostics],
+      ['equity-overlay', equity],
+      ['walk-forward-heatmap', heatmap],
+      ['run-scatter', scatter],
+      ['universe-breakdown', universeBreakdown],
+    ] as const;
+    // A timeout is a failure (ERROR), not silently treated as an empty/
+    // NOT_STARTED dataset — it surfaces in the same API_UNAVAILABLE notice
+    // as a hard fetch failure.
+    endpointErrors = resolved.filter(([, payload]) => payload === null || payload === 'TIMEOUT').map(([name]) => name);
+    dbSummary = d === 'TIMEOUT' ? null : d;
+    universe = u === 'TIMEOUT' ? null : u;
+    artifacts = a === 'TIMEOUT' ? null : a;
+    dataset = ds === 'TIMEOUT' ? null : ds;
+    datasetChart = dc === 'TIMEOUT' ? null : dc;
+    prediction = pred === 'TIMEOUT' ? null : pred;
+    portfolio = port === 'TIMEOUT' ? null : port;
+    walkForward = wf === 'TIMEOUT' ? null : wf;
+    registry = reg === 'TIMEOUT' ? null : reg;
+    predictionChart = predChart === 'TIMEOUT' ? null : predChart;
+    portfolioChart = portChart === 'TIMEOUT' ? null : portChart;
+    walkForwardChart = wfChart === 'TIMEOUT' ? null : wfChart;
+    decisionCockpit = decision === 'TIMEOUT' ? null : decision;
+    scenarioLab = scenarios === 'TIMEOUT' ? null : scenarios;
+    scenarioRuns = scenarioRunsResult === 'TIMEOUT' ? null : scenarioRunsResult;
+    flowChart = flow === 'TIMEOUT' ? null : flow;
+    glossaryChart = glossary === 'TIMEOUT' ? null : glossary;
+    researchDiagnosticsChart = diagnostics === 'TIMEOUT' ? null : diagnostics;
+    equityOverlayChart = equity === 'TIMEOUT' ? null : equity;
+    walkForwardHeatmapChart = heatmap === 'TIMEOUT' ? null : heatmap;
+    runScatterChart = scatter === 'TIMEOUT' ? null : scatter;
+    universeBreakdownChart = universeBreakdown === 'TIMEOUT' ? null : universeBreakdown;
+  }
+
+  function retryProgressCard(): void {
+    void loadProgressCard();
+  }
+
+  function retryCloseSlotCard(): void {
+    void loadCloseSlotCard();
+  }
+
+  // The three card groups are fired together but never awaited on each
+  // other — each one assigns its own state as soon as IT resolves, so a
+  // slow/timed-out card in one group never delays another group's render.
+  // `loading` here only tracks the outer refresh-button spinner.
   async function loadDailyOhlcv(): Promise<void> {
     loading = true;
     try {
-      const [
-        p,
-        d,
-        u,
-        a,
-        ds,
-        dc,
-        pred,
-        port,
-        wf,
-        reg,
-        predChart,
-        portChart,
-        wfChart,
-        closeLatest,
-        closeGate,
-        closeArtifacts,
-        closeEquity,
-        closeSelection,
-        decision,
-        scenarios,
-        scenarioRunsResult,
-        flow,
-        glossary,
-        diagnostics,
-        equity,
-        heatmap,
-        scatter,
-        universeBreakdown,
-      ] = await Promise.all([
-        dailyOhlcvApi.progress(),
-        dailyOhlcvApi.dbSummary(),
-        dailyOhlcvApi.universePreview(),
-        dailyOhlcvApi.artifacts(),
-        dailyOhlcvApi.datasetLatest(),
-        dailyOhlcvApi.datasetChart(),
-        dailyOhlcvApi.predictionLatest(),
-        dailyOhlcvApi.portfolioLatest(),
-        dailyOhlcvApi.walkForwardLatest(),
-        dailyOhlcvApi.registryLatest(),
-        dailyOhlcvApi.predictionChart(),
-        dailyOhlcvApi.portfolioChart(),
-        dailyOhlcvApi.walkForwardChart(),
-        dailyOhlcvApi.closeSlotLatest(),
-        dailyOhlcvApi.closeSlotGate(),
-        dailyOhlcvApi.closeSlotArtifacts(),
-        dailyOhlcvApi.closeSlotEquity(),
-        dailyOhlcvApi.closeSlotSelection(),
-        dailyOhlcvApi.decisionCockpitChart(),
-        dailyOhlcvApi.scenarios(),
-        dailyOhlcvApi.scenarioRuns(),
-        dailyOhlcvApi.flowChart(),
-        dailyOhlcvApi.glossaryChart(),
-        dailyOhlcvApi.researchDiagnosticsChart(),
-        dailyOhlcvApi.equityOverlayChart(),
-        dailyOhlcvApi.walkForwardHeatmapChart(),
-        dailyOhlcvApi.runScatterChart(),
-        dailyOhlcvApi.universeBreakdownChart(),
-      ]);
-      const resolved = [
-        ['progress', p],
-        ['db-summary', d],
-        ['universe', u],
-        ['artifacts', a],
-        ['dataset', ds],
-        ['dataset-chart', dc],
-        ['prediction', pred],
-        ['portfolio', port],
-        ['walk-forward', wf],
-        ['registry', reg],
-        ['prediction-chart', predChart],
-        ['portfolio-chart', portChart],
-        ['walk-forward-chart', wfChart],
-        ['close-slot-latest', closeLatest],
-        ['close-slot-gate', closeGate],
-        ['close-slot-artifacts', closeArtifacts],
-        ['close-slot-equity', closeEquity],
-        ['close-slot-selection', closeSelection],
-        ['decision-cockpit', decision],
-        ['scenarios', scenarios],
-        ['scenario-runs', scenarioRunsResult],
-        ['flow-chart', flow],
-        ['glossary-chart', glossary],
-        ['research-diagnostics', diagnostics],
-        ['equity-overlay', equity],
-        ['walk-forward-heatmap', heatmap],
-        ['run-scatter', scatter],
-        ['universe-breakdown', universeBreakdown],
-      ] as const;
-      endpointErrors = resolved.filter(([, payload]) => payload === null).map(([name]) => name);
-      progress = p;
-      dbSummary = d;
-      universe = u;
-      artifacts = a;
-      dataset = ds;
-      datasetChart = dc;
-      prediction = pred;
-      portfolio = port;
-      walkForward = wf;
-      registry = reg;
-      predictionChart = predChart;
-      portfolioChart = portChart;
-      walkForwardChart = wfChart;
-      closeSlotLatest = closeLatest;
-      closeSlotGate = closeGate;
-      closeSlotArtifacts = closeArtifacts;
-      closeSlotEquity = closeEquity;
-      closeSlotSelection = closeSelection;
-      decisionCockpit = decision;
-      scenarioLab = scenarios;
-      scenarioRuns = scenarioRunsResult;
-      flowChart = flow;
-      glossaryChart = glossary;
-      researchDiagnosticsChart = diagnostics;
-      equityOverlayChart = equity;
-      walkForwardHeatmapChart = heatmap;
-      runScatterChart = scatter;
-      universeBreakdownChart = universeBreakdown;
+      await Promise.all([loadProgressCard(), loadCloseSlotCard(), loadSecondaryCards()]);
     } finally {
       loading = false;
     }
@@ -264,6 +328,14 @@
   blockers={dailyStatusBlockers}
   nextActions={dailyNextInspection}
 />
+{#if progressCardState.error}
+  <div class="notice danger" data-daily-progress-card-error style="margin-top:12px">
+    ERROR: {progressCardState.error}
+    <button type="button" class="btn" onclick={retryProgressCard} style="margin-left:8px">RETRY</button>
+  </div>
+{:else if progressCardState.loading && !progress}
+  <div class="notice" data-daily-progress-card-loading style="margin-top:12px">progress 카드 로딩 중…</div>
+{/if}
 <DailyGateLadder {progress} />
 <div class="daily-review-grid" style="margin-top:14px">
   <div><span>leading-zero code</span><b>000250 string preserved</b></div>
@@ -272,6 +344,14 @@
 </div>
 <DailyProgressTimeline {progress} />
 
+{#if closeSlotCardState.error}
+  <div class="notice danger" data-daily-close-slot-card-error style="margin-top:12px">
+    ERROR: {closeSlotCardState.error}
+    <button type="button" class="btn" onclick={retryCloseSlotCard} style="margin-left:8px">RETRY</button>
+  </div>
+{:else if closeSlotCardState.loading && !closeSlotLatest && !closeSlotGate}
+  <div class="notice" data-daily-close-slot-card-loading style="margin-top:12px">close-slot 카드 로딩 중…</div>
+{/if}
 <CloseSlotAgentScreen
   latest={closeSlotLatest}
   gate={closeSlotGate}

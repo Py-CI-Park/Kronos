@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 
+from webui import artifact_cache
 from stom_rl.daily_ohlcv_db import (
     DEFAULT_ARTIFACT_ROOT as DB_SUMMARY_ROOT,
     DECISION_GRADE_RETURN_STATUS,
@@ -222,7 +223,7 @@ def _latest_run_dir(root: Path, *, required_file: str, run_id: str | None = None
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return artifact_cache.cached_load_json(path)
 
 
 def _latest_artifact_dir(root: Path, *, required_file: str) -> Path | None:
@@ -399,11 +400,16 @@ def _close_slot_safe_csv_row_count(path: Path, *, errors: list[str], error_prefi
     if not path.is_file():
         errors.append(f"{error_prefix}_MISSING")
         return None
-    try:
-        return _close_slot_csv_row_count(path)
-    except (OSError, UnicodeDecodeError, csv.Error):
-        errors.append(f"{error_prefix}_UNREADABLE_CSV")
-        return None
+    def _compute() -> tuple[int | None, str | None]:
+        try:
+            return (_close_slot_csv_row_count(path), None)
+        except (OSError, UnicodeDecodeError, csv.Error):
+            return (None, "UNREADABLE_CSV")
+
+    value, err = artifact_cache.cached_by_stat(path, _compute, extra="close_slot_csv_row_count")
+    if err is not None:
+        errors.append(f"{error_prefix}_{err}")
+    return value
 
 
 def _close_slot_safe_read_csv_rows(path: Path, limit: int, *, errors: list[str], error_prefix: str) -> list[dict[str, Any]]:
@@ -420,35 +426,45 @@ def _close_slot_safe_split_date_counts(path: Path, *, errors: list[str], error_p
     if not path.is_file():
         errors.append(f"{error_prefix}_MISSING")
         return {}
-    split_dates: dict[str, set[str]] = {}
-    try:
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            for row in csv.DictReader(handle):
-                split = str(row.get("split") or "")
-                date = str(row.get("date") or "")
-                if split and date:
-                    split_dates.setdefault(split, set()).add(date)
-    except (OSError, UnicodeDecodeError, csv.Error):
-        errors.append(f"{error_prefix}_UNREADABLE_CSV")
-        return {}
-    return {split: len(dates) for split, dates in split_dates.items()}
+    def _compute() -> tuple[dict[str, int], str | None]:
+        split_dates: dict[str, set[str]] = {}
+        try:
+            with path.open("r", encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    split = str(row.get("split") or "")
+                    date = str(row.get("date") or "")
+                    if split and date:
+                        split_dates.setdefault(split, set()).add(date)
+        except (OSError, UnicodeDecodeError, csv.Error):
+            return ({}, "UNREADABLE_CSV")
+        return ({split: len(dates) for split, dates in split_dates.items()}, None)
+
+    value, err = artifact_cache.cached_by_stat(path, _compute, extra="close_slot_split_date_counts")
+    if err is not None:
+        errors.append(f"{error_prefix}_{err}")
+    return value
 
 def _close_slot_safe_date_split_map(path: Path, *, errors: list[str], error_prefix: str) -> dict[str, str]:
     if not path.is_file():
         errors.append(f"{error_prefix}_MISSING")
         return {}
-    date_split: dict[str, str] = {}
-    try:
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            for row in csv.DictReader(handle):
-                split = str(row.get("split") or "")
-                date = str(row.get("date") or "")
-                if split and date:
-                    date_split[date] = split
-    except (OSError, UnicodeDecodeError, csv.Error):
-        errors.append(f"{error_prefix}_UNREADABLE_CSV")
-        return {}
-    return date_split
+    def _compute() -> tuple[dict[str, str], str | None]:
+        date_split: dict[str, str] = {}
+        try:
+            with path.open("r", encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    split = str(row.get("split") or "")
+                    date = str(row.get("date") or "")
+                    if split and date:
+                        date_split[date] = split
+        except (OSError, UnicodeDecodeError, csv.Error):
+            return ({}, "UNREADABLE_CSV")
+        return (date_split, None)
+
+    value, err = artifact_cache.cached_by_stat(path, _compute, extra="close_slot_date_split_map")
+    if err is not None:
+        errors.append(f"{error_prefix}_{err}")
+    return value
 
 
 def _close_slot_gate_manifest_expected_sha(manifest: dict[str, Any]) -> str:
@@ -523,27 +539,36 @@ def _close_slot_csv_file_schema_errors(
 ) -> list[str]:
     if not path.is_file():
         return [f"{error_prefix}_MISSING"]
-    errors: list[str] = []
-    try:
-        with path.open(encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle)
-            fieldnames = set(reader.fieldnames or [])
-            missing = sorted(required_columns - fieldnames)
-            if missing:
-                errors.append(f"{error_prefix}_MISSING_COLUMNS:{','.join(missing)}")
-            row_count = 0
-            for index, row in enumerate(reader):
-                row_count += 1
-                if None in row:
-                    errors.append(f"{error_prefix}_EXTRA_FIELDS:{index}")
-                blank = sorted(column for column in nonblank_columns if row.get(column) in (None, ""))
-                if blank:
-                    errors.append(f"{error_prefix}_BLANK_COLUMNS:{index}:{','.join(blank)}")
-            if row_count == 0:
-                errors.append(f"{error_prefix}_EMPTY")
-    except (OSError, UnicodeDecodeError, csv.Error):
-        return [f"{error_prefix}_UNREADABLE_CSV"]
-    return errors
+    def _compute() -> list[str]:
+        errors: list[str] = []
+        try:
+            with path.open(encoding="utf-8", newline="") as handle:
+                reader = csv.DictReader(handle)
+                fieldnames = set(reader.fieldnames or [])
+                missing = sorted(required_columns - fieldnames)
+                if missing:
+                    errors.append(f"{error_prefix}_MISSING_COLUMNS:{','.join(missing)}")
+                row_count = 0
+                for index, row in enumerate(reader):
+                    row_count += 1
+                    if None in row:
+                        errors.append(f"{error_prefix}_EXTRA_FIELDS:{index}")
+                    blank = sorted(column for column in nonblank_columns if row.get(column) in (None, ""))
+                    if blank:
+                        errors.append(f"{error_prefix}_BLANK_COLUMNS:{index}:{','.join(blank)}")
+                if row_count == 0:
+                    errors.append(f"{error_prefix}_EMPTY")
+        except (OSError, UnicodeDecodeError, csv.Error):
+            return [f"{error_prefix}_UNREADABLE_CSV"]
+        return errors
+
+    return list(
+        artifact_cache.cached_by_stat(
+            path,
+            _compute,
+            extra=("close_slot_csv_schema", frozenset(required_columns), frozenset(nonblank_columns), error_prefix),
+        )
+    )
 
 
 def _close_slot_gate_manifest_summary_errors(manifest: dict[str, Any], run_dir: Path) -> list[str]:
@@ -2102,7 +2127,21 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
         if gate_report.get("dataset_run_id") != source_run_ids.get("dataset_run_id"):
             errors.append("CLOSE_SLOT_GATE_DATASET_RUN_ID_MISMATCH")
         try:
-            recomputed_gate = validate_close_slot_gate(train_manifest_path) if train_manifest_path is not None else {}
+            # Todo 9: memoized by the train-manifest stat. Sound under the
+            # write-once-run invariant — a gate run's artifact_dir is immutable
+            # and any regeneration rewrites train_manifest.json (new stat ->
+            # invalidation); the manifest hash-pins its artifact closure, so no
+            # live re-validation of an out-of-band mutated-in-place artifact is
+            # expected here.
+            recomputed_gate = (
+                artifact_cache.cached_by_stat(
+                    train_manifest_path,
+                    lambda: validate_close_slot_gate(train_manifest_path),
+                    extra="validate_close_slot_gate",
+                )
+                if train_manifest_path is not None
+                else {}
+            )
         except (TypeError, ValueError, OSError, json.JSONDecodeError):
             errors.append("CLOSE_SLOT_GATE_RECOMPUTE_FAILED")
         else:

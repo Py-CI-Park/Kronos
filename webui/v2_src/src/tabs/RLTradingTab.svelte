@@ -8,6 +8,7 @@
     type RlRunRecord,
     type RlTableRow,
   } from '$lib/rlApi';
+  import { createRequestGate } from '$lib/requestGate';
   import { errorMessage } from '$lib/rlRows';
   import { humanizeVerdict } from '$lib/verdictLabel';
   import RLHero from './rlTrading/RLHero.svelte';
@@ -161,10 +162,32 @@
     }
   }
 
+  const runSelectGate = createRequestGate();
+
   async function selectRun(name: string, runPool: readonly RlRunRecord[] = runs): Promise<void> {
+    // G009 Todo 9 — capture a generation token BEFORE clearing/awaiting so a
+    // stale (superseded) selection's late results can be detected and
+    // discarded below instead of overwriting a newer selection's state.
+    const token = runSelectGate.next();
     selectedName = name;
+    // Clear the prior run's detail immediately (before any await) so the UI
+    // never shows run A's data under run B's label while the new fetch is
+    // in flight.
+    selectedRun = null;
     detailLoading = true;
     error = null;
+    leaderboardRows = [];
+    trades = [];
+    actions = [];
+    equity = [];
+    episodes = [];
+    participantProxyRows = [];
+    orderbookPersistenceRows = [];
+    participantStudyRows = [];
+    featureAblationRows = [];
+    ruleFilterControlRows = [];
+    ruleFilterAblationRows = [];
+    ruleFilterFailureRows = [];
     try {
       const costRun = runPool.find((run) => run.artifact_type === 'cost_gate');
       const leaderboardRun = runPool.find((run) => run.artifact_type === 'performance_leaderboard');
@@ -178,6 +201,9 @@
           rlApi.rlEpisodes(name, 160),
           costRun ? rlApi.rlCostGate(costRun.name, 120) : Promise.resolve(null),
         ]);
+      // A newer selectRun() call started while this one was in flight —
+      // discard these results so they cannot overwrite the current run.
+      if (!runSelectGate.isCurrent(token)) return;
       selectedRun = detail;
       ruleFilterControlRows = [];
       ruleFilterAblationRows = [];
@@ -193,6 +219,7 @@
           loadOptionalRows(name, 'rule_filter_proxy_availability'),
           loadOptionalRows(name, 'rule_filter_orderbook_persistence'),
         ]);
+        if (!runSelectGate.isCurrent(token)) return;
         leaderboardRows = [];
         costGate = null;
         trades = ruleBuckets;
@@ -217,6 +244,7 @@
           loadOptionalRows(name, 'participant_study_groups'),
           loadOptionalRows(name, 'feature_ablation'),
         ]);
+        if (!runSelectGate.isCurrent(token)) return;
         leaderboardRows = [];
         costGate = null;
         trades = candidateBuckets;
@@ -243,9 +271,10 @@
         ruleFilterFailureRows = [];
       }
     } catch (caught) {
+      if (!runSelectGate.isCurrent(token)) return;
       error = errorMessage(caught, `${name} detail load failed`);
     } finally {
-      detailLoading = false;
+      if (runSelectGate.isCurrent(token)) detailLoading = false;
     }
   }
 

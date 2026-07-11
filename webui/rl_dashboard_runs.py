@@ -145,6 +145,11 @@ def _run_lifecycle(run_dir: Path) -> Dict[str, Any]:
     """
     from stom_rl import rl_events as _ev
 
+    try:
+        from . import artifact_cache as _cache
+    except ImportError:  # pragma: no cover - script-style import
+        import artifact_cache as _cache
+
     event_path = _find_event_file(run_dir)
     now = time.time()
     if event_path is None:
@@ -159,7 +164,9 @@ def _run_lifecycle(run_dir: Path) -> Dict[str, Any]:
             "is_replay": False,
             "poll_interval_seconds": DEFAULT_POLL_INTERVAL_SECONDS,
         }
-    rows, _truncated = _ev.read_live_events(event_path, limit=_ev.MAX_EVENT_LIMIT, tail=True)
+    # Bounded (path,mtime,size)-keyed tail-read memoization (Todo 9); re-stats
+    # every call and never serves stale data for a changed event file.
+    rows, _truncated = _cache.cached_read_live_events(event_path, limit=_ev.MAX_EVENT_LIMIT, tail=True)
     event_count = len(rows)
     last = rows[-1] if rows else {}
     raw_step = last.get("global_step") if isinstance(last, Mapping) else None

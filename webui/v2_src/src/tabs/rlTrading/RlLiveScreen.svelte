@@ -8,6 +8,7 @@
   // selectRun()에서 로드해 전달하는 rlApi.rlEquity rows. 신규 /api/* 없음 (C7).
   import { onDestroy } from 'svelte';
   import EChartsRenderer from '../../charts/EChartsRenderer.svelte';
+  import { createRequestGate } from '$lib/requestGate';
   import { rlApi, type RlTableRow } from '$lib/rlApi';
   import { deriveDisplayStatus, statusLabel, statusTone, isLive as isRunning, type RunLifecycle } from '$lib/runLifecycle';
   import { cell, errorMessage, num, pct, rowNumber, text } from '$lib/rlRows';
@@ -63,6 +64,12 @@
   let timer: number | null = null;
   let activeRun = '';
   let activeCompareKey = '';
+  // G009 Todo 9 — generation gate so a superseded run's late-resolving
+  // refresh() cannot overwrite the currently selected run's state, plus an
+  // in-flight token to stop overlapping polls for the SAME run.
+  const liveGate = createRequestGate();
+  let activeRefreshToken: number | null = null;
+
   // WP-S1/Todo6 — lifecycle 스냅샷(백엔드 단일 스냅샷은 RUNNING/STALE 을 절대 방출하지
   // 않는다) + cross-poll 관측(prevStep/wasRunning)으로 client 가 RUNNING/STALE 을
   // 도출한다. run 이 바뀌면 관측 상태를 리셋한다.
@@ -133,6 +140,11 @@
 
   async function refresh(): Promise<void> {
     if (!run) {
+      // A run change (or clearing) invalidates any in-flight refresh for the
+      // previous run so its late response is discarded instead of
+      // overwriting this cleared state.
+      liveGate.next();
+      activeRefreshToken = null;
       events = [];
       truncated = false;
       compareSeries = [];
@@ -142,6 +154,12 @@
       currentStep = null;
       return;
     }
+    // Prevent overlapping polls for the same run — if a refresh is already
+    // in flight, skip scheduling/awaiting a new one rather than piling up
+    // concurrent requests.
+    if (activeRefreshToken !== null) return;
+    const token = liveGate.next();
+    activeRefreshToken = token;
     loading = true;
     try {
       const extras = overlayNames;
@@ -152,6 +170,10 @@
         ]),
         rlApi.rlRun(run).catch(() => null),
       ]);
+      // The run changed (or a newer refresh started) while this one was in
+      // flight — discard these results so a stale run's data can never
+      // overwrite the currently selected run's state.
+      if (!liveGate.isCurrent(token)) return;
       const primary = payloads[0];
       const rows = primary?.rows ?? [];
       events = rows;
@@ -168,13 +190,15 @@
       currentStep = Number.isFinite(newStepRaw) ? newStepRaw : null;
       if (displayStatus === 'RUNNING') wasRunning = true;
     } catch (caught) {
+      if (!liveGate.isCurrent(token)) return;
       error = errorMessage(caught, `${run} live events load failed`);
       events = [];
       truncated = false;
       compareSeries = [];
       emptyMessage = null;
     } finally {
-      loading = false;
+      if (activeRefreshToken === token) activeRefreshToken = null;
+      if (liveGate.isCurrent(token)) loading = false;
     }
   }
 
@@ -203,6 +227,11 @@
     prevStep = null;
     currentStep = null;
     wasRunning = false;
+    // Abandon any in-flight refresh for the previous run: bump the gate so
+    // its late response is discarded, and clear the in-flight marker so the
+    // new run's refresh is not skipped by the stale "overlapping poll" guard.
+    liveGate.next();
+    activeRefreshToken = null;
     startTimer();
   });
 
