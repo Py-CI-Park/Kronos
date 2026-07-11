@@ -1096,7 +1096,14 @@ def run_close_slot_training(
                 equity=running_net_pnl_krw,
                 timestamp=str(ledger.get("date") or ""),
                 source="daily_close_slot_train",
-                info={"threshold_text": str(chosen_threshold["threshold_text"])},
+                info={
+                    "threshold_text": str(chosen_threshold["threshold_text"]),
+                    "reward_kind": "return_fraction",
+                    "reward_unit": "fraction",
+                    "equity_kind": "cumulative_pnl",
+                    "equity_unit": "krw",
+                    "action_recorded": False,
+                },
             )
     # F2 diagnostic: what the fitted score would pick if forced to take the top
     # slots each day (no threshold). Separates "signal too weak to clear 23bp"

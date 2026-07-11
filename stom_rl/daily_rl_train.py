@@ -775,6 +775,13 @@ def train_tabular_q_policy(
                 reward=total_reward,
                 equity=env.equity,
                 source="daily_rl_train",
+                info={
+                    "reward_kind": "raw_reward",
+                    "reward_unit": "score",
+                    "equity_kind": "normalized_nav",
+                    "equity_unit": "normalized",
+                    "action_recorded": False,
+                },
             )
     return dict(q_table), episode_rows
 
@@ -840,6 +847,13 @@ def evaluate_policy(
                 equity=float(info["equity"]),
                 timestamp=str(info["date"]),
                 source="daily_rl_train",
+                info={
+                    "reward_kind": "raw_reward",
+                    "reward_unit": "score",
+                    "equity_kind": "normalized_nav",
+                    "equity_unit": "normalized",
+                    "action_recorded": False,
+                },
             )
         mask_text = "|".join(str(int(v)) for v in mask)
         filter_mask_text = "|".join(str(int(v)) for v in filtered_mask)
