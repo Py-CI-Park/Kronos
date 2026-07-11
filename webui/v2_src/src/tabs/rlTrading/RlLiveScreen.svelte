@@ -10,7 +10,19 @@
   import EChartsRenderer from '../../charts/EChartsRenderer.svelte';
   import { rlApi, type RlTableRow } from '$lib/rlApi';
   import { deriveDisplayStatus, statusLabel, statusTone, isLive as isRunning, type RunLifecycle } from '$lib/runLifecycle';
-  import { errorMessage, num, pct, rowNumber, text } from '$lib/rlRows';
+  import { cell, errorMessage, num, pct, rowNumber, text } from '$lib/rlRows';
+  import {
+    actionAvailability,
+    formatEquity,
+    formatReward,
+    formatRewardValue,
+    metricsOverlayCompatible,
+    resolveMetricMetadata,
+    rewardAxisIsPercent,
+    rewardPlotValue,
+    rewardUnitLabel,
+    type MetricMeta,
+  } from '$lib/runMetrics';
   import { tooltipLines, tooltipText, tooltipTitle } from '$lib/safeHtml';
   import { theme } from '$lib/stores';
   import { equityChartOption } from './chartOptions';
@@ -71,11 +83,43 @@
   );
   const visibleEvents = $derived(events.slice(0, frame));
   const isLiveFrame = $derived(frameOverride == null || frame >= totalFrames);
+  // G007 — overlay unit-compatibility gate. Each run may declare a distinct
+  // equity contract (e.g. daily_rl_train -> normalized_nav/normalized vs
+  // close-slot -> cumulative_pnl/krw). A missing/pre-G003 contract (gap_up
+  // backtest events) never counts as compatible. Representative meta is the
+  // most recent row that actually declares an equity_kind (rows without one
+  // are skipped) so a run's contract is read off real declared metadata.
+  function representativeEquityMeta(rows: readonly RlTableRow[]): MetricMeta {
+    for (let idx = rows.length - 1; idx >= 0; idx -= 1) {
+      const meta = resolveMetricMetadata(rows[idx]);
+      if (meta.equity_kind !== null) return meta;
+    }
+    return resolveMetricMetadata(null);
+  }
+  const overlaySeriesMeta = $derived.by(() => {
+    if (!isOverlay) return [];
+    return [
+      { name: run, meta: representativeEquityMeta(visibleEvents) },
+      ...overlayNames.map((name) => ({
+        name,
+        meta: representativeEquityMeta(compareSeries.find((entry) => entry.name === name)?.rows ?? []),
+      })),
+    ];
+  });
+  const overlayUnitsCompatible = $derived(
+    !isOverlay ||
+      overlaySeriesMeta.length < 2 ||
+      overlaySeriesMeta
+        .slice(1)
+        .every((entry) => metricsOverlayCompatible(overlaySeriesMeta[0].meta, entry.meta, 'equity'))
+  );
 
   const latest = $derived(visibleEvents.length ? visibleEvents[visibleEvents.length - 1] : null);
   const latestStep = $derived(latest ? num(rowNumber(latest, 'global_step'), 0) : '—');
-  const latestReward = $derived(latest ? pct(rowNumber(latest, 'reward') * 100, 4) : '—');
-  const latestEquity = $derived(latest ? num(rowNumber(latest, 'equity'), 2) : '—');
+  const latestRewardMeta = $derived(resolveMetricMetadata(latest));
+  const latestReward = $derived(latest ? formatReward(latest, latestRewardMeta) : '—');
+  const latestRewardUnit = $derived(rewardUnitLabel(latestRewardMeta));
+  const latestEquity = $derived(latest ? formatEquity(latest, latestRewardMeta) : '—');
   const latestPhase = $derived(latest ? text(latest, 'phase', 'research') : '—');
   const latestAlgorithm = $derived(latest ? text(latest, 'algorithm', 'research') : '—');
   // WP-S1/Todo6 — 파생 상태: 백엔드 스냅샷 + cross-poll 관측을 결합한 정직한 상태.
@@ -192,6 +236,7 @@
   const liveChartOption = $derived.by(() => {
     void currentTheme;
     if (!visibleEvents.length || typeof window === 'undefined') return {};
+    if (isOverlay && !overlayUnitsCompatible) return {};
     const cs = getComputedStyle(document.documentElement);
     const accent = cs.getPropertyValue('--accent').trim() || '#38bdf8';
     const success = cs.getPropertyValue('--success').trim() || '#22c55e';
@@ -258,6 +303,7 @@
 
     // single-run 경로 — LiveRlEventsCard:216-247 과 동일하게 렌더한다.
     const rows = visibleEvents;
+    const rewardMeta = resolveMetricMetadata(rows.length ? rows[rows.length - 1] : null);
     return {
       backgroundColor: 'transparent',
       grid: { left: 62, right: 62, top: 42, bottom: 40 },
@@ -266,10 +312,11 @@
         trigger: 'axis',
         formatter: (params: unknown) => {
           const row = rows[paramIndex(params)];
+          const rowMeta = resolveMetricMetadata(row);
           return tooltipLines([
             tooltipTitle(`step ${num(rowNumber(row, 'global_step'), 0)}`),
-            tooltipText(`reward evidence ${pct(rowNumber(row, 'reward') * 100, 4)}`),
-            tooltipText(`equity evidence ${num(rowNumber(row, 'equity'), 2)}`),
+            tooltipText(`reward evidence ${formatReward(row, rowMeta)} ${rewardUnitLabel(rowMeta)}`),
+            tooltipText(`equity evidence ${formatEquity(row, rowMeta)}`),
             tooltipText(`phase ${text(row, 'phase', 'research')}`),
           ]);
         },
@@ -280,11 +327,11 @@
         axisLabel: { color: dim },
       },
       yAxis: [
-        { type: 'value', name: 'reward %', position: 'left', axisLabel: { formatter: '{value}%', color: dim }, splitLine: { lineStyle: { color: grid } } },
+        { type: 'value', name: `reward ${rewardUnitLabel(rewardMeta)}`, position: 'left', axisLabel: { formatter: rewardAxisIsPercent(rewardMeta) ? '{value}%' : '{value}', color: dim }, splitLine: { lineStyle: { color: grid } } },
         { type: 'value', name: 'equity', position: 'right', axisLabel: { color: dim }, splitLine: { show: false } },
       ],
       series: [
-        { name: 'reward over step', type: 'line', smooth: 0.2, symbol: 'none', yAxisIndex: 0, data: rows.map((row) => rowNumber(row, 'reward') * 100), lineStyle: { color: accent, width: 2.2 }, itemStyle: { color: accent } },
+        { name: 'reward over step', type: 'line', smooth: 0.2, symbol: 'none', yAxisIndex: 0, data: rows.map((row) => rewardPlotValue(cell(row, 'reward'), resolveMetricMetadata(row))), lineStyle: { color: accent, width: 2.2 }, itemStyle: { color: accent } },
         { name: 'equity over step', type: 'line', smooth: 0.2, symbol: 'none', yAxisIndex: 1, data: rows.map((row) => rowNumber(row, 'equity')), lineStyle: { color: success, width: 2.2 }, itemStyle: { color: success } },
       ],
     };
@@ -302,23 +349,37 @@
     // 부호 보존 크기 지표. metricLabel 에 따라 단위가 다르다.
     readonly totalReward: number;
     readonly stepCount: number;
-    // 'Σreward' = 라이브 이벤트 reward 합(raw, ×100 후 pct 표기) ·
+    // 'Σreward' = 라이브 이벤트 reward 합(declared reward_unit 계약대로 표기) ·
     // 'return' = CSV 폴백 episode_return_pct(이미 % 값, 그대로 pct 표기).
     readonly metricLabel: 'Σreward' | 'return';
+    // G007 — 'Σreward' 버킷은 대표 reward_unit(첫 이벤트의 declared 계약)을 보존해
+    // formatRewardValue 가 fraction 일 때만 ×100 하도록 한다.
+    readonly rewardMeta: MetricMeta | null;
   }
   const episodeBuckets = $derived.by((): EpisodeBucket[] => {
     const buckets: EpisodeBucket[] = [];
     const indexByKey = new Map<string, number>();
     for (const row of events) {
-      const episodeId = text(row, 'episode_id', '');
-      const episodeNum = rowNumber(row, 'episode', NaN);
-      const key = episodeId || (Number.isFinite(episodeNum) ? `ep-${episodeNum}` : '');
-      if (!key) continue;
+      // G007 — episode/episode_id 가 null 인 행은 실제 에피소드 ID가 없으므로
+      // rowNumber 의 0-fallback(coercion)을 절대 쓰지 않고 직접 null 체크한다.
+      const episodeIdRaw = cell(row, 'episode_id');
+      const episodeNumRaw = cell(row, 'episode');
+      const episodeId = typeof episodeIdRaw === 'string' && episodeIdRaw !== '' ? episodeIdRaw : null;
+      const episodeNum = typeof episodeNumRaw === 'number' && Number.isFinite(episodeNumRaw) ? episodeNumRaw : null;
+      if (episodeId === null && episodeNum === null) continue;
+      const key = episodeId ?? `ep-${episodeNum}`;
       const existingIdx = indexByKey.get(key);
       if (existingIdx === undefined) {
-        const label = Number.isFinite(episodeNum) ? `EP ${episodeNum}` : `EP ${buckets.length + 1}`;
+        const label = episodeNum !== null ? `EP ${episodeNum}` : `EP ${buckets.length + 1}`;
         indexByKey.set(key, buckets.length);
-        buckets.push({ key, label, totalReward: rowNumber(row, 'reward'), stepCount: 1, metricLabel: 'Σreward' });
+        buckets.push({
+          key,
+          label,
+          totalReward: rowNumber(row, 'reward'),
+          stepCount: 1,
+          metricLabel: 'Σreward',
+          rewardMeta: resolveMetricMetadata(row),
+        });
       } else {
         const prior = buckets[existingIdx];
         buckets[existingIdx] = {
@@ -338,7 +399,7 @@
         const episodeId = text(row, 'episode_id', '');
         if (!episodeId) return null;
         const returnPct = rowNumber(row, 'episode_return_pct', rowNumber(row, 'baseline_net_return_pct', 0));
-        return { key: episodeId, label: `EP ${idx + 1}`, totalReward: returnPct, stepCount: 1, metricLabel: 'return' };
+        return { key: episodeId, label: `EP ${idx + 1}`, totalReward: returnPct, stepCount: 1, metricLabel: 'return', rewardMeta: null };
       })
       .filter((bucket): bucket is EpisodeBucket => bucket !== null)
   );
@@ -354,7 +415,7 @@
   }
   function episodeRewardText(bucket: EpisodeBucket): string {
     return bucket.metricLabel === 'Σreward'
-      ? `Σ${pct(bucket.totalReward * 100, 3)}`
+      ? `Σ${formatRewardValue(bucket.totalReward, bucket.rewardMeta ?? resolveMetricMetadata(null))}`
       : `return ${pct(bucket.totalReward, 3)}`;
   }
 
@@ -362,10 +423,14 @@
   // /events 응답에 포함되어 있다 (rl_events.py:81).
   const actionFeedRows = $derived(events.slice(-20).reverse());
   function actionTone(row: RlTableRow): string {
+    if (actionAvailability(row) === 'NOT_RECORDED') return 'action-unrecorded';
     const name = text(row, 'action_name', '').toLowerCase();
     if (name === 'buy') return 'action-buy';
     if (name === 'sell') return 'action-sell';
     return 'action-hold';
+  }
+  function actionFeedLabel(row: RlTableRow): string {
+    return actionAvailability(row) === 'NOT_RECORDED' ? 'NOT_RECORDED' : text(row, 'action_name', 'hold');
   }
   // statusTone() vocabulary (accent/warn/ok/danger/idle) maps onto this file's
   // existing `.pill.*` CSS classes (success/warn/danger/accent; idle -> no
@@ -400,18 +465,24 @@
   {#if events.length}
     <div class="live-readouts" data-rl-live-screen-readouts>
       <div><span>Step</span><b class="mono">{latestStep}</b></div>
-      <div><span>Reward</span><b class="mono">{latestReward}</b></div>
+      <div><span>Reward</span><b class="mono">{latestReward} <span class="unit-chip">{latestRewardUnit}</span></b></div>
       <div><span>Equity</span><b class="mono">{latestEquity}</b></div>
       <div><span>Phase</span><b class="mono">{latestPhase}</b></div>
       <div><span>Algorithm</span><b class="mono">{latestAlgorithm}</b></div>
     </div>
-    <div class="live-chart" data-rl-live-screen-chart>
-      <EChartsRenderer option={liveChartOption} height="300px" />
-    </div>
-    {#if isOverlay}
-      <p class="text-caption overlay-note" data-rl-live-screen-overlay>
-        equity 오버레이 · {run} vs {overlayNames.join(' · ')} · run 별 색상 비교 (research-only, 실행/수익 근거 아님)
-      </p>
+    {#if isOverlay && !overlayUnitsCompatible}
+      <div class="live-empty" data-rl-live-screen-overlay-incompatible>
+        incompatible units (e.g. normalized NAV vs KRW P&L) — overlay withheld
+      </div>
+    {:else}
+      <div class="live-chart" data-rl-live-screen-chart>
+        <EChartsRenderer option={liveChartOption} height="300px" />
+      </div>
+      {#if isOverlay}
+        <p class="text-caption overlay-note" data-rl-live-screen-overlay>
+          equity 오버레이 · {run} vs {overlayNames.join(' · ')} · run 별 색상 비교 (research-only, 실행/수익 근거 아님)
+        </p>
+      {/if}
     {/if}
     <div class="frame-scrubber" data-rl-live-screen-scrubber>
       <input
@@ -486,9 +557,9 @@
         {#each actionFeedRows as row, idx (`${text(row, 'global_step', String(idx))}-${idx}`)}
           <li class="action-feed-row {actionTone(row)}">
             <span class="mono">step {num(rowNumber(row, 'global_step'), 0)}</span>
-            <span class="action-name">{text(row, 'action_name', 'hold')}</span>
-            <span class="mono">reward {pct(rowNumber(row, 'reward') * 100, 3)}</span>
-            <span class="mono">equity {num(rowNumber(row, 'equity'), 2)}</span>
+            <span class="action-name">{actionFeedLabel(row)}</span>
+            <span class="mono">reward {formatReward(row, resolveMetricMetadata(row))}</span>
+            <span class="mono">equity {formatEquity(row, resolveMetricMetadata(row))}</span>
           </li>
         {/each}
       </ul>
@@ -688,4 +759,11 @@
   .action-feed-row.action-buy .action-name { color: var(--success); }
   .action-feed-row.action-sell .action-name { color: var(--danger); }
   .action-feed-row.action-hold .action-name { color: var(--muted); }
+  .action-feed-row.action-unrecorded .action-name { color: var(--warn); }
+  .unit-chip {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-left: 4px;
+  }
 </style>

@@ -19,6 +19,11 @@ export function numberValue(value: unknown, fallback = 0): number {
 export function rowNumber(row: RlTableRow | null | undefined, key: string, fallback = 0): number {
   return numberValue(cell(row, key), fallback);
 }
+export function numberOrNotRecorded(value: unknown, digits = 2): string {
+  if (value === null || value === undefined) return 'NOT_RECORDED';
+  const n = Number(value);
+  return Number.isFinite(n) ? num(n, digits) : 'NOT_RECORDED';
+}
 
 export function rowBool(row: RlTableRow | null | undefined, key: string): boolean {
   return cell(row, key) === true || cell(row, key) === 'True' || cell(row, key) === 'true';

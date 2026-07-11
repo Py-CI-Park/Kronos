@@ -6,7 +6,8 @@
   import { onMount } from 'svelte';
   import { dailyOhlcvApi } from '$lib/dailyOhlcvApi';
   import { rlApi } from '$lib/rlApi';
-  import { num, pct, rowNumber } from '$lib/rlRows';
+  import { num, rowNumber } from '$lib/rlRows';
+  import { formatReward, resolveMetricMetadata } from '$lib/runMetrics';
   import { trainingStatus, metricsLatest } from '$lib/stores';
   import { navigateToTab } from '$lib/routes';
   import { humanizeVerdict } from '$lib/verdictLabel';
@@ -57,7 +58,7 @@
         if (latestRow) {
           rlLiveEvent = {
             step: num(rowNumber(latestRow, 'global_step'), 0),
-            reward: pct(rowNumber(latestRow, 'reward') * 100, 4),
+            reward: formatReward(latestRow, resolveMetricMetadata(latestRow)),
           };
         }
       } catch {
