@@ -168,7 +168,32 @@ def _is_scenario_generated_run_dir(path: Path) -> bool:
     except (ValueError, OSError):
         return False
     return scenario_manifest.is_file()
+def _run_authority_sort_key(run_dir: Path, required_file: str) -> tuple[int, int, str, float]:
+    manifest = _load_json_if_exists(run_dir / required_file)
+    if not isinstance(manifest, dict):
+        manifest = {}
+    authority_block = manifest.get("authority")
+    if not isinstance(authority_block, dict):
+        authority_block = manifest.get("run_authority")
+    if not isinstance(authority_block, dict):
+        authority_block = {}
 
+    def _field(name: str) -> Any:
+        if name in authority_block:
+            return authority_block.get(name)
+        return manifest.get(name)
+
+    authoritative_rank = 1 if bool(_field("authoritative")) else 0
+    status = _field("status")
+    status = status.strip().lower() if isinstance(status, str) else ""
+    status_rank = {"done": 3, "running": 2, "queued": 1}.get(status, 0)
+    completed_at = _field("completed_at")
+    completed_at_key = completed_at if isinstance(completed_at, str) else ""
+    try:
+        mtime = (run_dir / required_file).stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return (authoritative_rank, status_rank, completed_at_key, mtime)
 
 def _latest_run_dir(root: Path, *, required_file: str, run_id: str | None = None) -> Path | None:
     root = root.resolve()
@@ -193,7 +218,7 @@ def _latest_run_dir(root: Path, *, required_file: str, run_id: str | None = None
         candidates.append(path)
     if not candidates:
         return None
-    return max(candidates, key=lambda p: (p / required_file).stat().st_mtime)
+    return max(candidates, key=lambda p: _run_authority_sort_key(p, required_file))
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -207,7 +232,7 @@ def _latest_artifact_dir(root: Path, *, required_file: str) -> Path | None:
     candidates = [path for path in root.iterdir() if path.is_dir() and (path / required_file).exists()]
     if not candidates:
         return None
-    return max(candidates, key=lambda p: (p / required_file).stat().st_mtime)
+    return max(candidates, key=lambda p: _run_authority_sort_key(p, required_file))
 
 
 def _load_json_if_exists(path: Path | None) -> dict[str, Any]:
