@@ -4,8 +4,10 @@
   // 신규 /api/* 없음 · 종목코드는 문자열 보존(C2) · ts_imb 등 RULE 라벨은 이 화면과 무관.
   // 데이터가 없으면 합성하지 않고 fail-closed('—'/MISSING pill)로 표시합니다.
   import type {
+    DailyCloseSlotDataRecency,
     DailyCloseSlotEquityResponse,
     DailyCloseSlotLatestResponse,
+    DailyCloseSlotLatestSelection,
     DailyCloseSlotPolicyScoreRow,
     DailyCloseSlotSelectionResponse,
     DailyCloseSlotSelectionRow,
@@ -75,6 +77,26 @@
   const thresholdSelection = $derived(latest?.threshold_selection ?? selection?.threshold_selection ?? {});
   const sentinelValue = $derived((thresholdSelection as unknown as Record<string, unknown> | undefined)?.chosen_is_no_trade_sentinel);
 
+  // ── authoritative latest/date-recency/blocker evidence (WP — de-hardcode) ──
+  // These come straight from the backend's structured latest_selection /
+  // data_recency / close_slot_blockers / chosen_is_no_trade_sentinel fields
+  // (selection endpoint primary, latest endpoint fallback). Nothing here is
+  // invented client-side; a missing field renders as '—' / an empty list.
+  const dataRecency = $derived(
+    (selection?.data_recency ?? latest?.data_recency ?? null) as DailyCloseSlotDataRecency | null
+  );
+  const recencyLabel = $derived(dataRecency?.label ?? (dataRecency?.is_today ? '오늘' : '기록된 replay 날짜 확인 불가'));
+  const closeSlotBlockers = $derived(
+    (selection?.close_slot_blockers ?? latest?.close_slot_blockers ?? []) as readonly string[]
+  );
+  const chosenIsNoTradeSentinel = $derived(
+    (selection?.chosen_is_no_trade_sentinel ?? latest?.chosen_is_no_trade_sentinel ?? sentinelValue) as
+      | boolean
+      | null
+      | undefined
+  );
+  const latestSelection = $derived((selection?.latest_selection ?? null) as DailyCloseSlotLatestSelection | null);
+
   // ── (1) hero — AUTHORITATIVE selected count from selected_hold_summary ──
   //    selection_rows is a paginated sample (closeSlotSelection ?limit=20 ->
   //    the OLDEST dates only, since load_close_slot_selection iterates dates
@@ -105,10 +127,15 @@
   );
   const sampledSelectedRows = $derived(sampledLatestRows.filter((row) => hasCode(row)));
 
+  // 0-selection copy is derived from the structured sentinel/blocker evidence
+  // — never a hardcoded 'normalization bug' claim. When the backend marks the
+  // zero selection as the honest no-trade sentinel, say so explicitly; when it
+  // does not, point at the live close_slot_blockers/verdict instead of
+  // inventing a defect label the backend never asserted.
   const zeroDefectCopy = $derived(
-    sentinelValue === true
+    chosenIsNoTradeSentinel === true
       ? '0종목 선택 — 23bp 하 무거래가 정직한 최적 (chosen_is_no_trade_sentinel=true)'
-      : '0종목 선택 — 피처 정규화 버그 (알려진 결함, FACT)'
+      : '0종목 선택 — 원인은 아래 blocker/verdict 참조'
   );
 
   // ── (2) 종목별 판단 — score vs threshold ────────────────────────────
@@ -190,8 +217,8 @@
 <section class="panel" data-close-slot-agent-screen>
   <div class="panel-head">
     <div>
-      <div class="text-eyebrow">Close-slot agent · 오늘의 선택 재현 (read-only)</div>
-      <h2 class="text-h3">종가매매 에이전트 — 오늘 선택 종목 · 판단 근거 · 익일 결과</h2>
+      <div class="text-eyebrow">Close-slot agent · {recencyLabel} 선택 재현 (read-only)</div>
+      <h2 class="text-h3">종가매매 에이전트 — {recencyLabel} 선택 종목 · 판단 근거 · 익일 결과</h2>
     </div>
     <span class="pill {tone(displayStatus)}" data-close-slot-agent-status>
       <span class="dot"></span>연구용 · {humanizeVerdict(displayStatus)} · 실거래 아님
@@ -200,6 +227,43 @@
   <p class="text-muted" style="font-size:12px; margin-top:-4px">
     기존 close-slot selection/policy-score/equity API만 사용 · no live/broker/account/order/paper-forward/profitability/model-build/GO claim.
   </p>
+
+  <!-- (0) 권위 latest_selection — test OOS는 PRIMARY, train/val은 secondary -->
+  <div class="agent-section evidence-box" data-close-slot-agent-latest-selection>
+    <div class="text-eyebrow">latest_selection (authoritative) · test OOS = PRIMARY</div>
+    <div class="mini-grid">
+      <div><span>date</span><strong>{text(latestSelection?.date)}</strong></div>
+      <div><span>policy</span><strong>{text(latestSelection?.policy)}</strong></div>
+      <div><span>split</span><strong>{text(latestSelection?.split, 'test')} · PRIMARY</strong></div>
+      <div><span>cost_scenario_id</span><strong>{text(latestSelection?.cost_scenario_id, 'base_23bp')}</strong></div>
+      <div><span>artifact_age_seconds</span><strong>{numberText(latestSelection?.artifact_age_seconds)}</strong></div>
+      <div><span>source_run_id</span><strong>{text(latestSelection?.source_run_id)}</strong></div>
+      <div><span>seed</span><strong>{latestSelection?.seed == null ? '— (close-slot manifest에 미영속)' : text(latestSelection?.seed)}</strong></div>
+    </div>
+    {#if latestSelection?.missing_test_split_evidence}
+      <div class="notice warn" style="margin-top:8px">test split evidence 없음 · PRIMARY OOS 결과 미확인 (fail-closed).</div>
+    {/if}
+    <div class="text-caption" style="margin-top:10px">secondary (참고용 · PRIMARY 아님)</div>
+    <div class="mini-grid">
+      <div><span>train</span><strong>{text(latestSelection?.secondary?.train?.date)}</strong></div>
+      <div><span>val</span><strong>{text(latestSelection?.secondary?.val?.date)}</strong></div>
+      <div><span>val+test</span><strong>{text(latestSelection?.secondary?.val_plus_test?.date)}</strong></div>
+    </div>
+    <div class="text-caption" style="margin-top:10px">
+      data_recency: {recencyLabel} · latest_data_date {text(dataRecency?.latest_data_date)} · is_today {flagText(dataRecency?.is_today)}
+    </div>
+  </div>
+
+  <!-- close_slot_blockers — full dynamic deduped list, count is never hardcoded -->
+  <div class="agent-section evidence-box" data-close-slot-agent-blockers>
+    <div class="text-eyebrow">close_slot_blockers · {closeSlotBlockers.length}건</div>
+    {#each closeSlotBlockers as blocker}
+      <div class="notice warn" style="margin-top:6px" data-close-slot-blocker>{blocker}</div>
+    {:else}
+      <div class="notice success">현재 dedup된 blocker 없음.</div>
+    {/each}
+  </div>
+yy
 
   <!-- (1) 선택 요약 (권위 집계 selected_hold_summary) + 표본 재현 -->
   <div class="agent-section" data-close-slot-agent-hero>
@@ -211,13 +275,16 @@
         <div class="mini-kv"><span>threshold</span><strong>{text(thresholdSelection.threshold_text ?? thresholdSelection.threshold)} · metric {text(thresholdSelection.metric, 'mean_daily_reward_base_23bp')}</strong></div>
         <div class="mini-kv"><span>hold_cash_action</span><strong>{text(thresholdSelection.hold_cash_action, 'true')}</strong></div>
         <div class="mini-kv"><span>cardinality</span><strong>max {numberText(thresholdSelection.max_slot_count ?? 10)} slots · {text(thresholdSelection.selection_cardinality, 'threshold_selected_0_to_10')}</strong></div>
-        <div class="mini-kv"><span>chosen_is_no_trade_sentinel</span><strong>{flagText(sentinelValue)}</strong></div>
+        <div class="mini-kv"><span>chosen_is_no_trade_sentinel</span><strong>{flagText(chosenIsNoTradeSentinel)}</strong></div>
         <p class="text-caption" style="margin-top:8px">모든 슬롯이 cash-hold 상태입니다 · 매매 신호 아님 · 연구 전용(RESEARCH_ONLY).</p>
+        {#if chosenIsNoTradeSentinel !== true}
+          <p class="text-caption" style="margin-top:4px">근거: close_slot_blockers {closeSlotBlockers.length}건 · verdict {humanizeVerdict(displayStatus)} (위 close_slot_blockers 섹션 참조).</p>
+        {/if}
       </div>
     {:else if primarySelectedCount == null && sampledSelectedRows.length === 0}
       <div class="notice">선택 데이터 없음 · NOT_STARTED 또는 fail-closed 상태입니다.</div>
     {:else}
-      <div class="text-caption" style="margin:2px 0 8px">표본 선택 재현 · 최신 표본일 {text(sampledLatestDate)} <span class="krw-note">· selection_rows는 제한된 표본이라 최신 거래일이 아닐 수 있음 (권위 집계는 위 요약)</span></div>
+      <div class="text-caption" style="margin:2px 0 8px">표본 선택 재현 ({text(selection?.selection_rows_label, 'sample_only_not_authoritative_latest')}) · 표본일 {text(sampledLatestDate)} <span class="krw-note">· selection_rows는 제한된 표본이라 최신 거래일이 아닐 수 있음 (권위 latest는 위 latest_selection 참조)</span></div>
       <div class="agent-picks-grid" data-close-slot-agent-picks>
         {#each sampledSelectedRows as row}
           <div class="agent-pick-card">

@@ -581,6 +581,37 @@ export interface DailyCloseSlotReplaySummary {
   readonly held_out_feedback_used_for_fit_count?: number;
 }
 
+export interface DailyCloseSlotDataRecency {
+  readonly latest_data_date?: string | null;
+  readonly configured_research_date?: string | null;
+  readonly is_today?: boolean;
+  readonly label?: string;
+}
+
+export interface DailyCloseSlotLatestSelectionSecondaryEntry {
+  readonly date?: string | null;
+  readonly split?: string;
+  readonly label?: string;
+}
+
+export interface DailyCloseSlotLatestSelection {
+  readonly policy?: string;
+  readonly date?: string | null;
+  readonly split?: string;
+  readonly cost_scenario_id?: string;
+  readonly seed?: number | null;
+  readonly source_run_id?: string | null;
+  readonly artifact_age_seconds?: number | null;
+  readonly label?: string;
+  readonly missing_test_split_evidence?: boolean;
+  readonly secondary?: {
+    readonly train?: DailyCloseSlotLatestSelectionSecondaryEntry;
+    readonly val?: DailyCloseSlotLatestSelectionSecondaryEntry;
+    readonly val_plus_test?: DailyCloseSlotLatestSelectionSecondaryEntry;
+  };
+}
+
+
 export interface DailyCloseSlotSelectedHoldRow {
   readonly policy?: string;
   readonly split?: string;
@@ -709,6 +740,10 @@ export interface DailyCloseSlotLatestResponse {
   readonly dataset_source_counts?: Readonly<Record<string, unknown>>;
   readonly bounded_research_scope?: Readonly<Record<string, unknown>>;
   readonly samples?: DailyCloseSlotSamples;
+  readonly artifact_age_seconds?: number | null;
+  readonly data_recency?: DailyCloseSlotDataRecency;
+  readonly close_slot_blockers?: readonly string[];
+  readonly chosen_is_no_trade_sentinel?: boolean | null;
   readonly artifact_selection_errors?: readonly string[];
 }
 
@@ -767,6 +802,11 @@ export interface DailyCloseSlotSelectionResponse {
   readonly go_summary_allowed?: boolean;
   readonly guardrail?: string;
   readonly selection_rows?: readonly DailyCloseSlotSelectionRow[];
+  readonly selection_rows_label?: string;
+  readonly latest_selection?: DailyCloseSlotLatestSelection;
+  readonly data_recency?: DailyCloseSlotDataRecency;
+  readonly close_slot_blockers?: readonly string[];
+  readonly chosen_is_no_trade_sentinel?: boolean | null;
   readonly policy_score_sample?: readonly DailyCloseSlotPolicyScoreRow[];
   readonly artifact_selection_errors?: readonly string[];
 }

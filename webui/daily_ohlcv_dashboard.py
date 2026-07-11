@@ -433,6 +433,23 @@ def _close_slot_safe_split_date_counts(path: Path, *, errors: list[str], error_p
         return {}
     return {split: len(dates) for split, dates in split_dates.items()}
 
+def _close_slot_safe_date_split_map(path: Path, *, errors: list[str], error_prefix: str) -> dict[str, str]:
+    if not path.is_file():
+        errors.append(f"{error_prefix}_MISSING")
+        return {}
+    date_split: dict[str, str] = {}
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                split = str(row.get("split") or "")
+                date = str(row.get("date") or "")
+                if split and date:
+                    date_split[date] = split
+    except (OSError, UnicodeDecodeError, csv.Error):
+        errors.append(f"{error_prefix}_UNREADABLE_CSV")
+        return {}
+    return date_split
+
 
 def _close_slot_gate_manifest_expected_sha(manifest: dict[str, Any]) -> str:
     return _json_hash(
@@ -1785,6 +1802,7 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
     policy_score_rows: list[dict[str, Any]] = []
     date_ledgers: dict[str, Any] = {}
     split_date_counts: dict[str, int] = {}
+    date_split_map: dict[str, str] = {}
     threshold_rows: list[dict[str, Any]] = []
     cost_scenario_rows: list[dict[str, Any]] = []
     walk_forward_windows: dict[str, Any] = {}
@@ -1834,6 +1852,11 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
                 error_prefix="CLOSE_SLOT_TRAIN_POLICY_SCORES",
             )
             split_date_counts = _close_slot_safe_split_date_counts(
+                train_artifacts["policy_scores"],
+                errors=errors,
+                error_prefix="CLOSE_SLOT_TRAIN_POLICY_SCORES",
+            )
+            date_split_map = _close_slot_safe_date_split_map(
                 train_artifacts["policy_scores"],
                 errors=errors,
                 error_prefix="CLOSE_SLOT_TRAIN_POLICY_SCORES",
@@ -2108,6 +2131,7 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
         "dataset_lineage": dataset_lineage,
         "baseline_rows": baseline_rows,
         "policy_score_rows": policy_score_rows,
+        "date_split_map": date_split_map,
         "date_ledgers": date_ledgers,
         "threshold_rows": threshold_rows,
         "cost_scenario_rows": cost_scenario_rows,
@@ -2134,6 +2158,39 @@ def _close_slot_labels(payload: dict[str, Any]) -> list[str]:
     if d3.get("present"):
         labels.append("D3 re-ledgered through close-slot accounting")
     return labels
+
+
+def _close_slot_latest_data_date(date_ledgers: dict[str, Any]) -> str | None:
+    dates = [
+        str(row.get("date"))
+        for rows in (date_ledgers or {}).values()
+        if isinstance(rows, list)
+        for row in rows
+        if row.get("date")
+    ]
+    return max(dates) if dates else None
+
+
+def _close_slot_data_recency(date_ledgers: dict[str, Any]) -> dict[str, Any]:
+    latest_data_date = _close_slot_latest_data_date(date_ledgers)
+    configured_research_date = None
+    is_today = configured_research_date is not None and latest_data_date == configured_research_date
+    label = "today" if is_today else f"stored replay {latest_data_date}" if latest_data_date else "stored replay unknown"
+    return {
+        "latest_data_date": latest_data_date,
+        "configured_research_date": configured_research_date,
+        "is_today": is_today,
+        "label": label,
+    }
+
+
+def _close_slot_artifact_age_seconds(run_dir: Path) -> float | None:
+    manifest_path = run_dir / "close_slot_gate_manifest.json"
+    try:
+        mtime = manifest_path.stat().st_mtime
+    except OSError:
+        return None
+    return max(0.0, datetime.now(timezone.utc).timestamp() - mtime)
 
 
 def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: int) -> dict[str, Any]:
@@ -2211,6 +2268,9 @@ def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: i
         "universe_review_status": current_d0_d1.get("universe_review_status"),
         "current_required_blockers": current_d0_d1.get("required_blockers") or [],
         "upstream_gate_blockers": gate_report.get("upstream_gate_blockers") or train_manifest.get("upstream_gate_blockers") or dataset_manifest.get("upstream_gate_blockers") or [],
+        "chosen_is_no_trade_sentinel": (train_manifest.get("fit_summary") or {}).get("chosen_is_no_trade_sentinel"),
+        "artifact_age_seconds": _close_slot_artifact_age_seconds(context["run_dir"]),
+        "data_recency": _close_slot_data_recency(context.get("date_ledgers") or {}),
         "dataset_lineage": context.get("dataset_lineage") or {},
         "dataset_source_counts": dataset_manifest.get("source_counts") or {},
         "bounded_research_scope": {
@@ -2236,6 +2296,11 @@ def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: i
         },
     }
     payload["labels"] = _close_slot_labels(payload)
+    payload["close_slot_blockers"] = _merge_string_lists(
+        payload["gate_validation_errors"],
+        payload["current_required_blockers"],
+        payload["upstream_gate_blockers"],
+    )
     return payload
 
 
@@ -2384,6 +2449,62 @@ def load_close_slot_equity(*, run: str | None = None, policy: str | None = None)
     }
 
 
+def _close_slot_ledger_dates_by_split(ledgers: list[dict[str, Any]], date_split_map: dict[str, str]) -> dict[str, list[str]]:
+    by_split: dict[str, list[str]] = {}
+    for row in ledgers:
+        date = row.get("date")
+        if not date:
+            continue
+        split = date_split_map.get(str(date), "")
+        by_split.setdefault(split, []).append(str(date))
+    return by_split
+
+
+def _close_slot_latest_selection(
+    *,
+    date_ledgers: dict[str, Any],
+    date_split_map: dict[str, str],
+    policy: str,
+    run_id: str | None,
+    artifact_age_seconds: float | None,
+) -> dict[str, Any]:
+    ledgers = date_ledgers.get(policy) if isinstance(date_ledgers.get(policy), list) else []
+    by_split = _close_slot_ledger_dates_by_split(ledgers, date_split_map)
+    test_dates = sorted(by_split.get("test") or [], reverse=True)
+    train_dates = sorted(by_split.get("train") or [], reverse=True)
+    val_dates = sorted(by_split.get("val") or [], reverse=True)
+    val_plus_test_dates = sorted((by_split.get("val") or []) + (by_split.get("test") or []), reverse=True)
+    primary_date = test_dates[0] if test_dates else None
+    return {
+        "policy": policy,
+        "date": primary_date,
+        "split": "test",
+        "cost_scenario_id": PRIMARY_COST_SCENARIO_ID,
+        "seed": None,
+        "source_run_id": run_id,
+        "artifact_age_seconds": artifact_age_seconds,
+        "label": "primary_oos_test_result",
+        "missing_test_split_evidence": primary_date is None,
+        "secondary": {
+            "train": {
+                "date": train_dates[0] if train_dates else None,
+                "split": "train",
+                "label": "secondary_in_sample_train_result",
+            },
+            "val": {
+                "date": val_dates[0] if val_dates else None,
+                "split": "val",
+                "label": "secondary_validation_result",
+            },
+            "val_plus_test": {
+                "date": val_plus_test_dates[0] if val_plus_test_dates else None,
+                "split": "val+test",
+                "label": "secondary_val_plus_test_combined_result",
+            },
+        },
+    }
+
+
 def load_close_slot_selection(*, run: str | None = None, policy: str | None = None, limit: int = 25) -> dict[str, Any]:
     context = _load_close_slot_context(run=run, sample_limit=limit)
     if "payload" in context:
@@ -2391,6 +2512,11 @@ def load_close_slot_selection(*, run: str | None = None, policy: str | None = No
     selected_policy = str(policy or POLICY_CONTEXTUAL_BANDIT)
     safe_limit = _bounded_limit(limit, default=25, maximum=500)
     date_ledgers = context.get("date_ledgers") if isinstance(context.get("date_ledgers"), dict) else {}
+    if selected_policy not in date_ledgers and selected_policy.lower() == "linear":
+        linear_candidates = sorted(name for name in date_ledgers if "linear" in str(name).lower())
+        if linear_candidates:
+            selected_policy = linear_candidates[0]
+    date_split_map = context.get("date_split_map") if isinstance(context.get("date_split_map"), dict) else {}
     slot_rows: list[dict[str, Any]] = []
     for ledger in (date_ledgers.get(selected_policy, []) if isinstance(date_ledgers.get(selected_policy), list) else []):
         for slot in ledger.get("ledger") or []:
@@ -2418,6 +2544,13 @@ def load_close_slot_selection(*, run: str | None = None, policy: str | None = No
         if len(slot_rows) >= safe_limit:
             break
     latest = _close_slot_payload_from_context(context, sample_limit=safe_limit)
+    latest_selection = _close_slot_latest_selection(
+        date_ledgers=date_ledgers,
+        date_split_map=date_split_map,
+        policy=selected_policy,
+        run_id=latest.get("run_id"),
+        artifact_age_seconds=latest.get("artifact_age_seconds"),
+    )
     return {
         "surface": "daily_close_slot_selection",
         "status": latest.get("status"),
@@ -2429,6 +2562,11 @@ def load_close_slot_selection(*, run: str | None = None, policy: str | None = No
         "slot_count": latest.get("slot_count"),
         "round_trip_cost_bp": latest.get("round_trip_cost_bp"),
         "selection_rows": slot_rows,
+        "selection_rows_label": "sample_only_not_authoritative_latest",
+        "latest_selection": latest_selection,
+        "data_recency": latest.get("data_recency"),
+        "close_slot_blockers": latest.get("close_slot_blockers"),
+        "chosen_is_no_trade_sentinel": latest.get("chosen_is_no_trade_sentinel"),
         "policy_score_sample": [row for row in (context.get("policy_score_rows") or []) if str(row.get("policy")) == selected_policy][:safe_limit],
         "threshold_selection": latest.get("threshold_selection"),
         "selected_hold_summary": latest.get("selected_hold_summary"),

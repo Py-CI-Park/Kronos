@@ -1,8 +1,10 @@
 <script lang="ts">
   // Mission Control — 전 연구 라인 통합 계기판(instrument panel).
   // 원칙: 라이브 값은 API/스토어에서 파생하고 fail-open 시 '확인 중'을 노출.
-  //       가드레일 사실(연구 전용 posture, 7 false-lock, D5 NO-GO, close-slot
-  //       정규화 버그로 0종목 선택)은 파생하지 않고 FACT 로 라벨링해 정직하게 표기.
+  //       가드레일 사실(연구 전용 posture, 7 false-lock, D5 NO-GO)은 파생하지
+  //       않고 FACT 로 라벨링해 정직하게 표기. close-slot 0종목 선택 사유는
+  //       하드코딩하지 않고 API의 data_recency/close_slot_blockers/
+  //       chosen_is_no_trade_sentinel에서 라이브로 파생한다(closeSlotFoot).
   import { onMount } from 'svelte';
   import { dailyOhlcvApi } from '$lib/dailyOhlcvApi';
   import { rlApi } from '$lib/rlApi';
@@ -84,6 +86,21 @@
   const closeMetric = $derived(
     closeSlot ? `${closeSlot.max_slot_count ?? 10} slot · ${closeSlot.round_trip_cost_bp ?? 23}bp` : PENDING
   );
+  // Authoritative structured evidence from the backend's data_recency /
+  // close_slot_blockers / chosen_is_no_trade_sentinel fields (never a
+  // hardcoded blocker count or an invented 'normalization bug' claim).
+  const closeSlotRecencyLabel = $derived((closeSlot?.data_recency?.label ?? PENDING) as string);
+  const closeSlotBlockerList = $derived((closeSlot?.close_slot_blockers ?? []) as string[]);
+  const closeSlotIsNoTradeSentinel = $derived(closeSlot?.chosen_is_no_trade_sentinel === true);
+  const closeSlotFoot = $derived(
+    closeSlot == null
+      ? PENDING
+      : closeSlotIsNoTradeSentinel
+        ? `${closeSlotRecencyLabel} · 0종목 선택 — 무거래가 정직한 최적 (sentinel=true)`
+        : closeSlotBlockerList.length
+          ? `${closeSlotRecencyLabel} · blocker ${closeSlotBlockerList.length}건`
+          : `${closeSlotRecencyLabel} · blocker 없음`
+  );
   const trainMetric = $derived(
     train?.overall_percent != null
       ? `${Number(train.overall_percent).toFixed(1)}%`
@@ -145,7 +162,7 @@
       foot: 'blocker · D0 price_basis / D1 universe' },
     { tab: 'daily-ohlcv', nm: '종가매매 close-slot', sub: '일봉 D4 · contextual bandit', tone: toneOf(closeVerdict),
       verdict: closeVerdict, vsrc: 'live', big: closeMetric, bsrc: 'live',
-      foot: '⚠ 정규화 버그 · contextual_bandit 0종목 선택' },
+      foot: closeSlotFoot },
     { tab: 'rl', nm: '강화학습 · 인트라데이', sub: 'intraday · ts_imb RULE baseline', tone: 'danger',
       verdict: 'NO-GO', vsrc: 'fact', big: 'RESEARCH_ONLY', bsrc: 'fact',
       foot: 'D9 gate · locks 7 off', liveSub: rlLiveLine, liveSubLabel: rlLifecycleLabel, liveSubTone: rlLifecycleTone,
@@ -244,7 +261,7 @@
       <div class="panel">
         <h3>다음 확인</h3>
         <div class="nx"><span class="n">1</span><span>D0–D9 게이트에서 PASS/WATCH/NOT_STARTED 우선 확인</span></div>
-        <div class="nx"><span class="n">2</span><span>close-slot 피처 정규화 버그 — contextual_bandit 0종목 (알려진 결함)</span></div>
+        <div class="nx"><span class="n">2</span><span>{closeSlotFoot} — close_slot_blockers/verdict 근거 확인</span></div>
         <div class="nx"><span class="n">3</span><span>artifact hash · stale/malformed → fail-closed 상태 점검</span></div>
       </div>
       <div class="panel">

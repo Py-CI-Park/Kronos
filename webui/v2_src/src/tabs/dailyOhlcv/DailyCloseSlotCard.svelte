@@ -69,10 +69,11 @@
   const sourceCounts = $derived(latest?.dataset_source_counts ?? {});
   const boundedScope = $derived(latest?.bounded_research_scope ?? {});
 
-  // 0-symbol defect gloss (WP-S3): only rendered when the primary base_23bp
-  // row actually selected 0 symbols. After WP-R1 the manifest may carry
-  // chosen_is_no_trade_sentinel — branch the wording when readable, else
-  // keep the known-defect copy (MissionControl.svelte wording, reused verbatim).
+  // 0-symbol gloss (Todo 8): rendered only when the primary base_23bp row
+  // selected 0 symbols. The wording is DATA-DRIVEN, never a hardcoded
+  // "normalization bug" claim: honest sentinel copy when the backend structured
+  // chosen_is_no_trade_sentinel is true, else a neutral pointer at the API
+  // blocker/verdict evidence.
   const primarySelectedCount = $derived.by(() => {
     const rows = selectedHoldSummary.rows ?? [];
     const primaryId = selectedHoldSummary.primary_cost_scenario_id ?? latest?.primary_cost_scenario_id ?? 'base_23bp';
@@ -80,11 +81,14 @@
     return match?.selected_count;
   });
   const isZeroSelectionDefect = $derived(typeof primarySelectedCount === 'number' && primarySelectedCount === 0);
-  const sentinelValue = $derived((thresholdSelection as unknown as Record<string, unknown>)?.chosen_is_no_trade_sentinel);
+  const sentinelValue = $derived(
+    latest?.chosen_is_no_trade_sentinel ??
+      (thresholdSelection as unknown as Record<string, unknown>)?.chosen_is_no_trade_sentinel,
+  );
   const zeroSelectionGloss = $derived(
     sentinelValue === true
       ? '23bp 하 무거래가 정직한 최적 (chosen_is_no_trade_sentinel=true)'
-      : '피처 정규화 버그 · contextual_bandit 0종목 선택 (알려진 결함, FACT)'
+      : '0종목 선택 — 원인은 아래 blocker/verdict 참조',
   );
 
   function flagText(value: unknown): string {
