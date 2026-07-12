@@ -10,8 +10,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from stom_rl.daily_close_slot_env import ACTION_TIE_BREAK_ORDER, account_close_slot_selection, normalize_close_slot_action  # noqa: E402
 from stom_rl.daily_close_slot_train import (  # noqa: E402
     CloseSlotTrainConfig,
+    _signed_feedback_weight,
     load_close_slot_dataset_run,
     run_close_slot_training,
 )
@@ -206,6 +208,26 @@ def _write_dataset_run(root: Path, run_id: str = "dataset_unit") -> dict:
     return {"root": root, "run_id": run_id, "manifest_sha": manifest_sha, "manifest_path": manifest_path, "panel_rows": panel_rows}
 
 
+def _rewrite_dataset_panel(dataset: dict, panel_rows: list[dict]) -> dict:
+    manifest_path = Path(dataset["manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for artifact_key in ("close_slot_panel", "candidate_score_rows", "label_audit"):
+        _write_csv(Path(manifest["artifacts"][artifact_key]), panel_rows, [])
+    manifest["artifact_hashes"] = {
+        key: _sha_file(Path(path))
+        for key, path in manifest["artifacts"].items()
+    }
+    manifest["manifest_sha"] = f"{dataset['run_id']}-rewritten-sha"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "root": dataset["root"],
+        "run_id": dataset["run_id"],
+        "manifest_sha": manifest["manifest_sha"],
+        "manifest_path": manifest_path,
+        "panel_rows": panel_rows,
+    }
+
+
 def _read_csv(path: Path) -> list[dict]:
     with path.open(encoding="utf-8", newline="") as handle:
         return [dict(row) for row in csv.DictReader(handle)]
@@ -290,16 +312,16 @@ def test_run_close_slot_training_emits_required_baselines_and_no_oos_fit(tmp_pat
         "no_trade_control",
         "deterministic_shuffle_top10_control",
         "momentum_top10_score_and_pick",
-        "contextual_bandit_linear_train_only_score_and_pick",
+        "linear_score_and_pick_train_only",
     }
 
     summaries = {row["policy"]: row for row in manifest["summary"]}
     assert summaries["no_trade_control"]["filled_slots"] == 0
     assert summaries["no_trade_control"]["total_net_pnl_krw"] == 0.0
-    assert summaries["contextual_bandit_linear_train_only_score_and_pick"]["filled_slots"] > 0
+    assert summaries["linear_score_and_pick_train_only"]["filled_slots"] > 0
     assert summaries["deterministic_shuffle_top10_control"]["shuffle_baseline_only"] is True
     assert summaries["deterministic_shuffle_top10_control"]["policy_action_allowed"] is False
-    assert summaries["contextual_bandit_linear_train_only_score_and_pick"]["oos_rows_used_for_fit"] == 0
+    assert summaries["linear_score_and_pick_train_only"]["oos_rows_used_for_fit"] == 0
     score_rows = _read_csv(Path(result["paths"]["policy_scores"]))
     assert {row["policy"] for row in score_rows} >= set(manifest["required_baselines"])
     assert "000001" in {row["code"] for row in score_rows}
@@ -309,13 +331,26 @@ def test_run_close_slot_training_emits_required_baselines_and_no_oos_fit(tmp_pat
     assert {row["decision_grade_return_status"] for row in score_rows} == {"BLOCKED_UNTIL_PRICE_BASIS_VERIFIED"}
     assert {row["round_trip_cost_bp"] for row in score_rows} == {"23"}
     assert {row["primary_cost_scenario_id"] for row in score_rows} == {"base_23bp"}
-    contextual_rows = [row for row in score_rows if row["policy"] == "contextual_bandit_linear_train_only_score_and_pick"]
-    assert {row["threshold"] for row in contextual_rows} == {manifest["threshold_selection"]["threshold_text"]}
-    assert {row["cost_scenario_id"] for row in contextual_rows} == {"base_23bp"}
-    assert {row["lineage"] for row in contextual_rows} == {"primary_train_threshold_frozen_replay"}
+    linear_rows = [row for row in score_rows if row["policy"] == "linear_score_and_pick_train_only"]
+    assert {row["threshold"] for row in linear_rows} == {manifest["threshold_selection"]["threshold_text"]}
+    assert {row["cost_scenario_id"] for row in linear_rows} == {"base_23bp"}
+    assert {row["lineage"] for row in linear_rows} == {"primary_train_threshold_frozen_replay"}
     shuffle_rows = [row for row in score_rows if row["policy"] == "deterministic_shuffle_top10_control"]
     assert {row["policy_action_allowed"] for row in shuffle_rows} == {"False"}
     assert {"selected", "selection_reason", "selected_count", "hold_cash_count", "slot_state_feedback"} <= set(score_rows[0])
+    assert manifest["threshold_selection"]["tie_break"] == [
+        "higher_mean_daily_reward_base_23bp",
+        "higher_median_daily_reward_base_23bp",
+        "higher_mean_selected_count",
+        "higher_threshold",
+        "lexicographically_smallest_threshold_text",
+    ]
+    assert manifest["threshold_selection"]["tie_break_policy"] == ",".join(manifest["threshold_selection"]["tie_break"])
+    assert manifest["test_oos_primary"] is True
+    assert manifest["primary_headline"]["split"] == "test"
+    assert manifest["primary_headline"]["round_trip_cost_bp"] == 23
+    assert manifest["policy_score_contract"]["deterministic_tie_breaks"] == ACTION_TIE_BREAK_ORDER
+    assert manifest["primary_headline"]["go_summary_allowed"] is False
     threshold_rows = _read_csv(Path(result["paths"]["threshold_search"]))
     assert any(row["chosen"] == "True" for row in threshold_rows)
     assert {row["split"] for row in threshold_rows} == {"train"}
@@ -491,11 +526,118 @@ def test_normalization_and_diagnostics_surfaced(tmp_path: Path):
 
     # Forced top-10 diagnostic exposed both in the manifest and the summary rows.
     diagnostic = manifest["forced_top10_diagnostic"]
-    assert diagnostic["policy"] == "contextual_bandit_linear_top10_forced_diagnostic"
+    assert diagnostic["policy"] == "linear_score_and_pick_top10_forced_diagnostic"
     summaries = {row["policy"]: row for row in manifest["summary"]}
-    assert "contextual_bandit_linear_top10_forced_diagnostic" in summaries
-    assert summaries["contextual_bandit_linear_top10_forced_diagnostic"]["policy_action_allowed"] is False
+    assert "linear_score_and_pick_top10_forced_diagnostic" in summaries
+    assert summaries["linear_score_and_pick_top10_forced_diagnostic"]["policy_action_allowed"] is False
 
     # Guardrails unchanged.
     assert manifest["model_build_allowed"] is False
     assert manifest["profitability_claim_allowed"] is False
+
+
+def test_close_slot_cash_reserves_buy_costs_and_tie_score_ordering():
+    normalized = normalize_close_slot_action(
+        [
+            {
+                "date": "2024-05-01",
+                "table": "A000002",
+                "code": "000002",
+                "score": 1.0,
+                "tie_score": 0.2,
+                "entry_close": 99980,
+                "next_close": 100000,
+                "future_return_1d": 0.0002,
+                "eligible_for_selection": True,
+            },
+            {
+                "date": "2024-05-01",
+                "table": "A000001",
+                "code": "000001",
+                "score": 1.0,
+                "tie_score": 0.9,
+                "entry_close": 1000,
+                "next_close": 1001,
+                "future_return_1d": 0.001,
+                "eligible_for_selection": True,
+            },
+            {
+                "date": "2024-05-01",
+                "table": "A000003",
+                "code": "000003",
+                "score": 1.0,
+                "entry_close": 1000,
+                "next_close": 1001,
+                "future_return_1d": 0.001,
+                "eligible_for_selection": True,
+            },
+        ],
+        date="2024-05-01",
+    )
+
+    assert normalized["deterministic_tie_breaks"] == ACTION_TIE_BREAK_ORDER
+    assert [slot["code"] for slot in normalized["selection_slots"][:3]] == ["000001", "000002", "000003"]
+
+    ledger = account_close_slot_selection(normalized, total_capital_krw=1_000_000)
+    costly_slot = next(slot for slot in ledger["ledger"] if slot["code"] == "000002")
+    assert costly_slot["shares"] == 1
+    assert costly_slot["notional_krw"] + costly_slot["buy_commission_krw"] + costly_slot["buy_slippage_krw"] <= costly_slot["slot_cash_krw"]
+    assert costly_slot["unused_cash_krw"] >= 0
+
+
+def test_signed_feedback_neutralizes_negative_returns_and_manifest_stays_watch_no_go(tmp_path: Path):
+    assert _signed_feedback_weight(-0.01) == 0.0
+    assert _signed_feedback_weight(0.0) == 1.0
+    assert _signed_feedback_weight(0.01) > 1.0
+    base_dataset = _write_dataset_run(tmp_path / "dataset_root")
+    negative_test_rows = []
+    for row in base_dataset["panel_rows"]:
+        edited = dict(row)
+        if edited["split"] == "test" and edited["code"] == "000001":
+            edited["next_close"] = 900
+            edited["future_return_1d"] = -0.10
+            edited["feature_a"] = 10.0
+            edited["candidate_score_causal_momentum"] = 10.0
+        if edited["split"] == "test" and edited["code"] == "000002":
+            edited["next_close"] = 990
+            edited["future_return_1d"] = -0.01
+            edited["feature_a"] = 9.0
+            edited["candidate_score_causal_momentum"] = 9.0
+        negative_test_rows.append(edited)
+    dataset = _rewrite_dataset_panel(base_dataset, negative_test_rows)
+    result = run_close_slot_training(
+        CloseSlotTrainConfig(
+            dataset_run_id=dataset["run_id"],
+            dataset_manifest_sha=dataset["manifest_sha"],
+            dataset_artifact_root=dataset["root"],
+            output_root=tmp_path / "train_root",
+            run_id="signed_feedback",
+            total_capital_krw=1_000_000,
+            seed=7,
+            min_fit_dates=1,
+            replay_window_dates=1,
+            freeze_cadence_dates=1,
+        )
+    )
+
+    replay = json.loads(Path(result["paths"]["replay_episode_ledgers"]).read_text(encoding="utf-8"))
+    negative_feedback = [
+        feedback
+        for episode in replay["episodes"]
+        for feedback in episode["slot_feedback"]
+        if feedback["feedback"] == "failure"
+    ]
+    assert negative_feedback
+    assert all(float(feedback["feedback_weight"]) == 0.0 for feedback in negative_feedback)
+
+    manifest = result["manifest"]
+    assert manifest["primary_test_oos_reward_base_23bp"] < 0.0
+    assert manifest["primary_test_oos_verdict"] == "NO-GO"
+    summaries = {row["policy"]: row for row in manifest["summary"]}
+    assert summaries["linear_score_and_pick_train_only"]["cumulative_reward"] > 0.0
+    assert manifest["status"] == "WATCH_RESEARCH_ONLY"
+    assert manifest["readiness_status"] == "WATCH_RESEARCH_ONLY"
+    assert manifest["primary_metric"] == "test_oos_reward_base_23bp"
+    assert manifest["primary_headline"]["cost_scenario_id"] == "base_23bp"
+    assert manifest["primary_headline"]["verdict"] in {"WATCH", "NO-GO"}
+    assert manifest["primary_headline"]["verdict"] != "GO"

@@ -29,6 +29,7 @@ from .daily_close_slot_dataset import (
     validate_close_slot_dataset_lineage,
 )
 from .daily_close_slot_env import (
+    ACTION_TIE_BREAK_ORDER,
     COST_SCENARIO_BASE_23BP,
     COST_SCENARIO_STRESS_46BP,
     COST_SCENARIO_ZERO_CONTROL_0BP,
@@ -42,12 +43,12 @@ LIVE_EVENTS_FILE_NAME = "rl_live_events.jsonl"
 CLOSE_SLOT_TRAIN_SCHEMA_VERSION = 2
 TRAIN_LINEAGE_SCHEMA_VERSION = 1
 RUN_ID_RE = re.compile(r"^(?=.*[0-9A-Za-z])[0-9A-Za-z_.-]+$")
-POLICY_CONTEXTUAL_BANDIT = "contextual_bandit_linear_train_only_score_and_pick"
+POLICY_LINEAR_SCORE = "linear_score_and_pick_train_only"
 POLICY_MOMENTUM = "momentum_top10_score_and_pick"
 POLICY_SHUFFLE = "deterministic_shuffle_top10_control"
 POLICY_NO_TRADE = "no_trade_control"
 POLICY_D3_FROZEN = "frozen_d3_reledgered_score_and_pick"
-POLICY_CONTEXTUAL_BANDIT_TOP10_DIAGNOSTIC = "contextual_bandit_linear_top10_forced_diagnostic"
+POLICY_LINEAR_TOP10_DIAGNOSTIC = "linear_score_and_pick_top10_forced_diagnostic"
 TRAIN_REPLAY_MODE_ID = "expanding_train_replay_reward_weighted_refit_v1"
 PRIMARY_COST_SCENARIO_ID = COST_SCENARIO_BASE_23BP
 COST_SCENARIO_IDS = (COST_SCENARIO_ZERO_CONTROL_0BP, COST_SCENARIO_BASE_23BP, COST_SCENARIO_STRESS_46BP)
@@ -203,7 +204,7 @@ def _row_key(row: Mapping[str, Any]) -> tuple[str, str]:
     return (str(row.get("date")), _candidate_code(row))
 
 
-def _fit_contextual_bandit_weights(
+def _fit_linear_score_weights(
     rows: Sequence[Mapping[str, Any]],
     feature_names: Sequence[str],
     feedback_weight_by_key: Mapping[tuple[str, str], float] | None = None,
@@ -214,7 +215,7 @@ def _fit_contextual_bandit_weights(
     covariance fit, so a large-scale feature (e.g. institutional_net_buy ~1e6)
     can no longer dominate small-scale return features (~1e-2) after L1
     normalization. The fitted mean/std are frozen inside the returned model and
-    re-applied at scoring time (see :func:`_contextual_bandit_score`); a missing
+    re-applied at scoring time (see :func:`_linear_score`); a missing
     feature imputes to the train mean (z=0). Returns a model dict (weights +
     scaler), not a bare weight map — scoring accepts either for back-compat.
     """
@@ -280,6 +281,15 @@ def _fit_contextual_bandit_weights(
     return model
 
 
+def _signed_feedback_weight(net_return_on_total_capital: Any) -> float:
+    value = float(net_return_on_total_capital or 0.0)
+    if value > 0.0:
+        return 1.0 + min(4.0, value * 1000.0)
+    if value < 0.0:
+        return 0.0
+    return 1.0
+
+
 def _feedback_weight_by_key(policy_payload: Mapping[str, Any]) -> dict[tuple[str, str], float]:
     weights: dict[tuple[str, str], float] = {}
     for ledger in policy_payload.get("date_ledgers", []):
@@ -289,12 +299,13 @@ def _feedback_weight_by_key(policy_payload: Mapping[str, Any]) -> dict[tuple[str
             code = str(slot.get("code") or "").zfill(6)
             if not code or code == "000000" or str(slot.get("slot_state")) == "cash_hold":
                 continue
-            slot_reward = abs(float(slot.get("net_return_on_total_capital") or 0.0))
-            weights[(str(ledger.get("date")), code)] = 1.0 + min(4.0, slot_reward * 1000.0)
+            weights[(str(ledger.get("date")), code)] = _signed_feedback_weight(
+                slot.get("net_return_on_total_capital")
+            )
     return weights
 
 
-def _contextual_bandit_score(row: Mapping[str, Any], model: Mapping[str, Any]) -> float:
+def _linear_score(row: Mapping[str, Any], model: Mapping[str, Any]) -> float:
     """Score a candidate under the fitted linear model.
 
     Applies the model's frozen train mean/std (z-score). A missing feature or a
@@ -344,8 +355,8 @@ def _score_table_for_policy(
     score_by_key: dict[tuple[str, str], float] = {}
     for row in rows:
         key = (str(row.get("date")), _candidate_code(row))
-        if policy == POLICY_CONTEXTUAL_BANDIT:
-            score = _contextual_bandit_score(row, weights or {})
+        if policy == POLICY_LINEAR_SCORE:
+            score = _linear_score(row, weights or {})
         elif policy == POLICY_MOMENTUM:
             score = _safe_float(row.get("candidate_score_causal_momentum"))
             if score is None:
@@ -559,7 +570,7 @@ def _choose_train_threshold(
     for threshold in _threshold_grid(train_rows):
         evaluated = _evaluate_policy_rows(
             train_rows,
-            policy=POLICY_CONTEXTUAL_BANDIT,
+            policy=POLICY_LINEAR_SCORE,
             total_capital_krw=total_capital_krw,
             slot_count=slot_count,
             cost_bp=cost_bp,
@@ -592,15 +603,19 @@ def _choose_train_threshold(
         key=lambda row: (
             -float(row["mean_daily_reward_base_23bp"]),
             -float(row["median_daily_reward_base_23bp"]),
-            # F2: prefer surfacing a signal over empty selection on reward ties
-            # (was ascending mean_selected_count, which biased toward no-trade).
             -float(row["mean_selected_count"]),
             -float(row["threshold"]),
             str(row["threshold_text"]),
         ),
     )[0]
     chosen["chosen_is_no_trade_sentinel"] = bool(chosen.get("is_no_trade_sentinel", False))
-    chosen["tie_break_policy"] = "reward_median_then_prefer_more_selections_v2"
+    chosen["tie_break_policy"] = (
+        "higher_mean_daily_reward_base_23bp,"
+        "higher_median_daily_reward_base_23bp,"
+        "higher_mean_selected_count,"
+        "higher_threshold,"
+        "lexicographically_smallest_threshold_text"
+    )
     for row in search_rows:
         row["chosen"] = row["threshold_text"] == chosen["threshold_text"]
     return chosen, search_rows
@@ -677,7 +692,7 @@ def _walk_forward_artifacts(
                     "code": slot.get("code"),
                     "slot_state": state,
                     "feedback": feedback,
-                    "feedback_weight": 1 + min(4.0, abs(float(slot.get("net_return_on_total_capital") or 0.0)) * 1000),
+                    "feedback_weight": _signed_feedback_weight(slot.get("net_return_on_total_capital")),
                     "feedback_used_for_fit": split == "train" and feedback in {"success", "failure"},
                 }
             )
@@ -730,7 +745,7 @@ def _episode_ledgers_from_policy_payload(
                     "code": slot.get("code"),
                     "slot_state": state,
                     "feedback": feedback,
-                    "feedback_weight": 1 + min(4.0, abs(float(slot.get("net_return_on_total_capital") or 0.0)) * 1000),
+                    "feedback_weight": _signed_feedback_weight(slot.get("net_return_on_total_capital")),
                     "feedback_used_for_fit": split == "train" and feedback in {"success", "failure"},
                 }
             )
@@ -779,7 +794,7 @@ def _expanding_refit_artifacts(
     replay_span = max(1, int(config.replay_window_dates))
     freeze_cadence = max(1, int(config.freeze_cadence_dates))
     first_threshold_text = ""
-    final_weights = _fit_contextual_bandit_weights(train_rows_all, feature_names)
+    final_weights = _fit_linear_score_weights(train_rows_all, feature_names)
     final_chosen: dict[str, Any] = {
         "threshold": 0.0,
         "threshold_text": "0",
@@ -799,8 +814,8 @@ def _expanding_refit_artifacts(
         if not replay_dates:
             break
         fit_rows = [row for row in train_rows_all if str(row.get("date")) in set(fit_dates)]
-        window_weights = _fit_contextual_bandit_weights(fit_rows, feature_names, feedback_weights)
-        scored_fit_rows = _score_table_for_policy(fit_rows, policy=POLICY_CONTEXTUAL_BANDIT, weights=window_weights)
+        window_weights = _fit_linear_score_weights(fit_rows, feature_names, feedback_weights)
+        scored_fit_rows = _score_table_for_policy(fit_rows, policy=POLICY_LINEAR_SCORE, weights=window_weights)
         chosen, search_rows = _choose_train_threshold(
             scored_fit_rows,
             total_capital_krw=config.total_capital_krw,
@@ -815,10 +830,10 @@ def _expanding_refit_artifacts(
             threshold_search_rows.append(annotated)
 
         replay_rows = [row for row in train_rows_all if str(row.get("date")) in set(replay_dates)]
-        replay_scored_rows = _score_table_for_policy(replay_rows, policy=POLICY_CONTEXTUAL_BANDIT, weights=window_weights)
+        replay_scored_rows = _score_table_for_policy(replay_rows, policy=POLICY_LINEAR_SCORE, weights=window_weights)
         replay_payload = _evaluate_policy_rows(
             replay_scored_rows,
-            policy=POLICY_CONTEXTUAL_BANDIT,
+            policy=POLICY_LINEAR_SCORE,
             total_capital_krw=config.total_capital_krw,
             slot_count=config.slot_count,
             cost_bp=config.cost_bp,
@@ -832,13 +847,24 @@ def _expanding_refit_artifacts(
         replay_date_ledgers = replay_payload["date_ledgers"]
         replay_selected_counts = [int(ledger.get("selected_count") or 0) for ledger in replay_date_ledgers]
         if event_writer is not None:
+            running_net_pnl_krw = sum(float(ledger.get("net_pnl_krw") or 0.0) for ledger in replay_date_ledgers)
             event_writer.write_step(
-                algorithm="contextual_bandit",
+                algorithm=POLICY_LINEAR_SCORE,
                 phase="walk_forward",
                 global_step=window_index,
                 reward=replay_payload.get("mean_reward"),
+                equity=running_net_pnl_krw,
+                timestamp=str(replay_date_ledgers[-1].get("date") if replay_date_ledgers else ""),
                 source="daily_close_slot_train",
-                info={"window_id": window_id, "threshold_text": str(chosen["threshold_text"])},
+                info={
+                    "window_id": window_id,
+                    "threshold_text": str(chosen["threshold_text"]),
+                    "reward_kind": "return_fraction",
+                    "reward_unit": "fraction",
+                    "equity_kind": "cumulative_pnl",
+                    "equity_unit": "krw",
+                    "action_recorded": False,
+                },
             )
         feedback_weights.update(_feedback_weight_by_key(replay_payload))
         windows.append(
@@ -871,8 +897,8 @@ def _expanding_refit_artifacts(
         window_index += 1
 
     if train_rows_all:
-        final_weights = _fit_contextual_bandit_weights(train_rows_all, feature_names, feedback_weights)
-        final_scored_fit_rows = _score_table_for_policy(train_rows_all, policy=POLICY_CONTEXTUAL_BANDIT, weights=final_weights)
+        final_weights = _fit_linear_score_weights(train_rows_all, feature_names, feedback_weights)
+        final_scored_fit_rows = _score_table_for_policy(train_rows_all, policy=POLICY_LINEAR_SCORE, weights=final_weights)
         final_chosen, final_search_rows = _choose_train_threshold(
             final_scored_fit_rows,
             total_capital_krw=config.total_capital_krw,
@@ -958,7 +984,7 @@ def _cost_scenario_summary_rows(
                 slot_count=slot_count,
                 cost_bp=cost_bp,
                 selected_by_date=selected_by_date,
-                selection_threshold=threshold if policy == POLICY_CONTEXTUAL_BANDIT else None,
+                selection_threshold=threshold if policy == POLICY_LINEAR_SCORE else None,
                 threshold_text=payload.get("threshold_text"),
                 cost_scenario_id=scenario_id,
                 lineage="cost_scenario_summary",
@@ -996,6 +1022,22 @@ def _cost_scenario_summary_rows(
     return rows
 
 
+def _split_reward_summary(policy_payload: Mapping[str, Any], source_rows: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    split_by_date = {str(row.get("date")): str(row.get("split") or "") for row in source_rows}
+    by_split: dict[str, list[dict[str, Any]]] = {}
+    for ledger in policy_payload.get("date_ledgers", []):
+        by_split.setdefault(split_by_date.get(str(ledger.get("date")), ""), []).append(ledger)
+    return {
+        split: {
+            "date_count": len(ledgers),
+            "reward": sum(float(ledger.get("reward") or 0.0) for ledger in ledgers),
+            "net_pnl_krw": sum(float(ledger.get("net_pnl_krw") or 0.0) for ledger in ledgers),
+            "filled_slots": sum(int(ledger.get("filled_slots") or 0) for ledger in ledgers),
+        }
+        for split, ledgers in sorted(by_split.items())
+    }
+
+
 def run_close_slot_training(
     config: CloseSlotTrainConfig,
     *,
@@ -1027,6 +1069,9 @@ def run_close_slot_training(
         if unexpected_names and not config.overwrite:
             raise FileExistsError(f"close-slot train run already exists: {rid}")
     output_dir.mkdir(parents=True, exist_ok=True)
+    if event_writer is None:
+        event_writer = RlLiveEventWriter(output_dir / LIVE_EVENTS_FILE_NAME, run_id=rid)
+        event_writer.reset()
 
     refit_artifacts = _expanding_refit_artifacts(rows, feature_names, config, event_writer=event_writer)
     weights = refit_artifacts["weights"]
@@ -1034,7 +1079,7 @@ def run_close_slot_training(
     threshold_search_rows = refit_artifacts["threshold_search_rows"]
     threshold_grid = refit_artifacts["threshold_grid"]
     feedback_weights = refit_artifacts["feedback_weights"]
-    contextual_rows = _score_table_for_policy(rows, policy=POLICY_CONTEXTUAL_BANDIT, weights=weights)
+    linear_rows = _score_table_for_policy(rows, policy=POLICY_LINEAR_SCORE, weights=weights)
 
     policies: dict[str, dict[str, Any]] = {}
     base_rows_by_policy: dict[str, list[dict[str, Any]]] = {}
@@ -1057,7 +1102,7 @@ def run_close_slot_training(
         {
             POLICY_SHUFFLE: shuffle_rows,
             POLICY_MOMENTUM: momentum_rows,
-            POLICY_CONTEXTUAL_BANDIT: contextual_rows,
+            POLICY_LINEAR_SCORE: linear_rows,
         }
     )
     for policy, score_rows in [
@@ -1074,9 +1119,9 @@ def run_close_slot_training(
             policy_action_allowed=policy != POLICY_SHUFFLE,
             lineage="baseline_control" if policy == POLICY_SHUFFLE else "baseline_momentum",
         )
-    policies[POLICY_CONTEXTUAL_BANDIT] = _evaluate_policy_rows(
-        contextual_rows,
-        policy=POLICY_CONTEXTUAL_BANDIT,
+    policies[POLICY_LINEAR_SCORE] = _evaluate_policy_rows(
+        linear_rows,
+        policy=POLICY_LINEAR_SCORE,
         total_capital_krw=config.total_capital_krw,
         slot_count=config.slot_count,
         cost_bp=config.cost_bp,
@@ -1086,10 +1131,10 @@ def run_close_slot_training(
     )
     if event_writer is not None:
         running_net_pnl_krw = 0.0
-        for step_index, ledger in enumerate(policies[POLICY_CONTEXTUAL_BANDIT]["date_ledgers"]):
+        for step_index, ledger in enumerate(policies[POLICY_LINEAR_SCORE]["date_ledgers"]):
             running_net_pnl_krw += float(ledger.get("net_pnl_krw") or 0.0)
             event_writer.write_step(
-                algorithm="contextual_bandit",
+                algorithm=POLICY_LINEAR_SCORE,
                 phase="primary_eval",
                 global_step=step_index,
                 reward=ledger.get("reward"),
@@ -1110,8 +1155,8 @@ def run_close_slot_training(
     # (threshold honestly picks cash) from "score degenerate". Research-only,
     # never a selectable/primary policy action.
     forced_top10_diagnostic = _evaluate_policy_rows(
-        contextual_rows,
-        policy=POLICY_CONTEXTUAL_BANDIT_TOP10_DIAGNOSTIC,
+        linear_rows,
+        policy=POLICY_LINEAR_TOP10_DIAGNOSTIC,
         total_capital_krw=config.total_capital_krw,
         slot_count=config.slot_count,
         cost_bp=config.cost_bp,
@@ -1144,7 +1189,7 @@ def run_close_slot_training(
     walk_forward_windows = dict(refit_artifacts["walk_forward_windows"])
     replay_episode_ledgers.extend(
         _episode_ledgers_from_policy_payload(
-            policies[POLICY_CONTEXTUAL_BANDIT],
+            policies[POLICY_LINEAR_SCORE],
             rows,
             window_id="final_held_out_val_test_replay",
             only_splits={"val", "test"},
@@ -1193,7 +1238,7 @@ def run_close_slot_training(
     ]
     summary_rows.append(
         {
-            "policy": POLICY_CONTEXTUAL_BANDIT_TOP10_DIAGNOSTIC,
+            "policy": POLICY_LINEAR_TOP10_DIAGNOSTIC,
             "date_count": forced_top10_diagnostic["date_count"],
             "filled_slots": forced_top10_diagnostic["filled_slots"],
             "total_net_pnl_krw": forced_top10_diagnostic["total_net_pnl_krw"],
@@ -1225,6 +1270,9 @@ def run_close_slot_training(
     _write_json(paths["walk_forward_windows"], walk_forward_windows)
     _write_json(paths["replay_episode_ledgers"], {"mode_id": config.replay_mode_id, "episodes": replay_episode_ledgers})
     artifact_hashes = {key: _file_sha(path) for key, path in paths.items() if key != "train_manifest"}
+    primary_split_summary = _split_reward_summary(policies[POLICY_LINEAR_SCORE], rows)
+    primary_test_reward = float(primary_split_summary.get("test", {}).get("reward", 0.0))
+    primary_test_verdict = "WATCH" if primary_test_reward > 0.0 else "NO-GO"
     manifest = {
         "schema_version": CLOSE_SLOT_TRAIN_SCHEMA_VERSION,
         "lineage_schema_version": TRAIN_LINEAGE_SCHEMA_VERSION,
@@ -1268,6 +1316,22 @@ def run_close_slot_training(
         "validation_test_no_retune": True,
         "shuffle_baseline_only": True,
         "replay_mode_id": config.replay_mode_id,
+        "test_oos_primary": True,
+        "primary_split": "test",
+        "primary_metric": "test_oos_reward_base_23bp",
+        "primary_policy": POLICY_LINEAR_SCORE,
+        "primary_split_summary": primary_split_summary,
+        "primary_test_oos_reward_base_23bp": primary_test_reward,
+        "primary_test_oos_verdict": primary_test_verdict,
+        "primary_headline": {
+            "split": "test",
+            "cost_scenario_id": PRIMARY_COST_SCENARIO_ID,
+            "round_trip_cost_bp": int(config.cost_bp),
+            "policy": POLICY_LINEAR_SCORE,
+            "reward": primary_test_reward,
+            "verdict": primary_test_verdict,
+            "go_summary_allowed": False,
+        },
         "walk_forward_config": {
             "mode_id": config.replay_mode_id,
             "min_fit_dates": int(config.min_fit_dates),
@@ -1276,22 +1340,24 @@ def run_close_slot_training(
             "oos_rows_used_for_fit": 0,
         },
         "threshold_selection": {
-            "policy": POLICY_CONTEXTUAL_BANDIT,
+            "policy": POLICY_LINEAR_SCORE,
             "split": "train",
             "threshold": chosen_threshold["threshold"],
             "threshold_text": chosen_threshold["threshold_text"],
             "metric": "mean_daily_reward_base_23bp",
             "tie_break": [
+                "higher_mean_daily_reward_base_23bp",
                 "higher_median_daily_reward_base_23bp",
-                "lower_mean_selected_count",
+                "higher_mean_selected_count",
                 "higher_threshold",
                 "lexicographically_smallest_threshold_text",
             ],
+            "tie_break_policy": chosen_threshold.get("tie_break_policy"),
             "oos_rows_used_for_fit": 0,
         },
         "feature_columns": feature_names,
         "fit_summary": {
-            "policy": POLICY_CONTEXTUAL_BANDIT,
+            "policy": POLICY_LINEAR_SCORE,
             "train_rows": sum(1 for row in _eligible_rows(rows) if str(row.get("split")) == "train"),
             "weights": weights,
             "fit_method": weights.get("fit_method") if isinstance(weights, Mapping) else None,
@@ -1305,17 +1371,18 @@ def run_close_slot_training(
             "threshold_text": chosen_threshold["threshold_text"],
         },
         "forced_top10_diagnostic": {
-            "policy": POLICY_CONTEXTUAL_BANDIT_TOP10_DIAGNOSTIC,
+            "policy": POLICY_LINEAR_TOP10_DIAGNOSTIC,
             "filled_slots": forced_top10_diagnostic["filled_slots"],
             "mean_reward": forced_top10_diagnostic["mean_reward"],
             "date_count": forced_top10_diagnostic["date_count"],
             "purpose": "separates weak-signal-cash from degenerate-score; not a policy action",
         },
-        "required_baselines": [POLICY_NO_TRADE, POLICY_SHUFFLE, POLICY_MOMENTUM, POLICY_CONTEXTUAL_BANDIT],
+        "required_baselines": [POLICY_NO_TRADE, POLICY_SHUFFLE, POLICY_MOMENTUM, POLICY_LINEAR_SCORE],
         "policy_score_contract": {
             "audit_fields": sorted(policy_score_audit_fields),
             "selected_code_lists": "test_or_replay_adapter_only_not_policy_action",
             "policy_action": "deterministic threshold score-and-pick scores only",
+            "deterministic_tie_breaks": list(ACTION_TIE_BREAK_ORDER),
             "shuffle_baseline_only": True,
             "v2_fields": [
                 "threshold",

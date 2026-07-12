@@ -35,7 +35,7 @@ def test_latest_selection_uses_test_split_and_primary_cost_scenario(tmp_path, mo
     payload = response.get_json()
     selection = payload["latest_selection"]
 
-    assert selection["policy"] == daily_dashboard.POLICY_CONTEXTUAL_BANDIT
+    assert selection["policy"] == daily_dashboard.POLICY_LINEAR_SCORE
     assert selection["split"] == "test"
     assert selection["cost_scenario_id"] == daily_dashboard.PRIMARY_COST_SCENARIO_ID
     assert selection["date"] == "2024-04-04"
@@ -125,9 +125,9 @@ def test_selection_accepts_linear_policy_alias(tmp_path, monkeypatch):
     response = client.get("/api/daily-ohlcv/close-slot/selection?run=gate_for_dashboard&policy=linear&limit=5")
     payload = response.get_json()
 
-    assert payload["policy"] == daily_dashboard.POLICY_CONTEXTUAL_BANDIT
+    assert payload["policy"] == daily_dashboard.POLICY_LINEAR_SCORE
     assert "linear" in payload["policy"]
-    assert payload["latest_selection"]["policy"] == daily_dashboard.POLICY_CONTEXTUAL_BANDIT
+    assert payload["latest_selection"]["policy"] == daily_dashboard.POLICY_LINEAR_SCORE
 
 
 def test_backward_compatible_payload_keys_still_present(tmp_path, monkeypatch):

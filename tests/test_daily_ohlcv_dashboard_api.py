@@ -3035,7 +3035,7 @@ def test_daily_close_slot_dashboard_endpoints_expose_read_only_gate_payload(tmp_
     assert latest["cost_scenarios"]["base_23bp"]["total_bp"] == 23.0
     assert latest["cost_scenarios"]["stress_46bp"]["buy_slippage_bp"] == 11.5
     assert latest["cost_scenarios"]["stress_46bp"]["total_bp"] == 46.0
-    assert latest["threshold_selection"]["policy"] == "contextual_bandit_linear_train_only_score_and_pick"
+    assert latest["threshold_selection"]["policy"] == "linear_score_and_pick_train_only"
     assert latest["threshold_selection"]["split"] == "train"
     assert latest["threshold_selection"]["oos_rows_used_for_fit"] == 0
     assert latest["threshold_selection"]["max_slot_count"] == 10
@@ -3048,7 +3048,7 @@ def test_daily_close_slot_dashboard_endpoints_expose_read_only_gate_payload(tmp_
     assert latest["selected_hold_summary"]["max_slot_count"] == 10
     assert latest["selected_hold_summary"]["hold_cash_action"] is True
     assert any(
-        row["policy"] == "contextual_bandit_linear_train_only_score_and_pick"
+        row["policy"] == "linear_score_and_pick_train_only"
         and row["cost_scenario_id"] == "base_23bp"
         and row["total_component_bp"] == 23.0
         and 0 <= row["selected_count"] <= 10
@@ -3081,7 +3081,7 @@ def test_daily_close_slot_dashboard_endpoints_expose_read_only_gate_payload(tmp_
 
     equity = client.get("/api/daily-ohlcv/close-slot/equity?run=gate_for_dashboard").get_json()
     assert equity["surface"] == "daily_close_slot_equity"
-    assert equity["series"][0]["policy"] == "contextual_bandit_linear_train_only_score_and_pick"
+    assert equity["series"][0]["policy"] == "linear_score_and_pick_train_only"
     assert equity["series"][0]["points"][0]["research_only"] is True
     _assert_close_slot_locks_false(equity)
     equity_alias = client.get("/api/daily-ohlcv/charts/close-slot-equity?run=gate_for_dashboard").get_json()

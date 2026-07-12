@@ -271,7 +271,7 @@ yy
     {#if isZeroSelectionDefect}
       <div class="notice danger zero-defect-card" data-close-slot-agent-zero-defect>
         <div class="zero-defect-title">{zeroDefectCopy}</div>
-        <div class="mini-kv"><span>policy</span><strong>{text(thresholdSelection.policy, 'contextual_bandit_linear_train_only_score_and_pick')}</strong></div>
+        <div class="mini-kv"><span>policy</span><strong>{text(thresholdSelection.policy, 'linear_score_and_pick_train_only')}</strong></div>
         <div class="mini-kv"><span>threshold</span><strong>{text(thresholdSelection.threshold_text ?? thresholdSelection.threshold)} · metric {text(thresholdSelection.metric, 'mean_daily_reward_base_23bp')}</strong></div>
         <div class="mini-kv"><span>hold_cash_action</span><strong>{text(thresholdSelection.hold_cash_action, 'true')}</strong></div>
         <div class="mini-kv"><span>cardinality</span><strong>max {numberText(thresholdSelection.max_slot_count ?? 10)} slots · {text(thresholdSelection.selection_cardinality, 'threshold_selected_0_to_10')}</strong></div>

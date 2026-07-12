@@ -297,19 +297,19 @@ def test_component_cost_scenarios_zero_base_and_stress_formulas():
     zero = evaluate_close_slot_day(
         rows,
         date="2024-03-09",
-        total_capital_krw=100_000,
+        total_capital_krw=101_000,
         cost_scenario_id=COST_SCENARIO_ZERO_CONTROL_0BP,
     )["ledger"]["ledger"][0]
     base = evaluate_close_slot_day(
         rows,
         date="2024-03-09",
-        total_capital_krw=100_000,
+        total_capital_krw=101_000,
         cost_scenario_id=COST_SCENARIO_BASE_23BP,
     )["ledger"]["ledger"][0]
     stress = evaluate_close_slot_day(
         rows,
         date="2024-03-09",
-        total_capital_krw=100_000,
+        total_capital_krw=101_000,
         cost_scenario_id=COST_SCENARIO_STRESS_46BP,
     )["ledger"]["ledger"][0]
 

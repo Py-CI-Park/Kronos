@@ -30,6 +30,13 @@ FUTURE_RETURN_COLUMN = "future_return_1d"
 COST_SCENARIO_ZERO_CONTROL_0BP = "zero_control_0bp"
 COST_SCENARIO_BASE_23BP = "base_23bp"
 COST_SCENARIO_STRESS_46BP = "stress_46bp"
+ACTION_TIE_BREAK_ORDER = [
+    "score_desc",
+    "tie_score_desc_missing_last",
+    "code_asc_zero_padded_6_digit_string",
+    "table_asc",
+    "candidate_index_asc",
+]
 _KRW_QUANT = Decimal("0.000001")
 _REWARD_QUANT = Decimal("0.000000000001")
 _BP_DENOMINATOR = Decimal("10000")
@@ -136,6 +143,7 @@ class CloseSlotCandidate:
     entry_close: float
     next_close: float
     future_return_1d: float
+    tie_score: float | None
     split: str
     candidate_index: int
     source_row: Mapping[str, Any]
@@ -219,6 +227,7 @@ def _candidate_from_row(row: Mapping[str, Any], *, score_column: str, candidate_
         table=_candidate_table(row, code),
         code=code,
         score=float(_row_score(row, score_column) or 0.0),
+        tie_score=_safe_float(row.get("tie_score")),
         entry_close=entry_close,
         next_close=next_close,
         future_return_1d=float(future_return if future_return is not None else 0.0),
@@ -234,6 +243,7 @@ def _candidate_payload(candidate: CloseSlotCandidate) -> dict[str, Any]:
         "table": candidate.table,
         "code": candidate.code,
         "score": candidate.score,
+        "tie_score": candidate.tie_score,
         "entry_close": candidate.entry_close,
         "next_close": candidate.next_close,
         "future_return_1d": candidate.future_return_1d,
@@ -277,8 +287,9 @@ def normalize_close_slot_action(
     """Normalize score rows into exact 10-slot deterministic research actions.
 
     ``selected_codes`` exists only for tests and replay adapters. Policy actions
-    must provide scores and let this normalizer choose by score descending with
-    stable code/table/index tie-breaking.
+    must provide scores and let this normalizer choose by score descending,
+    tie_score descending with missing values last, then stable code/table/index
+    tie-breaking.
     """
 
     if int(slot_count) != DEFAULT_SLOT_COUNT:
@@ -309,8 +320,19 @@ def normalize_close_slot_action(
         candidates.append(_candidate_from_row(row, score_column=score_column, candidate_index=index))
 
     ranked: list[CloseSlotCandidate] = []
+    def rank_key(item: CloseSlotCandidate) -> tuple[float, int, float, str, str, int]:
+        tie_score = item.tie_score
+        return (
+            -item.score,
+            1 if tie_score is None else 0,
+            -(tie_score if tie_score is not None else 0.0),
+            item.code,
+            item.table,
+            item.candidate_index,
+        )
+
     seen_codes: set[str] = set()
-    for candidate in sorted(candidates, key=lambda item: (-item.score, item.code, item.table, item.candidate_index)):
+    for candidate in sorted(candidates, key=rank_key):
         if candidate.code in seen_codes:
             diagnostics["duplicate_candidate_rows"].append(
                 {
@@ -382,6 +404,7 @@ def normalize_close_slot_action(
         "threshold_inclusive": bool(threshold_inclusive),
         "action_label": action_label,
         "selected_code_lists": REPLAY_ADAPTER_LABEL,
+        "deterministic_tie_breaks": list(ACTION_TIE_BREAK_ORDER),
         "ranked_candidates": [_candidate_payload(candidate) for candidate in ranked],
         "selected_count": selected_count,
         "hold_cash_count": hold_cash_count,
@@ -450,7 +473,8 @@ def account_close_slot_selection(
                 reason = "MISSING_NEXT_CLOSE"
                 blocked = True
             else:
-                shares = int(math.floor(slot_cash / entry_close))
+                buy_rate = (cost_scenario.buy_commission_bp + cost_scenario.buy_slippage_bp) / 10_000.0
+                shares = int(math.floor(slot_cash / (entry_close * (1.0 + buy_rate))))
                 if shares <= 0:
                     reason = "INSUFFICIENT_SLOT_CASH"
                     blocked = True
@@ -471,7 +495,7 @@ def account_close_slot_selection(
                         + _decimal(sell_slippage_krw)
                     )
                     net_pnl = _round_krw(_decimal(gross_pnl) - _decimal(cost_krw))
-                    unused_cash = slot_cash - notional
+                    unused_cash = slot_cash - notional - buy_commission_krw - buy_slippage_krw
                     filled = True
                     reason = None
                     slot_state = "filled"
@@ -789,6 +813,7 @@ class DailyCloseSlotEnv:
 
 __all__ = [
     "CLOSE_SLOT_ENV_SCHEMA_VERSION",
+    "ACTION_TIE_BREAK_ORDER",
     "POLICY_ACTION_LABEL",
     "REPLAY_ADAPTER_LABEL",
     "COST_SCENARIOS",

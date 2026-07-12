@@ -68,7 +68,7 @@ from stom_rl.daily_close_slot_gate import (
     REQUIRED_POLICY_SCORE_AUDIT_FIELDS,
     validate_close_slot_gate,
 )
-from stom_rl.daily_close_slot_train import DEFAULT_CLOSE_SLOT_TRAIN_ROOT, POLICY_CONTEXTUAL_BANDIT, PRIMARY_COST_SCENARIO_ID, TRAIN_REPLAY_MODE_ID
+from stom_rl.daily_close_slot_train import DEFAULT_CLOSE_SLOT_TRAIN_ROOT, POLICY_LINEAR_SCORE, PRIMARY_COST_SCENARIO_ID, TRAIN_REPLAY_MODE_ID
 
 SAFE_RUN_RE = re.compile(r"^[0-9A-Za-z_.-]+$")
 DEFAULT_SIGNAL_QUALITY_ROOT = Path("webui/rl_runs/daily_ohlcv_signal_quality")
@@ -913,7 +913,7 @@ def _close_slot_threshold_selection_errors(selection: Any) -> list[str]:
     if not isinstance(selection, dict):
         return ["CLOSE_SLOT_THRESHOLD_SELECTION_MISSING"]
     errors: list[str] = []
-    if selection.get("policy") != POLICY_CONTEXTUAL_BANDIT:
+    if selection.get("policy") != POLICY_LINEAR_SCORE:
         errors.append("CLOSE_SLOT_THRESHOLD_SELECTION_POLICY_INVALID")
     if selection.get("split") != "train" or _finite_int(selection.get("oos_rows_used_for_fit")) != 0:
         errors.append("CLOSE_SLOT_THRESHOLD_SELECTION_INVALID")
@@ -2601,7 +2601,7 @@ def load_close_slot_equity(*, run: str | None = None, policy: str | None = None)
     context = _load_close_slot_context(run=run, sample_limit=0)
     if "payload" in context:
         return context["payload"]
-    selected_policy = str(policy or POLICY_CONTEXTUAL_BANDIT)
+    selected_policy = str(policy or POLICY_LINEAR_SCORE)
     date_ledgers = context.get("date_ledgers") if isinstance(context.get("date_ledgers"), dict) else {}
     series: list[dict[str, Any]] = []
     for policy_name, rows in date_ledgers.items():
@@ -2712,7 +2712,7 @@ def load_close_slot_selection(*, run: str | None = None, policy: str | None = No
     context = _load_close_slot_context(run=run, sample_limit=limit)
     if "payload" in context:
         return context["payload"]
-    selected_policy = str(policy or POLICY_CONTEXTUAL_BANDIT)
+    selected_policy = str(policy or POLICY_LINEAR_SCORE)
     safe_limit = _bounded_limit(limit, default=25, maximum=500)
     date_ledgers = context.get("date_ledgers") if isinstance(context.get("date_ledgers"), dict) else {}
     if selected_policy not in date_ledgers and selected_policy.lower() == "linear":

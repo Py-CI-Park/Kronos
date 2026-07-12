@@ -3,7 +3,7 @@ instrumentation (F3/F4) + run discoverability (F5).
 
 Guardrails under test:
   C3 -- RULE/baseline evaluations (no_trade/shuffle/momentum/D3-frozen) must
-        never be tagged algorithm='contextual_bandit' in emitted events.
+        never be emitted as linear_score_and_pick_train_only events.
   C6 -- stom_rl/rl_events.py is untouched; schema_version stays
         'stom_rl_live_event.v1'.
 """
@@ -247,6 +247,12 @@ def test_close_slot_events_schema(tmp_path: Path):
         assert row["schema_version"] == "stom_rl_live_event.v1"
         # rl_events.py source default is 'sb3_smoke' -- the trainer must set it explicitly.
         assert row["source"] == "daily_close_slot_train"
+        assert row["algorithm"] == "linear_score_and_pick_train_only"
+        assert row["info"]["reward_kind"] == "return_fraction"
+        assert row["info"]["reward_unit"] == "fraction"
+        assert row["info"]["equity_kind"] == "cumulative_pnl"
+        assert row["info"]["equity_unit"] == "krw"
+        assert row["info"]["action_recorded"] is False
 
 
 def test_rule_baseline_never_labeled_rl(tmp_path: Path):
@@ -259,7 +265,8 @@ def test_rule_baseline_never_labeled_rl(tmp_path: Path):
 
     rows, _truncated = read_live_events(events_path, limit=500, tail=False)
     assert rows
-    mislabeled = [row for row in rows if row.get("algorithm") != "contextual_bandit"]
+    expected_algorithm = "linear_score_and_pick_train_only"
+    mislabeled = [row for row in rows if row.get("algorithm") != expected_algorithm]
     assert mislabeled == [], f"non-bandit events leaked into the live stream: {mislabeled}"
 
     # The walk-forward window event count plus the primary per-date event
@@ -271,7 +278,7 @@ def test_rule_baseline_never_labeled_rl(tmp_path: Path):
     refit_window_count = sum(
         1 for window in walk_forward_windows["windows"] if str(window["window_id"]).startswith("train_replay_refit_")
     )
-    primary_eval_dates = {row["policy"]: row for row in manifest["summary"]}["contextual_bandit_linear_train_only_score_and_pick"]["date_count"]
+    primary_eval_dates = {row["policy"]: row for row in manifest["summary"]}["linear_score_and_pick_train_only"]["date_count"]
     assert len(rows) == refit_window_count + primary_eval_dates
 
 
@@ -346,15 +353,18 @@ def test_writer_none_byte_identical(tmp_path: Path):
         "no_trade_control",
         "deterministic_shuffle_top10_control",
         "momentum_top10_score_and_pick",
-        "contextual_bandit_linear_train_only_score_and_pick",
+        "linear_score_and_pick_train_only",
     }
     summaries = {row["policy"]: row for row in manifest["summary"]}
     assert summaries["no_trade_control"]["filled_slots"] == 0
-    assert summaries["contextual_bandit_linear_train_only_score_and_pick"]["filled_slots"] > 0
+    assert summaries["linear_score_and_pick_train_only"]["filled_slots"] > 0
 
-    # No live-events file materializes when no writer is supplied.
+    # Default training constructs the standard CLI live-events writer.
     output_dir = Path(result["manifest"]["artifact_dir"])
-    assert not (output_dir / LIVE_EVENTS_FILE_NAME).exists()
+    default_events = output_dir / LIVE_EVENTS_FILE_NAME
+    assert default_events.exists()
+    rows, _truncated = read_live_events(default_events, limit=500, tail=False)
+    assert rows
 
     # Calling again without passing event_writer at all (relying on the
     # default) must be accepted identically.

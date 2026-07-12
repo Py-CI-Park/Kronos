@@ -158,7 +158,7 @@
   <div class="evidence-grid" data-daily-close-slot-v2-evidence>
     <div class="evidence-box" data-daily-close-slot-threshold-contract>
       <div class="text-eyebrow">max-10 threshold / cash-hold contract</div>
-      <div class="mini-kv"><span>policy</span><strong>{text(thresholdSelection.policy, 'contextual_bandit_linear_train_only_score_and_pick')}</strong></div>
+      <div class="mini-kv"><span>policy</span><strong>{text(thresholdSelection.policy, 'linear_score_and_pick_train_only')}</strong></div>
       <div class="mini-kv"><span>split / OOS fit rows</span><strong>{text(thresholdSelection.split, 'train')} · {numberText(thresholdSelection.oos_rows_used_for_fit ?? 0)}</strong></div>
       <div class="mini-kv"><span>threshold</span><strong>{text(thresholdSelection.threshold_text ?? thresholdSelection.threshold)} · metric {text(thresholdSelection.metric, 'mean_daily_reward_base_23bp')}</strong></div>
       <div class="mini-kv"><span>cardinality</span><strong>{numberText(thresholdSelection.max_slot_count ?? latest?.max_slot_count ?? latest?.slot_count ?? 10)} slots · {text(thresholdSelection.selection_cardinality ?? latest?.selection_cardinality, 'threshold_selected_0_to_10')} · hold_cash_action={text(thresholdSelection.hold_cash_action ?? latest?.hold_cash_action, 'true')}</strong></div>

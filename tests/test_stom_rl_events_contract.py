@@ -490,10 +490,10 @@ def test_daily_close_slot_train_emits_declared_metric_metadata_and_keeps_thresho
     events = [json.loads(line) for line in lines]
 
     primary_eval_events = [event for event in events if event["phase"] == "primary_eval"]
-    assert primary_eval_events, "expected primary_eval events from the contextual bandit eval loop"
+    assert primary_eval_events, "expected primary_eval events from the linear score-and-pick eval loop"
 
     for event in primary_eval_events:
-        assert event["algorithm"] == "contextual_bandit"
+        assert event["algorithm"] == "linear_score_and_pick_train_only"
         info = event["info"]
         # threshold_text must survive the additive extension, not be dropped.
         assert "threshold_text" in info
