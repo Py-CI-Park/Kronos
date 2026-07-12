@@ -4,6 +4,8 @@ import csv
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -3101,6 +3103,150 @@ def test_daily_close_slot_dashboard_endpoints_expose_read_only_gate_payload(tmp_
     assert selection_alias["surface"] == "daily_close_slot_selection"
     _assert_close_slot_locks_false(selection_alias)
 
+
+def test_daily_close_slot_csv_facts_are_bound_to_manifest_sha(tmp_path, monkeypatch):
+    daily_dashboard, result, _written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    import stom_rl.daily_close_slot_gate as gate_module
+
+    policy_path = Path(result["manifest"]["artifacts"]["policy_scores"])
+    expected_sha = result["manifest"]["artifact_hashes"]["policy_scores"]
+    facts = daily_dashboard._close_slot_cached_csv_facts(
+        policy_path,
+        sample_limit=15,
+        retain_all_rows=False,
+        audit_columns=tuple(sorted(gate_module.REQUIRED_POLICY_SCORE_AUDIT_FIELDS)),
+        expected_sha256=expected_sha,
+    )
+    same_sha_facts = daily_dashboard._close_slot_cached_csv_facts(
+        policy_path,
+        sample_limit=15,
+        retain_all_rows=False,
+        audit_columns=tuple(sorted(gate_module.REQUIRED_POLICY_SCORE_AUDIT_FIELDS)),
+        expected_sha256=expected_sha,
+    )
+    different_sha_facts = daily_dashboard._close_slot_cached_csv_facts(
+        policy_path,
+        sample_limit=15,
+        retain_all_rows=False,
+        audit_columns=tuple(sorted(gate_module.REQUIRED_POLICY_SCORE_AUDIT_FIELDS)),
+        expected_sha256="f" * 64,
+    )
+
+    assert same_sha_facts is facts
+    assert different_sha_facts is not facts
+    assert different_sha_facts.resolved_path == facts.resolved_path
+    assert different_sha_facts.mtime_ns == facts.mtime_ns
+    assert different_sha_facts.size == facts.size
+    assert gate_module._csv_fact({"policy_scores": facts}, "policy_scores", policy_path, expected_sha) is facts
+    assert gate_module._csv_fact({"policy_scores": facts}, "policy_scores", policy_path, "f" * 64) is None
+
+
+@pytest.mark.parametrize("malformed_hash", [[], {"nested": "value"}])
+def test_daily_close_slot_latest_fails_closed_on_unhashable_manifest_sha(tmp_path, monkeypatch, malformed_hash):
+    daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    gate_manifest = json.loads(Path(written["gate_manifest_path"]).read_text(encoding="utf-8"))
+    train_manifest_path = Path(gate_manifest["train_manifest_path"])
+    train_manifest = json.loads(train_manifest_path.read_text(encoding="utf-8"))
+    train_manifest["artifact_hashes"]["policy_scores"] = malformed_hash
+    train_manifest_path.write_text(json.dumps(train_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    response = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_TRAIN_POLICY_SCORES_HASH_MISSING" in payload["artifact_selection_errors"]
+    _assert_close_slot_locks_false(payload)
+
+
+def test_daily_close_slot_latest_fails_closed_on_non_mapping_gate_hashes(tmp_path, monkeypatch):
+    _daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    gate_manifest_path = Path(written["gate_manifest_path"])
+    gate_manifest = json.loads(gate_manifest_path.read_text(encoding="utf-8"))
+    gate_manifest["artifact_hashes"] = ["not", "a", "mapping"]
+    gate_manifest_path.write_text(json.dumps(gate_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    response = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_GATE_MANIFEST_SHA_INVALID" in payload["artifact_selection_errors"]
+    assert "CLOSE_SLOT_GATE_REPORT_HASH_MISSING" in payload["artifact_selection_errors"]
+    _assert_close_slot_locks_false(payload)
+
+
+def test_daily_close_slot_latest_fails_closed_on_non_mapping_gate_artifacts(tmp_path, monkeypatch):
+    _daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    gate_manifest_path = Path(written["gate_manifest_path"])
+    gate_manifest = json.loads(gate_manifest_path.read_text(encoding="utf-8"))
+    gate_manifest["artifacts"] = ["not", "a", "mapping"]
+    gate_manifest_path.write_text(json.dumps(gate_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    response = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_GATE_REPORT_MISSING" in payload["artifact_selection_errors"]
+    _assert_close_slot_locks_false(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_error"),
+    [
+        ("artifacts", "CLOSE_SLOT_TRAIN_POLICY_SCORES_MISSING"),
+        ("row_counts", "CLOSE_SLOT_POLICY_SCORE_ROW_COUNT_MISMATCH"),
+    ],
+)
+def test_daily_close_slot_latest_fails_closed_on_non_mapping_train_containers(
+    tmp_path, monkeypatch, field, expected_error
+):
+    _daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    gate_manifest = json.loads(Path(written["gate_manifest_path"]).read_text(encoding="utf-8"))
+    train_manifest_path = Path(gate_manifest["train_manifest_path"])
+    train_manifest = json.loads(train_manifest_path.read_text(encoding="utf-8"))
+    train_manifest[field] = ["not", "a", "mapping"]
+    train_manifest_path.write_text(json.dumps(train_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    response = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert expected_error in payload["artifact_selection_errors"]
+    _assert_close_slot_locks_false(payload)
+
+def test_daily_close_slot_latest_reuses_single_policy_csv_facts_for_dashboard_and_gate(tmp_path, monkeypatch):
+    daily_dashboard, _, _written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    original_analyze = daily_dashboard._close_slot_analyze_csv_facts
+    original_validate = daily_dashboard.validate_close_slot_gate
+    calls = {"policy_analyze": 0, "gate_saw_policy_facts": 0}
+
+    def counted_analyze(path, **kwargs):
+        if Path(path).name == "policy_scores.csv":
+            calls["policy_analyze"] += 1
+        return original_analyze(path, **kwargs)
+
+    def counted_validate(train_manifest_or_path, *, csv_facts=None):
+        policy_facts = (csv_facts or {}).get("policy_scores") if isinstance(csv_facts, dict) else None
+        if policy_facts is not None:
+            calls["gate_saw_policy_facts"] += 1
+            assert policy_facts.row_count is not None
+            assert "code" in policy_facts.fieldnames
+            assert policy_facts.all_rows is None
+            assert policy_facts.distinct_values
+            assert policy_facts.expected_sha256
+        return original_validate(train_manifest_or_path, csv_facts=csv_facts)
+
+    monkeypatch.setattr(daily_dashboard, "_close_slot_analyze_csv_facts", counted_analyze)
+    monkeypatch.setattr(daily_dashboard, "validate_close_slot_gate", counted_validate)
+
+    latest = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard&limit=15").get_json()
+
+    assert latest["status"] == "WATCH_RESEARCH_ONLY"
+    assert latest["samples"]["policy_scores"][0]["code"] == "000001"
+    assert calls == {"policy_analyze": 1, "gate_saw_policy_facts": 1}
 
 def test_daily_close_slot_dashboard_fails_closed_on_hash_and_current_d1_mismatch(tmp_path, monkeypatch):
     daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=False)

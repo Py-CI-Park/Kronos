@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveDisplayStatus, isLive, type RunLifecycle, type LiveObservation } from './runLifecycle';
+import type * as RunLifecycleModule from './runLifecycle';
+
+const runLifecyclePath = ['.', 'runLifecycle.ts'].join('/');
+const { deriveDisplayStatus, isLive } = (await import(runLifecyclePath)) as typeof RunLifecycleModule;
+
+type RunLifecycle = RunLifecycleModule.RunLifecycle;
+type LiveObservation = RunLifecycleModule.LiveObservation;
 
 function lc(overrides: Partial<RunLifecycle> = {}): RunLifecycle {
   return {

@@ -37,6 +37,8 @@ __all__ = [
     "DEFAULT_MAXSIZE",
     "cached_read_live_events",
     "cached_load_json",
+    "cached_by_stat",
+    "cached_by_stat_immutable",
     "cache_stats",
     "clear_cache",
     "configure",
@@ -80,6 +82,7 @@ _stats = {"hits": 0, "misses": 0}
 _json_cache = _BoundedLRU(DEFAULT_MAXSIZE)
 _events_cache = _BoundedLRU(DEFAULT_MAXSIZE)
 _generic_cache = _BoundedLRU(DEFAULT_MAXSIZE)
+_immutable_cache = _BoundedLRU(DEFAULT_MAXSIZE)
 
 
 def _safe_stat_key(path: Path) -> StatKey | None:
@@ -105,9 +108,11 @@ def configure(maxsize: int = DEFAULT_MAXSIZE) -> None:
         _json_cache.maxsize = max(1, int(maxsize))
         _events_cache.maxsize = max(1, int(maxsize))
         _generic_cache.maxsize = max(1, int(maxsize))
+        _immutable_cache.maxsize = max(1, int(maxsize))
         _json_cache._trim()
         _events_cache._trim()
         _generic_cache._trim()
+        _immutable_cache._trim()
 
 
 def cached_read_live_events(
@@ -199,6 +204,35 @@ def cached_by_stat(path: str | Path, compute, *, extra: Any = None):
     return copy.deepcopy(value)
 
 
+def cached_by_stat_immutable(path: str | Path, compute, *, extra: Any = None):
+    """Memoize an immutable ``compute()`` result keyed by file stat + ``extra``.
+
+    This is the same bounded, locked, stat-keyed cache as ``cached_by_stat`` but
+    it deliberately returns the cached object itself instead of a deep copy.
+    Callers MUST only store immutable values (for example tuples, frozen
+    dataclasses, strings, numbers, and ``None``). Misses and compute exceptions
+    are never cached; a changed resolved path, ``st_mtime_ns``, or size
+    invalidates the entry.
+    """
+
+    stat_key = _safe_stat_key(Path(path))
+    if stat_key is None:
+        with _lock:
+            _stats["misses"] += 1
+        return compute()
+    key = (stat_key, extra)
+    with _lock:
+        cached, hit = _immutable_cache.get(key)
+        if hit:
+            _stats["hits"] += 1
+            return cached
+        _stats["misses"] += 1
+    value = compute()
+    with _lock:
+        _immutable_cache.set(key, value)
+    return value
+
+
 def cache_stats() -> Dict[str, int]:
     """Return ``{"hits": int, "misses": int, "size": int}`` for observability."""
 
@@ -206,7 +240,7 @@ def cache_stats() -> Dict[str, int]:
         return {
             "hits": _stats["hits"],
             "misses": _stats["misses"],
-            "size": len(_json_cache) + len(_events_cache) + len(_generic_cache),
+            "size": len(_json_cache) + len(_events_cache) + len(_generic_cache) + len(_immutable_cache),
         }
 
 
@@ -217,5 +251,6 @@ def clear_cache() -> None:
         _json_cache.clear()
         _events_cache.clear()
         _generic_cache.clear()
+        _immutable_cache.clear()
         _stats["hits"] = 0
         _stats["misses"] = 0

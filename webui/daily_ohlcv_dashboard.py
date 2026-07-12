@@ -8,6 +8,7 @@ import hashlib
 import math
 import re
 from pathlib import Path
+from typing import NamedTuple
 from datetime import datetime, timezone
 from typing import Any
 
@@ -64,6 +65,7 @@ from stom_rl.daily_close_slot_dataset import (
 from stom_rl.daily_close_slot_gate import (
     DEFAULT_CLOSE_SLOT_GATE_ROOT,
     REQUIRED_BASELINES as CLOSE_SLOT_REQUIRED_BASELINES,
+    REQUIRED_POLICY_SCORE_AUDIT_FIELDS,
     validate_close_slot_gate,
 )
 from stom_rl.daily_close_slot_train import DEFAULT_CLOSE_SLOT_TRAIN_ROOT, POLICY_CONTEXTUAL_BANDIT, PRIMARY_COST_SCENARIO_ID, TRAIN_REPLAY_MODE_ID
@@ -391,6 +393,157 @@ def _close_slot_limited_ledgers(date_ledgers: dict[str, Any], *, limit: int) -> 
     return limited
 
 
+class CloseSlotCsvFacts(NamedTuple):
+    resolved_path: str
+    mtime_ns: int
+    size: int
+    expected_sha256: str | None
+    row_count: int | None
+    fieldnames: tuple[str, ...]
+    sample_rows: tuple[tuple[tuple[str, str], ...], ...]
+    all_rows: tuple[tuple[tuple[str, str], ...], ...] | None
+    split_date_counts: tuple[tuple[str, int], ...]
+    date_split_map: tuple[tuple[str, str], ...]
+    distinct_values: tuple[tuple[str, tuple[str, ...]], ...]
+    extra_field_rows: tuple[int, ...]
+    blank_columns: tuple[tuple[int, tuple[str, ...]], ...]
+    error: str | None
+
+
+def _close_slot_csv_facts_identity(path: Path) -> tuple[str, int, int] | None:
+    try:
+        resolved = str(path.resolve())
+        st = path.stat()
+    except OSError:
+        return None
+    return resolved, st.st_mtime_ns, st.st_size
+
+
+def _close_slot_row_tuple(row: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    return tuple((str(key), "" if value is None else str(value)) for key, value in row.items() if key is not None)
+
+
+def _close_slot_rows_from_tuples(rows: tuple[tuple[tuple[str, str], ...], ...]) -> list[dict[str, Any]]:
+    return [{key: value for key, value in row} for row in rows]
+
+
+def _close_slot_facts_mapping(pairs: tuple[tuple[str, Any], ...]) -> dict[str, Any]:
+    return {key: value for key, value in pairs}
+
+
+def _close_slot_analyze_csv_facts(
+    path: Path,
+    *,
+    sample_limit: int,
+    retain_all_rows: bool,
+    audit_columns: tuple[str, ...] = (),
+    expected_sha256: str | None = None,
+) -> CloseSlotCsvFacts:
+    identity = _close_slot_csv_facts_identity(path)
+    if identity is None:
+        return CloseSlotCsvFacts(str(path), 0, 0, expected_sha256, None, (), (), () if retain_all_rows else None, (), (), (), (), (), "MISSING")
+    resolved, mtime_ns, size = identity
+    sample_rows: list[tuple[tuple[str, str], ...]] = []
+    all_rows: list[tuple[tuple[str, str], ...]] | None = [] if retain_all_rows else None
+    split_dates: dict[str, set[str]] = {}
+    date_split: dict[str, str] = {}
+    distinct: dict[str, set[str]] = {column: set() for column in audit_columns}
+    extra_rows: list[int] = []
+    blank_columns: list[tuple[int, tuple[str, ...]]] = []
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = tuple(str(name) for name in (reader.fieldnames or ()))
+            row_count = 0
+            for index, row in enumerate(reader):
+                row_count += 1
+                if None in row:
+                    extra_rows.append(index)
+                blanks = tuple(str(column) for column in fieldnames if row.get(column) in (None, ""))
+                if blanks:
+                    blank_columns.append((index, blanks))
+                split = str(row.get("split") or "")
+                date = str(row.get("date") or "")
+                if split and date:
+                    split_dates.setdefault(split, set()).add(date)
+                    date_split[date] = split
+                for column in audit_columns:
+                    distinct.setdefault(column, set()).add(str(row.get(column, "")))
+                if len(sample_rows) < sample_limit or all_rows is not None:
+                    row_tuple = _close_slot_row_tuple(row)
+                    if len(sample_rows) < sample_limit:
+                        sample_rows.append(row_tuple)
+                    if all_rows is not None:
+                        all_rows.append(row_tuple)
+    except (OSError, UnicodeDecodeError, csv.Error):
+        return CloseSlotCsvFacts(resolved, mtime_ns, size, expected_sha256, None, (), (), () if retain_all_rows else None, (), (), (), (), (), "UNREADABLE_CSV")
+    return CloseSlotCsvFacts(
+        resolved,
+        mtime_ns,
+        size,
+        expected_sha256,
+        row_count,
+        fieldnames,
+        tuple(sample_rows),
+        tuple(all_rows) if all_rows is not None else None,
+        tuple(sorted((split, len(dates)) for split, dates in split_dates.items())),
+        tuple(sorted(date_split.items())),
+        tuple(sorted((column, tuple(sorted(values))) for column, values in distinct.items())),
+        tuple(extra_rows),
+        tuple(blank_columns),
+        None,
+    )
+
+
+def _close_slot_cached_csv_facts(
+    path: Path,
+    *,
+    sample_limit: int,
+    retain_all_rows: bool,
+    audit_columns: tuple[str, ...] = (),
+    expected_sha256: str | None = None,
+) -> CloseSlotCsvFacts:
+    return artifact_cache.cached_by_stat_immutable(
+        path,
+        lambda: _close_slot_analyze_csv_facts(
+            path,
+            sample_limit=sample_limit,
+            retain_all_rows=retain_all_rows,
+            audit_columns=audit_columns,
+            expected_sha256=expected_sha256,
+        ),
+        extra=("close_slot_csv_facts_v2", int(sample_limit), bool(retain_all_rows), tuple(audit_columns), expected_sha256),
+    )
+
+
+def _close_slot_facts_schema_errors(
+    facts: CloseSlotCsvFacts,
+    *,
+    required_columns: set[str],
+    nonblank_columns: set[str],
+    error_prefix: str,
+) -> list[str]:
+    if facts.error is not None:
+        return [f"{error_prefix}_{facts.error}"]
+    errors: list[str] = []
+    fieldnames = set(facts.fieldnames)
+    missing = sorted(required_columns - fieldnames)
+    if missing:
+        errors.append(f"{error_prefix}_MISSING_COLUMNS:{','.join(missing)}")
+    if facts.row_count == 0:
+        errors.append(f"{error_prefix}_EMPTY")
+    for index in facts.extra_field_rows:
+        errors.append(f"{error_prefix}_EXTRA_FIELDS:{index}")
+    nonblank = set(nonblank_columns)
+    for index, blanks in facts.blank_columns:
+        relevant = sorted(nonblank & set(blanks))
+        if relevant:
+            errors.append(f"{error_prefix}_BLANK_COLUMNS:{index}:{','.join(relevant)}")
+    return errors
+
+
+def _close_slot_facts_for_gate(facts_by_key: dict[str, CloseSlotCsvFacts]) -> dict[str, CloseSlotCsvFacts]:
+    return dict(facts_by_key)
 def _close_slot_csv_row_count(path: Path) -> int:
     with path.open(encoding="utf-8", newline="") as handle:
         return sum(1 for _ in csv.DictReader(handle))
@@ -467,12 +620,21 @@ def _close_slot_safe_date_split_map(path: Path, *, errors: list[str], error_pref
     return value
 
 
+def _close_slot_manifest_mapping(manifest: dict[str, Any], key: str) -> dict[str, Any]:
+    value = manifest.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _close_slot_artifact_hashes(manifest: dict[str, Any]) -> dict[str, Any]:
+    return _close_slot_manifest_mapping(manifest, "artifact_hashes")
+
+
 def _close_slot_gate_manifest_expected_sha(manifest: dict[str, Any]) -> str:
     return _json_hash(
         {
             "run_id": manifest.get("run_id"),
             "train_manifest_sha": manifest.get("train_manifest_sha"),
-            "gate_report": (manifest.get("artifact_hashes") or {}).get("gate_report"),
+            "gate_report": _close_slot_artifact_hashes(manifest).get("gate_report"),
         }
     )
 
@@ -1769,7 +1931,7 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
 
     source_run_ids = gate_manifest.get("source_run_ids") if isinstance(gate_manifest.get("source_run_ids"), dict) else {}
     gate_report_path = _close_slot_resolve_path(
-        (gate_manifest.get("artifacts") or {}).get("gate_report"),
+        _close_slot_manifest_mapping(gate_manifest, "artifacts").get("gate_report"),
         base_dir=run_dir,
         allowed_root=run_dir,
         errors=errors,
@@ -1780,7 +1942,7 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
         gate_report, gate_report_errors = _safe_load_json_artifact(gate_report_path, error_prefix="CLOSE_SLOT_GATE_REPORT")
         errors.extend(gate_report_errors)
         errors.extend(_close_slot_false_lock_errors(gate_report, prefix="CLOSE_SLOT_GATE_REPORT", require_present=False))
-        expected_gate_hash = (gate_manifest.get("artifact_hashes") or {}).get("gate_report")
+        expected_gate_hash = _close_slot_artifact_hashes(gate_manifest).get("gate_report")
         if not expected_gate_hash or not _is_sha256(expected_gate_hash):
             errors.append("CLOSE_SLOT_GATE_REPORT_HASH_MISSING")
         elif gate_report_path.exists() and _file_sha256(gate_report_path) != expected_gate_hash:
@@ -1832,7 +1994,12 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
     cost_scenario_rows: list[dict[str, Any]] = []
     walk_forward_windows: dict[str, Any] = {}
     replay_episode_ledgers: dict[str, Any] = {}
+    csv_facts_by_key: dict[str, CloseSlotCsvFacts] = {}
+    valid_train_artifact_hashes: dict[str, str] = {}
     if train_manifest and train_manifest_path is not None:
+        train_artifact_hashes = _close_slot_artifact_hashes(train_manifest)
+        train_artifacts_manifest = _close_slot_manifest_mapping(train_manifest, "artifacts")
+        train_row_counts = _close_slot_manifest_mapping(train_manifest, "row_counts")
         train_artifact_dir = Path(str(train_manifest.get("artifact_dir") or train_manifest_path.parent)).resolve()
         if not _path_is_relative_to(train_artifact_dir, DEFAULT_CLOSE_SLOT_TRAIN_ROOT.resolve()):
             errors.append("CLOSE_SLOT_TRAIN_ARTIFACT_DIR_UNSAFE")
@@ -1847,7 +2014,7 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
                 "cost_scenario_summary",
             ]:
                 artifact_path = _close_slot_resolve_path(
-                    (train_manifest.get("artifacts") or {}).get(key),
+                    train_artifacts_manifest.get(key),
                     base_dir=train_manifest_path.parent,
                     allowed_root=train_artifact_dir,
                     errors=errors,
@@ -1856,39 +2023,34 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
                 if artifact_path is None:
                     continue
                 train_artifacts[key] = artifact_path
-                expected_hash = (train_manifest.get("artifact_hashes") or {}).get(key)
-                if not expected_hash or not _is_sha256(expected_hash):
+                expected_hash = train_artifact_hashes.get(key)
+                if not _is_sha256(expected_hash):
                     errors.append(f"CLOSE_SLOT_TRAIN_{key.upper()}_HASH_MISSING")
-                elif artifact_path.exists() and _file_sha256(artifact_path) != expected_hash:
-                    errors.append(f"CLOSE_SLOT_TRAIN_{key.upper()}_HASH_MISMATCH")
+                else:
+                    valid_train_artifact_hashes[key] = expected_hash
+                    if artifact_path.exists() and _file_sha256(artifact_path) != expected_hash:
+                        errors.append(f"CLOSE_SLOT_TRAIN_{key.upper()}_HASH_MISMATCH")
         if "policy_scores" in train_artifacts:
-            expected_policy_rows = _to_int((train_manifest.get("row_counts") or {}).get("policy_score_rows"))
-            observed_policy_rows = _close_slot_safe_csv_row_count(
+            policy_facts = _close_slot_cached_csv_facts(
                 train_artifacts["policy_scores"],
-                errors=errors,
-                error_prefix="CLOSE_SLOT_TRAIN_POLICY_SCORES",
+                sample_limit=safe_limit,
+                retain_all_rows=False,
+                audit_columns=tuple(sorted(REQUIRED_POLICY_SCORE_AUDIT_FIELDS)),
+                expected_sha256=valid_train_artifact_hashes.get("policy_scores"),
             )
+            csv_facts_by_key["policy_scores"] = policy_facts
+            if policy_facts.error is not None:
+                errors.append(f"CLOSE_SLOT_TRAIN_POLICY_SCORES_{policy_facts.error}")
+            expected_policy_rows = _to_int(train_row_counts.get("policy_score_rows"))
+            observed_policy_rows = policy_facts.row_count
             if expected_policy_rows is None or observed_policy_rows is None or expected_policy_rows != observed_policy_rows:
                 errors.append("CLOSE_SLOT_POLICY_SCORE_ROW_COUNT_MISMATCH")
-            policy_score_rows = _close_slot_safe_read_csv_rows(
-                train_artifacts["policy_scores"],
-                safe_limit,
-                errors=errors,
-                error_prefix="CLOSE_SLOT_TRAIN_POLICY_SCORES",
-            )
-            split_date_counts = _close_slot_safe_split_date_counts(
-                train_artifacts["policy_scores"],
-                errors=errors,
-                error_prefix="CLOSE_SLOT_TRAIN_POLICY_SCORES",
-            )
-            date_split_map = _close_slot_safe_date_split_map(
-                train_artifacts["policy_scores"],
-                errors=errors,
-                error_prefix="CLOSE_SLOT_TRAIN_POLICY_SCORES",
-            )
+            policy_score_rows = _close_slot_rows_from_tuples(policy_facts.sample_rows)
+            split_date_counts = dict(policy_facts.split_date_counts)
+            date_split_map = dict(policy_facts.date_split_map)
             errors.extend(
-                _close_slot_csv_file_schema_errors(
-                    train_artifacts["policy_scores"],
+                _close_slot_facts_schema_errors(
+                    policy_facts,
                     required_columns={
                         "date",
                         "split",
@@ -1923,16 +2085,19 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
                 )
             )
         if "baseline_summary" in train_artifacts:
-            expected_baseline_rows = _to_int((train_manifest.get("row_counts") or {}).get("baseline_summary_rows"))
-            all_baseline_rows = _close_slot_safe_read_csv_rows(
+            baseline_facts = _close_slot_cached_csv_facts(
                 train_artifacts["baseline_summary"],
-                MAX_LIMIT,
-                errors=errors,
-                error_prefix="CLOSE_SLOT_TRAIN_BASELINE_SUMMARY",
+                sample_limit=MAX_LIMIT,
+                retain_all_rows=True,
+                expected_sha256=valid_train_artifact_hashes.get("baseline_summary"),
             )
+            csv_facts_by_key["baseline_summary"] = baseline_facts
+            if baseline_facts.error is not None:
+                errors.append(f"CLOSE_SLOT_TRAIN_BASELINE_SUMMARY_{baseline_facts.error}")
+            all_baseline_rows = _close_slot_rows_from_tuples(baseline_facts.all_rows or ())
             errors.extend(
-                _close_slot_csv_file_schema_errors(
-                    train_artifacts["baseline_summary"],
+                _close_slot_facts_schema_errors(
+                    baseline_facts,
                     required_columns={
                         "policy",
                         "date_count",
@@ -1954,11 +2119,8 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
                     error_prefix="CLOSE_SLOT_BASELINE_SUMMARY_CSV_SCHEMA",
                 )
             )
-            observed_baseline_rows = _close_slot_safe_csv_row_count(
-                train_artifacts["baseline_summary"],
-                errors=errors,
-                error_prefix="CLOSE_SLOT_TRAIN_BASELINE_SUMMARY",
-            )
+            expected_baseline_rows = _to_int(train_row_counts.get("baseline_summary_rows"))
+            observed_baseline_rows = baseline_facts.row_count
             if expected_baseline_rows is None or observed_baseline_rows is None or expected_baseline_rows != observed_baseline_rows:
                 errors.append("CLOSE_SLOT_BASELINE_ROW_COUNT_MISMATCH")
             baseline_rows = all_baseline_rows[:safe_limit]
@@ -1969,23 +2131,23 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
             date_ledgers, date_ledger_errors = _safe_load_json_artifact(train_artifacts["date_ledgers"], error_prefix="CLOSE_SLOT_DATE_LEDGERS")
             errors.extend(date_ledger_errors)
         if "threshold_search" in train_artifacts:
-            expected_threshold_rows = _to_int((train_manifest.get("row_counts") or {}).get("threshold_search_rows"))
-            observed_threshold_rows = _close_slot_safe_csv_row_count(
+            threshold_facts = _close_slot_cached_csv_facts(
                 train_artifacts["threshold_search"],
-                errors=errors,
-                error_prefix="CLOSE_SLOT_THRESHOLD_SEARCH",
+                sample_limit=MAX_LIMIT,
+                retain_all_rows=True,
+                expected_sha256=valid_train_artifact_hashes.get("threshold_search"),
             )
+            csv_facts_by_key["threshold_search"] = threshold_facts
+            if threshold_facts.error is not None:
+                errors.append(f"CLOSE_SLOT_THRESHOLD_SEARCH_{threshold_facts.error}")
+            expected_threshold_rows = _to_int(train_row_counts.get("threshold_search_rows"))
+            observed_threshold_rows = threshold_facts.row_count
             if expected_threshold_rows is None or observed_threshold_rows is None or expected_threshold_rows != observed_threshold_rows:
                 errors.append("CLOSE_SLOT_THRESHOLD_SEARCH_ROW_COUNT_MISMATCH")
-            all_threshold_rows = _close_slot_safe_read_csv_rows(
-                train_artifacts["threshold_search"],
-                MAX_LIMIT,
-                errors=errors,
-                error_prefix="CLOSE_SLOT_THRESHOLD_SEARCH",
-            )
+            all_threshold_rows = _close_slot_rows_from_tuples(threshold_facts.all_rows or ())
             errors.extend(
-                _close_slot_csv_file_schema_errors(
-                    train_artifacts["threshold_search"],
+                _close_slot_facts_schema_errors(
+                    threshold_facts,
                     required_columns={
                         "chosen",
                         "mean_daily_reward_base_23bp",
@@ -2013,7 +2175,7 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
                 errors.extend(
                     _close_slot_walk_forward_errors(
                         walk_forward_windows,
-                        _to_int((train_manifest.get("row_counts") or {}).get("walk_forward_windows")),
+                        _to_int(train_row_counts.get("walk_forward_windows")),
                     )
                 )
         if "replay_episode_ledgers" in train_artifacts:
@@ -2026,27 +2188,27 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
                 errors.extend(
                     _close_slot_replay_errors(
                         replay_episode_ledgers,
-                        _to_int((train_manifest.get("row_counts") or {}).get("replay_episode_ledgers")),
+                        _to_int(train_row_counts.get("replay_episode_ledgers")),
                     )
                 )
         if "cost_scenario_summary" in train_artifacts:
-            expected_cost_rows = _to_int((train_manifest.get("row_counts") or {}).get("cost_scenario_summary_rows"))
-            observed_cost_rows = _close_slot_safe_csv_row_count(
+            cost_facts = _close_slot_cached_csv_facts(
                 train_artifacts["cost_scenario_summary"],
-                errors=errors,
-                error_prefix="CLOSE_SLOT_COST_SCENARIO_SUMMARY",
+                sample_limit=MAX_LIMIT,
+                retain_all_rows=True,
+                expected_sha256=valid_train_artifact_hashes.get("cost_scenario_summary"),
             )
+            csv_facts_by_key["cost_scenario_summary"] = cost_facts
+            if cost_facts.error is not None:
+                errors.append(f"CLOSE_SLOT_COST_SCENARIO_SUMMARY_{cost_facts.error}")
+            expected_cost_rows = _to_int(train_row_counts.get("cost_scenario_summary_rows"))
+            observed_cost_rows = cost_facts.row_count
             if expected_cost_rows is None or observed_cost_rows is None or expected_cost_rows != observed_cost_rows:
                 errors.append("CLOSE_SLOT_COST_SCENARIO_SUMMARY_ROW_COUNT_MISMATCH")
-            all_cost_rows = _close_slot_safe_read_csv_rows(
-                train_artifacts["cost_scenario_summary"],
-                MAX_LIMIT,
-                errors=errors,
-                error_prefix="CLOSE_SLOT_COST_SCENARIO_SUMMARY",
-            )
+            all_cost_rows = _close_slot_rows_from_tuples(cost_facts.all_rows or ())
             errors.extend(
-                _close_slot_csv_file_schema_errors(
-                    train_artifacts["cost_scenario_summary"],
+                _close_slot_facts_schema_errors(
+                    cost_facts,
                     required_columns={
                         "buy_commission_bp",
                         "buy_slippage_bp",
@@ -2133,11 +2295,12 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
             # invalidation); the manifest hash-pins its artifact closure, so no
             # live re-validation of an out-of-band mutated-in-place artifact is
             # expected here.
+            gate_csv_facts = _close_slot_facts_for_gate(csv_facts_by_key)
             recomputed_gate = (
                 artifact_cache.cached_by_stat(
                     train_manifest_path,
-                    lambda: validate_close_slot_gate(train_manifest_path),
-                    extra="validate_close_slot_gate",
+                    lambda: validate_close_slot_gate(train_manifest_path, csv_facts=gate_csv_facts),
+                    extra=("validate_close_slot_gate", tuple(sorted((key, facts.resolved_path, facts.mtime_ns, facts.size, facts.expected_sha256) for key, facts in csv_facts_by_key.items()))),
                 )
                 if train_manifest_path is not None
                 else {}
@@ -2238,6 +2401,7 @@ def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: i
     train_manifest = context["train_manifest"]
     dataset_manifest = context["dataset_manifest"]
     current_d0_d1 = context["current_d0_d1"]
+    train_row_counts = _close_slot_manifest_mapping(train_manifest, "row_counts")
     payload = {
         "surface": "daily_close_slot",
         "status": gate_manifest.get("status"),
@@ -2318,13 +2482,13 @@ def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: i
             "scope_label": "bounded_latest_evidence_not_full_universe_or_decision_grade",
         },
         "row_counts": {
-            "policy_score_rows": (train_manifest.get("row_counts") or {}).get("policy_score_rows"),
-            "baseline_summary_rows": (train_manifest.get("row_counts") or {}).get("baseline_summary_rows"),
+            "policy_score_rows": train_row_counts.get("policy_score_rows"),
+            "baseline_summary_rows": train_row_counts.get("baseline_summary_rows"),
             "dataset_close_slot_panel_rows": (dataset_manifest.get("row_counts") or {}).get("close_slot_panel_rows"),
-            "threshold_search_rows": (train_manifest.get("row_counts") or {}).get("threshold_search_rows"),
-            "walk_forward_windows": (train_manifest.get("row_counts") or {}).get("walk_forward_windows"),
-            "replay_episode_ledgers": (train_manifest.get("row_counts") or {}).get("replay_episode_ledgers"),
-            "cost_scenario_summary_rows": (train_manifest.get("row_counts") or {}).get("cost_scenario_summary_rows"),
+            "threshold_search_rows": train_row_counts.get("threshold_search_rows"),
+            "walk_forward_windows": train_row_counts.get("walk_forward_windows"),
+            "replay_episode_ledgers": train_row_counts.get("replay_episode_ledgers"),
+            "cost_scenario_summary_rows": train_row_counts.get("cost_scenario_summary_rows"),
         },
         "samples": {
             "baseline_summary": context.get("baseline_rows") or [],

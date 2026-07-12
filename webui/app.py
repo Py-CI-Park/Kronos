@@ -2517,4 +2517,4 @@ if __name__ == '__main__':
     host = os.environ.get("KRONOS_WEBUI_HOST", "127.0.0.1")
     port = int(os.environ.get("KRONOS_WEBUI_PORT", os.environ.get("PORT", "7070")))
     debug_mode = os.environ.get("KRONOS_WEBUI_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
-    app.run(debug=debug_mode, host=host, port=port)
+    app.run(debug=debug_mode, host=host if host.strip().lower() in {"127.0.0.1", "localhost", "::1"} else "127.0.0.1", port=port)

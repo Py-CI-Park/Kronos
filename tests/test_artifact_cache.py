@@ -84,6 +84,67 @@ def test_cached_by_stat_returns_isolated_copy(tmp_path):
     assert second is not first
 
 
+def test_cached_by_stat_immutable_returns_same_object_on_hit(tmp_path):
+    path = tmp_path / "facts.csv"
+    path.write_text("a\n1\n", encoding="utf-8")
+    calls = {"count": 0}
+
+    def compute():
+        calls["count"] += 1
+        return (("row_count", 1),)
+
+    first = artifact_cache.cached_by_stat_immutable(path, compute, extra=("facts", 1))
+    second = artifact_cache.cached_by_stat_immutable(path, compute, extra=("facts", 1))
+
+    assert first == (("row_count", 1),)
+    assert second is first
+    assert calls["count"] == 1
+    assert artifact_cache.cache_stats()["hits"] == 1
+
+
+def test_cached_by_stat_immutable_binds_expected_sha_in_extra_without_deepcopy(tmp_path):
+    path = tmp_path / "facts.csv"
+    path.write_text("a\n1\n", encoding="utf-8")
+    calls = {"count": 0}
+
+    def compute(expected_sha):
+        calls["count"] += 1
+        return (("expected_sha256", expected_sha),)
+
+    first = artifact_cache.cached_by_stat_immutable(path, lambda: compute("a" * 64), extra=("facts", "a" * 64))
+    second = artifact_cache.cached_by_stat_immutable(path, lambda: compute("a" * 64), extra=("facts", "a" * 64))
+    changed_sha = artifact_cache.cached_by_stat_immutable(path, lambda: compute("b" * 64), extra=("facts", "b" * 64))
+
+    assert second is first
+    assert changed_sha == (("expected_sha256", "b" * 64),)
+    assert changed_sha is not first
+    assert calls["count"] == 2
+
+
+def test_cached_by_stat_immutable_invalidates_and_does_not_cache_exceptions(tmp_path):
+    path = tmp_path / "facts.csv"
+    path.write_text("a\n1\n", encoding="utf-8")
+    calls = {"count": 0}
+
+    def compute():
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise ValueError("boom")
+        return (("value", path.read_text(encoding="utf-8")),)
+
+    with pytest.raises(ValueError):
+        artifact_cache.cached_by_stat_immutable(path, compute, extra="facts")
+    first = artifact_cache.cached_by_stat_immutable(path, compute, extra="facts")
+    assert first == (("value", "a\n1\n"),)
+
+    path.write_text("a\n2\n", encoding="utf-8")
+    _bump_mtime(path)
+    second = artifact_cache.cached_by_stat_immutable(path, compute, extra="facts")
+
+    assert second == (("value", "a\n2\n"),)
+    assert second is not first
+    assert calls["count"] == 3
+
 def test_cached_load_json_invalidates_on_size_change(tmp_path):
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps({"a": 1}), encoding="utf-8")

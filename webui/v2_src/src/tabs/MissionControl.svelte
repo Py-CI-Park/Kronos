@@ -310,7 +310,7 @@
   .gauge[data-t="accent"] .gh .dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .gauge .gk { font: 600 11px/1.2 var(--font-mono); color: var(--muted); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .gauge .gv { font: 800 21px/1.1 var(--font-display); letter-spacing: -0.03em; color: var(--fg-strong); margin-top: 9px;
-    overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
   /* src tags — LIVE(파생) vs FACT(가드레일 사실) 정직 라벨 */
   .tag { font: 700 8.5px/1 var(--font-mono); letter-spacing: 0.06em; padding: 3px 5px; border-radius: 5px; margin-left: auto; flex: none; }

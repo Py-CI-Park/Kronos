@@ -146,6 +146,82 @@ def _csv_row_count(path: Path) -> int:
         return sum(1 for _ in csv.DictReader(handle))
 
 
+def _fact_get(fact: Any, key: str) -> Any:
+    if isinstance(fact, Mapping):
+        return fact.get(key)
+    return getattr(fact, key, None)
+
+
+def _csv_fact(csv_facts: Mapping[str, Any] | None, key: str, path: Path, expected_sha256: Any) -> Any | None:
+    if not isinstance(csv_facts, Mapping):
+        return None
+    fact = csv_facts.get(key)
+    if fact is None:
+        return None
+    try:
+        st = path.stat()
+        resolved = str(path.resolve())
+    except OSError:
+        return None
+    if not expected_sha256 or str(_fact_get(fact, "expected_sha256")) != str(expected_sha256):
+        return None
+    if (
+        str(_fact_get(fact, "resolved_path")) != resolved
+        or _safe_int(_fact_get(fact, "mtime_ns")) != st.st_mtime_ns
+        or _safe_int(_fact_get(fact, "size")) != st.st_size
+    ):
+        return None
+    return fact
+
+
+def _rows_from_fact(fact: Any | None) -> list[dict[str, Any]] | None:
+    if fact is None:
+        return None
+    rows = _fact_get(fact, "all_rows")
+    if rows is None:
+        return None
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            out.append({str(key): str(value) for key, value in row})
+        except (TypeError, ValueError):
+            return None
+    return out
+
+
+def _row_count_from_fact(fact: Any | None) -> int | None:
+    if fact is None:
+        return None
+    return _safe_int(_fact_get(fact, "row_count"))
+
+
+def _fieldnames_from_fact(fact: Any | None) -> set[str] | None:
+    if fact is None:
+        return None
+    fieldnames = _fact_get(fact, "fieldnames")
+    if not isinstance(fieldnames, (list, tuple)):
+        return None
+    return {str(field) for field in fieldnames}
+
+
+def _distinct_from_fact(fact: Any | None) -> dict[str, set[str]] | None:
+    if fact is None:
+        return None
+    distinct = _fact_get(fact, "distinct_values")
+    if not isinstance(distinct, (list, tuple)):
+        return None
+    out: dict[str, set[str]] = {}
+    for item in distinct:
+        try:
+            key, values = item
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(values, (list, tuple)):
+            return None
+        out[str(key)] = {str(value) for value in values}
+    return out
+
+
 def _safe_int(value: Any) -> int | None:
     try:
         if isinstance(value, float) and not math.isfinite(value):
@@ -197,6 +273,7 @@ def _validate_v2_train_artifacts(
     artifact_hashes: Mapping[str, Any],
     expected_rows: Mapping[str, Any],
     errors: list[str],
+    csv_facts: Mapping[str, Any] | None = None,
 ) -> None:
     _v2_cost_scenarios_valid(train_manifest, errors)
     artifacts_required = ["threshold_search", "walk_forward_windows", "replay_episode_ledgers", "cost_scenario_summary"]
@@ -212,7 +289,10 @@ def _validate_v2_train_artifacts(
             errors.append("GATE_V2_COST_SCENARIO_ID_MISSING")
         return
 
-    threshold_rows = _read_csv_rows(artifact_paths["threshold_search"])
+    threshold_fact = _csv_fact(csv_facts, "threshold_search", artifact_paths["threshold_search"], artifact_hashes.get("threshold_search"))
+    threshold_rows = _rows_from_fact(threshold_fact)
+    if threshold_rows is None:
+        threshold_rows = _read_csv_rows(artifact_paths["threshold_search"])
     if not threshold_rows or not any(str(row.get("chosen")).lower() == "true" for row in threshold_rows):
         errors.append("GATE_V2_THRESHOLD_GRID_MISSING")
     if any(str(row.get("split")) != "train" or _safe_int(row.get("oos_rows_used_for_fit")) != 0 for row in threshold_rows):
@@ -281,7 +361,10 @@ def _validate_v2_train_artifacts(
     if shuffle.get("shuffle_baseline_only") is not True or shuffle.get("policy_action_allowed") is not False:
         errors.append("GATE_V2_SHUFFLE_POLICY_PROMOTION")
 
-    cost_rows = _read_csv_rows(artifact_paths["cost_scenario_summary"])
+    cost_fact = _csv_fact(csv_facts, "cost_scenario_summary", artifact_paths["cost_scenario_summary"], artifact_hashes.get("cost_scenario_summary"))
+    cost_rows = _rows_from_fact(cost_fact)
+    if cost_rows is None:
+        cost_rows = _read_csv_rows(artifact_paths["cost_scenario_summary"])
     cost_ids = {row.get("cost_scenario_id") for row in cost_rows}
     if not {"zero_control_0bp", "base_23bp", "stress_46bp"} <= cost_ids:
         errors.append("GATE_V2_COST_SCENARIO_MISSING_BASE_OR_STRESS")
@@ -332,7 +415,7 @@ def _load_manifest(manifest_or_path: Mapping[str, Any] | str | Path) -> tuple[di
     return manifest, Path(str(manifest.get("artifact_dir") or ".")).resolve()
 
 
-def validate_close_slot_gate(train_manifest_or_path: Mapping[str, Any] | str | Path) -> dict[str, Any]:
+def validate_close_slot_gate(train_manifest_or_path: Mapping[str, Any] | str | Path, *, csv_facts: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Return a fail-closed gate report for a close-slot train artifact."""
 
     train_manifest, manifest_dir = _load_manifest(train_manifest_or_path)
@@ -370,10 +453,26 @@ def validate_close_slot_gate(train_manifest_or_path: Mapping[str, Any] | str | P
     if train_manifest.get("fill_mode") != FILL_MODE:
         errors.append("GATE_MISSING_POLICY_SCORE_AUDIT")
 
-    artifacts = train_manifest.get("artifacts") or {}
-    artifact_hashes = train_manifest.get("artifact_hashes") or {}
-    expected_rows = train_manifest.get("row_counts") or {}
+    artifacts_value = train_manifest.get("artifacts")
+    if isinstance(artifacts_value, Mapping):
+        artifacts = artifacts_value
+    else:
+        artifacts = {}
+        errors.append("GATE_UNSAFE_PATH")
+    artifact_hashes_value = train_manifest.get("artifact_hashes")
+    if isinstance(artifact_hashes_value, Mapping):
+        artifact_hashes = artifact_hashes_value
+    else:
+        artifact_hashes = {}
+        errors.append("GATE_HASH_MISMATCH")
+    expected_rows_value = train_manifest.get("row_counts")
+    if isinstance(expected_rows_value, Mapping):
+        expected_rows = expected_rows_value
+    else:
+        expected_rows = {}
+        errors.append("GATE_ROW_COUNT_MISMATCH")
     artifact_paths: dict[str, Path] = {}
+    matching_csv_facts: dict[str, Any] = {}
     for key in ["policy_scores", "baseline_summary", "date_ledgers", "threshold_search", "walk_forward_windows", "replay_episode_ledgers", "cost_scenario_summary"]:
         path = _resolve_artifact(artifacts.get(key), manifest_dir=manifest_dir, artifact_dir=artifact_dir)
         if path is None:
@@ -386,27 +485,53 @@ def validate_close_slot_gate(train_manifest_or_path: Mapping[str, Any] | str | P
         expected_hash = artifact_hashes.get(key)
         if not expected_hash or _file_sha(path) != expected_hash:
             errors.append("GATE_HASH_MISMATCH")
+        fact = _csv_fact(csv_facts, key, path, expected_hash)
+        if fact is not None:
+            matching_csv_facts[key] = fact
         if key == "policy_scores":
             expected_count = _safe_int(expected_rows.get("policy_score_rows"))
-            if expected_count is None or _csv_row_count(path) != expected_count:
+            observed_count = _row_count_from_fact(fact)
+            if observed_count is None:
+                observed_count = _csv_row_count(path)
+            if expected_count is None or observed_count != expected_count:
                 errors.append("GATE_ROW_COUNT_MISMATCH")
         if key == "baseline_summary":
             expected_count = _safe_int(expected_rows.get("baseline_summary_rows"))
-            if expected_count is None or _csv_row_count(path) != expected_count:
+            observed_count = _row_count_from_fact(fact)
+            if observed_count is None:
+                observed_count = _csv_row_count(path)
+            if expected_count is None or observed_count != expected_count:
                 errors.append("GATE_ROW_COUNT_MISMATCH")
         if key == "threshold_search":
             expected_count = _safe_int(expected_rows.get("threshold_search_rows"))
-            if expected_count is None or _csv_row_count(path) != expected_count:
+            observed_count = _row_count_from_fact(fact)
+            if observed_count is None:
+                observed_count = _csv_row_count(path)
+            if expected_count is None or observed_count != expected_count:
                 errors.append("GATE_ROW_COUNT_MISMATCH")
         if key == "cost_scenario_summary":
             expected_count = _safe_int(expected_rows.get("cost_scenario_summary_rows"))
-            if expected_count is None or _csv_row_count(path) != expected_count:
+            observed_count = _row_count_from_fact(fact)
+            if observed_count is None:
+                observed_count = _csv_row_count(path)
+            if expected_count is None or observed_count != expected_count:
                 errors.append("GATE_ROW_COUNT_MISMATCH")
 
-    policy_score_rows = _read_csv_rows(artifact_paths["policy_scores"]) if "policy_scores" in artifact_paths and artifact_paths["policy_scores"].exists() else []
-    if policy_score_rows:
-        missing_audit = sorted(REQUIRED_POLICY_SCORE_AUDIT_FIELDS - set(policy_score_rows[0]))
-        wrong_cost = any(str(row.get("round_trip_cost_bp")) != str(ROUND_TRIP_COST_BP) for row in policy_score_rows)
+    policy_fact = matching_csv_facts.get("policy_scores")
+    policy_row_count = _row_count_from_fact(policy_fact)
+    if policy_row_count is None:
+        policy_score_rows = _read_csv_rows(artifact_paths["policy_scores"]) if "policy_scores" in artifact_paths and artifact_paths["policy_scores"].exists() else []
+        policy_row_count = len(policy_score_rows)
+        fieldnames = set(policy_score_rows[0]) if policy_score_rows else set()
+        distinct_values: dict[str, set[str]] = {
+            field: {str(row.get(field, "")) for row in policy_score_rows}
+            for field in REQUIRED_POLICY_SCORE_AUDIT_FIELDS
+        }
+    else:
+        fieldnames = _fieldnames_from_fact(policy_fact) or set()
+        distinct_values = _distinct_from_fact(policy_fact) or {}
+    if policy_row_count and fieldnames:
+        missing_audit = sorted(REQUIRED_POLICY_SCORE_AUDIT_FIELDS - fieldnames)
         policy_expected_values = {
             "dataset_run_id": str(train_manifest.get("dataset_run_id")),
             "dataset_manifest_sha": str(train_manifest.get("dataset_manifest_sha")),
@@ -418,21 +543,21 @@ def validate_close_slot_gate(train_manifest_or_path: Mapping[str, Any] | str | P
             "primary_cost_scenario_id": str(train_manifest.get("primary_cost_scenario_id")),
         }
         expected_blockers = "|".join(str(value) for value in train_manifest.get("upstream_gate_blockers", []))
-        mismatched_audit = any(
-            any(str(row.get(field)) != expected for field, expected in policy_expected_values.items())
-            or str(row.get("upstream_gate_blockers", "")) != expected_blockers
-            for row in policy_score_rows
-        )
-        if missing_audit or wrong_cost or mismatched_audit:
+        mismatched_audit = any(distinct_values.get(field) != {expected} for field, expected in policy_expected_values.items())
+        mismatched_audit = mismatched_audit or distinct_values.get("upstream_gate_blockers") != {expected_blockers}
+        if missing_audit or mismatched_audit:
             errors.append("GATE_MISSING_POLICY_SCORE_AUDIT")
     else:
         errors.append("GATE_MISSING_POLICY_SCORE_AUDIT")
 
-    baseline_summary_rows = _read_csv_rows(artifact_paths["baseline_summary"]) if "baseline_summary" in artifact_paths and artifact_paths["baseline_summary"].exists() else []
+    baseline_fact = matching_csv_facts.get("baseline_summary")
+    baseline_summary_rows = _rows_from_fact(baseline_fact)
+    if baseline_summary_rows is None:
+        baseline_summary_rows = _read_csv_rows(artifact_paths["baseline_summary"]) if "baseline_summary" in artifact_paths and artifact_paths["baseline_summary"].exists() else []
     baseline_csv_policies = {str(row.get("policy")) for row in baseline_summary_rows}
     if not REQUIRED_BASELINES <= baseline_csv_policies:
         errors.append("GATE_MISSING_REQUIRED_BASELINE")
-    _validate_v2_train_artifacts(train_manifest, artifact_paths, artifact_hashes, expected_rows, errors)
+    _validate_v2_train_artifacts(train_manifest, artifact_paths, artifact_hashes, expected_rows, errors, csv_facts=matching_csv_facts)
 
     dataset_manifest_path = Path(str(train_manifest.get("dataset_manifest_path") or "")).resolve()
     dataset_manifest: dict[str, Any] = {}

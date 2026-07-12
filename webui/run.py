@@ -19,6 +19,15 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+
+_LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _loopback_bind_host(value):
+    """Return a loopback bind host; never expose the credential-free dashboard remotely."""
+    candidate = str(value or "").strip().lower()
+    return candidate if candidate in _LOOPBACK_BIND_HOSTS else "127.0.0.1"
+
 def clear_stale_app_bytecode():
     """Force app.py to be imported from source after dashboard edits."""
     cache_pattern = os.path.join(os.path.dirname(os.path.abspath(__file__)), "__pycache__", "app.cpython-*.pyc")
@@ -178,7 +187,8 @@ def main():
         readiness_guarded = enforce_runtime_research_locks(app)
         print(f"✅ Flask app module: {app_module.__file__}")
         print(f"✅ Model-build readiness route guard: {'on' if readiness_guarded else 'off'}")
-        host = os.environ.get("KRONOS_WEBUI_HOST", "127.0.0.1")
+        requested_host = os.environ.get("KRONOS_WEBUI_HOST", "127.0.0.1")
+        host = _loopback_bind_host(requested_host)
         port = int(os.environ.get("KRONOS_WEBUI_PORT", os.environ.get("PORT", "7070")))
         open_browser = os.environ.get("KRONOS_WEBUI_OPEN_BROWSER", "1").lower() not in {"0", "false", "no", "off"}
         # Debug stays available, but the file-watch reloader is OFF by default:
@@ -196,6 +206,8 @@ def main():
         is_reloader_child = bool(os.environ.get("WERKZEUG_RUN_MAIN"))
         access_host = "localhost" if host in {"0.0.0.0", "::"} else host
         access_url = f"http://{access_host}:{port}"
+        if host != str(requested_host).strip().lower():
+            print("⚠️  Remote bind rejected; using loopback 127.0.0.1")
 
         print("✅ Web server started successfully!")
         print(f"🌐 Access URL: {access_url}")

@@ -477,6 +477,7 @@
   }
   .param-row input[type="range"] {
     -webkit-appearance: none;
+    appearance: none;
     width: 100%;
     height: 6px;
     background: var(--surface-sunken);
@@ -485,6 +486,7 @@
   }
   .param-row input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
+    appearance: none;
     width: 16px;
     height: 16px;
     border-radius: 50%;

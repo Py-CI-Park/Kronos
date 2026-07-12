@@ -126,6 +126,24 @@ def test_validate_close_slot_gate_fail_closed_errors_are_stable(tmp_path: Path):
     assert "GATE_OOS_RETUNING_NOT_BLOCKED" in report["errors"]
     assert "GATE_ROW_COUNT_MISMATCH" in report["errors"]
 
+    malformed_hash_container = json.loads(json.dumps(manifest))
+    malformed_hash_container["artifact_hashes"] = ["not", "a", "mapping"]
+    report = validate_close_slot_gate(malformed_hash_container)
+    assert report["status"] == "BLOCK"
+    assert "GATE_HASH_MISMATCH" in report["errors"]
+
+    malformed_artifact_container = json.loads(json.dumps(manifest))
+    malformed_artifact_container["artifacts"] = ["not", "a", "mapping"]
+    report = validate_close_slot_gate(malformed_artifact_container)
+    assert report["status"] == "BLOCK"
+    assert "GATE_UNSAFE_PATH" in report["errors"]
+
+    malformed_row_count_container = json.loads(json.dumps(manifest))
+    malformed_row_count_container["row_counts"] = ["not", "a", "mapping"]
+    report = validate_close_slot_gate(malformed_row_count_container)
+    assert report["status"] == "BLOCK"
+    assert "GATE_ROW_COUNT_MISMATCH" in report["errors"]
+
     scalar_cost_ladder = json.loads(json.dumps(manifest))
     scalar_cost_ladder["cost_sensitivity_bp"] = 23
     report = validate_close_slot_gate(scalar_cost_ladder)

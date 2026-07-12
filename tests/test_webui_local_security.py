@@ -5,6 +5,7 @@ import pandas as pd
 
 
 webui_app = importlib.import_module("webui.app")
+webui_run = importlib.import_module("webui.run")
 
 
 def _frame():
@@ -143,3 +144,14 @@ def test_debug_default_remains_off_in_both_entrypoints():
     for source in (app_source, run_source):
         assert 'os.environ.get("KRONOS_WEBUI_DEBUG", "0")' in source
         assert "app.run(debug=debug_mode" in source
+
+
+def test_bind_host_is_forced_to_loopback_in_both_entrypoints():
+    assert webui_run._loopback_bind_host("127.0.0.1") == "127.0.0.1"
+    assert webui_run._loopback_bind_host("LOCALHOST") == "localhost"
+    assert webui_run._loopback_bind_host("::1") == "::1"
+    assert webui_run._loopback_bind_host("0.0.0.0") == "127.0.0.1"
+    assert webui_run._loopback_bind_host("192.0.2.10") == "127.0.0.1"
+
+    app_source = Path(webui_app.__file__).read_text(encoding="utf-8")
+    assert 'host=host if host.strip().lower() in {"127.0.0.1", "localhost", "::1"} else "127.0.0.1"' in app_source
