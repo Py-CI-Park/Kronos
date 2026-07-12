@@ -786,6 +786,10 @@ def train_tabular_q_policy(
     return dict(q_table), episode_rows
 
 
+def _actual_trade_count(reward_rows: list[dict[str, Any]]) -> int:
+    return sum(1 for row in reward_rows if float(row.get("turnover") or 0.0) > 0.0)
+
+
 def evaluate_policy(
     candidates: dict[str, list[Any]],
     q_table: dict[tuple[int, ...], list[float]],
@@ -1042,10 +1046,13 @@ def evaluate_policy(
     concentration_values = [float(row["concentration"]) for row in reward_rows]
     invalid_count = sum(1 for row in invalid_rows if row["invalid_action"])
     step_count = len(reward_rows)
+    trade_count = _actual_trade_count(reward_rows)
     metrics = {
         "split": split_label,
         "steps": step_count,
         "position_rows": len(positions_rows),
+        "trade_count": trade_count,
+        "never_trade": trade_count == 0,
         "final_equity": env.equity,
         "total_reward": total_reward,
         "mean_daily_reward": _mean(reward_values),
@@ -1324,6 +1331,13 @@ def run_daily_rl(
         "cost_round_trip_bp": ROUND_TRIP_COST_BP,
     }
     source_hashes = _source_hashes()
+    parent_training_run = {
+        "seed": int(seed),
+        "episodes": int(episodes),
+        "prediction_manifest_sha": artifacts["prediction_manifest_sha256"],
+        "prediction_artifact_hashes": artifacts["prediction_artifact_hashes"],
+        "source_hashes": source_hashes,
+    }
     clean_action_filter_mode = _clean_action_filter_mode(action_filter_mode)
     policy_type = (
         "tabular_q_trade_quality_filter_v1"
@@ -1383,6 +1397,7 @@ def run_daily_rl(
         "prediction_declared_artifact_hashes": artifacts["prediction_declared_artifact_hashes"],
         "prediction_artifact_hash_mismatches": artifacts["prediction_artifact_hash_mismatches"],
         "source_hashes": source_hashes,
+        "parent_training_run": parent_training_run,
         "prediction_verdict_status": artifacts["verdict"].get("status"),
         "score_column": score_column,
         "action_space": ACTION_NAMES,
@@ -1408,6 +1423,9 @@ def run_daily_rl(
         "paper_forward_allowed": False,
         "live_broker_order_allowed": False,
         "readiness_status": "D4_RESEARCH_ONLY_DIAGNOSTICS",
+        "checkpoint_readiness": False,
+        "environment_readiness": True,
+        "model_ready": False,
         "observation_manifest": observation_manifest,
         "observation_manifest_validation": observation_manifest_validation,
         "state_contract_status": observation_manifest_validation["status"],
@@ -1816,6 +1834,7 @@ def write_rl_artifacts(
             "no_trade_opportunity_diagnostic_rows": len(result["no_trade_opportunity_diagnostics"]),
             "abstention_reason_rows": len(result["abstention_reasons"]),
             "source_hashes": result["source_hashes"],
+            "parent_training_run": result["manifest"].get("parent_training_run"),
             "model_build_allowed": False,
             "go_summary_allowed": False,
             "paper_forward_allowed": False,

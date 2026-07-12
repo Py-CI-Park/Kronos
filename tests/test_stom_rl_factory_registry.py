@@ -3,6 +3,7 @@
 Cost assumption pinned at 23.0bp round trip throughout.
 """
 
+import json
 import sqlite3
 
 import pytest
@@ -24,6 +25,7 @@ from stom_rl.factory.run_registry import (
     list_runs,
     register_run,
     set_status,
+    update_run_artifacts,
 )
 
 
@@ -206,3 +208,43 @@ def test_registry_status_check_constraint(tmp_path):
                 "INSERT INTO runs (run_id, cost_bps, stage, prereg_doc, status)"
                 " VALUES ('x', 23.0, 'smoke', 'docs/p.md', 'bogus')"
             )
+
+
+def test_update_run_artifacts_rejects_unknown_run(tmp_path):
+    with pytest.raises(RegistryError, match="unknown_run_id"):
+        update_run_artifacts(
+            _registry(tmp_path),
+            "ghost",
+            run_dir=str(tmp_path / "run"),
+            artifact_hashes={"rl_manifest": "a" * 64},
+            total_bytes=1,
+        )
+
+
+def test_update_run_artifacts_rejects_malformed_hashes(tmp_path):
+    path = _registry(tmp_path)
+    register_run(path, run_id="r1", split_hash="s1", cost_bps=23.0, seed=7, stage="smoke", prereg_doc="docs/prereg.md")
+    with pytest.raises(RegistryError, match="malformed_artifact_hash"):
+        update_run_artifacts(
+            path,
+            "r1",
+            run_dir=str(tmp_path / "run"),
+            artifact_hashes={"rl_manifest": "not-a-sha"},
+            total_bytes=1,
+        )
+
+
+def test_update_run_artifacts_records_post_run_metadata(tmp_path):
+    path = _registry(tmp_path)
+    register_run(path, run_id="r1", split_hash="s1", cost_bps=23.0, seed=7, stage="smoke", prereg_doc="docs/prereg.md")
+    updated = update_run_artifacts(
+        path,
+        "r1",
+        run_dir=str(tmp_path / "run"),
+        artifact_hashes={"rl_manifest": "A" * 64, "training_manifest": "b" * 64},
+        total_bytes=123,
+    )
+
+    assert updated["run_dir"] == str(tmp_path / "run")
+    assert json.loads(updated["artifact_hashes"]) == {"rl_manifest": "a" * 64, "training_manifest": "b" * 64}
+    assert updated["total_bytes"] == 123

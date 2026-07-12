@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import cmp_to_key
@@ -83,6 +84,24 @@ _MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (
 
 
 _STATUS_RANK: dict[str, int] = {"done": 0, "running": 1, "queued": 2, "failed": 3}
+_HASH64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def _validate_artifact_hashes(artifact_hashes: dict[str, str]) -> str:
+    if not isinstance(artifact_hashes, dict) or not artifact_hashes:
+        raise RegistryError("empty_artifact_hashes")
+    clean: dict[str, str] = {}
+    for key, value in artifact_hashes.items():
+        clean_key = str(key or "").strip()
+        clean_value = str(value or "").strip()
+        if not clean_key:
+            raise RegistryError("empty_artifact_hash_key")
+        if not _HASH64_RE.match(clean_value):
+            raise RegistryError(f"malformed_artifact_hash:{clean_key}")
+        clean[clean_key] = clean_value.lower()
+    return json.dumps(clean, sort_keys=True)
+
+
 
 
 def init_registry(registry_path: Path | str) -> None:
@@ -189,6 +208,40 @@ def set_status(
                     "UPDATE runs SET status = ?, verdict = ?, updated_utc = ? WHERE run_id = ?",
                     (status, verdict, _utc_now(), run_id),
                 )
+    row = get_run(registry_path, run_id)
+    assert row is not None
+    return row
+
+def update_run_artifacts(
+    registry_path: Path | str,
+    run_id: str,
+    *,
+    run_dir: str,
+    artifact_hashes: dict[str, str],
+    total_bytes: int,
+) -> dict[str, Any]:
+    """Attach post-run artifact metadata to an existing queued/running run."""
+
+    current = get_run(registry_path, run_id)
+    if current is None:
+        raise RegistryError(f"unknown_run_id:{run_id}")
+    if current["status"] not in {"queued", "running"}:
+        raise RegistryError(f"artifact_update_status:{current['status']}")
+    clean_run_dir = str(run_dir or "").strip()
+    if not clean_run_dir:
+        raise RegistryError("empty_run_dir")
+    try:
+        clean_total_bytes = int(total_bytes)
+    except (TypeError, ValueError) as exc:
+        raise RegistryError("invalid_total_bytes") from exc
+    if clean_total_bytes < 0:
+        raise RegistryError("invalid_total_bytes")
+    artifact_hashes_json = _validate_artifact_hashes(artifact_hashes)
+    with _connect(registry_path) as conn:
+        conn.execute(
+            "UPDATE runs SET run_dir = ?, artifact_hashes = ?, total_bytes = ?, updated_utc = ? WHERE run_id = ?",
+            (clean_run_dir, artifact_hashes_json, clean_total_bytes, _utc_now(), run_id),
+        )
     row = get_run(registry_path, run_id)
     assert row is not None
     return row
