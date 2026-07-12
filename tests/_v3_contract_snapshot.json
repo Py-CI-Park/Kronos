@@ -109,11 +109,44 @@
       "normalizers": [],
       "separator": "\n"
     },
+    "webui/v2_src/src/lib/cardRequest.test.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/cardRequest.test.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/cardRequest.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/cardRequest.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
     "webui/v2_src/src/lib/dailyOhlcvApi.ts": {
       "components": [
         {
           "kind": "file",
           "path": "webui/v2_src/src/lib/dailyOhlcvApi.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/latencyGate.test.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/latencyGate.test.ts"
         }
       ],
       "non_source": false,
@@ -216,6 +249,17 @@
         {
           "kind": "file",
           "path": "webui/v2_src/src/tabs/ResearchStatusShell.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/CloseSlotAgentScreen.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/CloseSlotAgentScreen.svelte"
         }
       ],
       "non_source": false,
@@ -374,7 +418,7 @@
   },
   "counts": {
     "absent": 12,
-    "classified": 583,
+    "classified": 608,
     "e1": 0,
     "e2": 5,
     "loop_absent_expanded": 7,
@@ -382,17 +426,17 @@
     "loop_present_expanded": 59,
     "per_file": {
       "tests/test_daily_ohlcv_dashboard_tab.py": {
-        "physical_assert_nodes": 470,
-        "total_asserts": 470
+        "physical_assert_nodes": 495,
+        "total_asserts": 495
       },
       "tests/test_stom_rl_dashboard_tab.py": {
         "physical_assert_nodes": 55,
         "total_asserts": 118
       }
     },
-    "physical_assert_nodes": 525,
-    "present": 505,
-    "total_asserts": 588
+    "physical_assert_nodes": 550,
+    "present": 530,
+    "total_asserts": 613
   },
   "e1": [],
   "e2": [
@@ -452,6 +496,15 @@
       "label: 'Trading Command Center'",
       "navigateToTab(id)"
     ],
+    "webui/v2_src/src/lib/cardRequest.test.ts": [
+      "independent cards publish independently when one request stalls",
+      "new request aborts and suppresses stale same-card response",
+      "timeout aborts only the stalled card"
+    ],
+    "webui/v2_src/src/lib/cardRequest.ts": [
+      "controllers.get(key)?.abort()",
+      "new AbortController()"
+    ],
     "webui/v2_src/src/lib/dailyOhlcvApi.ts": [
       "/api/daily-ohlcv/charts/close-slot-equity",
       "/api/daily-ohlcv/charts/close-slot-selection",
@@ -482,6 +535,7 @@
       "/api/daily-ohlcv/symbol/",
       "/api/daily-ohlcv/universe/preview",
       "/api/daily-ohlcv/walk-forward/latest",
+      "AbortSignal",
       "DailyCloseSlotCostScenario",
       "DailyCloseSlotLatestResponse",
       "DailyCloseSlotPolicyScoreRow",
@@ -500,6 +554,10 @@
       "selected_hold_summary",
       "threshold_selection",
       "walk_forward_summary"
+    ],
+    "webui/v2_src/src/lib/latencyGate.test.ts": [
+      "cold critical API breach fails rather than passing silently",
+      "warm critical API breach fails rather than passing silently"
     ],
     "webui/v2_src/src/lib/rlApi.ts": [
       "/api/rl/runs",
@@ -549,11 +607,23 @@
       "NOT_STARTED",
       "READ_ONLY",
       "ResearchStatusShell",
+      "auxiliaryFailures",
+      "close-slot auxiliary request unavailable",
+      "close-slot primary request unavailable",
+      "createCardRequestManager(CARD_TIMEOUT_MS)",
       "data-daily-api-error",
+      "data-daily-card-error={endpoint}",
+      "data-daily-close-slot-card-error",
       "data-daily-ohlcv-tab",
+      "data-daily-progress-card-error",
       "data-daily-symbol-panel",
+      "if (result === 'TIMEOUT')",
       "live/model/paper/profit",
-      "no live/broker/orders"
+      "no live/broker/orders",
+      "primaryFailures",
+      "progress = null;",
+      "retrySecondaryCard(endpoint)",
+      "secondaryCardStates"
     ],
     "webui/v2_src/src/tabs/DailyRlGuideTab.svelte": [
       "AI Agent",
@@ -706,6 +776,13 @@
       "data-next-inspection",
       "data-research-status-page={pageId}",
       "data-research-status-shell"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/CloseSlotAgentScreen.svelte": [
+      "gate?.artifact_selection_errors",
+      "latest?.artifact_selection_errors",
+      "latest_selection 없음 · PRIMARY OOS 결과 미확인 (fail-closed).",
+      "selection?.artifact_selection_errors",
+      "selection?.latest_selection ?? latest?.latest_selection ?? null"
     ],
     "webui/v2_src/src/tabs/dailyOhlcv/DailyCloseSlotCard.svelte": [
       "000250",

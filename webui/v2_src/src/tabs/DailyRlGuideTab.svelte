@@ -408,8 +408,9 @@
   </div>
 
   <div class="process-strip" data-daily-rl-process-storyboard aria-label="일봉 RL 프로세스 스토리보드">
+    <a class="scroll-region-focus" href="#daily-rl-process-1">첫 단계부터 키보드로 탐색</a>
     {#each processSteps as step, index}
-      <article class="process-step" data-step-tone={step.tone}>
+      <article class="process-step" id={`daily-rl-process-${index + 1}`} data-step-tone={step.tone}>
         <div class="step-badge">{step.no}</div>
         <h3>{step.title}</h3>
         <p>{step.detail}</p>
@@ -1393,6 +1394,8 @@
   .svg-action-active { fill:rgb(29,78,216); font-weight:900; }
   .svg-callout { fill:rgb(180,83,9); font-family:var(--font-mono); font-size:12px; font-weight:800; letter-spacing:0.02em; }
   .process-strip { margin-top:16px; display:flex; align-items:stretch; gap:8px; overflow-x:auto; padding:4px 0 2px; }
+  .scroll-region-focus:focus-visible { outline:2px solid var(--accent-strong); outline-offset:2px; }
+  .scroll-region-focus { min-width:max-content; align-self:center; color:var(--accent-strong); font-size:12px; font-weight:700; }
   .process-step { min-width:180px; flex:1; border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:var(--surface); box-shadow:var(--shadow-sm); position:relative; }
   .process-step[data-step-tone='pass'] { border-color:rgba(34,197,94,0.42); background:linear-gradient(180deg, rgba(34,197,94,0.08), var(--surface)); }
   .process-step[data-step-tone='warn'] { border-color:rgba(245,158,11,0.42); background:linear-gradient(180deg, rgba(245,158,11,0.08), var(--surface)); }

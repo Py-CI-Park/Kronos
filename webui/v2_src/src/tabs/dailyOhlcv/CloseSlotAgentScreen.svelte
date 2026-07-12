@@ -86,8 +86,13 @@
     (selection?.data_recency ?? latest?.data_recency ?? null) as DailyCloseSlotDataRecency | null
   );
   const recencyLabel = $derived(dataRecency?.label ?? (dataRecency?.is_today ? '오늘' : '기록된 replay 날짜 확인 불가'));
-  const closeSlotBlockers = $derived(
-    (selection?.close_slot_blockers ?? latest?.close_slot_blockers ?? []) as readonly string[]
+  const closeSlotBlockers = $derived.by(() =>
+    Array.from(new Set([
+      ...(selection?.close_slot_blockers ?? latest?.close_slot_blockers ?? []),
+      ...(latest?.artifact_selection_errors ?? []),
+      ...(gate?.artifact_selection_errors ?? []),
+      ...(selection?.artifact_selection_errors ?? []),
+    ]))
   );
   const chosenIsNoTradeSentinel = $derived(
     (selection?.chosen_is_no_trade_sentinel ?? latest?.chosen_is_no_trade_sentinel ?? sentinelValue) as
@@ -95,7 +100,9 @@
       | null
       | undefined
   );
-  const latestSelection = $derived((selection?.latest_selection ?? null) as DailyCloseSlotLatestSelection | null);
+  const latestSelection = $derived(
+    (selection?.latest_selection ?? latest?.latest_selection ?? null) as DailyCloseSlotLatestSelection | null
+  );
 
   // ── (1) hero — AUTHORITATIVE selected count from selected_hold_summary ──
   //    selection_rows is a paginated sample (closeSlotSelection ?limit=20 ->
@@ -234,12 +241,15 @@
     <div class="mini-grid">
       <div><span>date</span><strong>{text(latestSelection?.date)}</strong></div>
       <div><span>policy</span><strong>{text(latestSelection?.policy)}</strong></div>
-      <div><span>split</span><strong>{text(latestSelection?.split, 'test')} · PRIMARY</strong></div>
-      <div><span>cost_scenario_id</span><strong>{text(latestSelection?.cost_scenario_id, 'base_23bp')}</strong></div>
+      <div><span>split</span><strong>{text(latestSelection?.split)}{latestSelection?.split === 'test' ? ' · PRIMARY' : ''}</strong></div>
+      <div><span>cost_scenario_id</span><strong>{text(latestSelection?.cost_scenario_id)}</strong></div>
       <div><span>artifact_age_seconds</span><strong>{numberText(latestSelection?.artifact_age_seconds)}</strong></div>
       <div><span>source_run_id</span><strong>{text(latestSelection?.source_run_id)}</strong></div>
       <div><span>seed</span><strong>{latestSelection?.seed == null ? '— (close-slot manifest에 미영속)' : text(latestSelection?.seed)}</strong></div>
     </div>
+    {#if !latestSelection}
+      <div class="notice danger" style="margin-top:8px">latest_selection 없음 · PRIMARY OOS 결과 미확인 (fail-closed).</div>
+    {/if}
     {#if latestSelection?.missing_test_split_evidence}
       <div class="notice warn" style="margin-top:8px">test split evidence 없음 · PRIMARY OOS 결과 미확인 (fail-closed).</div>
     {/if}
@@ -256,14 +266,13 @@
 
   <!-- close_slot_blockers — full dynamic deduped list, count is never hardcoded -->
   <div class="agent-section evidence-box" data-close-slot-agent-blockers>
-    <div class="text-eyebrow">close_slot_blockers · {closeSlotBlockers.length}건</div>
+    <div class="text-eyebrow">close_slot_blockers / artifact_selection_errors · {closeSlotBlockers.length}건</div>
     {#each closeSlotBlockers as blocker}
       <div class="notice warn" style="margin-top:6px" data-close-slot-blocker>{blocker}</div>
     {:else}
       <div class="notice success">현재 dedup된 blocker 없음.</div>
     {/each}
   </div>
-yy
 
   <!-- (1) 선택 요약 (권위 집계 selected_hold_summary) + 표본 재현 -->
   <div class="agent-section" data-close-slot-agent-hero>
@@ -329,12 +338,13 @@ yy
       <div class="notice">selection ledger 없음 · replay 불가.</div>
     {:else}
       <div class="replay-controls">
-        <select value={ledgerDate} onchange={(event) => chooseLedgerDate((event.currentTarget as HTMLSelectElement).value)}>
+        <select aria-label="원장 날짜" value={ledgerDate} onchange={(event) => chooseLedgerDate((event.currentTarget as HTMLSelectElement).value)}>
           {#each ledgerDates as d}<option value={d}>{d}</option>{/each}
         </select>
         <button type="button" class="step-btn" onclick={() => ledgerStep(-1)} disabled={ledgerStepIndex <= 0}>prev</button>
         <input
           type="range"
+          aria-label="원장 공개 단계"
           min="0"
           max={ledgerMaxIndex}
           value={Math.min(ledgerStepIndex, ledgerMaxIndex)}
@@ -370,7 +380,7 @@ yy
   <!-- (4) 누적 연구용 에쿼티 -->
   <div class="agent-section evidence-box" data-close-slot-agent-equity>
     <div class="text-eyebrow">누적 연구용 에쿼티 · {KRW_NOTE}</div>
-    <EquityDrawdownChart {equity} />
+    <EquityDrawdownChart {equity} autoLoad={false} />
   </div>
 
   <div class="evidence-grid" style="margin-top:12px">
@@ -523,6 +533,7 @@ yy
     font-size: 12px;
   }
   .mini-grid > div {
+    min-width: 0;
     display: flex;
     justify-content: space-between;
     gap: 8px;
@@ -533,5 +544,11 @@ yy
   }
   .mini-grid span {
     color: var(--muted);
+    flex: 0 0 auto;
+  }
+  .mini-grid strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: right;
   }
 </style>

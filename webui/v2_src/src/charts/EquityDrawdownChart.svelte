@@ -13,11 +13,12 @@
   interface Props {
     // Preferred: the equity payload already fetched by DailyCloseSlotCard.
     readonly equity?: DailyCloseSlotEquityResponse | null;
+    readonly autoLoad?: boolean;
     // Which policy series to plot (defaults to the first available).
     readonly policy?: string;
     readonly height?: string;
   }
-  let { equity = null, policy, height = '300px' }: Props = $props();
+  let { equity = null, autoLoad = true, policy, height = '300px' }: Props = $props();
 
   let currentTheme = $state<'light' | 'dark'>('light');
   const unsubscribeTheme = theme.subscribe((value) => (currentTheme = value));
@@ -29,7 +30,7 @@
   let error = $state<string | null>(null);
 
   onMount(() => {
-    if (equity) return;
+    if (equity || !autoLoad) return;
     loading = true;
     dailyOhlcvApi
       .closeSlotEquity()

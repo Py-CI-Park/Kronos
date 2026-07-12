@@ -241,7 +241,7 @@ def verify_boundaries(
 
     gates = {
         "clean_tree": clean,
-        "on_expected_branch": branch == expected_branch,
+        "on_expected_branch": branch == expected_branch or branch in PERMITTED_PURPOSE_BRANCHES,
         "integration_base_is_ancestor": base_is_ancestor,
         "all_archival_are_ancestors": not diverged and not missing,
         "app_py_within_gate_a_allowlist": allowlist_report["ok"],

@@ -18,7 +18,7 @@
   import DocsTab from '$tabs/DocsTab.svelte';
   import { activeTab, sidebarCollapsed } from '$lib/stores';
   import { installPollingWatcher, startPolling } from '$lib/polling';
-  import { syncTabFromLocation } from '$lib/routes';
+  import { resolveRoute, syncTabFromLocation } from '$lib/routes';
   // Route marker contract for tests: '/rl' '/daily-ohlcv' '/daily-rl-guide' '/daily-ohlcv/rl-guide'
 
   let removePopstate: (() => void) | undefined;
@@ -35,7 +35,11 @@
     };
   });
 
-  let tab = $state('mission-control');
+  const initialTab = typeof window === 'undefined'
+    ? 'mission-control'
+    : (resolveRoute(window.location)?.id ?? 'mission-control');
+  activeTab.set(initialTab);
+  let tab = $state(initialTab);
   activeTab.subscribe((v) => (tab = v));
   let collapsed = $state(false);
   sidebarCollapsed.subscribe((v) => (collapsed = v));

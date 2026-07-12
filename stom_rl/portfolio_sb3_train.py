@@ -633,36 +633,50 @@ def _daily_run_contract(config: DailyPortfolioSb3TrainConfig) -> Dict[str, Any]:
     authority = str(config.run_authority).strip()
     authoritative = bool(config.authoritative)
     is_smoke = bool(config.is_smoke)
+    stage_key = stage.lower()
+    status_key = status.lower()
     if not stage or not status or not authority:
         raise ValueError("DailyPortfolioSb3TrainConfig run stage/status/authority must be explicit.")
-    requests_smoke = is_smoke or stage.lower() == "smoke" or authoritative or status.lower() == "completed"
+    requests_smoke = is_smoke or stage_key == "smoke"
+    requests_full = stage_key == "full"
+    if (authoritative or status_key == "completed") and not (requests_smoke or requests_full):
+        raise ValueError("Authoritative completed runs must declare stage='smoke' or stage='full'.")
     if requests_smoke and not (
-        stage.lower() == "smoke"
-        and status.lower() == "completed"
+        stage_key == "smoke"
+        and status_key == "completed"
         and authoritative
         and is_smoke
     ):
         raise ValueError("G017 smoke metadata requires stage='smoke', status='completed', authoritative=True, and is_smoke=True.")
+    if requests_full and not (
+        status_key == "completed"
+        and authoritative
+        and not is_smoke
+    ):
+        raise ValueError("Full-run metadata requires stage='full', status='completed', authoritative=True, and is_smoke=False.")
     if requests_smoke and config.algorithm.lower() != "ppo":
         raise ValueError("G017 smoke contract requires algorithm='ppo'.")
     if requests_smoke and int(config.total_timesteps) != 5_000:
         raise ValueError("G017 smoke contract requires total_timesteps=5000.")
     if requests_smoke and int(config.seed) != 7:
         raise ValueError("G017 smoke contract requires seed=7.")
-    if requests_smoke and float(config.primary_cost_bps) != 23.0:
-        raise ValueError("G017 smoke contract requires primary_cost_bps=23.0.")
-    if requests_smoke and tuple(float(value) for value in config.control_cost_bps) != (0.0, 46.0):
-        raise ValueError("G017 smoke contract requires control_cost_bps=(0.0, 46.0).")
-    if requests_smoke and not config.write_artifacts:
-        raise ValueError("G017 smoke contract requires write_artifacts=True.")
-    if requests_smoke and not config.stream_training_events:
-        raise ValueError("G017 smoke metadata requires stream_training_events=True.")
+    if requests_full and int(config.total_timesteps) < 200_000:
+        raise ValueError("Full-run contract requires total_timesteps>=200000 per seed.")
+    if (requests_smoke or requests_full) and float(config.primary_cost_bps) != 23.0:
+        raise ValueError("Daily R3b contract requires primary_cost_bps=23.0.")
+    if (requests_smoke or requests_full) and tuple(float(value) for value in config.control_cost_bps) != (0.0, 46.0):
+        raise ValueError("Daily R3b contract requires control_cost_bps=(0.0, 46.0).")
+    if (requests_smoke or requests_full) and not config.write_artifacts:
+        raise ValueError("Daily R3b contract requires write_artifacts=True.")
+    if (requests_smoke or requests_full) and not config.stream_training_events:
+        raise ValueError("Daily R3b contract requires stream_training_events=True.")
     return {
         "stage": stage,
         "status": status,
         "authority": authority,
         "authoritative": authoritative,
         "is_smoke": is_smoke,
+        "is_full": requests_full,
     }
 
 

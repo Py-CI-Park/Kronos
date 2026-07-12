@@ -289,6 +289,67 @@ def test_daily_portfolio_sb3_g017_smoke_contract_rejects_frozen_tuple_drift(chan
         trainer._daily_run_contract(replace(config, **changes))
 
 
+def test_daily_portfolio_sb3_full_contract_exposes_bounded_200k_per_seed_path():
+    config = trainer.DailyPortfolioSb3TrainConfig(
+        prediction_run_dir="approved-adapter",
+        algorithm="ppo",
+        total_timesteps=200_000,
+        seed=17,
+        primary_cost_bps=23.0,
+        control_cost_bps=(0.0, 46.0),
+        write_artifacts=True,
+        run_stage="full",
+        run_status="completed",
+        run_authority="PREREG_REQUIRED_BEFORE_EXECUTION",
+        authoritative=True,
+        is_smoke=False,
+        stream_training_events=True,
+    )
+
+    contract = trainer._daily_run_contract(config)
+
+    assert contract == {
+        "stage": "full",
+        "status": "completed",
+        "authority": "PREREG_REQUIRED_BEFORE_EXECUTION",
+        "authoritative": True,
+        "is_smoke": False,
+        "is_full": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"total_timesteps": 199_999}, "total_timesteps>=200000"),
+        ({"primary_cost_bps": 22.0}, "primary_cost_bps=23.0"),
+        ({"control_cost_bps": (0.0, 45.0)}, r"control_cost_bps=\(0.0, 46.0\)"),
+        ({"write_artifacts": False}, "write_artifacts=True"),
+        ({"stream_training_events": False}, "stream_training_events=True"),
+        ({"is_smoke": True}, "stage='smoke'"),
+    ],
+)
+def test_daily_portfolio_sb3_full_contract_fails_closed_on_path_drift(changes, message):
+    config = trainer.DailyPortfolioSb3TrainConfig(
+        prediction_run_dir="approved-adapter",
+        algorithm="ppo",
+        total_timesteps=200_000,
+        seed=17,
+        primary_cost_bps=23.0,
+        control_cost_bps=(0.0, 46.0),
+        write_artifacts=True,
+        run_stage="full",
+        run_status="completed",
+        run_authority="PREREG_REQUIRED_BEFORE_EXECUTION",
+        authoritative=True,
+        is_smoke=False,
+        stream_training_events=True,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        trainer._daily_run_contract(replace(config, **changes))
+
+
 def test_real_training_callback_streams_rollouts_and_writes_validation_evidence(tmp_path, monkeypatch):
     class _BaseCallback:
         def __init__(self, verbose=0):

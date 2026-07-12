@@ -216,12 +216,12 @@
     const direction = Number(overall?.direction_accuracy ?? 0);
     const avgReturn = Number(overall?.avg_actual_return ?? 0);
     if (direction >= 0.5 && avgReturn >= 0) {
-      return { label: '실전 후보 검토 가능', tone: 'success', message: '방향 적중률이 50% 이상입니다. 그래도 비용 반영 rolling 검증을 함께 확인해야 합니다.' };
+      return { label: '연구 후보 · 추가 검증 필요', tone: 'warn', message: '방향 적중률이 50% 이상이지만 비용 반영 test OOS·rolling 게이트 전에는 승격하거나 실전 후보로 해석할 수 없습니다.' };
     }
     if (direction >= 0.4) {
-      return { label: '조건식 보완 필요', tone: 'warn', message: '방향성은 일부 있지만 50%를 넘지 못했거나 비용 검증이 부족합니다. 조건식과 horizon 비교가 필요합니다.' };
+      return { label: '연구 조건 보완 필요', tone: 'warn', message: '방향성은 일부 있지만 비용 검증이 부족합니다. 조건식과 horizon 비교 후 test OOS 게이트가 필요합니다.' };
     }
-    return { label: '실전 사용 보류', tone: 'danger', message: '현재 결과만으로 자동매매 신호로 사용하기 어렵습니다.' };
+    return { label: '연구 NO-GO', tone: 'danger', message: '현재 결과는 자동매매·실전·수익 준비 근거가 아니며 연구용 진단으로만 사용합니다.' };
   }
 
   const resultVerdict = $derived(verdict(diagnostics?.overall));
@@ -350,7 +350,7 @@
       <div>
         <div class="card-eyebrow">HORIZON COMPARISON · 30/60/120/300초 비교</div>
         <h2>어느 예측 시간이 가장 의미 있는가?</h2>
-        <p>동일 checkpoint로 각 horizon을 walk-forward 평가하고, 비용 25bp 기준 rolling gate까지 비교합니다.</p>
+        <p>동일 checkpoint로 각 horizon을 walk-forward 평가합니다. 이 STOM 1초봉 레거시 gate는 거래비용 15bp + 슬리피지 10bp = 총 25bp로 사전 고정되며, 일봉 연구의 primary 23bp 가정과는 별도입니다.</p>
       </div>
       <span class="pill {horizonComparison?.passes_any_gate ? 'success' : 'warn'}">
         {horizonComparison?.passes_any_gate ? '확장 가능' : '확장 보류'}
@@ -584,7 +584,7 @@
     padding: 8px 14px;
     cursor: pointer;
   }
-  .tabs button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .tabs button.active { background: var(--accent-strong); color: var(--on-accent); border-color: var(--accent-strong); }
   .workspace-grid { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 16px; }
   .file-list { border-right: 1px solid var(--border); padding-right: 14px; max-height: 980px; overflow: auto; }
   .file-row {

@@ -2,6 +2,8 @@ import json
 import hashlib
 import csv
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,120 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from webui.app import app as flask_app  # noqa: E402
+
+
+def test_daily_progress_coalesces_only_overlapping_builds(monkeypatch):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    calls = 0
+    call_started = threading.Event()
+    release_call = threading.Event()
+    caller_barrier = threading.Barrier(4)
+    results = []
+    errors = []
+
+    def fake_compute():
+        nonlocal calls
+        calls += 1
+        call_started.set()
+        assert release_call.wait(timeout=5)
+        return {"generation": calls}
+
+    def worker():
+        try:
+            caller_barrier.wait(timeout=5)
+            results.append(daily_dashboard.load_daily_progress())
+        except BaseException as exc:
+            errors.append(exc)
+
+    monkeypatch.setattr(daily_dashboard, "_compute_daily_progress", fake_compute)
+    monkeypatch.setattr(daily_dashboard, "_daily_progress_artifact_signature", lambda: None)
+    with daily_dashboard._PROGRESS_CONDITION:
+        daily_dashboard._PROGRESS_IN_FLIGHT = False
+        daily_dashboard._PROGRESS_GENERATION = 0
+        daily_dashboard._PROGRESS_RESULT = None
+
+    threads = [threading.Thread(target=worker) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    caller_barrier.wait(timeout=5)
+    assert call_started.wait(timeout=5)
+    time.sleep(0.05)
+    release_call.set()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert errors == []
+    assert calls == 1
+    assert results == [{"generation": 1}] * 3
+
+    assert daily_dashboard.load_daily_progress() == {"generation": 2}
+    assert calls == 2
+
+
+def test_daily_progress_cache_invalidates_on_any_source_stat_change(tmp_path, monkeypatch):
+    from webui import artifact_cache
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    primary = tmp_path / "db_summary.json"
+    secondary = tmp_path / "prediction_manifest.json"
+    primary.write_text("{}", encoding="utf-8")
+    secondary.write_text("{}", encoding="utf-8")
+    calls = 0
+
+    def signature():
+        entries = []
+        for path in (primary, secondary):
+            stat = path.stat()
+            entries.append((str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+        return primary, tuple(entries)
+
+    def fake_load():
+        nonlocal calls
+        calls += 1
+        return {"generation": calls}
+
+    artifact_cache.clear_cache()
+    monkeypatch.setattr(daily_dashboard, "_daily_progress_artifact_signature", signature)
+    monkeypatch.setattr(daily_dashboard, "_load_daily_progress_singleflight", fake_load)
+
+    assert daily_dashboard.load_daily_progress() == {"generation": 1}
+    assert daily_dashboard.load_daily_progress() == {"generation": 1}
+    assert calls == 1
+
+    secondary.write_text('{"changed": true}', encoding="utf-8")
+    assert daily_dashboard.load_daily_progress() == {"generation": 2}
+    assert calls == 2
+    artifact_cache.clear_cache()
+
+
+def test_daily_progress_cache_isolates_replaced_loaders(tmp_path, monkeypatch):
+    from webui import artifact_cache
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    primary = tmp_path / "db_summary.json"
+    primary.write_text("{}", encoding="utf-8")
+    stat = primary.stat()
+    signature = lambda: (
+        primary,
+        ((str(primary.resolve()), stat.st_mtime_ns, stat.st_size),),
+    )
+    calls = 0
+
+    def fake_load():
+        nonlocal calls
+        calls += 1
+        return {"generation": calls}
+
+    artifact_cache.clear_cache()
+    monkeypatch.setattr(daily_dashboard, "_daily_progress_artifact_signature", signature)
+    monkeypatch.setattr(daily_dashboard, "_load_daily_progress_singleflight", fake_load)
+
+    assert daily_dashboard.load_daily_progress() == {"generation": 1}
+    monkeypatch.setattr(daily_dashboard, "load_daily_db_summary", lambda **_: {})
+    assert daily_dashboard.load_daily_progress() == {"generation": 2}
+    assert calls == 2
+    artifact_cache.clear_cache()
 
 
 def test_daily_ohlcv_db_summary_api_is_read_only_and_bounded():
@@ -1466,8 +1582,12 @@ def test_daily_ohlcv_model_result_apis_expose_d3_d5_guardrails():
     registry = client.get('/api/daily-ohlcv/registry/latest?limit=2')
     assert registry.status_code == 200
     registry_payload = registry.get_json()
-    assert registry_payload['status'] == 'RESEARCH_ONLY_BLOCKED'
-    assert registry_payload['promotion_status'] == 'BLOCKED_RESEARCH_ONLY_NO_LIVE_BROKER_ORDER'
+    assert registry_payload['status'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
+    assert registry_payload['promotion_status'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
+    assert registry_payload['artifact_status'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
+    assert registry_payload['promotion_allowed'] is False
+    assert registry_payload['profitability_claim_allowed'] is False
+    assert registry_payload['go_summary_allowed'] is False
     assert registry_payload['model_build_allowed'] is False
     assert registry_payload['paper_forward_allowed'] is False
     assert registry_payload['live_broker_order_allowed'] is False
@@ -1475,20 +1595,15 @@ def test_daily_ohlcv_model_result_apis_expose_d3_d5_guardrails():
     assert len(registry_payload['config_hash']) == 64
     assert len(registry_payload['data_hash']) == 64
     assert len(registry_payload['code_hash']) == 64
-    assert registry_payload['candidate_registry']['candidates'][0]['promotion_status'] == 'BLOCKED_RESEARCH_ONLY_NO_LIVE_BROKER_ORDER'
+    assert registry_payload['candidate_registry']['candidates'][0]['promotion_status'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
     assert registry_payload['candidate_registry']['candidates'][0]['model_build_allowed'] is False
     assert registry_payload['candidate_registry']['candidates'][0]['paper_forward_allowed'] is False
     assert registry_payload['candidate_registry']['candidates'][0]['live_broker_order_allowed'] is False
     assert registry_payload['candidate_registry']['candidates'][0]['no_live_broker_order_readiness'] is True
     assert 'D5_WALK_FORWARD_NOT_PASS' in registry_payload['effective_gate_blockers']
-    assert registry_payload['samples']['drawdown'][0]['source'] == 'research_policy_nav_not_live_account'
+    assert 'REGISTRY_EVIDENCE_PAPER_SELECTED_HASH_MISSING' in registry_payload['invariant_errors']
     assert registry_payload['read_only_dashboard_note'].startswith('GET-only D8/D9')
-    assert len(registry_payload['samples']['paper_selected']) <= 2
-    assert registry_payload['samples']['paper_selected'][0]['selection_status'] == 'BLOCKED_BY_D5_NO_GO'
-    assert len(registry_payload['samples']['realized_returns']) <= 2
-    assert len(registry_payload['samples']['drift']) <= 2
-    assert len(registry_payload['samples']['drawdown']) <= 2
-    assert len(registry_payload['samples']['decision_log']) <= 2
+    assert all(not rows for rows in registry_payload['samples'].values())
 
     chart = client.get('/api/daily-ohlcv/charts/walk-forward').get_json()
     prediction_chart = client.get('/api/daily-ohlcv/charts/prediction').get_json()
@@ -2516,6 +2631,105 @@ def _write_registry_nonempty_evidence(run_dir: Path) -> None:
     )
 
 
+def _seal_registry_test_manifest(run_dir: Path) -> None:
+    manifest_path = run_dir / "registry_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    artifacts = {
+        "candidate_registry": "candidate_registry.json",
+        "paper_selected": "paper_selected.csv",
+        "realized_returns": "realized_returns.csv",
+        "drift": "drift.csv",
+        "drawdown": "drawdown.csv",
+        "decision_log": "decision_log.jsonl",
+    }
+    manifest["artifact_hashes"] = {
+        key: hashlib.sha256((run_dir / filename).read_bytes()).hexdigest()
+        for key, filename in artifacts.items()
+    }
+    manifest["row_counts"] = {
+        "candidate_registry_rows": 1,
+        "paper_selected_rows": 1,
+        "realized_return_rows": 1,
+        "drift_rows": 1,
+        "drawdown_rows": 1,
+        "decision_log_rows": 1,
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_daily_registry_api_accepts_only_hash_and_row_count_bound_evidence(tmp_path, monkeypatch):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    fake_hash = "9" * 64
+    root = tmp_path / "registry"
+    run_dir = root / "signed_registry"
+    run_dir.mkdir(parents=True)
+    _write_registry_safe_manifest_and_candidate(run_dir, fake_hash)
+    _write_registry_nonempty_evidence(run_dir)
+    _seal_registry_test_manifest(run_dir)
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_DAILY_REGISTRY_ROOT", root)
+
+    client = flask_app.test_client()
+    payload = client.get("/api/daily-ohlcv/registry/latest?run=signed_registry").get_json()
+
+    assert payload["status"] == "RESEARCH_ONLY_BLOCKED"
+    assert payload["artifact_status"] == "LOADED_GENERATED_ARTIFACT"
+    assert payload["invariant_errors"] == []
+    assert payload["samples"]["drawdown"][0]["source"] == "research_policy_nav_not_live_account"
+    _assert_close_slot_locks_false(payload)
+
+    (run_dir / "drawdown.csv").write_text(
+        (run_dir / "drawdown.csv").read_text(encoding="utf-8").replace("research_policy_nav_not_live_account", "tampered"),
+        encoding="utf-8",
+    )
+    tampered = client.get("/api/daily-ohlcv/registry/latest?run=signed_registry").get_json()
+
+    assert tampered["status"] == "BLOCKED_UNSAFE_REGISTRY_ARTIFACT"
+    assert tampered["artifact_status"] == "BLOCKED_UNSAFE_REGISTRY_ARTIFACT"
+    assert "REGISTRY_EVIDENCE_DRAWDOWN_HASH_MISMATCH" in tampered["invariant_errors"]
+    assert all(not rows for rows in tampered["samples"].values())
+    _assert_close_slot_locks_false(tampered)
+
+
+@pytest.mark.parametrize(
+    ("row_count_key", "expected_error"),
+    [
+        ("drawdown_rows", "REGISTRY_EVIDENCE_DRAWDOWN_ROW_COUNT_MISMATCH"),
+        ("candidate_registry_rows", "REGISTRY_EVIDENCE_CANDIDATE_REGISTRY_ROW_COUNT_MISMATCH"),
+        ("decision_log_rows", "REGISTRY_EVIDENCE_DECISION_LOG_ROW_COUNT_MISMATCH"),
+    ],
+)
+def test_daily_registry_api_fails_closed_on_exact_row_count_mismatch(
+    tmp_path,
+    monkeypatch,
+    row_count_key,
+    expected_error,
+):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    fake_hash = "8" * 64
+    root = tmp_path / "registry"
+    run_dir = root / "row_count_mismatch_registry"
+    run_dir.mkdir(parents=True)
+    _write_registry_safe_manifest_and_candidate(run_dir, fake_hash)
+    _write_registry_nonempty_evidence(run_dir)
+    _seal_registry_test_manifest(run_dir)
+    manifest_path = run_dir / "registry_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["row_counts"][row_count_key] = 2
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_DAILY_REGISTRY_ROOT", root)
+
+    payload = flask_app.test_client().get(
+        "/api/daily-ohlcv/registry/latest?run=row_count_mismatch_registry"
+    ).get_json()
+
+    assert payload["status"] == "BLOCKED_UNSAFE_REGISTRY_ARTIFACT"
+    assert expected_error in payload["invariant_errors"]
+    assert all(not rows for rows in payload["samples"].values())
+    _assert_close_slot_locks_false(payload)
+
+
 def test_daily_registry_api_blocks_unsafe_generated_artifact(tmp_path, monkeypatch):
     import webui.daily_ohlcv_dashboard as daily_dashboard
 
@@ -3099,6 +3313,17 @@ def test_daily_close_slot_dashboard_endpoints_expose_read_only_gate_payload(tmp_
     assert selection["cost_scenarios"]["base_23bp"]["total_bp"] == 23.0
     assert selection["false_locks"]["live_broker_order_allowed"] is False
     assert "NO_LIVE_BROKER_ORDER_ACCOUNT_SURFACE" in selection["no_claim_labels"]
+    assert selection["policy_score_sample"]
+    assert all(row["policy"] == "linear_score_and_pick_train_only" for row in selection["policy_score_sample"])
+    comparable_selection_latest = dict(selection["latest_selection"])
+    comparable_latest = dict(latest["latest_selection"])
+    comparable_selection_latest.pop("artifact_age_seconds")
+    comparable_latest.pop("artifact_age_seconds")
+    assert comparable_selection_latest == comparable_latest
+    assert selection["latest_selection"]["artifact_age_seconds"] >= latest["latest_selection"]["artifact_age_seconds"]
+    assert latest["latest_selection"]["split"] == "test"
+    assert latest["latest_selection"]["cost_scenario_id"] == "base_23bp"
+    assert latest["latest_selection"]["label"] == "primary_oos_test_result"
     selection_alias = client.get("/api/daily-ohlcv/charts/close-slot-selection?run=gate_for_dashboard&limit=5").get_json()
     assert selection_alias["surface"] == "daily_close_slot_selection"
     _assert_close_slot_locks_false(selection_alias)
@@ -3139,6 +3364,32 @@ def test_daily_close_slot_csv_facts_are_bound_to_manifest_sha(tmp_path, monkeypa
     assert different_sha_facts.size == facts.size
     assert gate_module._csv_fact({"policy_scores": facts}, "policy_scores", policy_path, expected_sha) is facts
     assert gate_module._csv_fact({"policy_scores": facts}, "policy_scores", policy_path, "f" * 64) is None
+
+
+def test_close_slot_csv_facts_retain_bounded_samples_per_policy(tmp_path):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    policy_path = tmp_path / "policy_scores.csv"
+    policy_path.write_text(
+        "date,split,policy,code\n"
+        + "".join(f"2026-01-{day:02d},test,no_trade_control,000001\n" for day in range(1, 8))
+        + "2026-01-08,test,linear_score_and_pick_train_only,000002\n"
+        + "2026-01-09,test,linear_score_and_pick_train_only,000003\n",
+        encoding="utf-8",
+    )
+
+    facts = daily_dashboard._close_slot_analyze_csv_facts(
+        policy_path,
+        sample_limit=2,
+        retain_all_rows=False,
+    )
+    samples_by_policy = {
+        policy: daily_dashboard._close_slot_rows_from_tuples(rows)
+        for policy, rows in facts.sample_rows_by_policy
+    }
+
+    assert [dict(row)["policy"] for row in facts.sample_rows] == ["no_trade_control", "no_trade_control"]
+    assert [row["code"] for row in samples_by_policy["linear_score_and_pick_train_only"]] == ["000002", "000003"]
 
 
 @pytest.mark.parametrize("malformed_hash", [[], {"nested": "value"}])
@@ -3512,8 +3763,8 @@ def test_daily_ohlcv_progress_and_model_surfaces_are_locked():
     assert statuses['D5'] == 'NO-GO'
     assert statuses['D6'] == 'PASS'
     assert statuses['D7'] == 'WATCH'
-    assert statuses['D8'] == 'RESEARCH_ONLY_BLOCKED'
-    assert statuses['D9'] == 'BLOCKED_RESEARCH_ONLY_NO_LIVE_BROKER_ORDER'
+    assert statuses['D8'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
+    assert statuses['D9'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
     assert 'no live/broker/orders' in progress['guardrail']
     assert len(progress['page_usage_guide']) == 10
     assert progress['stages'][6]['usage_guide']['stage'] == 'D6'

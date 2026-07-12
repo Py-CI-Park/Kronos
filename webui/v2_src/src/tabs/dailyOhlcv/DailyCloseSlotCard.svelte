@@ -196,7 +196,7 @@
     </div>
     <div class="evidence-box">
       <div class="text-eyebrow">research equity + drawdown · 누적 순손익</div>
-      <EquityDrawdownChart {equity} />
+      <EquityDrawdownChart {equity} autoLoad={false} />
     </div>
   </div>
 

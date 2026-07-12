@@ -113,7 +113,7 @@
       <div class="desc">데스크탑(≥900px)에서 사이드바를 축소 상태로 시작</div>
     </div>
     <label class="switch">
-      <input type="checkbox" checked={collapsed} onchange={(e) => sidebarCollapsed.set((e.currentTarget as HTMLInputElement).checked)} />
+      <input type="checkbox" aria-label="데스크탑 사이드바를 축소 상태로 시작" checked={collapsed} onchange={(e) => sidebarCollapsed.set((e.currentTarget as HTMLInputElement).checked)} />
       <span class="switch-track"><span class="switch-thumb"></span></span>
     </label>
   </div>
@@ -275,6 +275,10 @@
     cursor: pointer;
   }
   .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch input:focus-visible + .switch-track {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 3px;
+  }
   .switch-track {
     width: 40px;
     height: 22px;

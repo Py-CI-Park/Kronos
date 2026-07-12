@@ -222,6 +222,7 @@
     grid-template-columns: 260px minmax(0, 1fr);
     gap: 16px;
     align-items: start;
+    min-width: 0;
   }
   @media (max-width: 900px) {
     .docs-layout { grid-template-columns: 1fr; }
@@ -236,6 +237,7 @@
     padding: 12px 8px;
     max-height: calc(100vh - 120px);
     overflow-y: auto;
+    min-width: 0;
   }
   @media (max-width: 900px) {
     .docs-nav { position: static; max-height: none; }
@@ -289,6 +291,7 @@
 
   .docs-content {
     padding: 24px 32px 48px;
+    min-width: 0;
   }
   @media (max-width: 640px) {
     .docs-content { padding: 16px 16px 32px; }
@@ -309,6 +312,9 @@
     color: var(--fg);
     line-height: 1.7;
     font-size: 14.5px;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
   }
   .markdown-body :global(h1) {
     font: 700 30px/1.25 var(--font-display);
@@ -403,6 +409,8 @@
     padding: 8px 12px;
     border-bottom: 1px solid var(--border-faint);
     text-align: left;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .markdown-body :global(th) {
     background: var(--surface-sunken);

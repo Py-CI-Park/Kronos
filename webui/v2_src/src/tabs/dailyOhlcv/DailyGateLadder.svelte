@@ -81,10 +81,12 @@
   </div>
 
   <div class="gate-rail" data-daily-ohlcv-d0-d9-cockpit role="group" aria-label="D0 to D9 gate status ladder">
+    <a class="scroll-region-focus" href="#daily-gate-D0">D0부터 키보드로 탐색</a>
     <ol class="gate-track">
       {#each ladder as gate, i (gate.id)}
         <li
           class="gate-node"
+          id={`daily-gate-${gate.id}`}
           data-tone={gate.tone}
           data-rl={gate.rl ? 'true' : undefined}
           style="--i:{i}"
@@ -132,6 +134,17 @@
     margin: 2px -4px 0;
     padding: 4px 4px 6px;
     scrollbar-width: thin;
+  }
+  .scroll-region-focus:focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 2px;
+  }
+  .scroll-region-focus {
+    display: inline-block;
+    margin: 0 0 6px;
+    color: var(--accent-strong);
+    font-size: 12px;
+    font-weight: 700;
   }
   .gate-track {
     display: flex;

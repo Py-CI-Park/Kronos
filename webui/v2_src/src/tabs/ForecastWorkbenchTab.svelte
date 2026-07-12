@@ -251,6 +251,7 @@
     </div>
     <select
       class="fw-select"
+      aria-label="예측 모델 선택"
       bind:value={selectedModel}
       disabled={Object.keys(availableModels).length === 0}
     >
@@ -268,7 +269,7 @@
       <button class="btn primary" disabled={!selectedModel || loadingModel} onclick={loadModelAction}>
         {loadingModel ? '로드 중…' : '모델 로드'}
       </button>
-      <select class="fw-select" bind:value={device} style="max-width:120px">
+      <select class="fw-select" bind:value={device} style="max-width:120px" aria-label="예측 실행 장치 선택">
         <option value="cpu">CPU</option>
         <option value="cuda">GPU (CUDA)</option>
       </select>
@@ -290,7 +291,7 @@
     {#if dataFiles.length === 0}
       <div class="text-caption">로드 가능한 데이터 파일이 없습니다</div>
     {:else}
-      <select class="fw-select" bind:value={selectedDataFile}>
+      <select class="fw-select" bind:value={selectedDataFile} aria-label="예측 입력 데이터 파일 선택">
         {#each dataFiles as f}
           {@const path = typeof f === 'string' ? f : (f.path ?? f.name ?? '')}
           {@const label = path.split(/[/\\]/).pop()}
@@ -456,7 +457,13 @@
     font: 500 13px/1.3 var(--font-mono);
     cursor: pointer;
   }
-  .fw-select:focus { border-color: var(--accent); outline: none; }
+  .fw-select:focus { border-color: var(--accent); }
+  .fw-select:focus-visible,
+  .fw-input-num:focus-visible,
+  .param-row input[type="range"]:focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 2px;
+  }
   .fw-input-num {
     width: 100px;
     padding: 6px 10px;
@@ -502,5 +509,12 @@
     background: var(--accent);
     cursor: pointer;
     border: 2px solid var(--surface);
+  }
+  .btn.primary {
+    background: var(--accent-strong);
+  }
+  .btn.primary:hover {
+    background: var(--accent-strong);
+    box-shadow: var(--shadow-sm);
   }
 </style>

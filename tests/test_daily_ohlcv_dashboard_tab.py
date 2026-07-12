@@ -108,6 +108,45 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "live/model/paper/profit" in tab
 
 
+def test_daily_critical_cards_fail_closed_on_refresh_and_auxiliary_timeouts():
+    tab = (SRC / 'tabs' / 'DailyOhlcvTab.svelte').read_text(encoding='utf-8')
+    agent_screen = (SRC / 'tabs' / 'dailyOhlcv' / 'CloseSlotAgentScreen.svelte').read_text(encoding='utf-8')
+
+    assert "if (result === 'TIMEOUT')" in tab
+    assert "progress = null;" in tab
+    assert "data-daily-progress-card-error" in tab
+    assert "primaryFailures" in tab
+    assert "close-slot primary request unavailable" in tab
+    assert "auxiliaryFailures" in tab
+    assert "close-slot auxiliary request unavailable" in tab
+    assert "data-daily-close-slot-card-error" in tab
+    assert "selection?.latest_selection ?? latest?.latest_selection ?? null" in agent_screen
+    assert "latest_selection 없음 · PRIMARY OOS 결과 미확인 (fail-closed)." in agent_screen
+    assert "latest?.artifact_selection_errors" in agent_screen
+    assert "gate?.artifact_selection_errors" in agent_screen
+    assert "selection?.artifact_selection_errors" in agent_screen
+
+
+def test_daily_secondary_cards_use_abortable_independent_state_and_retry():
+    tab = (SRC / 'tabs' / 'DailyOhlcvTab.svelte').read_text(encoding='utf-8')
+    api = (SRC / 'lib' / 'dailyOhlcvApi.ts').read_text(encoding='utf-8')
+    manager = (SRC / 'lib' / 'cardRequest.ts').read_text(encoding='utf-8')
+    manager_tests = (SRC / 'lib' / 'cardRequest.test.ts').read_text(encoding='utf-8')
+    latency_tests = (SRC / 'lib' / 'latencyGate.test.ts').read_text(encoding='utf-8')
+
+    assert "createCardRequestManager(CARD_TIMEOUT_MS)" in tab
+    assert "secondaryCardStates" in tab
+    assert "data-daily-card-error={endpoint}" in tab
+    assert "retrySecondaryCard(endpoint)" in tab
+    assert "AbortSignal" in api
+    assert "new AbortController()" in manager
+    assert "controllers.get(key)?.abort()" in manager
+    assert "independent cards publish independently when one request stalls" in manager_tests
+    assert "new request aborts and suppresses stale same-card response" in manager_tests
+    assert "timeout aborts only the stalled card" in manager_tests
+    assert "warm critical API breach fails rather than passing silently" in latency_tests
+    assert "cold critical API breach fails rather than passing silently" in latency_tests
+
 def test_daily_ohlcv_cards_expose_guardrail_markers():
     progress = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyProgressTimeline.svelte').read_text(encoding='utf-8')
     guide = (SRC / 'tabs' / 'DailyRlGuideTab.svelte').read_text(encoding='utf-8')

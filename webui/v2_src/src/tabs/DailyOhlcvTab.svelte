@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import {
     dailyOhlcvApi,
     type DailyArtifactsResponse,
@@ -36,6 +36,7 @@
   import ResearchStatusShell from './ResearchStatusShell.svelte';
   import Disclosure from '$lib/Disclosure.svelte';
   import { createRequestGate } from '$lib/requestGate';
+  import { createCardRequestManager, type CardRequestState } from '$lib/cardRequest';
 
   let progress = $state<DailyProgressResponse | null>(null);
   let dbSummary = $state<DailyDbSummaryResponse | null>(null);
@@ -68,7 +69,7 @@
   let selectedSymbol = $state<DailySymbolResponse | null>(null);
   let selectedSymbolChart = $state<DailyVisualChartResponse | null>(null);
   let selectedSymbolError = $state<string | null>(null);
-  let endpointErrors = $state<string[]>([]);
+  let endpointErrors = $state<SecondaryCardKey[]>([]);
   let loading = $state(false);
 
   // G009 Todo 9 — critical (always-visible, not behind a Disclosure) cards
@@ -85,6 +86,31 @@
   const progressGate = createRequestGate();
   const closeSlotGateReq = createRequestGate();
   const CARD_TIMEOUT_MS = 20000;
+  type SecondaryCardKey =
+    | 'db-summary' | 'universe' | 'artifacts' | 'dataset' | 'dataset-chart'
+    | 'prediction' | 'portfolio' | 'walk-forward' | 'registry'
+    | 'prediction-chart' | 'portfolio-chart' | 'walk-forward-chart'
+    | 'decision-cockpit' | 'scenarios' | 'scenario-runs' | 'flow-chart'
+    | 'glossary-chart' | 'research-diagnostics' | 'equity-overlay'
+    | 'walk-forward-heatmap' | 'run-scatter' | 'universe-breakdown';
+  let secondaryCardStates = $state<Partial<Record<SecondaryCardKey, CardRequestState>>>({});
+  const secondaryCardRequests = createCardRequestManager(CARD_TIMEOUT_MS);
+
+  function publishSecondaryState(key: string, state: CardRequestState): void {
+    const cardKey = key as SecondaryCardKey;
+    secondaryCardStates = { ...secondaryCardStates, [cardKey]: state };
+    endpointErrors = (Object.entries(secondaryCardStates) as [SecondaryCardKey, CardRequestState][])
+      .filter(([, cardState]) => cardState.error !== null)
+      .map(([failedKey]) => failedKey);
+  }
+
+  function loadSecondaryCard<T>(
+    key: SecondaryCardKey,
+    request: (signal: AbortSignal) => Promise<T | null>,
+    apply: (payload: T) => void,
+  ): Promise<void> {
+    return secondaryCardRequests.load(key, request, apply, publishSecondaryState);
+  }
 
   function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | 'TIMEOUT'> {
     return new Promise((resolve) => {
@@ -131,6 +157,7 @@
     const result = await withTimeout(dailyOhlcvApi.progress(), CARD_TIMEOUT_MS);
     if (!progressGate.isCurrent(token)) return;
     if (result === 'TIMEOUT') {
+      progress = null;
       progressCardState = { loading: false, error: 'progress card request timed out' };
       return;
     }
@@ -145,116 +172,84 @@
   async function loadCloseSlotCard(): Promise<void> {
     const token = closeSlotGateReq.next();
     closeSlotCardState = { loading: true, error: null };
-    const [latestR, gateR, artifactsR, equityR, selectionR] = await Promise.all([
+
+    // Resolve the two always-visible decision payloads first. The larger
+    // artifact/chart payloads must not delay the critical card.
+    const [latestR, gateR] = await Promise.all([
       withTimeout(dailyOhlcvApi.closeSlotLatest(), CARD_TIMEOUT_MS),
       withTimeout(dailyOhlcvApi.closeSlotGate(), CARD_TIMEOUT_MS),
+    ]);
+    if (!closeSlotGateReq.isCurrent(token)) return;
+    closeSlotLatest = latestR === 'TIMEOUT' ? null : latestR;
+    closeSlotGate = gateR === 'TIMEOUT' ? null : gateR;
+    const primaryFailures = [
+      latestR === 'TIMEOUT' || latestR === null ? 'latest' : null,
+      gateR === 'TIMEOUT' || gateR === null ? 'gate' : null,
+    ].filter((name): name is string => name !== null);
+    const primaryError = primaryFailures.length
+      ? `close-slot primary request unavailable: ${primaryFailures.join(', ')}`
+      : null;
+    closeSlotCardState = {
+      loading: false,
+      error: primaryError,
+    };
+
+    void Promise.all([
       withTimeout(dailyOhlcvApi.closeSlotArtifacts(), CARD_TIMEOUT_MS),
       withTimeout(dailyOhlcvApi.closeSlotEquity(), CARD_TIMEOUT_MS),
       withTimeout(dailyOhlcvApi.closeSlotSelection(), CARD_TIMEOUT_MS),
-    ]);
-    if (!closeSlotGateReq.isCurrent(token)) return;
-    const anyTimedOut = [latestR, gateR, artifactsR, equityR, selectionR].some((r) => r === 'TIMEOUT');
-    closeSlotLatest = latestR === 'TIMEOUT' ? null : latestR;
-    closeSlotGate = gateR === 'TIMEOUT' ? null : gateR;
-    closeSlotArtifacts = artifactsR === 'TIMEOUT' ? null : artifactsR;
-    closeSlotEquity = equityR === 'TIMEOUT' ? null : equityR;
-    closeSlotSelection = selectionR === 'TIMEOUT' ? null : selectionR;
-    const primaryUnavailable = closeSlotLatest === null && closeSlotGate === null;
-    closeSlotCardState = {
-      loading: false,
-      error: anyTimedOut
-        ? 'close-slot card request timed out'
-        : primaryUnavailable
-          ? 'close-slot card data unavailable'
-          : null,
-    };
+    ]).then(([artifactsR, equityR, selectionR]) => {
+      if (!closeSlotGateReq.isCurrent(token)) return;
+      closeSlotArtifacts = artifactsR === 'TIMEOUT' ? null : artifactsR;
+      closeSlotEquity = equityR === 'TIMEOUT' ? null : equityR;
+      closeSlotSelection = selectionR === 'TIMEOUT' ? null : selectionR;
+      const auxiliaryFailures = [
+        artifactsR === 'TIMEOUT' || artifactsR === null ? 'artifacts' : null,
+        equityR === 'TIMEOUT' || equityR === null ? 'equity' : null,
+        selectionR === 'TIMEOUT' || selectionR === null ? 'selection' : null,
+      ].filter((name): name is string => name !== null);
+      closeSlotCardState = {
+        loading: false,
+        error: primaryError ?? (
+          auxiliaryFailures.length
+            ? `close-slot auxiliary request unavailable: ${auxiliaryFailures.join(', ')}`
+            : null
+        ),
+      };
+    });
   }
 
-  // G009 Todo 9 — the remaining D0-D9/artifacts/symbol evidence cards all
-  // live behind collapsed <Disclosure> sections (not immediately visible),
-  // so they stay batched together for simplicity, but that batch itself now
-  // runs independently of (never blocked by, never blocking) the two
-  // critical cards above, and every fetch is timeout-bounded so a hang here
-  // cannot stall the whole page either.
+  const secondaryLoaders: Record<SecondaryCardKey, () => Promise<void>> = {
+    'db-summary': () => loadSecondaryCard('db-summary', (signal) => dailyOhlcvApi.dbSummary(signal), (value) => { dbSummary = value; }),
+    'universe': () => loadSecondaryCard('universe', (signal) => dailyOhlcvApi.universePreview(signal), (value) => { universe = value; }),
+    'artifacts': () => loadSecondaryCard('artifacts', (signal) => dailyOhlcvApi.artifacts(signal), (value) => { artifacts = value; }),
+    'dataset': () => loadSecondaryCard('dataset', (signal) => dailyOhlcvApi.datasetLatest(signal), (value) => { dataset = value; }),
+    'dataset-chart': () => loadSecondaryCard('dataset-chart', (signal) => dailyOhlcvApi.datasetChart(signal), (value) => { datasetChart = value; }),
+    'prediction': () => loadSecondaryCard('prediction', (signal) => dailyOhlcvApi.predictionLatest(signal), (value) => { prediction = value; }),
+    'portfolio': () => loadSecondaryCard('portfolio', (signal) => dailyOhlcvApi.portfolioLatest(signal), (value) => { portfolio = value; }),
+    'walk-forward': () => loadSecondaryCard('walk-forward', (signal) => dailyOhlcvApi.walkForwardLatest(signal), (value) => { walkForward = value; }),
+    'registry': () => loadSecondaryCard('registry', (signal) => dailyOhlcvApi.registryLatest(signal), (value) => { registry = value; }),
+    'prediction-chart': () => loadSecondaryCard('prediction-chart', (signal) => dailyOhlcvApi.predictionChart(signal), (value) => { predictionChart = value; }),
+    'portfolio-chart': () => loadSecondaryCard('portfolio-chart', (signal) => dailyOhlcvApi.portfolioChart(signal), (value) => { portfolioChart = value; }),
+    'walk-forward-chart': () => loadSecondaryCard('walk-forward-chart', (signal) => dailyOhlcvApi.walkForwardChart(signal), (value) => { walkForwardChart = value; }),
+    'decision-cockpit': () => loadSecondaryCard('decision-cockpit', (signal) => dailyOhlcvApi.decisionCockpitChart(signal), (value) => { decisionCockpit = value; }),
+    'scenarios': () => loadSecondaryCard('scenarios', (signal) => dailyOhlcvApi.scenarios(signal), (value) => { scenarioLab = value; }),
+    'scenario-runs': () => loadSecondaryCard('scenario-runs', (signal) => dailyOhlcvApi.scenarioRuns(signal), (value) => { scenarioRuns = value; }),
+    'flow-chart': () => loadSecondaryCard('flow-chart', (signal) => dailyOhlcvApi.flowChart(signal), (value) => { flowChart = value; }),
+    'glossary-chart': () => loadSecondaryCard('glossary-chart', (signal) => dailyOhlcvApi.glossaryChart(signal), (value) => { glossaryChart = value; }),
+    'research-diagnostics': () => loadSecondaryCard('research-diagnostics', (signal) => dailyOhlcvApi.researchDiagnosticsChart(signal), (value) => { researchDiagnosticsChart = value; }),
+    'equity-overlay': () => loadSecondaryCard('equity-overlay', (signal) => dailyOhlcvApi.equityOverlayChart(signal), (value) => { equityOverlayChart = value; }),
+    'walk-forward-heatmap': () => loadSecondaryCard('walk-forward-heatmap', (signal) => dailyOhlcvApi.walkForwardHeatmapChart(signal), (value) => { walkForwardHeatmapChart = value; }),
+    'run-scatter': () => loadSecondaryCard('run-scatter', (signal) => dailyOhlcvApi.runScatterChart(signal), (value) => { runScatterChart = value; }),
+    'universe-breakdown': () => loadSecondaryCard('universe-breakdown', (signal) => dailyOhlcvApi.universeBreakdownChart(signal), (value) => { universeBreakdownChart = value; }),
+  };
+
   async function loadSecondaryCards(): Promise<void> {
-    const [
-      d, u, a, ds, dc, pred, port, wf, reg, predChart, portChart, wfChart,
-      decision, scenarios, scenarioRunsResult, flow, glossary, diagnostics,
-      equity, heatmap, scatter, universeBreakdown,
-    ] = await Promise.all([
-      withTimeout(dailyOhlcvApi.dbSummary(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.universePreview(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.artifacts(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.datasetLatest(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.datasetChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.predictionLatest(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.portfolioLatest(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.walkForwardLatest(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.registryLatest(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.predictionChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.portfolioChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.walkForwardChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.decisionCockpitChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.scenarios(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.scenarioRuns(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.flowChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.glossaryChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.researchDiagnosticsChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.equityOverlayChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.walkForwardHeatmapChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.runScatterChart(), CARD_TIMEOUT_MS),
-      withTimeout(dailyOhlcvApi.universeBreakdownChart(), CARD_TIMEOUT_MS),
-    ]);
-    const resolved = [
-      ['db-summary', d],
-      ['universe', u],
-      ['artifacts', a],
-      ['dataset', ds],
-      ['dataset-chart', dc],
-      ['prediction', pred],
-      ['portfolio', port],
-      ['walk-forward', wf],
-      ['registry', reg],
-      ['prediction-chart', predChart],
-      ['portfolio-chart', portChart],
-      ['walk-forward-chart', wfChart],
-      ['decision-cockpit', decision],
-      ['scenarios', scenarios],
-      ['scenario-runs', scenarioRunsResult],
-      ['flow-chart', flow],
-      ['glossary-chart', glossary],
-      ['research-diagnostics', diagnostics],
-      ['equity-overlay', equity],
-      ['walk-forward-heatmap', heatmap],
-      ['run-scatter', scatter],
-      ['universe-breakdown', universeBreakdown],
-    ] as const;
-    // A timeout is a failure (ERROR), not silently treated as an empty/
-    // NOT_STARTED dataset — it surfaces in the same API_UNAVAILABLE notice
-    // as a hard fetch failure.
-    endpointErrors = resolved.filter(([, payload]) => payload === null || payload === 'TIMEOUT').map(([name]) => name);
-    dbSummary = d === 'TIMEOUT' ? null : d;
-    universe = u === 'TIMEOUT' ? null : u;
-    artifacts = a === 'TIMEOUT' ? null : a;
-    dataset = ds === 'TIMEOUT' ? null : ds;
-    datasetChart = dc === 'TIMEOUT' ? null : dc;
-    prediction = pred === 'TIMEOUT' ? null : pred;
-    portfolio = port === 'TIMEOUT' ? null : port;
-    walkForward = wf === 'TIMEOUT' ? null : wf;
-    registry = reg === 'TIMEOUT' ? null : reg;
-    predictionChart = predChart === 'TIMEOUT' ? null : predChart;
-    portfolioChart = portChart === 'TIMEOUT' ? null : portChart;
-    walkForwardChart = wfChart === 'TIMEOUT' ? null : wfChart;
-    decisionCockpit = decision === 'TIMEOUT' ? null : decision;
-    scenarioLab = scenarios === 'TIMEOUT' ? null : scenarios;
-    scenarioRuns = scenarioRunsResult === 'TIMEOUT' ? null : scenarioRunsResult;
-    flowChart = flow === 'TIMEOUT' ? null : flow;
-    glossaryChart = glossary === 'TIMEOUT' ? null : glossary;
-    researchDiagnosticsChart = diagnostics === 'TIMEOUT' ? null : diagnostics;
-    equityOverlayChart = equity === 'TIMEOUT' ? null : equity;
-    walkForwardHeatmapChart = heatmap === 'TIMEOUT' ? null : heatmap;
-    runScatterChart = scatter === 'TIMEOUT' ? null : scatter;
-    universeBreakdownChart = universeBreakdown === 'TIMEOUT' ? null : universeBreakdown;
+    await Promise.all(Object.values(secondaryLoaders).map((loadCard) => loadCard()));
+  }
+
+  function retrySecondaryCard(key: SecondaryCardKey): void {
+    void secondaryLoaders[key]();
   }
 
   function retryProgressCard(): void {
@@ -265,14 +260,28 @@
     void loadCloseSlotCard();
   }
 
-  // The three card groups are fired together but never awaited on each
-  // other — each one assigns its own state as soon as IT resolves, so a
-  // slow/timed-out card in one group never delays another group's render.
-  // `loading` here only tracks the outer refresh-button spinner.
+  // Give the first-card progress request a short priority window before the
+  // close-slot/secondary artifact scans start. The groups still own independent
+  // state and a slow progress request cannot block the others beyond 3s.
   async function loadDailyOhlcv(): Promise<void> {
     loading = true;
     try {
-      await Promise.all([loadProgressCard(), loadCloseSlotCard(), loadSecondaryCards()]);
+      const progressRequest = loadProgressCard();
+      await Promise.race([
+        progressRequest,
+        new Promise<void>((resolve) => window.setTimeout(resolve, 3000)),
+      ]);
+      if (!progressCardState.loading) {
+        await tick();
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      }
+      const closeSlotRequest = loadCloseSlotCard();
+      await Promise.race([
+        Promise.all([progressRequest, closeSlotRequest]),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 7000)),
+      ]);
+      await loadSecondaryCards();
+      await Promise.all([progressRequest, closeSlotRequest]);
     } finally {
       loading = false;
     }
@@ -313,7 +322,15 @@
   </div>
   {#if endpointErrors.length > 0}
     <div class="notice danger" data-daily-api-error style="margin-top:12px">
-      API_UNAVAILABLE: {endpointErrors.join(', ')} · 데이터 없음(NOT_STARTED)과 API 실패를 분리합니다. decision locks remain false; no model/profit/live readiness is inferred.
+      <strong>API_UNAVAILABLE</strong> · 데이터 없음(NOT_STARTED)과 API 실패를 분리합니다. decision locks remain false; no model/profit/live readiness is inferred.
+      <div class="daily-error-list" style="margin-top:8px">
+        {#each endpointErrors as endpoint}
+          <div data-daily-card-error={endpoint}>
+            <span>{endpoint}: {secondaryCardStates[endpoint]?.error}</span>
+            <button type="button" class="btn" onclick={() => retrySecondaryCard(endpoint)}>RETRY</button>
+          </div>
+        {/each}
+      </div>
     </div>
   {/if}
 </section>
@@ -434,7 +451,8 @@
     <span class="pill"><span class="dot"></span>GET-only</span>
   </div>
   <div class="table-wrap" style="margin-top:12px; max-height:300px; overflow:auto">
-    <table>
+    <a class="sr-only" href="#daily-artifact-table">Daily OHLCV 생성 증거 파일 표로 이동</a>
+    <table id="daily-artifact-table">
       <thead><tr><th>kind</th><th>run</th><th>file</th><th>bytes</th></tr></thead>
       <tbody>
         {#each artifacts?.artifacts ?? [] as row}
@@ -455,6 +473,8 @@
   .daily-review-grid div { border:1px solid var(--border-faint); border-radius:14px; padding:12px; background:var(--surface-sunken); }
   .daily-review-grid span { display:block; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:0.04em; }
   .daily-review-grid b { display:block; margin-top:6px; font-size:13px; }
+  .daily-error-list { display:grid; gap:6px; }
+  .daily-error-list > div { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
   table { width:100%; border-collapse:collapse; font-size:12px; }
   th, td { border-bottom:1px solid var(--border-faint); padding:7px; text-align:left; vertical-align:top; }
   .mono { font-family: var(--font-mono); font-size:11px; color:var(--muted); }

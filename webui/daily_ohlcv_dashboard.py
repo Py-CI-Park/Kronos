@@ -6,11 +6,14 @@ import csv
 import json
 import hashlib
 import math
+import threading
 import re
 from pathlib import Path
 from typing import NamedTuple
 from datetime import datetime, timezone
 from typing import Any
+from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 
 from webui import artifact_cache
 from stom_rl.daily_ohlcv_db import (
@@ -94,6 +97,21 @@ CLOSE_SLOT_DASHBOARD_FALSE_FLAGS = (
     "live_broker_order_allowed",
     "profitability_claim_allowed",
     "go_summary_allowed",
+)
+
+_PROGRESS_CONDITION = threading.Condition()
+_PROGRESS_IN_FLIGHT = False
+_PROGRESS_GENERATION = 0
+_PROGRESS_RESULT: dict[str, Any] | None = None
+
+_PROGRESS_ARTIFACT_SOURCES = (
+    (DB_SUMMARY_ROOT, "db_summary.json"),
+    (DEFAULT_UNIVERSE_ROOT, "universe.json"),
+    (DEFAULT_DATASET_ROOT, "dataset_manifest.json"),
+    (DEFAULT_PREDICTION_ROOT, "prediction_manifest.json"),
+    (DEFAULT_PORTFOLIO_ROOT, "rl_manifest.json"),
+    (DEFAULT_WALK_FORWARD_ROOT, "walk_forward_manifest.json"),
+    (DEFAULT_DAILY_REGISTRY_ROOT, "registry_manifest.json"),
 )
 CLOSE_SLOT_DASHBOARD_READY_LOCK = "CLOSE_SLOT_READY_STATUS_BLOCKED_FOR_RESEARCH_ONLY_D0_D1"
 CLOSE_SLOT_COST_COMPONENT_FIELDS = (
@@ -401,6 +419,7 @@ class CloseSlotCsvFacts(NamedTuple):
     row_count: int | None
     fieldnames: tuple[str, ...]
     sample_rows: tuple[tuple[tuple[str, str], ...], ...]
+    sample_rows_by_policy: tuple[tuple[str, tuple[tuple[tuple[str, str], ...], ...]], ...]
     all_rows: tuple[tuple[tuple[str, str], ...], ...] | None
     split_date_counts: tuple[tuple[str, int], ...]
     date_split_map: tuple[tuple[str, str], ...]
@@ -441,9 +460,10 @@ def _close_slot_analyze_csv_facts(
 ) -> CloseSlotCsvFacts:
     identity = _close_slot_csv_facts_identity(path)
     if identity is None:
-        return CloseSlotCsvFacts(str(path), 0, 0, expected_sha256, None, (), (), () if retain_all_rows else None, (), (), (), (), (), "MISSING")
+        return CloseSlotCsvFacts(str(path), 0, 0, expected_sha256, None, (), (), (), () if retain_all_rows else None, (), (), (), (), (), "MISSING")
     resolved, mtime_ns, size = identity
     sample_rows: list[tuple[tuple[str, str], ...]] = []
+    sample_rows_by_policy: dict[str, list[tuple[tuple[str, str], ...]]] = {}
     all_rows: list[tuple[tuple[str, str], ...]] | None = [] if retain_all_rows else None
     split_dates: dict[str, set[str]] = {}
     date_split: dict[str, str] = {}
@@ -469,14 +489,19 @@ def _close_slot_analyze_csv_facts(
                     date_split[date] = split
                 for column in audit_columns:
                     distinct.setdefault(column, set()).add(str(row.get(column, "")))
-                if len(sample_rows) < sample_limit or all_rows is not None:
+                policy = str(row.get("policy") or "")
+                if len(sample_rows) < sample_limit or all_rows is not None or policy:
                     row_tuple = _close_slot_row_tuple(row)
                     if len(sample_rows) < sample_limit:
                         sample_rows.append(row_tuple)
+                    if policy:
+                        policy_rows = sample_rows_by_policy.setdefault(policy, [])
+                        if len(policy_rows) < sample_limit:
+                            policy_rows.append(row_tuple)
                     if all_rows is not None:
                         all_rows.append(row_tuple)
     except (OSError, UnicodeDecodeError, csv.Error):
-        return CloseSlotCsvFacts(resolved, mtime_ns, size, expected_sha256, None, (), (), () if retain_all_rows else None, (), (), (), (), (), "UNREADABLE_CSV")
+        return CloseSlotCsvFacts(resolved, mtime_ns, size, expected_sha256, None, (), (), (), () if retain_all_rows else None, (), (), (), (), (), "UNREADABLE_CSV")
     return CloseSlotCsvFacts(
         resolved,
         mtime_ns,
@@ -485,6 +510,7 @@ def _close_slot_analyze_csv_facts(
         row_count,
         fieldnames,
         tuple(sample_rows),
+        tuple((policy, tuple(rows)) for policy, rows in sorted(sample_rows_by_policy.items())),
         tuple(all_rows) if all_rows is not None else None,
         tuple(sorted((split, len(dates)) for split, dates in split_dates.items())),
         tuple(sorted(date_split.items())),
@@ -512,7 +538,7 @@ def _close_slot_cached_csv_facts(
             audit_columns=audit_columns,
             expected_sha256=expected_sha256,
         ),
-        extra=("close_slot_csv_facts_v2", int(sample_limit), bool(retain_all_rows), tuple(audit_columns), expected_sha256),
+        extra=("close_slot_csv_facts_v3", int(sample_limit), bool(retain_all_rows), tuple(audit_columns), expected_sha256),
     )
 
 
@@ -1987,6 +2013,7 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
     train_artifacts: dict[str, Path] = {}
     baseline_rows: list[dict[str, Any]] = []
     policy_score_rows: list[dict[str, Any]] = []
+    policy_score_rows_by_policy: dict[str, list[dict[str, Any]]] = {}
     date_ledgers: dict[str, Any] = {}
     split_date_counts: dict[str, int] = {}
     date_split_map: dict[str, str] = {}
@@ -2046,6 +2073,10 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
             if expected_policy_rows is None or observed_policy_rows is None or expected_policy_rows != observed_policy_rows:
                 errors.append("CLOSE_SLOT_POLICY_SCORE_ROW_COUNT_MISMATCH")
             policy_score_rows = _close_slot_rows_from_tuples(policy_facts.sample_rows)
+            policy_score_rows_by_policy = {
+                policy: _close_slot_rows_from_tuples(rows)
+                for policy, rows in policy_facts.sample_rows_by_policy
+            }
             split_date_counts = dict(policy_facts.split_date_counts)
             date_split_map = dict(policy_facts.date_split_map)
             errors.extend(
@@ -2333,6 +2364,7 @@ def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) 
         "dataset_lineage": dataset_lineage,
         "baseline_rows": baseline_rows,
         "policy_score_rows": policy_score_rows,
+        "policy_score_rows_by_policy": policy_score_rows_by_policy,
         "date_split_map": date_split_map,
         "date_ledgers": date_ledgers,
         "threshold_rows": threshold_rows,
@@ -2401,6 +2433,12 @@ def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: i
     train_manifest = context["train_manifest"]
     dataset_manifest = context["dataset_manifest"]
     current_d0_d1 = context["current_d0_d1"]
+    date_ledgers = context.get("date_ledgers") if isinstance(context.get("date_ledgers"), dict) else {}
+    selected_policy = POLICY_LINEAR_SCORE
+    if selected_policy not in date_ledgers:
+        linear_candidates = sorted(name for name in date_ledgers if "linear" in str(name).lower())
+        if linear_candidates:
+            selected_policy = linear_candidates[0]
     train_row_counts = _close_slot_manifest_mapping(train_manifest, "row_counts")
     payload = {
         "surface": "daily_close_slot",
@@ -2473,7 +2511,7 @@ def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: i
         "upstream_gate_blockers": gate_report.get("upstream_gate_blockers") or train_manifest.get("upstream_gate_blockers") or dataset_manifest.get("upstream_gate_blockers") or [],
         "chosen_is_no_trade_sentinel": (train_manifest.get("fit_summary") or {}).get("chosen_is_no_trade_sentinel"),
         "artifact_age_seconds": _close_slot_artifact_age_seconds(context["run_dir"]),
-        "data_recency": _close_slot_data_recency(context.get("date_ledgers") or {}),
+        "data_recency": _close_slot_data_recency(date_ledgers),
         "dataset_lineage": context.get("dataset_lineage") or {},
         "dataset_source_counts": dataset_manifest.get("source_counts") or {},
         "bounded_research_scope": {
@@ -2493,11 +2531,18 @@ def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: i
         "samples": {
             "baseline_summary": context.get("baseline_rows") or [],
             "policy_scores": context.get("policy_score_rows") or [],
-            "date_ledgers": _close_slot_limited_ledgers(context.get("date_ledgers") or {}, limit=sample_limit),
+            "date_ledgers": _close_slot_limited_ledgers(date_ledgers, limit=sample_limit),
             "threshold_search": (context.get("threshold_rows") or [])[:sample_limit],
             "cost_scenario_summary": (context.get("cost_scenario_rows") or [])[:sample_limit],
         },
     }
+    payload["latest_selection"] = _close_slot_latest_selection(
+        date_ledgers=date_ledgers,
+        date_split_map=context.get("date_split_map") if isinstance(context.get("date_split_map"), dict) else {},
+        policy=selected_policy,
+        run_id=payload.get("run_id"),
+        artifact_age_seconds=payload.get("artifact_age_seconds"),
+    )
     payload["labels"] = _close_slot_labels(payload)
     payload["close_slot_blockers"] = _merge_string_lists(
         payload["gate_validation_errors"],
@@ -2770,7 +2815,7 @@ def load_close_slot_selection(*, run: str | None = None, policy: str | None = No
         "data_recency": latest.get("data_recency"),
         "close_slot_blockers": latest.get("close_slot_blockers"),
         "chosen_is_no_trade_sentinel": latest.get("chosen_is_no_trade_sentinel"),
-        "policy_score_sample": [row for row in (context.get("policy_score_rows") or []) if str(row.get("policy")) == selected_policy][:safe_limit],
+        "policy_score_sample": (context.get("policy_score_rows_by_policy") or {}).get(selected_policy, [])[:safe_limit],
         "threshold_selection": latest.get("threshold_selection"),
         "selected_hold_summary": latest.get("selected_hold_summary"),
         "cost_scenarios": latest.get("cost_scenarios"),
@@ -3170,18 +3215,26 @@ REGISTRY_REQUIRED_CSV_EVIDENCE = {
     "PAPER_SELECTED": (
         "paper_selected.csv",
         {"date", "code", "rank", "paper_weight", "paper_only_selected", "selection_status", "strategy", "reason"},
+        "paper_selected",
+        "paper_selected_rows",
     ),
     "REALIZED_RETURNS": (
         "realized_returns.csv",
         {"date", "split", "paper_nav", "realized_return", "policy_reward", "current_drawdown", "evidence_status", "numeric_error", "source"},
+        "realized_returns",
+        "realized_return_rows",
     ),
     "DRIFT": (
         "drift.csv",
         {"metric", "value", "reference", "status", "action"},
+        "drift",
+        "drift_rows",
     ),
     "DRAWDOWN": (
         "drawdown.csv",
         {"date", "split", "paper_nav", "paper_forward_drawdown", "computed_drawdown", "evidence_status", "numeric_error", "source"},
+        "drawdown",
+        "drawdown_rows",
     ),
 }
 
@@ -3198,17 +3251,18 @@ def _read_registry_json_artifact(path: Path, *, invalid_error: str, missing_erro
     return payload, []
 
 
-def _read_registry_decision_log(path: Path, limit: int) -> tuple[list[dict[str, Any]], list[str]]:
+def _read_registry_decision_log(path: Path, limit: int) -> tuple[list[dict[str, Any]], int | None, list[str]]:
     errors: list[str] = []
     rows: list[dict[str, Any]] = []
     if not path.exists():
-        return rows, ["REGISTRY_EVIDENCE_DECISION_LOG_MISSING"]
+        return rows, None, ["REGISTRY_EVIDENCE_DECISION_LOG_MISSING"]
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
-        return rows, ["REGISTRY_DECISION_LOG_JSONL_INVALID"]
+        return rows, None, ["REGISTRY_DECISION_LOG_JSONL_INVALID"]
     if not any(line.strip() for line in lines):
-        return rows, ["REGISTRY_EVIDENCE_DECISION_LOG_EMPTY"]
+        return rows, 0, ["REGISTRY_EVIDENCE_DECISION_LOG_EMPTY"]
+    row_count = sum(1 for line in lines if line.strip())
     for line in lines:
         if not line.strip():
             continue
@@ -3222,7 +3276,7 @@ def _read_registry_decision_log(path: Path, limit: int) -> tuple[list[dict[str, 
             continue
         if len(rows) < limit:
             rows.append(payload)
-    return rows, errors
+    return rows, row_count, errors
 
 
 def _safe_read_registry_csv_rows(path: Path, limit: int) -> list[dict[str, Any]]:
@@ -3232,10 +3286,66 @@ def _safe_read_registry_csv_rows(path: Path, limit: int) -> list[dict[str, Any]]
         return []
 
 
-
-def _registry_csv_evidence_errors(run_dir: Path) -> list[str]:
+def _registry_artifact_hash_errors(run_dir: Path, manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    for label, (filename, required_columns) in REGISTRY_REQUIRED_CSV_EVIDENCE.items():
+    artifact_hashes = manifest.get("artifact_hashes")
+    if not isinstance(artifact_hashes, dict):
+        artifact_hashes = {}
+    for key, filename in {
+        "candidate_registry": "candidate_registry.json",
+        "paper_selected": "paper_selected.csv",
+        "realized_returns": "realized_returns.csv",
+        "drift": "drift.csv",
+        "drawdown": "drawdown.csv",
+        "decision_log": "decision_log.jsonl",
+    }.items():
+        path = run_dir / filename
+        expected_hash = artifact_hashes.get(key)
+        if not _is_sha256(expected_hash):
+            errors.append(f"REGISTRY_EVIDENCE_{key.upper()}_HASH_MISSING")
+        elif not path.is_file():
+            errors.append(f"REGISTRY_EVIDENCE_{key.upper()}_MISSING")
+        else:
+            try:
+                actual_hash = _file_sha256(path)
+            except OSError:
+                errors.append(f"REGISTRY_EVIDENCE_{key.upper()}_UNREADABLE")
+            else:
+                if actual_hash != expected_hash:
+                    errors.append(f"REGISTRY_EVIDENCE_{key.upper()}_HASH_MISMATCH")
+    return errors
+
+
+def _registry_non_csv_row_count_errors(
+    manifest: dict[str, Any],
+    candidate_registry: dict[str, Any],
+    decision_row_count: int | None,
+) -> list[str]:
+    errors: list[str] = []
+    row_counts = manifest.get("row_counts")
+    if not isinstance(row_counts, dict):
+        row_counts = {}
+    candidates = candidate_registry.get("candidates")
+    candidate_row_count = len(candidates) if isinstance(candidates, list) else None
+    for label, expected_key, observed in (
+        ("CANDIDATE_REGISTRY", "candidate_registry_rows", candidate_row_count),
+        ("DECISION_LOG", "decision_log_rows", decision_row_count),
+    ):
+        expected = _to_int(row_counts.get(expected_key))
+        if expected is None:
+            errors.append(f"REGISTRY_EVIDENCE_{label}_ROW_COUNT_MISSING")
+        elif observed is not None and observed != expected:
+            errors.append(f"REGISTRY_EVIDENCE_{label}_ROW_COUNT_MISMATCH")
+    return errors
+
+
+
+def _registry_csv_evidence_errors(run_dir: Path, manifest: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    row_counts = manifest.get("row_counts")
+    if not isinstance(row_counts, dict):
+        row_counts = {}
+    for label, (filename, required_columns, _artifact_key, row_count_key) in REGISTRY_REQUIRED_CSV_EVIDENCE.items():
         path = run_dir / filename
         if not path.exists():
             errors.append(f"REGISTRY_EVIDENCE_{label}_MISSING")
@@ -3245,7 +3355,7 @@ def _registry_csv_evidence_errors(run_dir: Path) -> list[str]:
                 reader = csv.DictReader(handle)
                 columns = set(reader.fieldnames or [])
                 has_header = bool(columns)
-                has_row = any(True for _ in reader)
+                observed_row_count = sum(1 for _ in reader)
         except (csv.Error, OSError, UnicodeDecodeError):
             errors.append(f"REGISTRY_EVIDENCE_{label}_INVALID")
             continue
@@ -3253,8 +3363,13 @@ def _registry_csv_evidence_errors(run_dir: Path) -> list[str]:
             errors.append(f"REGISTRY_EVIDENCE_{label}_HEADER_MISSING")
         elif not required_columns.issubset(columns):
             errors.append(f"REGISTRY_EVIDENCE_{label}_COLUMNS_INVALID")
-        if not has_row:
+        if observed_row_count == 0:
             errors.append(f"REGISTRY_EVIDENCE_{label}_EMPTY")
+        expected_row_count = _to_int(row_counts.get(row_count_key))
+        if expected_row_count is None:
+            errors.append(f"REGISTRY_EVIDENCE_{label}_ROW_COUNT_MISSING")
+        elif observed_row_count != expected_row_count:
+            errors.append(f"REGISTRY_EVIDENCE_{label}_ROW_COUNT_MISMATCH")
     return errors
 
 def load_registry_latest(*, run: str | None = None, sample_limit: int = 25) -> dict[str, Any]:
@@ -3272,14 +3387,16 @@ def load_registry_latest(*, run: str | None = None, sample_limit: int = 25) -> d
         invalid_error="REGISTRY_CANDIDATE_REGISTRY_JSON_INVALID",
         missing_error="REGISTRY_CANDIDATE_REGISTRY_MISSING",
     )
-    decision_rows, decision_errors = _read_registry_decision_log(run_dir / "decision_log.jsonl", safe_limit)
+    decision_rows, decision_row_count, decision_errors = _read_registry_decision_log(run_dir / "decision_log.jsonl", safe_limit)
     invariant_errors = sorted(
         dict.fromkeys(
             [
                 *manifest_errors,
                 *candidate_errors,
                 *_registry_artifact_invariant_errors(manifest, candidate_registry),
-                *_registry_csv_evidence_errors(run_dir),
+                *_registry_artifact_hash_errors(run_dir, manifest),
+                *_registry_csv_evidence_errors(run_dir, manifest),
+                *_registry_non_csv_row_count_errors(manifest, candidate_registry, decision_row_count),
                 *decision_errors,
             ]
         )
@@ -3314,20 +3431,27 @@ def load_registry_latest(*, run: str | None = None, sample_limit: int = 25) -> d
                 ],
             }
         candidate_registry["invariant_errors"] = invariant_errors
+    evidence_safe = not invariant_errors
     return {
         **manifest,
         "status": manifest.get("status") or "RESEARCH_ONLY_BLOCKED",
-        "artifact_status": "LOADED_GENERATED_ARTIFACT",
+        "artifact_status": "LOADED_GENERATED_ARTIFACT" if evidence_safe else "BLOCKED_UNSAFE_REGISTRY_ARTIFACT",
         "artifact_dir": str(run_dir),
         "read_only": True,
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "go_summary_allowed": False,
         "read_only_dashboard_note": "GET-only D8/D9 registry and paper-forward ledger evidence; no live/broker/order/profit action from dashboard.",
         "candidate_registry": candidate_registry,
         "samples": {
-            "paper_selected": _safe_read_registry_csv_rows(run_dir / "paper_selected.csv", safe_limit),
-            "realized_returns": _safe_read_registry_csv_rows(run_dir / "realized_returns.csv", safe_limit),
-            "drift": _safe_read_registry_csv_rows(run_dir / "drift.csv", safe_limit),
-            "drawdown": _safe_read_registry_csv_rows(run_dir / "drawdown.csv", safe_limit),
-            "decision_log": decision_rows,
+            "paper_selected": _safe_read_registry_csv_rows(run_dir / "paper_selected.csv", safe_limit) if evidence_safe else [],
+            "realized_returns": _safe_read_registry_csv_rows(run_dir / "realized_returns.csv", safe_limit) if evidence_safe else [],
+            "drift": _safe_read_registry_csv_rows(run_dir / "drift.csv", safe_limit) if evidence_safe else [],
+            "drawdown": _safe_read_registry_csv_rows(run_dir / "drawdown.csv", safe_limit) if evidence_safe else [],
+            "decision_log": decision_rows if evidence_safe else [],
         },
         "guardrail": safe_guardrail,
         "invariant_errors": invariant_errors,
@@ -6756,16 +6880,27 @@ def load_daily_artifacts(limit: int = 50) -> dict[str, Any]:
     }
 
 
-def load_daily_progress() -> dict[str, Any]:
-    db = load_daily_db_summary(table_limit=0, flag_limit=0, window_limit=0)
-    universe = load_universe_preview(limit=0)
-    dataset = load_dataset_latest(sample_limit=0)
-    prediction = load_prediction_latest(sample_limit=0)
-    portfolio = load_portfolio_latest(sample_limit=0)
-    gate = load_walk_forward_latest(sample_limit=0)
+def _compute_daily_progress() -> dict[str, Any]:
+    with ThreadPoolExecutor(max_workers=8, thread_name_prefix="daily-progress") as pool:
+        futures = {
+            "db": pool.submit(load_daily_db_summary, table_limit=0, flag_limit=0, window_limit=0),
+            "universe": pool.submit(load_universe_preview, limit=0),
+            "dataset": pool.submit(load_dataset_latest, sample_limit=0),
+            "prediction": pool.submit(load_prediction_latest, sample_limit=0),
+            "portfolio": pool.submit(load_portfolio_latest, sample_limit=0),
+            "gate": pool.submit(load_walk_forward_latest, sample_limit=0),
+            "registry": pool.submit(load_registry_latest, sample_limit=0),
+            "diagnostics": pool.submit(load_research_diagnostics_chart),
+        }
+        db = futures["db"].result()
+        universe = futures["universe"].result()
+        dataset = futures["dataset"].result()
+        prediction = futures["prediction"].result()
+        portfolio = futures["portfolio"].result()
+        gate = futures["gate"].result()
+        registry = futures["registry"].result()
+        diagnostics = futures["diagnostics"].result()
     gate_verdict = gate.get("verdict") or {}
-    registry = load_registry_latest(sample_limit=0)
-    diagnostics = load_research_diagnostics_chart()
     baseline_delta = prediction.get("baseline_delta_summary") or {}
     effective_gate = _effective_daily_model_gate(
         db=db,
@@ -6906,6 +7041,94 @@ def load_daily_progress() -> dict[str, Any]:
         "effective_gate_blockers": effective_gate["effective_gate_blockers"],
     }
 
+
+def _load_daily_progress_singleflight() -> dict[str, Any]:
+    """Coalesce only overlapping progress builds without cross-change caching."""
+
+    global _PROGRESS_GENERATION, _PROGRESS_IN_FLIGHT, _PROGRESS_RESULT
+
+    with _PROGRESS_CONDITION:
+        observed_generation = _PROGRESS_GENERATION
+        if _PROGRESS_IN_FLIGHT:
+            while _PROGRESS_IN_FLIGHT and _PROGRESS_GENERATION == observed_generation:
+                _PROGRESS_CONDITION.wait()
+            if _PROGRESS_GENERATION != observed_generation and _PROGRESS_RESULT is not None:
+                return deepcopy(_PROGRESS_RESULT)
+        _PROGRESS_IN_FLIGHT = True
+
+    try:
+        result = _compute_daily_progress()
+    except BaseException:
+        with _PROGRESS_CONDITION:
+            _PROGRESS_RESULT = None
+            _PROGRESS_GENERATION += 1
+            _PROGRESS_IN_FLIGHT = False
+            _PROGRESS_CONDITION.notify_all()
+        raise
+
+    with _PROGRESS_CONDITION:
+        _PROGRESS_RESULT = deepcopy(result)
+        _PROGRESS_GENERATION += 1
+        _PROGRESS_IN_FLIGHT = False
+        _PROGRESS_CONDITION.notify_all()
+    return result
+
+def _daily_progress_artifact_signature() -> tuple[Path, tuple[tuple[str, int, int], ...]] | None:
+    entries: list[tuple[str, int, int]] = []
+    primary_path: Path | None = None
+    for root, required_file in _PROGRESS_ARTIFACT_SOURCES:
+        run_dir = _latest_run_dir(root, required_file=required_file)
+        if run_dir is None:
+            return None
+        required_path = run_dir / required_file
+        if primary_path is None:
+            primary_path = required_path
+        paths = [root, *sorted(path for path in run_dir.rglob("*") if path.is_file())]
+        for path in paths:
+            try:
+                stat = path.stat()
+                entries.append((str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+            except OSError:
+                return None
+    if primary_path is None:
+        return None
+    return primary_path, tuple(entries)
+
+
+def _daily_progress_loader_identity() -> tuple[int, ...]:
+    """Keep in-process caches isolated when tests or adapters replace loaders."""
+
+    return tuple(
+        id(loader)
+        for loader in (
+            load_daily_db_summary,
+            load_universe_preview,
+            load_dataset_latest,
+            load_prediction_latest,
+            load_portfolio_latest,
+            load_walk_forward_latest,
+            load_registry_latest,
+            load_research_diagnostics_chart,
+        )
+    )
+
+
+def load_daily_progress() -> dict[str, Any]:
+    """Return stat-invalidated progress, coalescing overlapping rebuilds."""
+
+    for _ in range(2):
+        signature = _daily_progress_artifact_signature()
+        if signature is None:
+            return _load_daily_progress_singleflight()
+        primary_path, stat_entries = signature
+        result = artifact_cache.cached_by_stat(
+            primary_path,
+            _load_daily_progress_singleflight,
+            extra=("daily_progress.v1", stat_entries, _daily_progress_loader_identity()),
+        )
+        if _daily_progress_artifact_signature() == signature:
+            return result
+    return _load_daily_progress_singleflight()
 
 def load_coverage_chart() -> dict[str, Any]:
     db = load_daily_db_summary(table_limit=0, flag_limit=0, window_limit=0)
