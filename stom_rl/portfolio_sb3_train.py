@@ -170,6 +170,14 @@ def _make_training_callback(
     algorithm: str,
     *,
     event_writer: RlLiveEventWriter,
+    step_offset: int = 0,
+    event_info: Optional[Mapping[str, Any]] = None,
+    event_source: str = "portfolio_sb3_train",
+    validation_config: Optional[PortfolioSb3TrainConfig] = None,
+    validation_candidates: Optional[pd.DataFrame] = None,
+    validation_evidence_path: Optional[Path] = None,
+    validation_fold_index: int = 0,
+    validation_cost_label: str = "base_23bp",
 ) -> Any:
     """Build an SB3 ``BaseCallback`` that streams per-rollout training telemetry.
 
@@ -206,6 +214,7 @@ def _make_training_callback(
         def __init__(self) -> None:
             super().__init__(verbose=0)
             self._iterations = 0
+            self.last_global_step = int(step_offset)
 
         def _mean_episode_reward(self) -> Optional[float]:
             buffer = getattr(self.model, "ep_info_buffer", None)
@@ -237,18 +246,32 @@ def _make_training_callback(
 
         def _emit(self) -> None:
             reward = self._mean_episode_reward()
+            global_step = int(step_offset) + int(self.num_timesteps)
+            self.last_global_step = global_step
+            info = {
+                "timesteps": int(self.num_timesteps),
+                "global_step_offset": int(step_offset),
+                "iterations": int(self._iterations),
+                "ep_count": self._ep_count(),
+                "action_recorded": False,
+            }
+            if event_info:
+                info.update(dict(event_info))
+            device_info = info.get("device")
+            if isinstance(device_info, Mapping):
+                info["device"] = {
+                    **dict(device_info),
+                    "used": str(getattr(self.model, "device", device_info.get("used"))),
+                }
             event_writer.write_step(
                 algorithm=live_algorithm,
                 phase=PORTFOLIO_TRAIN_LIVE_PHASE,
-                global_step=int(self.num_timesteps),
+                global_step=global_step,
+                action=None,
                 reward=reward if reward is not None else 0.0,
                 loss=self._latest_loss(),
-                source="portfolio_sb3_train",
-                info={
-                    "timesteps": int(self.num_timesteps),
-                    "iterations": int(self._iterations),
-                    "ep_count": self._ep_count(),
-                },
+                source=event_source,
+                info=info,
             )
 
         def _on_step(self) -> bool:  # noqa: D401 - SB3 hook
@@ -262,6 +285,35 @@ def _make_training_callback(
             # Final flush so short runs (no completed rollout boundary) still
             # produce at least one terminal event carrying the last stats.
             self._emit()
+            if validation_evidence_path is not None:
+                if validation_config is None or validation_candidates is None:
+                    raise ValueError("Validation callback requires config and validation candidates")
+                validation_metrics = _evaluate_model_on_candidates(
+                    self.model,
+                    validation_config,
+                    validation_candidates,
+                    fold_index=int(validation_fold_index),
+                    cost_label=validation_cost_label,
+                )
+                if not _finite_metrics(validation_metrics):
+                    raise ValueError(f"Fold {validation_fold_index} callback validation metrics are not finite")
+                _write_json_sorted(
+                    validation_evidence_path,
+                    {
+                        "schema_version": "daily_portfolio_sb3_validation_callback_evidence.v1",
+                        "callback_executed": True,
+                        "fold_index": int(validation_fold_index),
+                        "source": "sb3_on_training_end_fold_validation_frame_only",
+                        "official_test_used": False,
+                        "validation_range": {
+                            "start": _fold_range(validation_candidates)[0],
+                            "end": _fold_range(validation_candidates)[1],
+                            "row_count": int(len(validation_candidates)),
+                        },
+                        "metrics": validation_metrics,
+                        "finite_metrics": True,
+                    },
+                )
 
     return RlLiveEventTrainingCallback()
 
@@ -309,6 +361,14 @@ def train_portfolio_model(
     *,
     candidates: Optional[pd.DataFrame] = None,
     live_events_path: Optional[Path] = None,
+    live_event_step_offset: int = 0,
+    live_event_info: Optional[Mapping[str, Any]] = None,
+    reset_live_events: bool = True,
+    validation_config: Optional[PortfolioSb3TrainConfig] = None,
+    validation_candidates: Optional[pd.DataFrame] = None,
+    validation_evidence_path: Optional[Path] = None,
+    validation_fold_index: int = 0,
+    validation_cost_label: str = "base_23bp",
 ) -> Tuple[Any, Dict[str, Any]]:
     """Train a deterministic SB3 PPO/DQN model on the Stage-A env.
 
@@ -368,14 +428,28 @@ def train_portfolio_model(
         callback = None
         if config.write_training_events and live_events_path is not None:
             event_writer = RlLiveEventWriter(live_events_path, run_id=Path(live_events_path).parent.name)
-            event_writer.reset()
-            callback = _make_training_callback(algorithm, event_writer=event_writer)
+            if reset_live_events:
+                event_writer.reset()
+            callback = _make_training_callback(
+                algorithm,
+                event_writer=event_writer,
+                step_offset=int(live_event_step_offset),
+                event_info=live_event_info,
+                event_source="daily_portfolio_sb3_train" if live_event_info else "portfolio_sb3_train",
+                validation_config=validation_config,
+                validation_candidates=validation_candidates,
+                validation_evidence_path=validation_evidence_path,
+                validation_fold_index=int(validation_fold_index),
+                validation_cost_label=validation_cost_label,
+            )
 
         model.learn(
             total_timesteps=int(config.total_timesteps),
             progress_bar=False,
             callback=callback,
         )
+        if callback is not None:
+            runtime = {**runtime, "last_training_event_step": int(getattr(callback, "last_global_step", live_event_step_offset))}
         return model, runtime
     finally:
         env.close()
@@ -513,6 +587,12 @@ class DailyPortfolioSb3TrainConfig:
     dqn_buffer_size: int = 4_096
     dqn_batch_size: int = 64
     write_artifacts: bool = True
+    run_stage: str = "G016_SLICE3_DAILY_PORTFOLIO_SB3_RESEARCH"
+    run_status: str = "COMPLETED_RESEARCH_ONLY"
+    run_authority: str = "D3_D2_DB_LINEAGE_APPROVED_RESEARCH_ONLY"
+    authoritative: bool = False
+    is_smoke: bool = False
+    stream_training_events: bool = False
 
 
 def _sha256_file(path: Path) -> str:
@@ -530,10 +610,12 @@ def _sha256_json(payload: Mapping[str, Any]) -> str:
 
 def _write_json_sorted(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n",
         encoding="utf-8",
     )
+    tmp.replace(path)
 
 
 def _daily_cost_label(cost_bps: float) -> str:
@@ -545,6 +627,114 @@ def _daily_cost_label(cost_bps: float) -> str:
     if value == 46.0:
         return "control_46bp"
     return f"cost_{value:g}bp"
+def _daily_run_contract(config: DailyPortfolioSb3TrainConfig) -> Dict[str, Any]:
+    stage = str(config.run_stage).strip()
+    status = str(config.run_status).strip()
+    authority = str(config.run_authority).strip()
+    authoritative = bool(config.authoritative)
+    is_smoke = bool(config.is_smoke)
+    if not stage or not status or not authority:
+        raise ValueError("DailyPortfolioSb3TrainConfig run stage/status/authority must be explicit.")
+    requests_smoke = is_smoke or stage.lower() == "smoke" or authoritative or status.lower() == "completed"
+    if requests_smoke and not (
+        stage.lower() == "smoke"
+        and status.lower() == "completed"
+        and authoritative
+        and is_smoke
+    ):
+        raise ValueError("G017 smoke metadata requires stage='smoke', status='completed', authoritative=True, and is_smoke=True.")
+    if requests_smoke and config.algorithm.lower() != "ppo":
+        raise ValueError("G017 smoke contract requires algorithm='ppo'.")
+    if requests_smoke and int(config.total_timesteps) != 5_000:
+        raise ValueError("G017 smoke contract requires total_timesteps=5000.")
+    if requests_smoke and int(config.seed) != 7:
+        raise ValueError("G017 smoke contract requires seed=7.")
+    if requests_smoke and float(config.primary_cost_bps) != 23.0:
+        raise ValueError("G017 smoke contract requires primary_cost_bps=23.0.")
+    if requests_smoke and tuple(float(value) for value in config.control_cost_bps) != (0.0, 46.0):
+        raise ValueError("G017 smoke contract requires control_cost_bps=(0.0, 46.0).")
+    if requests_smoke and not config.write_artifacts:
+        raise ValueError("G017 smoke contract requires write_artifacts=True.")
+    if requests_smoke and not config.stream_training_events:
+        raise ValueError("G017 smoke metadata requires stream_training_events=True.")
+    return {
+        "stage": stage,
+        "status": status,
+        "authority": authority,
+        "authoritative": authoritative,
+        "is_smoke": is_smoke,
+    }
+
+
+def _finite_metrics(metrics: Mapping[str, Any]) -> bool:
+    for key in ("final_nav", "return_pct", "max_drawdown_pct", "turnover", "total_cost", "total_reward", "raw_invalid_action_rate"):
+        try:
+            value = float(metrics[key])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not np.isfinite(value):
+            return False
+    return True
+
+
+def _daily_source_baselines(dataset_manifest: Mapping[str, Any]) -> Dict[str, Any]:
+    rows = dataset_manifest.get("source_baseline_metrics")
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+        raise ValueError("Daily Portfolio SB3 dataset manifest missing source baseline metrics")
+    primary_label = "base_23bp"
+    required = {"no_trade_cash", "shuffle_control", "equal_weight_topk_momentum"}
+    selected: Dict[str, Dict[str, Any]] = {}
+    rule_candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        strategy = str(row.get("strategy") or "")
+        raw_cost = row.get(
+            "cost_bps",
+            row.get(
+                "round_trip_cost_bps",
+                row.get("cost_round_trip_bp", row.get("cost_assumption_round_trip_bp")),
+            ),
+        )
+        try:
+            cost = float(raw_cost)
+        except (TypeError, ValueError):
+            continue
+        if abs(cost - 23.0) > 1e-9:
+            continue
+        if strategy in required:
+            selected[strategy] = dict(row)
+        if str(row.get("strategy_family") or "") == "rule_baseline" and strategy != "equal_weight_topk_momentum":
+            rule_candidates.append(dict(row))
+    missing = sorted(required - set(selected))
+    if missing:
+        raise ValueError(f"Daily Portfolio SB3 source baselines missing 23bp rows: {missing}")
+    if not rule_candidates:
+        raise ValueError("Daily Portfolio SB3 source baselines missing a distinct 23bp RULE row")
+    rule_candidates.sort(
+        key=lambda row: (
+            -float(row.get("total_net_return", float("-inf"))),
+            str(row.get("strategy") or ""),
+        )
+    )
+    selected["rule_baseline"] = rule_candidates[0]
+    source_hash = dataset_manifest.get("source_baseline_metrics_sha256") or dict(dataset_manifest.get("source_artifact_hashes", {})).get("baseline_metrics")
+    if not isinstance(source_hash, str) or len(source_hash) != 64:
+        raise ValueError("Daily Portfolio SB3 source baseline metrics missing source hash")
+    return {
+        "schema_version": "daily_portfolio_sb3_source_baselines.v1",
+        "primary_cost_label": primary_label,
+        "primary_cost_bps": 23.0,
+        "source_hash": source_hash,
+        "rows": selected,
+        "secondary_combined_val_test_rows": [dict(row) for row in rows if isinstance(row, Mapping)],
+        "primary_oos_source": "untouched_test_oos",
+        "usage": {
+            "model_go_source": False,
+            "label": "frozen_source_adapter_baseline_reference",
+            "secondary_label": "combined_val_test_source_metrics_secondary",
+        },
+    }
 
 
 def _portfolio_train_config(
@@ -577,7 +767,7 @@ def _portfolio_train_config(
         dqn_batch_size=int(daily_config.dqn_batch_size),
         max_eval_steps=int(daily_config.max_eval_steps),
         write_artifacts=False,
-        write_training_events=False,
+        write_training_events=bool(daily_config.stream_training_events),
     )
 
 
@@ -806,9 +996,11 @@ def _daily_training_manifest(
     return {
         "schema_version": "daily_portfolio_sb3_training_manifest.v1",
         "generated_at": _utc_now(),
-        "stage": "G016_SLICE3_DAILY_PORTFOLIO_SB3_RESEARCH",
-        "status": "COMPLETED_RESEARCH_ONLY",
-        "authority": "D3_D2_DB_LINEAGE_APPROVED_RESEARCH_ONLY",
+        "stage": summary.get("stage"),
+        "status": summary.get("status"),
+        "authority": summary.get("authority"),
+        "authoritative": bool(summary.get("authoritative", False)),
+        "is_smoke": bool(summary.get("is_smoke", False)),
         "run_id": config.run_id,
         "algorithm": summary.get("algorithm"),
         "seed": summary.get("seed"),
@@ -824,6 +1016,8 @@ def _daily_training_manifest(
         "preregistration": dict(preregistration),
         "dataset": dict(summary.get("dataset", {})),
         "source_hashes": dict(summary.get("source_hashes", {})),
+        "source_baselines": dict(summary.get("source_baselines", {})),
+        "metric_usage": dict(summary.get("metric_usage", {})),
         "config_sha256": summary.get("config_sha256"),
         "false_locks": dict(summary.get("false_locks", {})),
     }
@@ -841,9 +1035,11 @@ def _daily_rl_manifest(
         "generated_at": _utc_now(),
         "artifact_type": "sb3_smoke",
         "mode": summary.get("mode"),
-        "stage": "G016_SLICE3_DAILY_PORTFOLIO_SB3_RESEARCH",
-        "status": "COMPLETED_RESEARCH_ONLY",
-        "authority": "D3_D2_DB_LINEAGE_APPROVED_RESEARCH_ONLY",
+        "stage": summary.get("stage"),
+        "status": summary.get("status"),
+        "authority": summary.get("authority"),
+        "authoritative": bool(summary.get("authoritative", False)),
+        "is_smoke": bool(summary.get("is_smoke", False)),
         "run_id": config.run_id,
         "algorithm": summary.get("algorithm"),
         "seed": summary.get("seed"),
@@ -855,6 +1051,8 @@ def _daily_rl_manifest(
         "fold_count": summary.get("fold_count"),
         "model_hashes": dict(source_hash_manifest.get("model_hashes", {})),
         "lineage_hashes": dict(source_hash_manifest.get("lineage_hashes", {})),
+        "source_baselines": dict(summary.get("source_baselines", {})),
+        "metric_usage": dict(summary.get("metric_usage", {})),
         "live_events": dict(live_summary),
         "false_locks": dict(summary.get("false_locks", {})),
     }
@@ -889,13 +1087,18 @@ def _daily_sb3_smoke_signature(
                 "cost_bps": metrics.get("cost_bps"),
                 "slippage_bps": summary.get("slippage_bps"),
                 "passes_cost_gate": False,
-                "is_smoke": False,
+                "is_smoke": bool(summary.get("is_smoke", False)),
                 "research_only": True,
             }
         )
     return {
         "mode": "stom_rl_sb3_smoke",
         "schema_version": "daily_portfolio_sb3_as_sb3_smoke.v1",
+        "stage": summary.get("stage"),
+        "status": summary.get("status"),
+        "authority": summary.get("authority"),
+        "authoritative": bool(summary.get("authoritative", False)),
+        "is_smoke": bool(summary.get("is_smoke", False)),
         "summary": {
             "algorithm_count": 1,
             "best_model": best_model,
@@ -923,6 +1126,7 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
     algorithm = config.algorithm.lower()
     if algorithm not in {"ppo", "dqn"}:
         raise ValueError("DailyPortfolioSb3TrainConfig.algorithm must be 'ppo' or 'dqn'.")
+    run_contract = _daily_run_contract(config)
     dataset = build_daily_portfolio_sb3_dataset(
         DailyPortfolioSb3DatasetConfig(
             prediction_run_dir=config.prediction_run_dir,
@@ -959,6 +1163,55 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
     live_writer.reset()
     live_step = 0
     preregistration = _daily_preregistration_lineage(dataset.manifest)
+    source_baselines = _daily_source_baselines(dataset.manifest)
+    if config.write_artifacts and run_contract["is_smoke"]:
+        running_summary = {
+            "schema_version": "daily_portfolio_sb3_train.v1",
+            "mode": "research_only_daily_portfolio_sb3_fold_local_train",
+            **run_contract,
+            "status": "running",
+            "run_id": config.run_id,
+            "algorithm": algorithm,
+            "seed": int(config.seed),
+            "device_requested": str(config.device),
+            "primary_cost_label": "base_23bp",
+            "primary_cost_bps": float(config.primary_cost_bps),
+            "control_cost_bps": [float(value) for value in config.control_cost_bps],
+            "total_timesteps": int(config.total_timesteps),
+            "fold_count": 0,
+            "folds": [],
+            "source_baselines": source_baselines,
+            "false_locks": {
+                "model_build_allowed": False,
+                "paper_forward_allowed": False,
+                "live_broker_order_allowed": False,
+                "profit_claim_allowed": False,
+            },
+        }
+        empty_live_summary = summarize_live_event_file(live_events_path)
+        empty_hash_manifest = {
+            "schema_version": "daily_portfolio_sb3_source_hashes.v1",
+            "generated_at": _utc_now(),
+            "source_hashes": dict(source_hashes),
+            "config_sha256": config_hash,
+            "model_hashes": {},
+            "lineage_hashes": {
+                "prereg_sha256": preregistration.get("sha256"),
+                "d3_prediction_manifest_sha256": dataset.manifest.get("source_prediction_manifest_sha256"),
+                "d2_dataset_manifest_sha256": dataset.manifest.get("d2_dataset_manifest_sha256"),
+                "d2_daily_db_sha256": dataset.manifest.get("d2_daily_db_sha256"),
+            },
+        }
+        _write_json_sorted(run_dir / "rl_manifest.json", _daily_rl_manifest(
+            config=config,
+            summary=running_summary,
+            source_hash_manifest=empty_hash_manifest,
+            live_summary=empty_live_summary,
+        ))
+        _write_json_sorted(run_dir / "sb3_smoke_summary.json", _daily_sb3_smoke_signature(
+            summary=running_summary,
+            live_summary=empty_live_summary,
+        ))
 
     for fold in folds:
         if fold.train_frame.empty:
@@ -984,7 +1237,35 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
             cost_bps=float(config.primary_cost_bps),
             seed=int(config.seed) + int(fold.fold_index),
         )
-        model, runtime = train_portfolio_model(train_config, candidates=fold.train_frame)
+        primary_label = _daily_cost_label(float(config.primary_cost_bps))
+        validation_evidence_path = fold_dir / "validation_callback_evidence.json"
+        model, runtime = train_portfolio_model(
+            train_config,
+            candidates=fold.train_frame,
+            live_events_path=live_events_path if config.stream_training_events else None,
+            live_event_step_offset=live_step,
+            live_event_info=_daily_metric_event_info(
+                fold_index=int(fold.fold_index),
+                cost_label=_daily_cost_label(float(config.primary_cost_bps)),
+                config=config,
+                training_device_used=str(config.device),
+                eval_device="pending",
+                dataset_manifest=dataset.manifest,
+            ),
+            reset_live_events=False,
+            **(
+                {
+                    "validation_config": train_config,
+                    "validation_candidates": fold.test_frame,
+                    "validation_evidence_path": validation_evidence_path,
+                    "validation_fold_index": int(fold.fold_index),
+                    "validation_cost_label": primary_label,
+                }
+                if run_contract["is_smoke"]
+                else {}
+            ),
+        )
+        live_step = max(live_step, int(runtime.get("last_training_event_step", live_step)))
         training_device_used = str(getattr(model, "device", config.device))
         fold_dir.mkdir(parents=True, exist_ok=True)
         model.save(str(model_path))
@@ -992,14 +1273,40 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
         eval_model = load_trained_model(str(model_path), algorithm=algorithm)
         eval_device = str(getattr(eval_model, "device", "cpu"))
 
-        primary_label = _daily_cost_label(float(config.primary_cost_bps))
-        primary_metrics = _evaluate_model_on_candidates(
-            eval_model,
-            train_config,
-            fold.test_frame,
-            fold_index=fold.fold_index,
-            cost_label=primary_label,
-        )
+        if run_contract["is_smoke"]:
+            if not validation_evidence_path.is_file():
+                raise ValueError(f"Fold {fold.fold_index} validation callback did not write evidence")
+            validation_evidence = json.loads(validation_evidence_path.read_text(encoding="utf-8"))
+            if (
+                validation_evidence.get("callback_executed") is not True
+                or validation_evidence.get("official_test_used") is not False
+                or not isinstance(validation_evidence.get("metrics"), Mapping)
+            ):
+                raise ValueError(f"Fold {fold.fold_index} validation callback evidence is invalid")
+            primary_metrics = dict(validation_evidence["metrics"])
+        else:
+            primary_metrics = _evaluate_model_on_candidates(
+                eval_model,
+                train_config,
+                fold.test_frame,
+                fold_index=fold.fold_index,
+                cost_label=primary_label,
+            )
+            validation_evidence = {
+                "schema_version": "daily_portfolio_sb3_validation_callback_evidence.v1",
+                "callback_executed": False,
+                "fold_index": int(fold.fold_index),
+                "source": "post_training_fold_validation_frame_only",
+                "official_test_used": False,
+                "validation_range": {
+                    "start": _fold_range(fold.test_frame)[0],
+                    "end": _fold_range(fold.test_frame)[1],
+                    "row_count": int(len(fold.test_frame)),
+                },
+                "metrics": primary_metrics,
+                "finite_metrics": _finite_metrics(primary_metrics),
+            }
+            _write_json_sorted(validation_evidence_path, validation_evidence)
         oos_primary_metrics = _evaluate_model_on_candidates(
             eval_model,
             train_config,
@@ -1007,6 +1314,9 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
             fold_index=fold.fold_index,
             cost_label=primary_label,
         )
+        if not _finite_metrics(primary_metrics):
+            raise ValueError(f"Fold {fold.fold_index} validation metrics are not finite")
+        validation_evidence_hash = _sha256_file(validation_evidence_path)
         raw_invalid = float(primary_metrics["raw_invalid_action_rate"])
         control_metrics: List[Dict[str, Any]] = []
         oos_control_metrics: List[Dict[str, Any]] = []
@@ -1041,9 +1351,11 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
         fold_manifest = {
             "schema_version": "daily_portfolio_sb3_train_fold.v1",
             "mode": "research_only_fold_local_daily_portfolio_sb3",
-            "stage": "G016_SLICE3_DAILY_PORTFOLIO_SB3_RESEARCH",
-            "status": "COMPLETED_RESEARCH_ONLY",
-            "authority": "D3_D2_DB_LINEAGE_APPROVED_RESEARCH_ONLY",
+            "stage": run_contract["stage"],
+            "status": run_contract["status"],
+            "authority": run_contract["authority"],
+            "authoritative": run_contract["authoritative"],
+            "is_smoke": run_contract["is_smoke"],
             "algorithm": algorithm,
             "seed": int(train_config.seed),
             "device_requested": str(config.device),
@@ -1076,6 +1388,18 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
             "headline": primary_label,
             "baseline_metrics": {
                 primary_label: _no_trade_metrics(train_config, fold_index=fold.fold_index, cost_label=primary_label),
+            },
+            "source_baselines": source_baselines,
+            "validation_callback_evidence": {
+                "path": str(validation_evidence_path),
+                "sha256": validation_evidence_hash,
+                "source": "fold_validation_frame_only",
+                "official_test_used": False,
+            },
+            "metric_usage": {
+                "validation_primary_metrics": "callback_validation_only_not_model_go",
+                "untouched_test_oos_primary_metrics": "primary_oos_report_only",
+                "combined_val_test_source_metrics": "secondary_source_baseline_reference_only",
             },
             "primary_metrics": primary_metrics,
             "validation_primary_metrics": primary_metrics,
@@ -1126,9 +1450,11 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
     summary = {
         "schema_version": "daily_portfolio_sb3_train.v1",
         "mode": "research_only_daily_portfolio_sb3_fold_local_train",
-        "stage": "G016_SLICE3_DAILY_PORTFOLIO_SB3_RESEARCH",
-        "status": "COMPLETED_RESEARCH_ONLY",
-        "authority": "D3_D2_DB_LINEAGE_APPROVED_RESEARCH_ONLY",
+        "stage": run_contract["stage"],
+        "status": run_contract["status"],
+        "authority": run_contract["authority"],
+        "authoritative": run_contract["authoritative"],
+        "is_smoke": run_contract["is_smoke"],
         "run_id": config.run_id,
         "algorithm": algorithm,
         "seed": int(config.seed),
@@ -1160,6 +1486,12 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
             "source_artifact_hashes": dict(dataset.manifest.get("source_artifact_hashes", {})),
         },
         "source_hashes": source_hashes,
+        "source_baselines": source_baselines,
+        "metric_usage": {
+            "untouched_test_oos_primary_metrics": "primary_oos_report_only",
+            "combined_val_test_source_metrics": "secondary_source_baseline_reference_only",
+            "model_go_source": False,
+        },
         "config_sha256": config_hash,
         "fold_count": len(fold_summaries),
         "official_split_row_counts": split_counts,

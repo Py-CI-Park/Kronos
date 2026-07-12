@@ -139,6 +139,18 @@ def _make_official_prediction_run(tmp_path: Path, *, mutate: str | None = None) 
             {"strategy": "no_trade_cash", "cost_bps": 23.0, "total_net_return": 0.0},
             {"strategy": "shuffle_control", "cost_bps": 23.0, "total_net_return": -0.01},
             {"strategy": "supervised_linear_ranker", "cost_bps": 23.0, "total_net_return": 0.01},
+            {
+                "strategy": "equal_weight_topk_momentum",
+                "strategy_family": "rule_baseline",
+                "cost_bps": 23.0,
+                "total_net_return": 0.005,
+            },
+            {
+                "strategy": "mean_reversion",
+                "strategy_family": "rule_baseline",
+                "cost_bps": 23.0,
+                "total_net_return": -0.01,
+            },
         ]
     }
     if mutate == "missing_control":
@@ -214,7 +226,6 @@ def test_build_and_write_daily_portfolio_sb3_dataset_preserves_zero_padded_codes
         "table",
         "code",
         "source_prediction_run_id",
-        "feature_score_equal_weight_topk_momentum",
     ]
     assert dataset.candidates["symbol"].tolist() == ["000250", "000250", "000250"]
     assert dataset.candidates["code"].tolist() == ["000250", "000250", "000250"]

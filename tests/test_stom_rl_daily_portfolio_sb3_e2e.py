@@ -54,7 +54,7 @@ class _FakeSb3Model:
         Path(path).write_bytes(b"synthetic-sb3-model-zip")
 
 
-def _fake_train_portfolio_model(_config, *, candidates):
+def _fake_train_portfolio_model(_config, *, candidates, **_kwargs):
     assert not candidates.empty
     return _FakeSb3Model(), {
         "device_requested": "cpu",
@@ -130,6 +130,18 @@ def _make_daily_prediction_run(tmp_path: Path) -> Path:
                 {"strategy": "no_trade_cash", "cost_bps": 23.0, "total_net_return": 0.0},
                 {"strategy": "shuffle_control", "cost_bps": 23.0, "total_net_return": -0.01},
                 {"strategy": "supervised_linear_ranker", "cost_bps": 23.0, "total_net_return": 0.01},
+                {
+                    "strategy": "equal_weight_topk_momentum",
+                    "strategy_family": "rule_baseline",
+                    "cost_bps": 23.0,
+                    "total_net_return": 0.005,
+                },
+                {
+                    "strategy": "mean_reversion",
+                    "strategy_family": "rule_baseline",
+                    "cost_bps": 23.0,
+                    "total_net_return": 0.02,
+                },
             ]
         },
     )

@@ -253,17 +253,27 @@ def _validate_baseline_metrics(metrics: Sequence[Mapping[str, Any]], *, expected
     if not metrics:
         raise DailyPortfolioSb3DatasetError("baseline_metrics.json has no metrics")
     strategies = {str(row.get("strategy") or "") for row in metrics if isinstance(row, Mapping)}
-    if not {"no_trade_cash", "shuffle_control"}.issubset(strategies):
-        raise DailyPortfolioSb3DatasetError("Baseline metrics missing no-trade/shuffle controls")
-    costs = set()
+    required = {"no_trade_cash", "shuffle_control", "equal_weight_topk_momentum"}
+    if not required.issubset(strategies):
+        raise DailyPortfolioSb3DatasetError("Baseline metrics missing no-trade/shuffle/momentum controls")
+    primary_strategies: set[str] = set()
+    primary_rule_present = False
     for row in metrics:
         if not isinstance(row, Mapping):
             raise DailyPortfolioSb3DatasetError("Baseline metric row is not an object")
-        for key in ("cost_bps", "round_trip_cost_bps", "cost_assumption_round_trip_bp"):
+        cost_value = None
+        for key in ("cost_bps", "round_trip_cost_bps", "cost_round_trip_bp", "cost_assumption_round_trip_bp"):
             if row.get(key) not in (None, ""):
-                costs.add(float(_safe_float(row[key], label="baseline metric cost")))
-    if costs and float(expected_cost_bps) not in costs:
-        raise DailyPortfolioSb3DatasetError("Baseline metrics missing 23bp primary rows")
+                cost_value = float(_safe_float(row[key], label="baseline metric cost"))
+                break
+        if cost_value is None or abs(cost_value - float(expected_cost_bps)) > 1e-9:
+            continue
+        strategy = str(row.get("strategy") or "")
+        primary_strategies.add(strategy)
+        if str(row.get("strategy_family") or "") == "rule_baseline" and strategy != "equal_weight_topk_momentum":
+            primary_rule_present = True
+    if not required.issubset(primary_strategies) or not primary_rule_present:
+        raise DailyPortfolioSb3DatasetError("Baseline metrics missing 23bp no-trade/shuffle/momentum/RULE rows")
 
 
 def _dataset_manifest_candidate(manifest: Mapping[str, Any], run_dir: Path) -> Path:
@@ -426,19 +436,7 @@ def _score_columns(rows: Sequence[Mapping[str, Any]], rank_score_column: str) ->
     ]
     if forbidden_score_cols:
         raise DailyPortfolioSb3DatasetError(f"Forbidden non-causal score columns in predictions.csv: {forbidden_score_cols}")
-    score_cols = sorted(
-        key for key in first.keys()
-        if (
-            (key == rank_score_column or key.startswith("score_"))
-            and key not in {"future_return_1d", "future_direction_1d"}
-            and "future" not in key
-            and "label" not in key
-            and "target" not in key
-        )
-    )
-    if rank_score_column not in score_cols and rank_score_column in first:
-        score_cols.append(rank_score_column)
-    return score_cols
+    return [rank_score_column] if rank_score_column in first else ["rank_score"]
 
 
 def _fetch_current_and_next_close(conn: sqlite3.Connection, *, table: str, date: str) -> tuple[float, str, float]:
@@ -565,6 +563,8 @@ def build_daily_portfolio_sb3_dataset(config: DailyPortfolioSb3DatasetConfig) ->
         "source_prediction_run_id": source_run_id,
         "source_prediction_run_dir": str(lineage.run_dir),
         "source_prediction_manifest_sha256": lineage.hashes["prediction_manifest"],
+        "source_baseline_metrics": list(lineage.baseline_metrics),
+        "source_baseline_metrics_sha256": lineage.hashes["baseline_metrics"],
         "preregistration_path": str(lineage.preregistration_path),
         "preregistration_sha256": lineage.hashes["preregistration"],
         "source_artifact_hashes": dict(lineage.hashes),
