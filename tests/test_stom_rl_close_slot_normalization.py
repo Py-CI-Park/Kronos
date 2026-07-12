@@ -1,4 +1,4 @@
-"""WP-R1 unit tests — close-slot contextual-bandit feature normalization.
+"""WP-R1 unit tests — close-slot linear-score feature normalization.
 
 Guards the fix for the 0-symbol bug: a large-scale feature (e.g.
 institutional_net_buy ~1e6) must no longer dominate the linear score after the
@@ -13,8 +13,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from stom_rl.daily_close_slot_train import (  # noqa: E402
-    _contextual_bandit_score,
-    _fit_contextual_bandit_weights,
+    _fit_linear_score_weights,
+    _linear_score,
 )
 
 
@@ -46,7 +46,7 @@ def _train_rows(big_scale: float):
 
 def test_fit_no_single_weight_dominance():
     features = ["inst", "ret"]
-    model = _fit_contextual_bandit_weights(_train_rows(big_scale=1_000_000.0), features)
+    model = _fit_linear_score_weights(_train_rows(big_scale=1_000_000.0), features)
     weights = model["weights"]
     l1 = sum(abs(v) for v in weights.values()) or 1.0
     top_share = max(abs(v) for v in weights.values()) / l1
@@ -61,29 +61,29 @@ def test_fit_no_single_weight_dominance():
 def test_score_uses_frozen_train_stats():
     features = ["inst", "ret"]
     rows = _train_rows(big_scale=1_000_000.0)
-    model = _fit_contextual_bandit_weights(rows, features)
+    model = _fit_linear_score_weights(rows, features)
     mean = model["feature_mean"]
     std = model["feature_std"]
     # A row sitting exactly at the train mean scores 0 (all z=0).
     at_mean = {"inst": mean["inst"], "ret": mean["ret"]}
-    assert abs(_contextual_bandit_score(at_mean, model)) < 1e-9
+    assert abs(_linear_score(at_mean, model)) < 1e-9
     # A row one std above the mean on each feature scores exactly sum(weights).
     one_std = {"inst": mean["inst"] + std["inst"], "ret": mean["ret"] + std["ret"]}
     expected = model["weights"]["inst"] + model["weights"]["ret"]
-    assert abs(_contextual_bandit_score(one_std, model) - expected) < 1e-9
+    assert abs(_linear_score(one_std, model) - expected) < 1e-9
 
 
 def test_missing_value_imputed_to_train_mean():
     features = ["inst", "ret"]
-    model = _fit_contextual_bandit_weights(_train_rows(big_scale=1_000_000.0), features)
+    model = _fit_linear_score_weights(_train_rows(big_scale=1_000_000.0), features)
     mean = model["feature_mean"]
     # Missing 'inst' must score identically to 'inst' at the train mean (z=0).
     missing = {"ret": mean["ret"]}
     imputed = {"inst": mean["inst"], "ret": mean["ret"]}
-    assert abs(_contextual_bandit_score(missing, model) - _contextual_bandit_score(imputed, model)) < 1e-9
+    assert abs(_linear_score(missing, model) - _linear_score(imputed, model)) < 1e-9
 
 
 def test_legacy_bare_weight_map_still_scores_raw():
     # Back-compat: a plain {feature: weight} map (no scaler keys) uses the raw dot product.
     legacy = {"ret": 2.0}
-    assert abs(_contextual_bandit_score({"ret": 3.0}, legacy) - 6.0) < 1e-9
+    assert abs(_linear_score({"ret": 3.0}, legacy) - 6.0) < 1e-9
