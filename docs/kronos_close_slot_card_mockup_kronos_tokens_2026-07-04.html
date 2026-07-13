@@ -1,0 +1,199 @@
+<style>
+  /* ===== Kronos real tokens (webui/v2_src/src/lib/theme.ts) · dark-only ===== */
+  :root {
+    --bg:#0f172a; --card:#111827; --card-raised:#0b1120; --card-2:#0e1626;
+    --border:#243244; --border-muted:#1e293b;
+    --text:#e2e8f0; --text-muted:#94a3b8; --text-dim:#64748b; --text-faint:#475569;
+    --accent:#38bdf8; --accent-subtle:#bfdbfe; --accent-dim:rgba(56,189,248,.12); --accent-hover:rgba(56,189,248,.08);
+    --success:#22c55e; --warn:#f59e0b; --danger:#ef4444; --info:#93c5fd;
+    --sans:"Segoe UI","Malgun Gothic","맑은 고딕",sans-serif;
+    --mono:"Consolas","D2Coding",ui-monospace,monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5;
+          -webkit-font-smoothing: antialiased; padding: 28px 24px 60px;
+          background-image: radial-gradient(1000px 520px at 86% -14%, var(--accent-dim), transparent 60%); }
+  .col { max-width: 940px; margin: 0 auto; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .mockpill { font-family: var(--mono); font-size: 11px; color: var(--warn);
+              border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: 999px; padding: 3px 10px; display: inline-block; }
+  .ctx { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; color: var(--text-dim); font-size: 12.5px; }
+  .ctx .b { color: var(--text-muted); } .ctx .sep { color: var(--text-faint); }
+  .ctx .tab { color: var(--accent); font-weight: 600; }
+  .cap-line { color: var(--text-dim); font-size: 12.5px; margin: 2px 0 18px; }
+
+  /* card */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 20px 18px;
+          box-shadow: 0 10px 30px -20px rgba(0,0,0,.7); }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+  .eyebrow { font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); }
+  .head h2 { font-size: 18px; font-weight: 600; margin: 5px 0 0; letter-spacing: -0.01em; }
+
+  .chip { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; white-space: nowrap;
+          background: color-mix(in srgb, var(--warn) 14%, var(--card)); color: var(--warn-ink, var(--text));
+          border: 1px solid color-mix(in srgb, var(--warn) 42%, transparent); }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+
+  .banner { display: flex; gap: 11px; align-items: flex-start; margin: 16px 0 4px; padding: 12px 14px; border-radius: 10px;
+            background: color-mix(in srgb, var(--danger) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent); }
+  .banner .ic { font-size: 15px; } .banner .bt { font-size: 13px; color: var(--text-muted); } .banner .bt b { color: var(--text); }
+
+  .kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 11px; margin: 18px 0 4px; }
+  @media (max-width: 680px){ .kpis { grid-template-columns: repeat(2,1fr); } }
+  .kpi { border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; background: var(--card-2); }
+  .kpi .l { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
+  .kpi .v { font-size: 21px; font-weight: 600; margin-top: 5px; letter-spacing: -0.02em; font-family: var(--mono); }
+  .kpi .u { font-size: 12px; color: var(--text-muted); font-family: var(--sans); font-weight: 400; }
+  .kpi.flag .v { color: var(--danger); }
+
+  .plots { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; margin-top: 20px; }
+  @media (max-width: 680px){ .plots { grid-template-columns: 1fr; } }
+  .plot { border: 1px solid var(--border); border-radius: 10px; padding: 14px 15px; background: var(--card-2); }
+  .plot .t { font-size: 12.5px; font-weight: 600; margin-bottom: 14px; }
+  .plot .cap { font-size: 10.5px; color: var(--text-dim); margin-top: 12px; }
+
+  .rbar { display: grid; grid-template-columns: 118px 1fr; gap: 10px; align-items: center; margin-bottom: 11px; }
+  .rbar .lab { font-family: var(--mono); font-size: 11px; color: var(--text-muted); text-align: right; line-height: 1.25; }
+  .rbar .track { position: relative; height: 22px; }
+  .rbar .zero { position: absolute; left: 58%; top: -3px; bottom: -3px; width: 1px; background: var(--border); }
+  .rbar .fill { position: absolute; top: 3px; height: 16px; border-radius: 4px; background: var(--accent); }
+  .rbar .fill.nub { width: 3px; background: var(--text-dim); }
+  .rbar .val { position: absolute; top: 2px; font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--text); }
+  .rbar .warnpin { position: absolute; top: 3px; font-size: 10.5px; font-weight: 600; color: var(--warn); white-space: nowrap; }
+
+  .cost { display: flex; flex-direction: column; gap: 11px; }
+  .cost .row { display: grid; grid-template-columns: 52px 1fr 52px; gap: 9px; align-items: center; }
+  .cost .cl { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+  .cost .ct { height: 15px; border-radius: 4px; }
+  .cost .cv { font-family: var(--mono); font-size: 11px; color: var(--text-muted); text-align: right; }
+  .cost .primary .cl, .cost .primary .cv { color: var(--accent); }
+
+  details { margin-top: 18px; border-top: 1px solid var(--border-muted); padding-top: 2px; }
+  summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-muted); padding: 12px 2px; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▸ "; color: var(--text-dim); } details[open] summary::before { content: "▾ "; }
+  .detgrid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-top: 8px; }
+  @media (max-width: 680px){ .detgrid { grid-template-columns: 1fr; } }
+  .detbox { border: 1px solid var(--border); border-radius: 9px; padding: 11px 13px; background: var(--card-2); }
+  .detbox .dh { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin-bottom: 8px; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 3px 0; border-bottom: 1px dotted var(--border-muted); }
+  .kv:last-child { border-bottom: 0; }
+  .kv span { color: var(--text-dim); } .kv strong { color: var(--text-muted); font-weight: 600; text-align: right; font-family: var(--mono); word-break: break-all; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font-family: var(--mono); font-size: 10.5px; padding: 3px 9px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); color: var(--text-muted); }
+  .tag.off { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 32%, transparent); }
+  table.mini { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  table.mini th { text-align: left; color: var(--text-dim); font-family: var(--mono); font-weight: 400; font-size: 10px; text-transform: uppercase; padding: 5px 7px; border-bottom: 1px solid var(--border-muted); }
+  table.mini td { padding: 5px 7px; border-bottom: 1px solid var(--border-muted); color: var(--text-muted); font-family: var(--mono); }
+
+  .foot { font-size: 12px; color: var(--text-muted); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 15px; margin-top: 16px; }
+  .foot b { color: var(--text); }
+</style>
+
+<div class="wrap"><div class="col">
+
+  <span class="mockpill">MOCKUP · Kronos slate/sky 토큰 · 실제 대시보드 아님</span>
+  <div class="ctx"><span class="b">Kronos 대시보드</span><span class="sep">›</span><span class="tab">Daily OHLCV 탭</span><span class="sep">›</span><span>close-slot 카드</span></div>
+  <p class="cap-line">아래는 <b style="color:var(--text)">리모델 목표</b> — 현재 과밀 카드를 Kronos 자신의 색·폰트로 재구성한 모습입니다. 확정되면 이 모습대로 <span class="mono">DailyCloseSlotCard.svelte</span>에 반영합니다.</p>
+
+  <section class="card" data-daily-close-slot-card>
+    <div class="head">
+      <div>
+        <div class="eyebrow">종가매매 연구 · read-only evidence</div>
+        <h2>종가 매수 → 익일 종가 매도 · 10-slot 실험</h2>
+      </div>
+      <span class="chip" data-daily-close-slot-status><span class="dot"></span>연구용 · WATCH · 실거래 아님</span>
+    </div>
+
+    <div class="banner" data-daily-close-slot-guardrail>
+      <span class="ic">⚠️</span>
+      <div class="bt"><b>미해결 blocker 2건 — 게이트 통과 불가</b><br>
+        D0_PRICE_BASIS_NOT_VERIFIED · D1_UNIVERSE_NOT_OFFICIAL · price_basis unknown · universe WATCH</div>
+    </div>
+
+    <div class="kpis" data-daily-close-slot-contract>
+      <div class="kpi"><div class="l">readiness</div><div class="v" style="font-size:14px">WATCH</div><div class="u">RESEARCH_ONLY</div></div>
+      <div class="kpi"><div class="l">선택 슬롯</div><div class="v">10<span class="u"> max</span></div><div class="u">threshold 0–10 · hold-cash</div></div>
+      <div class="kpi"><div class="l">기본 비용</div><div class="v">23<span class="u"> bp</span></div><div class="u">민감도 0 / 23 / 46</div></div>
+      <div class="kpi flag"><div class="l">미해결 blocker</div><div class="v">2</div><div class="u">D0 · D1</div></div>
+    </div>
+
+    <div class="plots">
+      <div class="plot" data-daily-close-slot-policy-scores>
+        <div class="t">정책별 연구 리워드 <span style="color:var(--text-dim);font-weight:400">(base 23bp)</span></div>
+
+        <div class="rbar" title="no_trade_control · 기준 통제 · 0.0000">
+          <div class="lab">no_trade<br>(control)</div>
+          <div class="track"><div class="zero"></div><div class="fill nub" style="left:58%"></div><div class="val" style="left:60%">0.0000</div></div>
+        </div>
+        <div class="rbar" title="deterministic_shuffle_top10 · 통제(액션 아님) · -0.4748">
+          <div class="lab">shuffle top10<br>(control)</div>
+          <div class="track"><div class="zero"></div><div class="fill" style="left:8%;width:50%"></div><div class="val" style="left:0%;color:var(--danger)">−0.4748</div></div>
+        </div>
+        <div class="rbar" title="momentum_top10_score_and_pick · +0.3088">
+          <div class="lab">momentum top10</div>
+          <div class="track"><div class="zero"></div><div class="fill" style="left:58%;width:32.5%"></div><div class="val" style="left:92%">+0.3088</div></div>
+        </div>
+        <div class="rbar" title="contextual_bandit · 피처 정규화 버그로 0종목 선택 (Phase 1 대상)">
+          <div class="lab">contextual<br>bandit</div>
+          <div class="track"><div class="zero"></div><div class="fill nub" style="left:58%"></div><div class="warnpin" style="left:61%">⚠ 0종목 선택 · 정규화 버그 (Phase 1)</div></div>
+        </div>
+
+        <div class="cap">연구 라벨 · 비실행 상한(non-executable upper bound) · 수익 주장 아님. shuffle은 baseline/control.</div>
+      </div>
+
+      <div class="plot" data-daily-close-slot-cost-components>
+        <div class="t">비용 민감도</div>
+        <div class="cost">
+          <div class="row"><div class="cl">0 bp</div><div class="ct" style="width:6%;background:var(--border)"></div><div class="cv">control</div></div>
+          <div class="row primary"><div class="cl">23 bp</div><div class="ct" style="width:50%;background:var(--accent)"></div><div class="cv">기본</div></div>
+          <div class="row"><div class="cl">46 bp</div><div class="ct" style="width:100%;background:color-mix(in srgb, var(--accent) 50%, var(--card))"></div><div class="cv">stress</div></div>
+        </div>
+        <div class="cap">primary cost = component <b style="color:var(--accent)">base_23bp</b>. 0/46bp는 통제·민감도.</div>
+      </div>
+    </div>
+
+    <details>
+      <summary>세부 증거 (계보 · DB 접근 증명 · 잠금 · no-claim · 산출물)</summary>
+      <div class="detgrid" style="margin-top:14px">
+        <div class="detbox" data-daily-close-slot-lineage>
+          <div class="dh">lineage / gate</div>
+          <div class="kv"><span>gate</span><strong>...research_gate_2026_07_03</strong></div>
+          <div class="kv"><span>train</span><strong>...research_policy_2026_07_03</strong></div>
+          <div class="kv"><span>dataset</span><strong>...research_dataset_2026_07_03</strong></div>
+        </div>
+        <div class="detbox" data-daily-close-slot-db-access>
+          <div class="dh">DB access proof</div>
+          <div class="kv"><span>access / uri</span><strong>read_only · ro</strong></div>
+          <div class="kv"><span>query_only</span><strong>true</strong></div>
+          <div class="kv"><span>mutation</span><strong>false</strong></div>
+        </div>
+        <div class="detbox" data-daily-close-slot-source-scope>
+          <div class="dh">bounded scope</div>
+          <div class="kv"><span>max symbols / rows</span><strong>120 · 260</strong></div>
+          <div class="kv"><span>full-universe</span><strong>아님</strong></div>
+        </div>
+        <div class="detbox" data-daily-close-slot-locks>
+          <div class="dh">machine-readable locks (모두 false)</div>
+          <div class="tags"><span class="tag off">promotion ✕</span><span class="tag off">model_build ✕</span><span class="tag off">paper_forward ✕</span><span class="tag off">live_broker ✕</span><span class="tag off">profitability ✕</span><span class="tag off">go ✕</span></div>
+        </div>
+        <div class="detbox" data-daily-close-slot-no-claims>
+          <div class="dh">no-claim labels</div>
+          <div class="tags"><span class="tag">NO_LIVE_BROKER_ORDER</span><span class="tag">NO_PAPER_FORWARD</span><span class="tag">NO_MODEL_BUILD_GO</span><span class="tag">NO_PROFITABILITY</span></div>
+        </div>
+        <div class="detbox" data-daily-close-slot-selection>
+          <div class="dh">selected-code replay (000250 문자열)</div>
+          <table class="mini"><thead><tr><th>date</th><th>slot</th><th>code</th></tr></thead>
+          <tbody><tr><td>2026-06-30</td><td>1</td><td>000250</td></tr><tr><td>2026-06-30</td><td>2</td><td>005930</td></tr></tbody></table>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <div class="foot">
+    <b>보존 확인.</b> 기존 QA 훅 <span class="mono">data-daily-close-slot-{card,status,contract,guardrail,policy-scores,cost-components,lineage,db-access,source-scope,locks,no-claims,selection}</span> 유지 · 가드레일 사실(WATCH·D0/D1·false-lock 6·read-only·000250) 삭제 없이 표현만 정리 · Kronos <span class="mono">theme.ts</span> slate/sky 토큰 사용.
+  </div>
+
+</div></div>

@@ -1,0 +1,415 @@
+<style>
+  /* ===== Kronos real tokens (core.css oklch) — base identity kept, layout/IA re-imagined ===== */
+  :root {
+    --bg: oklch(97% 0.005 240); --surface: oklch(100% 0 0); --surface-raised: oklch(99% 0.003 240); --surface-sunken: oklch(96% 0.006 240);
+    --border: oklch(91% 0.006 240); --border-strong: oklch(82% 0.01 240); --border-faint: oklch(94% 0.005 240);
+    --fg: oklch(22% 0.02 240); --fg-strong: oklch(15% 0.025 240); --muted: oklch(48% 0.018 240); --dim: oklch(62% 0.014 240); --faint: oklch(78% 0.01 240);
+    --on-accent: oklch(99% 0.005 170);
+    --accent: oklch(56% 0.12 170); --accent-strong: oklch(46% 0.14 170); --accent-soft: oklch(95% 0.04 170); --accent-tint: oklch(90% 0.05 170); --accent-glow: oklch(56% 0.12 170 / .2);
+    --success: oklch(58% 0.15 150); --success-soft: oklch(94% 0.05 150);
+    --warn: oklch(72% 0.16 75); --warn-ink: oklch(48% 0.15 75); --warn-soft: oklch(96% 0.06 75);
+    --danger: oklch(58% 0.21 25); --danger-soft: oklch(96% 0.05 25);
+    --info: oklch(60% 0.14 235); --info-soft: oklch(96% 0.04 235);
+    --violet: oklch(56% 0.16 295);
+    --font: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', 'Malgun Gothic', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', 'D2Coding', Consolas, ui-monospace, monospace;
+    --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:22px; --r-pill:999px;
+    --sh-sm: 0 1px 2px oklch(40% .03 240/.06); --sh-md: 0 6px 18px -8px oklch(40% .06 240/.18);
+    --sidebar-w: 248px;
+  }
+  :root[data-theme="dark"], :root.dark {
+    --bg: oklch(15% 0.02 250); --surface: oklch(19% 0.022 250); --surface-raised: oklch(22% 0.024 250); --surface-sunken: oklch(13% 0.018 250);
+    --border: oklch(27% 0.025 250); --border-strong: oklch(35% 0.028 250); --border-faint: oklch(23% 0.022 250);
+    --fg: oklch(93% 0.006 240); --fg-strong: oklch(98% 0.003 240); --muted: oklch(70% 0.014 240); --dim: oklch(56% 0.018 240); --faint: oklch(40% 0.02 240);
+    --on-accent: oklch(15% 0.02 170);
+    --accent: oklch(74% 0.14 170); --accent-strong: oklch(82% 0.15 170); --accent-soft: oklch(27% 0.08 170); --accent-tint: oklch(33% 0.10 170); --accent-glow: oklch(74% 0.14 170 / .28);
+    --warn-ink: oklch(80% 0.15 75); --success-soft: oklch(27% 0.08 150); --warn-soft: oklch(29% 0.10 75); --danger-soft: oklch(27% 0.10 25); --info-soft: oklch(27% 0.08 235);
+    --violet: oklch(72% 0.15 295); --sh-md: 0 8px 24px -10px oklch(0% 0 0/.5);
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --bg: oklch(15% 0.02 250); --surface: oklch(19% 0.022 250); --surface-raised: oklch(22% 0.024 250); --surface-sunken: oklch(13% 0.018 250);
+    --border: oklch(27% 0.025 250); --border-strong: oklch(35% 0.028 250); --border-faint: oklch(23% 0.022 250);
+    --fg: oklch(93% 0.006 240); --fg-strong: oklch(98% 0.003 240); --muted: oklch(70% 0.014 240); --dim: oklch(56% 0.018 240); --faint: oklch(40% 0.02 240);
+    --on-accent: oklch(15% 0.02 170);
+    --accent: oklch(74% 0.14 170); --accent-strong: oklch(82% 0.15 170); --accent-soft: oklch(27% 0.08 170); --accent-tint: oklch(33% 0.10 170);
+    --warn-ink: oklch(80% 0.15 75); --success-soft: oklch(27% 0.08 150); --warn-soft: oklch(29% 0.10 75); --danger-soft: oklch(27% 0.10 25); --info-soft: oklch(27% 0.08 235); --violet: oklch(72% 0.15 295);
+  }}
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .app { font-family: var(--font); background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased;
+         display: grid; grid-template-columns: var(--sidebar-w) 1fr; grid-template-rows: auto 1fr; min-height: 100vh; font-size: 14px; line-height: 1.5; }
+  @media (max-width: 960px){ .app { grid-template-columns: 1fr; } .sidebar { display: none; } }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .cbanner { grid-column: 1/-1; background: var(--accent-soft); color: var(--accent-strong); border-bottom: 1px solid var(--border); font: 600 12px/1.4 var(--mono); padding: 8px 18px; }
+  .cbanner b { color: var(--fg-strong); }
+
+  /* ===== sidebar (restructured IA) ===== */
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 11px; padding: 18px 18px; border-bottom: 1px solid var(--border-faint); }
+  .bm { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, var(--accent), var(--violet)); display: grid; place-items: center; color: var(--on-accent); font-weight: 800; box-shadow: 0 4px 12px var(--accent-glow); }
+  .bn { font: 700 15px/1.05 var(--font); color: var(--fg-strong); letter-spacing: -0.01em; }
+  .bt { font: 500 10px/1.3 var(--mono); color: var(--muted); margin-top: 2px; }
+  .snav { padding: 12px 10px 0; overflow-y: auto; flex: 1; }
+  .sgroup { margin-bottom: 4px; }
+  .slabel { font: 600 9.5px/1 var(--font); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); padding: 12px 12px 6px; }
+  .ni { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--r-sm); color: var(--muted); font: 500 13px/1 var(--font); position: relative; cursor: pointer; user-select: none; }
+  .ni:hover { background: var(--surface-sunken); color: var(--fg); }
+  .ni .dt { width: 7px; height: 7px; border-radius: 2px; background: currentColor; opacity: .4; flex: 0 0 auto; }
+  .ni .lb { flex: 1; }
+  .ni .bd { font: 600 9px/1 var(--mono); padding: 3px 6px; border-radius: 4px; background: var(--surface-sunken); color: var(--dim); }
+  .ni[data-active="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+  .ni[data-active="true"] .dt { opacity: 1; }
+  .ni[data-active="true"]::before { content: ''; position: absolute; left: -10px; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: var(--accent); }
+  .ni .st { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+  .st.warn { background: var(--warn); } .st.danger { background: var(--danger); } .st.ok { background: var(--success); } .st.idle { background: var(--dim); }
+  .sfoot { padding: 12px; border-top: 1px solid var(--border-faint); }
+  .rc { background: var(--surface-sunken); border-radius: var(--r-md); padding: 11px; }
+  .rc .h { display: flex; align-items: center; gap: 7px; font: 600 11px/1 var(--mono); color: var(--success); }
+  .rc .h .d { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+  .rc .n { font: 600 11px/1.3 var(--mono); color: var(--fg-strong); word-break: break-all; margin-top: 7px; }
+
+  /* ===== header + command bar ===== */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .hdr { position: sticky; top: 0; z-index: 6; height: 60px; display: flex; align-items: center; gap: 14px; padding: 0 26px; background: color-mix(in oklab, var(--bg) 85%, transparent); backdrop-filter: blur(12px) saturate(140%); border-bottom: 1px solid var(--border-faint); }
+  .crumb { font: 500 10px/1 var(--mono); color: var(--dim); letter-spacing: .06em; text-transform: uppercase; }
+  .htitle { font: 600 17px/1.2 var(--font); color: var(--fg-strong); letter-spacing: -0.01em; }
+  .sp { flex: 1; }
+  .hstat { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--border); font: 600 12px/1 var(--mono); }
+  .hstat .d { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+  .tbtn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; font-size: 15px; }
+  .tbtn:hover { background: var(--surface-sunken); }
+  @media (max-width: 760px){ .hide-sm { display: none; } }
+
+  /* global posture bar — NEW */
+  .posture { display: flex; align-items: center; gap: 14px; padding: 12px 26px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .posture .big { font: 700 14px/1 var(--font); color: var(--fg-strong); display: flex; align-items: center; gap: 9px; }
+  .posture .big .d { width: 10px; height: 10px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 4px var(--warn-soft); }
+  .locks { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .lock { font: 600 10px/1 var(--mono); padding: 4px 8px; border-radius: var(--r-pill); background: var(--danger-soft); color: var(--danger); }
+
+  /* ===== page + primitives ===== */
+  .page { padding: 24px 26px 60px; max-width: 1560px; width: 100%; margin: 0 auto; }
+  .view { display: none; } .view[data-on="true"] { display: block; }
+  .eyebrow { font: 600 11px/1.4 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h1.big { font: 700 27px/1.15 var(--font); letter-spacing: -0.022em; color: var(--fg-strong); margin: 6px 0; text-wrap: balance; }
+  .lede { color: var(--muted); max-width: 74ch; margin: 0; }
+  .sec-title { display: flex; align-items: baseline; gap: 10px; margin: 26px 0 12px; }
+  .sec-title h2 { font: 600 15px/1 var(--font); color: var(--fg-strong); letter-spacing: -0.01em; }
+  .sec-title .m { font: 500 12px/1 var(--mono); color: var(--dim); }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--r-pill); font: 600 11px/1 var(--font); background: var(--surface-sunken); color: var(--muted); border: 1px solid var(--border-faint); white-space: nowrap; }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill.warn { background: var(--warn-soft); color: var(--warn-ink); border-color: transparent; }
+  .pill.danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+  .pill.success { background: var(--success-soft); color: var(--success); border-color: transparent; }
+  .pill.accent { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--sh-sm); }
+
+  /* mission control grid — NEW */
+  .mc-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 1100px){ .mc-grid { grid-template-columns: 1fr; } }
+  .lines { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  @media (max-width: 720px){ .lines { grid-template-columns: 1fr; } }
+  .line { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; box-shadow: var(--sh-sm); cursor: pointer; transition: transform .12s, border-color .12s, box-shadow .12s; position: relative; overflow: hidden; }
+  .line:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--sh-md); }
+  .line::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--warn); }
+  .line[data-v="danger"]::after { background: var(--danger); } .line[data-v="ok"]::after { background: var(--success); } .line[data-v="idle"]::after { background: var(--dim); }
+  .line .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .line .nm { font: 600 14px/1.25 var(--font); color: var(--fg-strong); }
+  .line .sub { font: 500 11px/1 var(--mono); color: var(--dim); margin-top: 3px; }
+  .line .val { font: 700 24px/1 var(--font); color: var(--fg-strong); letter-spacing: -0.02em; margin: 14px 0 4px; font-variant-numeric: tabular-nums; }
+  .line .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  .line .bk { font: 600 11px/1 var(--mono); color: var(--danger); }
+  .line .go { font: 600 11px/1 var(--mono); color: var(--accent-strong); }
+  .spark { height: 26px; width: 100%; margin-top: 6px; }
+
+  .rail { display: flex; flex-direction: column; gap: 16px; }
+  .rail .card h3 { font: 600 13px/1 var(--font); color: var(--fg-strong); margin: 0 0 12px; }
+  .blk { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--border-faint); font-size: 12.5px; }
+  .blk:last-child { border-bottom: 0; }
+  .blk .g { font: 700 10px/1.5 var(--mono); color: var(--danger); flex: 0 0 auto; }
+  .blk .tx { color: var(--muted); } .blk .tx b { color: var(--fg); }
+  .next { display: flex; gap: 9px; padding: 8px 0; font-size: 12.5px; color: var(--muted); border-bottom: 1px dashed var(--border-faint); }
+  .next:last-child { border-bottom: 0; } .next .n { color: var(--accent-strong); font-weight: 700; }
+
+  /* KPI + metric */
+  .grid-6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 1100px){ .grid-6 { grid-template-columns: repeat(3,1fr); } .grid-4 { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 640px){ .grid-6, .grid-4 { grid-template-columns: repeat(2,1fr); } }
+  .metric { padding: 14px 15px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+  .metric .l { font: 600 10px/1 var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .metric .v { font: 700 22px/1.05 var(--font); color: var(--fg-strong); letter-spacing: -0.02em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .metric .v.sm { font-size: 15px; }
+  .metric .f { font: 500 11px/1.3 var(--mono); color: var(--muted); margin-top: 4px; }
+  .metric.flag .v { color: var(--danger); }
+
+  /* stepper */
+  .steps { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+  .steps .s { border: 1px solid var(--border-faint); border-radius: var(--r-sm); padding: 9px 5px; background: var(--surface-sunken); text-align: center; }
+  .steps .s .n { font: 700 11px/1 var(--mono); color: var(--dim); }
+  .steps .s .t { font: 500 8.5px/1.2 var(--mono); color: var(--muted); margin-top: 5px; display: block; min-height: 20px; }
+  .steps .s[data-st="warn"] { border-color: color-mix(in oklab, var(--warn) 45%, transparent); background: var(--warn-soft); }
+  .steps .s[data-st="danger"] { border-color: color-mix(in oklab, var(--danger) 45%, transparent); background: var(--danger-soft); }
+
+  .notice { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--r-md); font-size: 13px; }
+  .notice.danger { background: var(--danger-soft); } .notice.danger b { color: var(--fg-strong); }
+  .locks-row { display: flex; gap: 7px; flex-wrap: wrap; }
+  .l2 { font: 600 10.5px/1 var(--mono); padding: 5px 9px; border-radius: var(--r-pill); background: var(--danger-soft); color: var(--danger); }
+
+  details.disc { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+  details.disc + details.disc { margin-top: 9px; }
+  details.disc > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 11px; padding: 13px 15px; font: 600 13px/1.2 var(--font); color: var(--fg-strong); }
+  details.disc > summary::-webkit-details-marker { display: none; }
+  details.disc > summary .cv { color: var(--dim); transition: transform .18s; } details.disc[open] > summary .cv { transform: rotate(90deg); }
+  details.disc > summary .sm { font: 500 11.5px/1 var(--mono); color: var(--muted); margin-left: auto; }
+  details.disc .bd { padding: 2px 15px 15px; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 5px 0; border-bottom: 1px dashed var(--border-faint); }
+  .kv:last-child { border-bottom: 0; } .kv span { color: var(--muted); } .kv strong { color: var(--fg); font-family: var(--mono); font-weight: 600; }
+  @media (prefers-reduced-motion: reduce){ details.disc > summary .cv, .line { transition: none; } }
+
+  .note { font-size: 12.5px; color: var(--muted); background: var(--surface-sunken); border: 1px solid var(--border-faint); border-radius: var(--r-md); padding: 13px 16px; margin-top: 20px; }
+  .note b { color: var(--fg-strong); }
+  .note ul { margin: 8px 0 0; padding-left: 18px; } .note li { margin: 3px 0; }
+</style>
+
+<div class="app" id="app">
+  <div class="cbanner">◆ 컨셉 v2 · <b>재구성 IA + Mission Control + RL Lab 포함</b> · 사이드바에서 뷰 전환 · 실제 oklch 토큰 · 최종은 Svelte(실데이터·ECharts)</div>
+
+  <!-- ===== restructured sidebar ===== -->
+  <aside class="sidebar">
+    <div class="brand"><div class="bm">K</div><div><div class="bn">Kronos</div><div class="bt">research command</div></div></div>
+    <div class="snav">
+      <div class="sgroup"><div class="slabel">커맨드</div>
+        <div class="ni" data-active="true" data-go="mc"><span class="dt"></span><span class="lb">Mission Control</span><span class="st warn"></span></div>
+      </div>
+      <div class="sgroup"><div class="slabel">연구 파이프라인</div>
+        <div class="ni" data-go="daily"><span class="dt"></span><span class="lb">일봉 D0–D9</span><span class="bd">연구</span></div>
+        <div class="ni" data-go="daily"><span class="dt"></span><span class="lb">종가매매</span><span class="st warn"></span></div>
+      </div>
+      <div class="sgroup"><div class="slabel">강화학습</div>
+        <div class="ni" data-go="rl"><span class="dt"></span><span class="lb">RL Lab</span><span class="st danger"></span></div>
+        <div class="ni" data-go="rl"><span class="dt"></span><span class="lb">오프닝 30m RL</span><span class="st idle"></span></div>
+      </div>
+      <div class="sgroup"><div class="slabel">모델</div>
+        <div class="ni" data-go="daily"><span class="dt"></span><span class="lb">예측·포트폴리오</span></div>
+        <div class="ni" data-go="daily"><span class="dt"></span><span class="lb">아티팩트·레지스트리</span></div>
+      </div>
+      <div class="sgroup"><div class="slabel">시스템</div>
+        <div class="ni" data-go="mc"><span class="dt"></span><span class="lb">실시간 학습</span><span class="st ok"></span></div>
+        <div class="ni" data-go="mc"><span class="dt"></span><span class="lb">시스템 상태</span></div>
+        <div class="ni" data-go="mc"><span class="dt"></span><span class="lb">설정 · 문서</span></div>
+      </div>
+    </div>
+    <div class="sfoot"><div class="rc"><div class="h"><span class="d"></span>predictor ok</div><div class="n">stom_1s_grid_pred60_2025_full_small</div></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="hdr">
+      <div><div class="crumb" id="crumb">Kronos · 커맨드</div><div class="htitle" id="htitle">Mission Control</div></div>
+      <div class="sp"></div>
+      <span class="hstat hide-sm"><span class="d"></span>WATCH · RESEARCH_ONLY</span>
+      <button class="tbtn" id="themeBtn" title="테마 전환">◐</button>
+    </header>
+
+    <!-- NEW global posture bar -->
+    <div class="posture">
+      <div class="big"><span class="d"></span>연구 전용 · 실거래 경로 전부 잠금</div>
+      <div class="locks">
+        <span class="lock">실거래 ✕</span><span class="lock">브로커 ✕</span><span class="lock">주문 ✕</span><span class="lock">계좌 ✕</span>
+        <span class="lock">페이퍼 ✕</span><span class="lock">모델빌드 ✕</span><span class="lock">수익주장 ✕</span>
+      </div>
+    </div>
+
+    <div class="page">
+
+      <!-- ============ VIEW: MISSION CONTROL ============ -->
+      <section class="view" data-view="mc" data-on="true">
+        <div class="eyebrow">Mission Control · 전 연구 라인 통합 상태</div>
+        <h1 class="big">모든 연구 라인을 한 화면에서</h1>
+        <p class="lede">각 라인의 판정·핵심 지표·미해결 blocker를 한눈에 보고, 카드를 눌러 상세로 들어갑니다. 실거래·수익 경로는 전부 잠금 상태입니다.</p>
+
+        <div class="mc-grid" style="margin-top:20px">
+          <div>
+            <div class="sec-title"><h2>연구 라인</h2><span class="m">6 lines · 실시간 posture</span></div>
+            <div class="lines">
+              <div class="line" data-v="warn" data-go="daily">
+                <div class="top"><div><div class="nm">일봉 연구 D0–D9</div><div class="sub">daily-ohlcv</div></div><span class="pill warn"><span class="dot"></span>WATCH</span></div>
+                <div class="val">D5 <span style="font-size:14px;color:var(--muted)">NO-GO locked</span></div>
+                <svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline points="0,20 20,18 40,19 60,14 80,15 100,11 120,12" fill="none" stroke="var(--warn)" stroke-width="2"/></svg>
+                <div class="foot"><span class="bk">blocker 2 · D0·D1</span><span class="go">자세히 →</span></div>
+              </div>
+              <div class="line" data-v="warn" data-go="daily">
+                <div class="top"><div><div class="nm">종가매매 (close-slot)</div><div class="sub">close_to_next_close</div></div><span class="pill warn"><span class="dot"></span>WATCH</span></div>
+                <div class="val">10 <span style="font-size:14px;color:var(--muted)">slots · 23bp</span></div>
+                <svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline points="0,13 20,13 40,20 60,10 80,13 100,13 120,13" fill="none" stroke="var(--warn)" stroke-width="2"/></svg>
+                <div class="foot"><span class="bk">⚠ bandit 0종목 (Phase1)</span><span class="go">자세히 →</span></div>
+              </div>
+              <div class="line" data-v="danger" data-go="rl">
+                <div class="top"><div><div class="nm">강화학습 RL Lab</div><div class="sub">ts_imb baseline</div></div><span class="pill danger"><span class="dot"></span>NO-GO</span></div>
+                <div class="val">23<span style="font-size:14px;color:var(--muted)">bp · D9 gate</span></div>
+                <svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline points="0,16 20,17 40,15 60,16 80,14 100,15 120,14" fill="none" stroke="var(--danger)" stroke-width="2"/></svg>
+                <div class="foot"><span class="bk">locks 7 off · RESEARCH</span><span class="go">자세히 →</span></div>
+              </div>
+              <div class="line" data-v="idle" data-go="rl">
+                <div class="top"><div><div class="nm">오프닝 30m RL</div><div class="sub">opening_30m</div></div><span class="pill"><span class="dot"></span>NOT_STARTED</span></div>
+                <div class="val">—</div>
+                <svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline points="0,13 120,13" fill="none" stroke="var(--dim)" stroke-width="2" stroke-dasharray="3 4"/></svg>
+                <div class="foot"><span class="bk" style="color:var(--dim)">대기</span><span class="go">자세히 →</span></div>
+              </div>
+              <div class="line" data-v="warn" data-go="daily">
+                <div class="top"><div><div class="nm">모델 · 포트폴리오</div><div class="sub">D3–D4</div></div><span class="pill warn"><span class="dot"></span>baseline</span></div>
+                <div class="val">ts_imb <span style="font-size:14px;color:var(--muted)">RULE</span></div>
+                <svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline points="0,18 20,16 40,17 60,13 80,14 100,10 120,9" fill="none" stroke="var(--accent)" stroke-width="2"/></svg>
+                <div class="foot"><span class="bk" style="color:var(--muted)">RL 아님 · 규칙</span><span class="go">자세히 →</span></div>
+              </div>
+              <div class="line" data-v="ok" data-go="mc">
+                <div class="top"><div><div class="nm">시스템 · 학습</div><div class="sub">predictor</div></div><span class="pill success"><span class="dot"></span>ok</span></div>
+                <div class="val">100.0<span style="font-size:14px;color:var(--muted)">%</span></div>
+                <svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline points="0,20 20,16 40,12 60,10 80,8 100,7 120,6" fill="none" stroke="var(--success)" stroke-width="2"/></svg>
+                <div class="foot"><span class="bk" style="color:var(--success)">정상</span><span class="go">자세히 →</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rail">
+            <div class="card">
+              <h3>미해결 blocker 전체</h3>
+              <div class="blk"><span class="g">D0</span><span class="tx"><b>price_basis 미검증</b> — 조정가격 증거 필요 (일봉·종가매매)</span></div>
+              <div class="blk"><span class="g">D1</span><span class="tx"><b>universe 비공식</b> — governance 증거·Q-products 격리</span></div>
+              <div class="blk"><span class="g">D5</span><span class="tx"><b>walk-forward NO-GO</b> — 사전등록 증거 통과 전 잠금</span></div>
+            </div>
+            <div class="card">
+              <h3>다음 확인</h3>
+              <div class="next"><span class="n">1</span><span>D0–D9 게이트에서 PASS/WATCH/NOT_STARTED/BLOCKED 먼저 확인</span></div>
+              <div class="next"><span class="n">2</span><span>close-slot 피처 정규화 버그(Phase 1) — contextual_bandit 0종목</span></div>
+              <div class="next"><span class="n">3</span><span>artifact hash·stale/malformed fail-closed 상태 점검</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ VIEW: RL LAB ============ -->
+      <section class="view" data-view="rl">
+        <div class="eyebrow">RL Lab · 강화학습 연구 커맨드 (research-only)</div>
+        <h1 class="big">강화학습 증거 — NO-GO / 연구 전용</h1>
+        <p class="lede">ts_imb RULE 기준선 대비 23bp 비용 반영 비교. 실거래·브로커·주문·계좌·페이퍼·모델빌드·수익주장 경로는 열리지 않습니다.</p>
+
+        <div class="grid-6" style="margin-top:18px">
+          <div class="metric"><div class="l">선택 판정</div><div class="v sm">NO-GO</div><div class="f">research_only</div></div>
+          <div class="metric"><div class="l">23bp 대비</div><div class="v sm">기준선</div><div class="f">ts_imb RULE</div></div>
+          <div class="metric"><div class="l">최대 낙폭</div><div class="v sm">증거없음</div><div class="f">D3 필요</div></div>
+          <div class="metric"><div class="l">거래·회전</div><div class="v sm">—</div><div class="f">D4</div></div>
+          <div class="metric"><div class="l">연구 큐</div><div class="v">0</div><div class="f">recorded-only</div></div>
+          <div class="metric flag"><div class="l">D9 게이트</div><div class="v sm">NO-GO</div><div class="f">사람 검토</div></div>
+        </div>
+
+        <div class="sec-title"><h2>안전 잠금</h2><span class="m">7 경로 · 전부 off</span></div>
+        <div class="locks-row">
+          <span class="l2">실거래 ✕</span><span class="l2">브로커 연결 ✕</span><span class="l2">주문 전송 ✕</span><span class="l2">계좌 접근 ✕</span>
+          <span class="l2">페이퍼 ✕</span><span class="l2">모델 빌드 ✕</span><span class="l2">수익 주장 ✕</span>
+        </div>
+
+        <div class="sec-title"><h2>D0–D9 증거 게이트</h2><span class="m">RL 연구 워크플로우</span></div>
+        <div class="steps">
+          <div class="s"><span class="n">D0</span><span class="t">데이터 발견</span></div>
+          <div class="s"><span class="n">D1</span><span class="t">룰 비교</span></div>
+          <div class="s"><span class="n">D2</span><span class="t">23bp 비용</span></div>
+          <div class="s" data-st="warn"><span class="n">D3</span><span class="t">낙폭</span></div>
+          <div class="s"><span class="n">D4</span><span class="t">거래·회전</span></div>
+          <div class="s"><span class="n">D5</span><span class="t">음성·셔플</span></div>
+          <div class="s"><span class="n">D6</span><span class="t">OOS 분리</span></div>
+          <div class="s"><span class="n">D7</span><span class="t">감사 묶음</span></div>
+          <div class="s"><span class="n">D8</span><span class="t">사람 검토</span></div>
+          <div class="s" data-st="danger"><span class="n">D9</span><span class="t">NO-GO 게이트</span></div>
+        </div>
+
+        <div class="sec-title"><h2>실험 · 원장 (세부는 접이식)</h2></div>
+        <details class="disc"><summary><span class="cv">▶</span>실험 프리셋 (3)<span class="sm">ts_imb RULE · DQN/PPO 연구 · 호가창 반증</span></summary><div class="bd">
+          <div class="kv"><span>ts_imb 룰 기준선</span><strong>MAINLINE_RULE · 증거 비교만</strong></div>
+          <div class="kv"><span>DQN/PPO 연구 비교</span><strong>RESEARCH_ONLY · 의도 기록</strong></div>
+          <div class="kv"><span>호가창 RL 반증</span><strong>NO_GO_REVIEW · 시각화 검토</strong></div>
+        </div></details>
+        <details class="disc"><summary><span class="cv">▶</span>엣지 · 포워드 원장<span class="sm">edge / forward ledger</span></summary><div class="bd">
+          <div class="kv"><span>edge ledger</span><strong>fresh 증거만 · hash-backed</strong></div>
+          <div class="kv"><span>forward ledger</span><strong>paper_forward=false (잠금)</strong></div>
+        </div></details>
+        <details class="disc"><summary><span class="cv">▶</span>캘리브레이션 · 리스크 사이징<span class="sm">calibration / sizing</span></summary><div class="bd">
+          <div class="kv"><span>calibration</span><strong>연구 검토 전용</strong></div>
+          <div class="kv"><span>sizing / risk</span><strong>model_build_allowed=false</strong></div>
+        </div></details>
+        <details class="disc"><summary><span class="cv">▶</span>세션 리플레이 · 팩토리 상태<span class="sm">replay / factory</span></summary><div class="bd">
+          <div class="kv"><span>session replay</span><strong>관찰 도구 · 수익 증거 아님</strong></div>
+          <div class="kv"><span>factory status</span><strong>read-only</strong></div>
+        </div></details>
+
+        <div class="note"><b>RL Lab 통합</b> — 지금 이 화면은 별도 Next.js 앱(<span class="mono">/rl</span>)이라 Svelte 대시보드와 분리돼 있습니다. 재구성에서 <b>단일 앱의 한 섹션</b>으로 흡수하고, 죽은 <span class="mono">rlTrading/</span> 17카드는 정리합니다. (파괴적 통합은 승인 게이트)</div>
+      </section>
+
+      <!-- ============ VIEW: DAILY PIPELINE (condensed) ============ -->
+      <section class="view" data-view="daily">
+        <div class="eyebrow">연구 파이프라인 · 일봉 D0–D9</div>
+        <h1 class="big">일봉 연구 파이프라인</h1>
+        <p class="lede">요약을 먼저, 세부 증거는 접이식으로. close-slot 카드가 상태칩·KPI·차트로 재구성됩니다.</p>
+
+        <div class="grid-4" style="margin-top:18px">
+          <div class="metric"><div class="l">최종 판정</div><div class="v sm">WATCH</div><div class="f">D5 NO-GO</div></div>
+          <div class="metric"><div class="l">기본 비용</div><div class="v">23<span style="font-size:13px;color:var(--muted)">bp</span></div><div class="f">0/23/46</div></div>
+          <div class="metric flag"><div class="l">blocker</div><div class="v">2</div><div class="f">D0·D1</div></div>
+          <div class="metric"><div class="l">유니버스</div><div class="v sm">120</div><div class="f">/ 2,140 · WATCH</div></div>
+        </div>
+
+        <div class="sec-title"><h2>종가매매 카드 (파일럿)</h2><span class="m">close-slot · read-only</span></div>
+        <div class="card" data-daily-close-slot-card>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="font:600 15px/1.3 var(--font);color:var(--fg-strong)">종가 매수 → 익일 종가 매도 · 10-slot</div>
+            <span class="pill warn"><span class="dot"></span>연구용 · WATCH · 실거래 아님</span>
+          </div>
+          <div class="notice danger" style="margin-top:14px"><span>⚠️</span><div><b>미해결 blocker 2건 — 게이트 통과 불가</b><br><span style="color:var(--muted)">D0 price_basis · D1 universe WATCH</span></div></div>
+          <div class="grid-4" style="margin-top:14px">
+            <div class="metric"><div class="l">readiness</div><div class="v sm">WATCH</div></div>
+            <div class="metric"><div class="l">선택 슬롯</div><div class="v">10<span style="font-size:13px;color:var(--muted)">max</span></div></div>
+            <div class="metric"><div class="l">비용</div><div class="v">23<span style="font-size:13px;color:var(--muted)">bp</span></div></div>
+            <div class="metric flag"><div class="l">blocker</div><div class="v">2</div></div>
+          </div>
+          <details class="disc" style="margin-top:14px"><summary><span class="cv">▶</span>세부 증거 (계보·DB·잠금·no-claim)<span class="sm">12 항목</span></summary><div class="bd">
+            <div class="kv"><span>정책 리워드</span><strong>momentum +0.31 · bandit 0 (버그)</strong></div>
+            <div class="kv"><span>DB access</span><strong>read_only · ro · mutation false</strong></div>
+            <div class="kv"><span>locks</span><strong>promotion/model_build/… 전부 false</strong></div>
+            <div class="kv"><span>selected code</span><strong>000250 문자열 보존</strong></div>
+          </div></details>
+        </div>
+        <div class="note"><b>보존</b> — 마커 <span class="mono">data-daily-close-slot-*</span> 19종 · 가드레일 사실(WATCH·D0/D1·false-lock·000250) 그대로.</div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    document.getElementById('themeBtn').addEventListener('click', function () {
+      var cur = root.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    });
+    var titles = { mc: ['Kronos · 커맨드', 'Mission Control'], rl: ['Kronos · 강화학습', 'RL Lab'], daily: ['Kronos · 연구 파이프라인', '일봉 D0–D9'] };
+    var matched = false;
+    function go(v) {
+      document.querySelectorAll('.view').forEach(function (el) { el.setAttribute('data-on', el.getAttribute('data-view') === v ? 'true' : 'false'); });
+      matched = false;
+      document.querySelectorAll('.ni').forEach(function (el) {
+        var hit = !matched && el.getAttribute('data-go') === v;
+        el.setAttribute('data-active', hit ? 'true' : 'false');
+        if (hit) matched = true;
+      });
+      var t = titles[v] || titles.mc; document.getElementById('crumb').textContent = t[0]; document.getElementById('htitle').textContent = t[1];
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    document.querySelectorAll('[data-go]').forEach(function (el) {
+      el.addEventListener('click', function () { go(el.getAttribute('data-go')); });
+    });
+  })();
+</script>

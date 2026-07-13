@@ -9,6 +9,7 @@ from flask_cors import CORS
 import sys
 import warnings
 import datetime
+from pathlib import Path
 warnings.filterwarnings('ignore')
 
 # Add project root directory to path
@@ -213,6 +214,11 @@ try:
         from .daily_ohlcv_dashboard import (
             list_universe_manifests,
             list_dataset_artifacts,
+            list_close_slot_artifacts,
+            load_close_slot_equity,
+            load_close_slot_gate,
+            load_close_slot_latest,
+            load_close_slot_selection,
             load_coverage_chart,
             load_decision_cockpit,
             load_scenario_lab,
@@ -254,6 +260,11 @@ try:
         from daily_ohlcv_dashboard import (
             list_universe_manifests,
             list_dataset_artifacts,
+            list_close_slot_artifacts,
+            load_close_slot_equity,
+            load_close_slot_gate,
+            load_close_slot_latest,
+            load_close_slot_selection,
             load_coverage_chart,
             load_decision_cockpit,
             load_scenario_lab,
@@ -295,6 +306,11 @@ except Exception as exc:
     print(f"Warning: Daily OHLCV dashboard helpers cannot be imported ({exc})")
     list_universe_manifests = None
     list_dataset_artifacts = None
+    list_close_slot_artifacts = None
+    load_close_slot_equity = None
+    load_close_slot_gate = None
+    load_close_slot_latest = None
+    load_close_slot_selection = None
     load_coverage_chart = None
     load_decision_cockpit = None
     load_scenario_lab = None
@@ -336,8 +352,10 @@ try:
         from .trading_command import (
             create_trading_command_job,
             list_trading_command_runs,
+            list_trading_command_jobs,
             load_trading_command_audit,
             load_trading_command_evidence,
+            load_trading_command_drilldown,
             load_trading_command_job,
             load_trading_command_run_summary,
             load_trading_command_status,
@@ -347,8 +365,10 @@ try:
         from trading_command import (
             create_trading_command_job,
             list_trading_command_runs,
+            list_trading_command_jobs,
             load_trading_command_audit,
             load_trading_command_evidence,
+            load_trading_command_drilldown,
             load_trading_command_job,
             load_trading_command_run_summary,
             load_trading_command_status,
@@ -358,8 +378,10 @@ except Exception as exc:
     print(f"Warning: Trading command center helpers cannot be imported ({exc})")
     create_trading_command_job = None
     list_trading_command_runs = None
+    list_trading_command_jobs = None
     load_trading_command_audit = None
     load_trading_command_evidence = None
+    load_trading_command_drilldown = None
     load_trading_command_job = None
     load_trading_command_run_summary = None
     load_trading_command_status = None
@@ -374,7 +396,7 @@ except Exception as exc:
     v2_bp = None
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=[origin.strip() for origin in os.environ.get("KRONOS_WEBUI_CORS_ORIGINS", f"http://127.0.0.1:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))},http://localhost:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))}").split(",") if _re.fullmatch(r"https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?", origin.strip())], supports_credentials=False)
 if v2_bp is not None:
     app.register_blueprint(v2_bp)
 
@@ -1093,14 +1115,14 @@ def rl_factory_model_build_readiness():
             }
             if safe_step['id'] == 'RL-implementation':
                 safe_step['status'] = 'LOCKED_DASHBOARD_RESEARCH_ONLY'
-                safe_step['evidence'] = 'Dashboard API never unlocks model-build, RL implementation, broker, order, account, paper, or profit readiness.'
+                safe_step['evidence'] = 'Dashboard API never unlocks model-build, RL implementation, broker, order, account, paper, or profit-claim capability.'
             safe_steps.append(safe_step)
         payload = {
             'available': bool(source.get('available', True)),
             'artifact_type': 'model_build_research_only_lock',
             'strategy_label': 'model-build evidence lock - NOT an RL model and NOT readiness',
             'baseline_label': 'ts_imb RULE baseline',
-            'guardrail': 'Read-only research evidence viewer; model-build/live/profit readiness remains locked false.',
+            'guardrail': 'Read-only research evidence viewer; model-build/live/profit-claim capabilities remain locked false.',
             'cost_bps': 23,
             'status': 'MODEL_BUILD_RESEARCH_ONLY_NO_GO',
             'restricted_rl_status': 'LOCKED_DASHBOARD_RESEARCH_ONLY',
@@ -1127,7 +1149,7 @@ def rl_factory_model_build_readiness():
             'readiness_steps': safe_steps,
             'unlock_requirements': [
                 'Dashboard route remains NO-GO/research-only even when offline evidence improves.',
-                'Do not infer model-build, live, broker, order, account, paper, or profit readiness from this API.',
+                'Do not infer model-build, live, broker, order, account, paper, or profit-claim capability from this API.',
                 'Use offline preregistered validation artifacts as research evidence only.',
             ],
             'research_only_guardrail': guardrail,
@@ -1193,15 +1215,88 @@ def rl_factory_lane_edge_ledger(run_name):
         return jsonify({'error': str(exc)}), 500
 
 
+# G6 — read-only rliable reliability statistics (approved backend-frozen exception).
+# Serves the offline artifact produced by scripts/gen_rliable_stats.py. No DB, no
+# request parameters, no write capability. RESEARCH_ONLY: not a profitability or
+# GO/NO-GO claim.
+RLIABLE_STATS_PATH = Path(__file__).resolve().parents[1] / 'artifacts' / 'rl_runs_rliable.json'
+
+
+@app.route('/api/rl/rliable-stats')
+def rl_rliable_stats():
+    artifact_path = RLIABLE_STATS_PATH
+    if not artifact_path.is_file():
+        return jsonify({'error': 'rliable stats not generated yet', 'available': False}), 404
+    try:
+        return jsonify(json.loads(artifact_path.read_text(encoding='utf-8')))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+def _trading_command_safe_lock(label, reason):
+    return {
+        'locked': False,
+        'allowed': False,
+        'enabled': False,
+        'capability_state': 'BLOCKED',
+        'status': 'API_UNAVAILABLE',
+        'label': label,
+        'reason': reason,
+    }
+
+
+def _trading_command_fail_closed_payload(error_code='TRADING_COMMAND_API_UNAVAILABLE', http_status=503):
+    reason = '트레이딩 커맨드 센터 API가 안전 잠금 상태로 닫혔습니다. 실거래/브로커/주문/계좌/페이퍼/모델 빌드/수익 주장 경로는 열리지 않습니다.'
+    locks = {
+        'live': _trading_command_safe_lock('NO-GO · 실거래 경로 잠금', reason),
+        'broker': _trading_command_safe_lock('NO-GO · 브로커 연결 잠금', reason),
+        'order': _trading_command_safe_lock('NO-GO · 주문 전송 경로 잠금', reason),
+        'account': _trading_command_safe_lock('NO-GO · 계좌 접근 잠금', reason),
+        'paper': _trading_command_safe_lock('NO-GO · 페이퍼 트레이딩 잠금', reason),
+        'model': _trading_command_safe_lock('NO-GO · 모델 빌드 잠금', reason),
+        'profit': _trading_command_safe_lock('NO-GO · 수익 주장 경로 잠금', reason),
+    }
+    return {
+        'http_status': http_status,
+        'status': 'API_UNAVAILABLE',
+        'api_status': 'API_UNAVAILABLE',
+        'mode': 'RESEARCH_ONLY',
+        'labels': ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
+        'error_code': error_code,
+        'reason': reason,
+        'reason_ko': reason,
+        'claim_locks': {key: False for key in locks},
+        'status_locks': locks,
+        'controls': {
+            'research_intent_record_allowed': False,
+            'unsafe_trading_controls_allowed': False,
+            'job_post_endpoint': '/api/trading-command/jobs',
+            'allowed_workflows': [],
+        },
+        'queue_summary': {
+            'mode': 'RESEARCH_ONLY_QUEUE',
+            'active_job_count': 0,
+            'recorded_intent_count': 0,
+            'latest_status': 'API_UNAVAILABLE',
+            'latest_job_id': None,
+            'status_counts': {},
+            'allowed_workflows': [],
+            'unsafe_controls_allowed': False,
+        },
+    }
+
+
 def _trading_command_response(loader, *args):
     if loader is None:
-        return jsonify({'error': 'Trading command center helper is not available'}), 500
+        payload = _trading_command_fail_closed_payload('TRADING_COMMAND_HELPER_UNAVAILABLE')
+        return jsonify(payload), int(payload['http_status'])
     try:
         payload = loader(*args)
         status = int(payload.get('http_status', 200)) if isinstance(payload, dict) else 200
         return jsonify(payload), status
-    except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+    except Exception:
+        payload = _trading_command_fail_closed_payload('TRADING_COMMAND_EXCEPTION')
+        return jsonify(payload), int(payload['http_status'])
 
 
 @app.route('/api/trading-command/status')
@@ -1227,6 +1322,10 @@ def trading_command_run_summary(run_id):
 @app.route('/api/trading-command/runs/<run_id>/evidence')
 def trading_command_run_evidence(run_id):
     return _trading_command_response(load_trading_command_evidence, run_id)
+@app.route('/api/trading-command/runs/<run_id>/drilldown')
+def trading_command_run_drilldown(run_id):
+    return _trading_command_response(load_trading_command_drilldown, run_id)
+
 
 
 @app.route('/api/trading-command/runs/<run_id>/audit')
@@ -1239,8 +1338,10 @@ def trading_command_audit():
     return _trading_command_response(load_trading_command_audit)
 
 
-@app.route('/api/trading-command/jobs', methods=['POST'])
+@app.route('/api/trading-command/jobs', methods=['GET', 'POST'])
 def trading_command_jobs():
+    if request.method == 'GET':
+        return _trading_command_response(list_trading_command_jobs)
     return _trading_command_response(create_trading_command_job, request.get_json(silent=True) or {})
 
 
@@ -1419,6 +1520,87 @@ def daily_ohlcv_dataset_artifacts():
         return jsonify({'error': 'Daily OHLCV dashboard helper is not available'}), 500
     try:
         return jsonify(list_dataset_artifacts(limit=_daily_limit('limit', 20, 200)))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/close-slot/latest')
+def daily_ohlcv_close_slot_latest():
+    if load_close_slot_latest is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_close_slot_latest(run=request.args.get('run') or None, sample_limit=_daily_limit('limit', 25, 500)))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/close-slot/artifacts')
+def daily_ohlcv_close_slot_artifacts():
+    if list_close_slot_artifacts is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(list_close_slot_artifacts(limit=_daily_limit('limit', 20, 200)))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/close-slot/gate/latest')
+@app.route('/api/daily-ohlcv/charts/close-slot-gate')
+@app.route('/api/daily-ohlcv/close-slot/gate')
+def daily_ohlcv_close_slot_gate():
+    if load_close_slot_gate is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(load_close_slot_gate(run=request.args.get('run') or None))
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/close-slot-equity')
+@app.route('/api/daily-ohlcv/close-slot/equity')
+def daily_ohlcv_close_slot_equity():
+    if load_close_slot_equity is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_close_slot_equity(
+                run=request.args.get('run') or None,
+                policy=request.args.get('policy') or None,
+            )
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/daily-ohlcv/charts/close-slot-selection')
+@app.route('/api/daily-ohlcv/close-slot/selection')
+def daily_ohlcv_close_slot_selection():
+    if load_close_slot_selection is None:
+        return jsonify({'error': 'Daily close-slot dashboard helper is not available'}), 500
+    try:
+        return jsonify(
+            load_close_slot_selection(
+                run=request.args.get('run') or None,
+                policy=request.args.get('policy') or None,
+                limit=_daily_limit('limit', 25, 500),
+            )
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -1885,94 +2067,93 @@ def get_data_files():
     data_files = load_data_files()
     return jsonify(data_files)
 
+def _approved_data_file(file_path):
+    if not isinstance(file_path, str) or not file_path.strip():
+        return None
+    repo_root = Path(__file__).resolve().parents[1]
+    configured = [value.strip() for value in os.environ.get("KRONOS_WEBUI_DATA_ROOTS", "").split(os.pathsep) if value.strip()]
+    roots = (
+        repo_root / "_database",
+        repo_root / "finetune" / "qlib_exports",
+        repo_root / "finetune_csv" / "data",
+        repo_root / "data",
+        *((Path(value) if Path(value).is_absolute() else repo_root / value) for value in configured),
+    )
+    try:
+        submitted = Path(file_path).expanduser()
+        candidate = (submitted if submitted.is_absolute() else repo_root / submitted).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not candidate.is_file():
+        return None
+    return str(candidate) if any(candidate.is_relative_to(root.resolve()) for root in roots) else None
+
 @app.route('/api/load-data', methods=['POST'])
 def load_data():
     """Load data file"""
     try:
-        data = request.get_json()
-        file_path = data.get('file_path')
-        
-        if not file_path:
-            return jsonify({'error': '파일 경로가 비어 있습니다'}), 400
-        
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': '요청 본문은 JSON 객체여야 합니다'}), 400
+        file_path = _approved_data_file(data.get('file_path'))
+        if file_path is None:
+            return jsonify({'error': '승인된 데이터 루트 안의 일반 파일만 사용할 수 있습니다'}), 400
         df, error = load_data_file(file_path)
         if error:
             return jsonify({'error': error}), 400
-        
-        # Detect data time frequency
-        def detect_timeframe(df):
-            if len(df) < 2:
+        def detect_timeframe(frame):
+            if len(frame) < 2:
                 return "알 수 없음"
-            
-            time_diffs = []
-            for i in range(1, min(10, len(df))):  # Check first 10 time differences
-                diff = df['timestamps'].iloc[i] - df['timestamps'].iloc[i-1]
-                time_diffs.append(diff)
-            
-            if not time_diffs:
+            diffs = [frame['timestamps'].iloc[i] - frame['timestamps'].iloc[i - 1] for i in range(1, min(10, len(frame)))]
+            if not diffs:
                 return "알 수 없음"
-            
-            # Calculate average time difference
-            avg_diff = sum(time_diffs, pd.Timedelta(0)) / len(time_diffs)
-            
-            # Convert to readable format
+            avg_diff = sum(diffs, pd.Timedelta(0)) / len(diffs)
             if avg_diff < pd.Timedelta(minutes=1):
                 return f"{avg_diff.total_seconds():.0f}초"
-            elif avg_diff < pd.Timedelta(hours=1):
+            if avg_diff < pd.Timedelta(hours=1):
                 return f"{avg_diff.total_seconds() / 60:.0f}분"
-            elif avg_diff < pd.Timedelta(days=1):
+            if avg_diff < pd.Timedelta(days=1):
                 return f"{avg_diff.total_seconds() / 3600:.0f}시간"
-            else:
-                return f"{avg_diff.days}일"
-        
-        # Return data information
+            return f"{avg_diff.days}일"
         data_info = {
             'rows': len(df),
             'columns': list(df.columns),
             'start_date': df['timestamps'].min().isoformat() if 'timestamps' in df.columns else 'N/A',
             'end_date': df['timestamps'].max().isoformat() if 'timestamps' in df.columns else 'N/A',
-            'price_range': {
-                'min': float(df[['open', 'high', 'low', 'close']].min().min()),
-                'max': float(df[['open', 'high', 'low', 'close']].max().max())
-            },
+            'price_range': {'min': float(df[['open', 'high', 'low', 'close']].min().min()), 'max': float(df[['open', 'high', 'low', 'close']].max().max())},
             'prediction_columns': ['open', 'high', 'low', 'close'] + (['volume'] if 'volume' in df.columns else []),
-            'timeframe': detect_timeframe(df)
+            'timeframe': detect_timeframe(df),
         }
-        
-        return jsonify({
-            'success': True,
-            'data_info': data_info,
-            'message': f'데이터를 성공적으로 불러왔습니다. 총 {len(df)}행'
-        })
-        
+        return jsonify({'success': True, 'data_info': data_info, 'message': f'데이터를 성공적으로 불러왔습니다. 총 {len(df)}행'})
     except Exception as e:
         return jsonify({'error': f'데이터 로드 실패: {str(e)}'}), 500
+
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
     """Perform prediction"""
     try:
-        data = request.get_json()
-        file_path = data.get('file_path')
-        lookback = int(data.get('lookback', 400))
-        pred_len = int(data.get('pred_len', 120))
-        
-        # Get prediction quality parameters
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': '요청 본문은 JSON 객체여야 합니다'}), 400
+        file_path = _approved_data_file(data.get('file_path'))
+        if file_path is None:
+            return jsonify({'error': '승인된 데이터 루트 안의 일반 파일만 사용할 수 있습니다'}), 400
+        def bounded_int(value, default, maximum):
+            value = default if value is None else value
+            return value if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= maximum else None
+        lookback = bounded_int(data.get('lookback'), 400, 4096)
+        pred_len = bounded_int(data.get('pred_len'), 120, 1024)
+        sample_count = bounded_int(data.get('sample_count'), 1, 16)
+        if None in (lookback, pred_len, sample_count):
+            return jsonify({'error': 'lookback, pred_len, sample_count는 허용 범위의 양의 정수여야 합니다'}), 400
         temperature = float(data.get('temperature', 1.0))
         top_p = float(data.get('top_p', 0.9))
-        sample_count = int(data.get('sample_count', 1))
-        
-        if not file_path:
-            return jsonify({'error': '파일 경로가 비어 있습니다'}), 400
-        
-        # Load data
         df, error = load_data_file(file_path)
         if error:
             return jsonify({'error': error}), 400
-        
         if len(df) < lookback:
             return jsonify({'error': f'데이터 길이가 부족합니다. 최소 {lookback}행이 필요합니다'}), 400
-        
         # Perform prediction
         if MODEL_AVAILABLE and predictor is not None:
             try:
@@ -2174,27 +2355,27 @@ def predict():
 def load_model():
     """Load Kronos model"""
     global tokenizer, model, predictor
-    
+
     try:
-        if not ensure_kronos_imported():
-            return jsonify({'error': f'Kronos 모델 라이브러리를 사용할 수 없습니다: {MODEL_IMPORT_ERROR}'}), 400
-        
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': '요청 본문은 JSON 객체여야 합니다'}), 400
+        if any("path" in key.lower() or key.lower().endswith("id") for key in data):
+            return jsonify({'error': '모델 경로 또는 ID 재정의는 허용되지 않습니다'}), 400
+        configured_models = os.environ.get("KRONOS_WEBUI_MODEL_ALLOWLIST", "")
+        allowed_models = {key.strip() for key in configured_models.split(",") if key.strip()} if configured_models else set(AVAILABLE_MODELS)
         model_key = data.get('model_key', 'kronos-small')
         device = data.get('device', 'cpu')
-        
-        if model_key not in AVAILABLE_MODELS:
+        if not isinstance(model_key, str) or model_key not in AVAILABLE_MODELS or model_key not in allowed_models:
             return jsonify({'error': f'지원하지 않는 모델입니다: {model_key}'}), 400
-        
+        if not isinstance(device, str) or not _re.fullmatch(r'(?:cpu|mps|cuda(?::[0-9]+)?)', device):
+            return jsonify({'error': f'지원하지 않는 장치입니다: {device}'}), 400
+        if not ensure_kronos_imported():
+            return jsonify({'error': f'Kronos 모델 라이브러리를 사용할 수 없습니다: {MODEL_IMPORT_ERROR}'}), 400
         model_config = AVAILABLE_MODELS[model_key]
-        
-        # Load tokenizer and model
         tokenizer = KronosTokenizer.from_pretrained(model_config['tokenizer_id'])
         model = Kronos.from_pretrained(model_config['model_id'])
-        
-        # Create predictor
         predictor = KronosPredictor(model, tokenizer, device=device, max_context=model_config['context_length'])
-        
         return jsonify({
             'success': True,
             'message': f'모델을 성공적으로 불러왔습니다: {model_config["name"]} ({model_config["params"]}) / 장치 {device}',
@@ -2205,7 +2386,7 @@ def load_model():
                 'description': model_config['description']
             }
         })
-        
+
     except Exception as e:
         return jsonify({'error': f'모델 로드 실패: {str(e)}'}), 500
 
@@ -2336,4 +2517,4 @@ if __name__ == '__main__':
     host = os.environ.get("KRONOS_WEBUI_HOST", "127.0.0.1")
     port = int(os.environ.get("KRONOS_WEBUI_PORT", os.environ.get("PORT", "7070")))
     debug_mode = os.environ.get("KRONOS_WEBUI_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
-    app.run(debug=debug_mode, host=host, port=port)
+    app.run(debug=debug_mode, host=host if host.strip().lower() in {"127.0.0.1", "localhost", "::1"} else "127.0.0.1", port=port)

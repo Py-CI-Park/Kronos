@@ -54,7 +54,7 @@
     {#if latestRuns.length}
       <div class="table-wrap" style="margin-top:12px">
         <table>
-          <thead><tr><th>run_id</th><th>stage</th><th>status</th><th>verdict</th><th>prereg doc</th></tr></thead>
+          <thead><tr><th>run_id</th><th>stage</th><th>status</th><th>verdict</th><th>lineage</th><th>prereg doc</th></tr></thead>
           <tbody>
             {#each latestRuns.slice(0, 12) as row}
               <tr>
@@ -62,6 +62,7 @@
                 <td>{row.stage ?? '-'}</td>
                 <td>{row.status ?? '-'}</td>
                 <td><span class="pill {verdictTone(String(row.verdict ?? ''))}">{row.verdict || 'pending'}</span></td>
+                <td class="lineage-cell">{row.parent_run ?? '-'}</td>
                 <td class="prereg-cell">{row.prereg_doc ?? '-'}</td>
               </tr>
             {/each}
@@ -83,6 +84,13 @@
 <style>
   .prereg-cell {
     max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lineage-cell {
+    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

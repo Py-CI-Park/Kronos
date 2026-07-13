@@ -25,6 +25,8 @@ ARTIFACT_SIGNATURES = (
     ("cost_gate", "cost_gate_report.json"),
     ("baseline", "baseline_summary.json"),
     ("episode_manifest", "episode_manifest.json"),
+    ("daily_ohlcv_portfolio", "rl_manifest.json"),
+    ("daily_close_slot_train", "close_slot_train_manifest.json"),
 )
 
 TABLE_ALIASES = {

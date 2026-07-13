@@ -27,10 +27,13 @@ from .daily_portfolio_env import (
     validate_observation_manifest,
 )
 from .daily_prediction import DEFAULT_PREDICTION_ROOT, ROUND_TRIP_COST_BP
+from .rl_events import RlLiveEventWriter
 
 DEFAULT_PORTFOLIO_ROOT = REPO_ROOT / "webui" / "rl_runs" / "daily_ohlcv_portfolio"
 PORTFOLIO_SCHEMA_VERSION = 1
 SAFE_RUN_RE = re.compile(r"^[0-9A-Za-z_.-]+$")
+LIVE_EVENTS_FILE_NAME = "rl_live_events.jsonl"
+LIVE_EVENT_FILE_NAMES = {LIVE_EVENTS_FILE_NAME}
 SCORE_COLUMN = "score_supervised_linear_ranker"
 FROZEN_BASELINE_STRATEGIES = [
     "no_trade_cash",
@@ -73,6 +76,30 @@ def _validate_run_id(run_id: str) -> str:
     if not SAFE_RUN_RE.match(rid) or rid in {".", ".."} or "/" in rid or "\\" in rid:
         raise ValueError("run_id contains unsafe characters")
     return rid
+
+
+def _resolve_portfolio_root(artifact_root: Path | str | None) -> Path:
+    root = Path(artifact_root or DEFAULT_PORTFOLIO_ROOT).resolve()
+    default_root = DEFAULT_PORTFOLIO_ROOT.resolve()
+    try:
+        root.relative_to(default_root)
+    except ValueError:
+        if root != default_root:
+            raise ValueError("Daily OHLCV portfolio artifacts must stay under webui/rl_runs/daily_ohlcv_portfolio")
+    return root
+
+
+def _dir_has_blocking_contents(out_dir: Path) -> bool:
+    """True when out_dir holds files other than the allowlisted live-events stream.
+
+    rid resolution is hoisted before training (F4/F6) so a live-events JSONL file can
+    be created and appended to while training runs. That pre-existing file must not
+    trip the overwrite-protection check when the final artifacts are written.
+    """
+
+    if not out_dir.exists():
+        return False
+    return any(entry.name not in LIVE_EVENT_FILE_NAMES for entry in out_dir.iterdir())
 
 
 def _latest_run_dir(root: Path, required_file: str) -> Path:
@@ -148,6 +175,43 @@ def _max_drawdown(equity_values: Iterable[float]) -> float:
 def _mean(values: Iterable[float]) -> float:
     clean = [float(value) for value in values]
     return sum(clean) / len(clean) if clean else 0.0
+
+
+def _linear_slope(pairs: list[tuple[float, float]]) -> float | None:
+    if len(pairs) < 2:
+        return None
+    mean_x = sum(x for x, _ in pairs) / len(pairs)
+    mean_y = sum(y for _, y in pairs) / len(pairs)
+    denominator = sum((x - mean_x) ** 2 for x, _ in pairs)
+    if denominator == 0:
+        return None
+    numerator = sum((x - mean_x) * (y - mean_y) for x, y in pairs)
+    return numerator / denominator
+
+
+def _rolling_val_nav_slope(learning_curve: list[dict[str, Any]], *, window: int = 3) -> float | None:
+    """Least-squares slope of the rolling-mean val NAV curve across episodes.
+
+    Diagnostic-only (F9): used to self-report when a run does not learn, never as a
+    profitability claim. Returns None when fewer than two val_nav samples exist.
+    """
+
+    samples = [
+        (float(row.get("episode") or 0), float(row["val_nav"]))
+        for row in learning_curve
+        if row.get("val_nav") not in (None, "")
+    ]
+    if len(samples) < 2:
+        return None
+    values = [value for _, value in samples]
+    rolling = [
+        _mean(values[max(0, index - window + 1) : index + 1])
+        for index in range(len(values))
+    ]
+    pairs = [(episode, rolled) for (episode, _), rolled in zip(samples, rolling)]
+    return _linear_slope(pairs)
+
+
 def _optional_float(value: Any) -> float | None:
     if value in (None, ""):
         return None
@@ -361,6 +425,7 @@ def build_learning_curve(episode_rows: list[dict[str, Any]], *, window: int = 3)
         rolling = rewards[-max(1, int(window)) :]
         steps = int(row.get("steps") or 0)
         invalid_actions = int(row.get("invalid_actions") or 0)
+        val_nav = row.get("val_nav")
         curve.append(
             {
                 "episode": int(row.get("episode") or len(curve) + 1),
@@ -369,8 +434,10 @@ def build_learning_curve(episode_rows: list[dict[str, Any]], *, window: int = 3)
                 "best_total_reward": best_reward,
                 "steps": steps,
                 "final_equity": float(row.get("final_equity") or 0.0),
+                "final_shaped_equity": float(row.get("final_shaped_equity") or 0.0),
                 "invalid_actions": invalid_actions,
                 "invalid_action_rate": invalid_actions / steps if steps else 0.0,
+                "val_nav": float(val_nav) if val_nav not in (None, "") else None,
             }
         )
     return curve
@@ -635,11 +702,15 @@ def train_tabular_q_policy(
     action_prior_mode: str = "none",
     action_prior_strength: float = 0.0,
     action_filter_mode: str = ACTION_FILTER_MODE_NONE,
+    val_candidates: dict[str, list[Any]] | None = None,
+    val_eval_every: int = 1,
+    event_writer: RlLiveEventWriter | None = None,
 ) -> tuple[dict[tuple[int, ...], list[float]], list[dict[str, Any]]]:
     rng = random.Random(seed)
     action_prior_values = build_action_prior_values(mode=action_prior_mode, strength=action_prior_strength)
     q_table: dict[tuple[int, ...], list[float]] = defaultdict(lambda: [0.0] * len(ACTION_NAMES))
     episode_rows: list[dict[str, Any]] = []
+    global_step = 0
     for episode in range(1, int(episodes) + 1):
         env = DailyPortfolioEnv(train_candidates, max_positions=max_positions, observation_mode=observation_mode)
         state = env.reset()
@@ -660,12 +731,31 @@ def train_tabular_q_policy(
             total_reward += reward
             steps += 1
             state = next_state
+        global_step += steps
+        # Greedy val-split NAV snapshot every val_eval_every episodes (F9): shows whether
+        # the policy is actually learning across the run; diagnostic only, uses the
+        # current q_table copy so it never mutates the training table.
+        val_nav: float | None = None
+        if val_candidates and val_eval_every > 0 and episode % max(1, int(val_eval_every)) == 0:
+            val_evaluation = evaluate_policy(
+                val_candidates,
+                dict(q_table),
+                split_label="val",
+                max_positions=max_positions,
+                observation_mode=observation_mode,
+                action_prior_mode=action_prior_mode,
+                action_prior_strength=action_prior_strength,
+                action_filter_mode=action_filter_mode,
+                event_writer=event_writer,
+            )
+            val_nav = val_evaluation["metrics"]["final_equity"]
         episode_rows.append(
             {
                 "episode": episode,
                 "total_reward": total_reward,
                 "steps": steps,
                 "final_equity": env.equity,
+                "final_shaped_equity": env.shaped_equity,
                 "invalid_actions": env.invalid_actions,
                 "mean_reward": total_reward / steps if steps else 0.0,
                 "invalid_action_rate": env.invalid_actions / steps if steps else 0.0,
@@ -673,9 +763,31 @@ def train_tabular_q_policy(
                 "action_prior_mode": action_prior_mode,
                 "action_prior_strength": float(action_prior_strength),
                 "action_filter_mode": action_filter_mode,
+                "val_nav": val_nav,
             }
         )
+        if event_writer is not None:
+            event_writer.write_step(
+                algorithm="tabular_q",
+                phase="train",
+                global_step=global_step,
+                episode=episode,
+                reward=total_reward,
+                equity=env.equity,
+                source="daily_rl_train",
+                info={
+                    "reward_kind": "raw_reward",
+                    "reward_unit": "score",
+                    "equity_kind": "normalized_nav",
+                    "equity_unit": "normalized",
+                    "action_recorded": False,
+                },
+            )
     return dict(q_table), episode_rows
+
+
+def _actual_trade_count(reward_rows: list[dict[str, Any]]) -> int:
+    return sum(1 for row in reward_rows if float(row.get("turnover") or 0.0) > 0.0)
 
 
 def evaluate_policy(
@@ -688,6 +800,7 @@ def evaluate_policy(
     action_prior_mode: str = "none",
     action_prior_strength: float = 0.0,
     action_filter_mode: str = ACTION_FILTER_MODE_NONE,
+    event_writer: RlLiveEventWriter | None = None,
 ) -> dict[str, Any]:
     env = DailyPortfolioEnv(candidates, max_positions=max_positions, observation_mode=observation_mode)
     action_prior_values = build_action_prior_values(mode=action_prior_mode, strength=action_prior_strength)
@@ -729,6 +842,23 @@ def evaluate_policy(
         next_state, reward, _done, info = env.step(action)
         equity_values.append(float(info["equity"]))
         total_reward += float(reward)
+        if event_writer is not None:
+            event_writer.write_step(
+                algorithm="tabular_q",
+                phase=f"eval_{split_label}",
+                global_step=len(equity_values),
+                reward=float(reward),
+                equity=float(info["equity"]),
+                timestamp=str(info["date"]),
+                source="daily_rl_train",
+                info={
+                    "reward_kind": "raw_reward",
+                    "reward_unit": "score",
+                    "equity_kind": "normalized_nav",
+                    "equity_unit": "normalized",
+                    "action_recorded": False,
+                },
+            )
         mask_text = "|".join(str(int(v)) for v in mask)
         filter_mask_text = "|".join(str(int(v)) for v in filtered_mask)
         mask_reasons = info.get("action_mask_reasons", {})
@@ -916,10 +1046,13 @@ def evaluate_policy(
     concentration_values = [float(row["concentration"]) for row in reward_rows]
     invalid_count = sum(1 for row in invalid_rows if row["invalid_action"])
     step_count = len(reward_rows)
+    trade_count = _actual_trade_count(reward_rows)
     metrics = {
         "split": split_label,
         "steps": step_count,
         "position_rows": len(positions_rows),
+        "trade_count": trade_count,
+        "never_trade": trade_count == 0,
         "final_equity": env.equity,
         "total_reward": total_reward,
         "mean_daily_reward": _mean(reward_values),
@@ -1070,6 +1203,7 @@ def _verdict_for_d4(
     prediction_verdict: dict[str, Any],
     manifest: dict[str, Any],
     eval_metrics: dict[str, Any],
+    learning_curve: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     d3_status = str(prediction_verdict.get("status") or manifest.get("verdict", {}).get("status") or "UNKNOWN")
     d3_status_normalized = d3_status.upper().replace("_", "-")
@@ -1084,6 +1218,12 @@ def _verdict_for_d4(
     ]
     if d3_blocked:
         reasons.append("D3_FAILED_OR_SKIPPED_FORCE_RESEARCH_OVERRIDE")
+    # F9 self-diagnosis: a run whose rolling val NAV is flat/declining says so instead of
+    # passing silently. Diagnostic-only; does not gate go_summary_allowed/model_build_allowed
+    # (those are already hard-False above).
+    val_nav_slope = _rolling_val_nav_slope(learning_curve or [])
+    if val_nav_slope is not None and val_nav_slope <= 0:
+        reasons.append("TRAINING_CURVE_NON_IMPROVING")
     return {
         "schema_version": PORTFOLIO_SCHEMA_VERSION,
         "status": "RESEARCH_ONLY",
@@ -1106,6 +1246,7 @@ def _verdict_for_d4(
             "price-basis verification",
         ],
         "invalid_action_rate": eval_metrics.get("invalid_action_rate", 0.0),
+        "val_nav_slope": val_nav_slope,
         "reasons": reasons,
     }
 
@@ -1122,6 +1263,8 @@ def run_daily_rl(
     action_prior_mode: str = "none",
     action_prior_strength: float = 0.0,
     action_filter_mode: str = ACTION_FILTER_MODE_NONE,
+    val_eval_every: int = 1,
+    event_writer: RlLiveEventWriter | None = None,
 ) -> dict[str, Any]:
     artifacts = load_prediction_artifacts(prediction_run_dir)
     prediction_rows = artifacts["predictions"]
@@ -1141,14 +1284,17 @@ def run_daily_rl(
         action_prior_mode=action_prior_mode,
         action_prior_strength=action_prior_strength,
         action_filter_mode=action_filter_mode,
+        val_candidates=split_groups["val"],
+        val_eval_every=val_eval_every,
+        event_writer=event_writer,
     )
 
     combined_eval_candidates = {**split_groups["val"], **split_groups["test"]}
     evaluations = [
-        evaluate_policy(split_groups["train"], q_table, split_label="train", max_positions=max_positions, observation_mode=observation_mode, action_prior_mode=action_prior_mode, action_prior_strength=action_prior_strength, action_filter_mode=action_filter_mode),
-        evaluate_policy(split_groups["val"], q_table, split_label="val", max_positions=max_positions, observation_mode=observation_mode, action_prior_mode=action_prior_mode, action_prior_strength=action_prior_strength, action_filter_mode=action_filter_mode),
-        evaluate_policy(split_groups["test"], q_table, split_label="test", max_positions=max_positions, observation_mode=observation_mode, action_prior_mode=action_prior_mode, action_prior_strength=action_prior_strength, action_filter_mode=action_filter_mode),
-        evaluate_policy(combined_eval_candidates, q_table, split_label="val+test", max_positions=max_positions, observation_mode=observation_mode, action_prior_mode=action_prior_mode, action_prior_strength=action_prior_strength, action_filter_mode=action_filter_mode),
+        evaluate_policy(split_groups["train"], q_table, split_label="train", max_positions=max_positions, observation_mode=observation_mode, action_prior_mode=action_prior_mode, action_prior_strength=action_prior_strength, action_filter_mode=action_filter_mode, event_writer=event_writer),
+        evaluate_policy(split_groups["val"], q_table, split_label="val", max_positions=max_positions, observation_mode=observation_mode, action_prior_mode=action_prior_mode, action_prior_strength=action_prior_strength, action_filter_mode=action_filter_mode, event_writer=event_writer),
+        evaluate_policy(split_groups["test"], q_table, split_label="test", max_positions=max_positions, observation_mode=observation_mode, action_prior_mode=action_prior_mode, action_prior_strength=action_prior_strength, action_filter_mode=action_filter_mode, event_writer=event_writer),
+        evaluate_policy(combined_eval_candidates, q_table, split_label="val+test", max_positions=max_positions, observation_mode=observation_mode, action_prior_mode=action_prior_mode, action_prior_strength=action_prior_strength, action_filter_mode=action_filter_mode, event_writer=event_writer),
     ]
     metrics = [evaluation["metrics"] for evaluation in evaluations]
     eval_metric = next(row for row in metrics if row["split"] == "val+test")
@@ -1185,6 +1331,13 @@ def run_daily_rl(
         "cost_round_trip_bp": ROUND_TRIP_COST_BP,
     }
     source_hashes = _source_hashes()
+    parent_training_run = {
+        "seed": int(seed),
+        "episodes": int(episodes),
+        "prediction_manifest_sha": artifacts["prediction_manifest_sha256"],
+        "prediction_artifact_hashes": artifacts["prediction_artifact_hashes"],
+        "source_hashes": source_hashes,
+    }
     clean_action_filter_mode = _clean_action_filter_mode(action_filter_mode)
     policy_type = (
         "tabular_q_trade_quality_filter_v1"
@@ -1232,6 +1385,7 @@ def run_daily_rl(
         prediction_verdict=artifacts["verdict"],
         manifest=artifacts["manifest"],
         eval_metrics=eval_metric,
+        learning_curve=learning_curve,
     )
     manifest = {
         "schema_version": PORTFOLIO_SCHEMA_VERSION,
@@ -1243,6 +1397,7 @@ def run_daily_rl(
         "prediction_declared_artifact_hashes": artifacts["prediction_declared_artifact_hashes"],
         "prediction_artifact_hash_mismatches": artifacts["prediction_artifact_hash_mismatches"],
         "source_hashes": source_hashes,
+        "parent_training_run": parent_training_run,
         "prediction_verdict_status": artifacts["verdict"].get("status"),
         "score_column": score_column,
         "action_space": ACTION_NAMES,
@@ -1268,6 +1423,9 @@ def run_daily_rl(
         "paper_forward_allowed": False,
         "live_broker_order_allowed": False,
         "readiness_status": "D4_RESEARCH_ONLY_DIAGNOSTICS",
+        "checkpoint_readiness": False,
+        "environment_readiness": True,
+        "model_ready": False,
         "observation_manifest": observation_manifest,
         "observation_manifest_validation": observation_manifest_validation,
         "state_contract_status": observation_manifest_validation["status"],
@@ -1355,17 +1513,11 @@ def write_rl_artifacts(
     artifact_root: Path | str | None = None,
     overwrite: bool = False,
 ) -> dict[str, Any]:
-    root = Path(artifact_root or DEFAULT_PORTFOLIO_ROOT).resolve()
-    default_root = DEFAULT_PORTFOLIO_ROOT.resolve()
-    try:
-        root.relative_to(default_root)
-    except ValueError:
-        if root != default_root:
-            raise ValueError("Daily OHLCV portfolio artifacts must stay under webui/rl_runs/daily_ohlcv_portfolio")
+    root = _resolve_portfolio_root(artifact_root)
     rid = _validate_run_id(run_id or f"portfolio_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
     out_dir = (root / rid).resolve()
     out_dir.relative_to(root)
-    if out_dir.exists() and any(out_dir.iterdir()) and not overwrite:
+    if _dir_has_blocking_contents(out_dir) and not overwrite:
         raise FileExistsError(f"Portfolio artifact run_id already exists: {rid}")
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = {
@@ -1402,8 +1554,8 @@ def write_rl_artifacts(
     _write_json(paths["policy_metrics"], result["policy_metrics"])
     _write_json(paths["baseline_comparison"], result["baseline_comparison"])
     _write_json(paths["verdict"], result["verdict"])
-    _write_csv(paths["episode_metrics"], result["episode_metrics"], ["episode", "total_reward", "steps", "final_equity", "invalid_actions"])
-    _write_csv(paths["learning_curve"], result["learning_curve"], ["episode", "total_reward", "rolling_mean_reward", "best_total_reward", "steps", "final_equity", "invalid_actions", "invalid_action_rate"])
+    _write_csv(paths["episode_metrics"], result["episode_metrics"], ["episode", "total_reward", "steps", "final_equity", "final_shaped_equity", "invalid_actions", "val_nav"])
+    _write_csv(paths["learning_curve"], result["learning_curve"], ["episode", "total_reward", "rolling_mean_reward", "best_total_reward", "steps", "final_equity", "final_shaped_equity", "invalid_actions", "invalid_action_rate", "val_nav"])
     _write_csv(paths["positions"], result["positions"], ["split", "date", "rank", "code", "action", "equity"])
     _write_csv(
         paths["invalid_actions"],
@@ -1682,6 +1834,7 @@ def write_rl_artifacts(
             "no_trade_opportunity_diagnostic_rows": len(result["no_trade_opportunity_diagnostics"]),
             "abstention_reason_rows": len(result["abstention_reasons"]),
             "source_hashes": result["source_hashes"],
+            "parent_training_run": result["manifest"].get("parent_training_run"),
             "model_build_allowed": False,
             "go_summary_allowed": False,
             "paper_forward_allowed": False,
@@ -1718,10 +1871,27 @@ def run_and_write_daily_rl(
     run_id: str | None = None,
     artifact_root: Path | str | None = None,
     overwrite: bool = False,
+    enable_live_events: bool = True,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    result = run_daily_rl(**kwargs)
-    written = write_rl_artifacts(result, run_id=run_id, artifact_root=artifact_root, overwrite=overwrite)
+    # rid is resolved here (before training runs) rather than post-hoc inside
+    # write_rl_artifacts so a live-events JSONL stream can be opened against the final
+    # run_id/output_dir while training is still in progress (F4/F6 observability).
+    root = _resolve_portfolio_root(artifact_root)
+    rid = _validate_run_id(run_id or f"portfolio_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
+    out_dir = (root / rid).resolve()
+    out_dir.relative_to(root)
+    if _dir_has_blocking_contents(out_dir) and not overwrite:
+        raise FileExistsError(f"Portfolio artifact run_id already exists: {rid}")
+
+    event_writer: RlLiveEventWriter | None = kwargs.pop("event_writer", None)
+    if event_writer is None and enable_live_events:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        event_writer = RlLiveEventWriter(out_dir / LIVE_EVENTS_FILE_NAME, run_id=rid)
+        event_writer.reset()
+
+    result = run_daily_rl(event_writer=event_writer, **kwargs)
+    written = write_rl_artifacts(result, run_id=rid, artifact_root=artifact_root, overwrite=overwrite)
     return {"result": result, "written": written}
 
 

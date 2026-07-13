@@ -334,6 +334,28 @@ def test_env_inspection_artifacts_document_contract_and_reject_escape(tmp_path: 
     with pytest.raises(ValueError):
         write_env_inspection_artifacts(inspection, run_id="bad", artifact_root=tmp_path / "elsewhere")
 
+def test_equity_is_pure_nav():
+    rows = [
+        {"date": "2024-05-01", "code": "000020", "split": "train", "score_supervised_linear_ranker": 1.0, "future_return_1d": 0.10},
+        {"date": "2024-05-02", "code": "000020", "split": "train", "score_supervised_linear_ranker": 1.0, "future_return_1d": 0.05},
+    ]
+    grouped = candidates_by_date(rows, score_column="score_supervised_linear_ranker", candidate_limit=1)
+    env = DailyPortfolioEnv(grouped, max_positions=1)
+    assert env.equity == 1.0
+    assert env.shaped_equity == 1.0
+
+    _state, reward, _done, info = env.step(1)
+
+    # Penalties (exposure/concentration/churn) make reward diverge from the raw
+    # cost-adjusted NAV return, so equity and shaped_equity must diverge too.
+    assert reward != pytest.approx(info["net_return_after_cost"])
+    assert env.equity == pytest.approx(1.0 * (1.0 + info["net_return_after_cost"]))
+    assert info["equity"] == pytest.approx(env.equity)
+    assert env.shaped_equity == pytest.approx(1.0 * (1.0 + reward))
+    assert info["shaped_equity"] == pytest.approx(env.shaped_equity)
+    assert env.equity != pytest.approx(env.shaped_equity)
+
+
 def test_sell_clears_positions_and_reduce_requires_multiple_positions():
     grouped = candidates_by_date(_candidate_rows(), score_column="score_supervised_linear_ranker", candidate_limit=2)
     env = DailyPortfolioEnv(grouped, max_positions=2)

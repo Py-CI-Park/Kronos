@@ -19,6 +19,11 @@ export function numberValue(value: unknown, fallback = 0): number {
 export function rowNumber(row: RlTableRow | null | undefined, key: string, fallback = 0): number {
   return numberValue(cell(row, key), fallback);
 }
+export function numberOrNotRecorded(value: unknown, digits = 2): string {
+  if (value === null || value === undefined) return 'NOT_RECORDED';
+  const n = Number(value);
+  return Number.isFinite(n) ? num(n, digits) : 'NOT_RECORDED';
+}
 
 export function rowBool(row: RlTableRow | null | undefined, key: string): boolean {
   return cell(row, key) === true || cell(row, key) === 'True' || cell(row, key) === 'true';
@@ -48,6 +53,8 @@ export function typeLabel(type: string | undefined): string {
     case 'portfolio_paper': return 'Portfolio paper';
     case 'opening_30m_rule_filter': return 'RULE filter evidence';
     case 'orderbook_rl_readiness': return 'RL readiness';
+    case 'daily_ohlcv_portfolio': return 'Daily portfolio (research)';
+    case 'daily_close_slot_train': return 'Close-slot train (research)';
     default: return type ?? 'unknown';
   }
 }
@@ -57,6 +64,7 @@ export function typeTone(type: string | undefined): string {
   if (type === 'opening_30m_rule_filter') return 'success';
   if (type === 'cost_gate' || type === 'performance_leaderboard') return 'info';
   if (type === 'sb3_smoke' || type === 'contextual_bandit' || type === 'portfolio_paper') return 'accent';
+  if (type === 'daily_ohlcv_portfolio' || type === 'daily_close_slot_train') return 'accent';
   if (type === 'orderbook_rl_readiness') return 'warn';
   return '';
 }

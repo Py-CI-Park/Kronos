@@ -1,0 +1,394 @@
+<style>
+  /* ===== Real Kronos tokens — copied from webui/v2_src/src/styles/core.css (oklch) ===== */
+  :root {
+    --bg: oklch(98% 0.004 240); --surface: oklch(100% 0 0); --surface-raised: oklch(99% 0.003 240); --surface-sunken: oklch(96% 0.005 240);
+    --border: oklch(91% 0.006 240); --border-strong: oklch(82% 0.01 240); --border-faint: oklch(94% 0.005 240);
+    --fg: oklch(22% 0.02 240); --fg-strong: oklch(15% 0.025 240); --muted: oklch(48% 0.018 240); --dim: oklch(62% 0.014 240); --faint: oklch(78% 0.01 240);
+    --on-accent: oklch(99% 0.005 170);
+    --accent: oklch(56% 0.12 170); --accent-strong: oklch(48% 0.14 170); --accent-soft: oklch(95% 0.04 170); --accent-tint: oklch(91% 0.05 170); --accent-glow: oklch(56% 0.12 170 / .18);
+    --warm: oklch(65% 0.16 35);
+    --success: oklch(58% 0.15 150); --success-soft: oklch(94% 0.05 150);
+    --warn: oklch(72% 0.16 75); --warn-soft: oklch(96% 0.06 75);
+    --danger: oklch(58% 0.21 25); --danger-soft: oklch(96% 0.05 25);
+    --info: oklch(60% 0.14 235); --info-soft: oklch(96% 0.04 235);
+    --font-display: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', 'Malgun Gothic', system-ui, sans-serif;
+    --font-body: var(--font-display);
+    --font-mono: 'JetBrains Mono', 'D2Coding', Consolas, ui-monospace, monospace;
+    --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:24px; --r-pill:999px;
+    --shadow-sm: 0 1px 2px oklch(40% 0.03 240 / .05), 0 1px 3px oklch(40% 0.03 240 / .05);
+    --shadow-md: 0 4px 8px oklch(40% 0.03 240 / .05), 0 2px 4px oklch(40% 0.03 240 / .05);
+    --sidebar-w: 232px; --content-max: 1480px;
+  }
+  :root[data-theme="dark"] {
+    --bg: oklch(16% 0.02 250); --surface: oklch(20% 0.022 250); --surface-raised: oklch(23% 0.024 250); --surface-sunken: oklch(14% 0.018 250);
+    --border: oklch(28% 0.025 250); --border-strong: oklch(36% 0.028 250); --border-faint: oklch(24% 0.022 250);
+    --fg: oklch(94% 0.005 240); --fg-strong: oklch(98% 0.003 240); --muted: oklch(72% 0.014 240); --dim: oklch(58% 0.018 240); --faint: oklch(40% 0.02 240);
+    --on-accent: oklch(15% 0.02 170);
+    --accent: oklch(72% 0.14 170); --accent-strong: oklch(80% 0.15 170); --accent-soft: oklch(28% 0.08 170); --accent-tint: oklch(34% 0.10 170); --accent-glow: oklch(72% 0.14 170 / .25);
+    --success-soft: oklch(28% 0.08 150); --warn-soft: oklch(30% 0.10 75); --danger-soft: oklch(28% 0.10 25); --info-soft: oklch(28% 0.08 235);
+    --shadow-sm: 0 1px 2px oklch(0% 0 0 / .3); --shadow-md: 0 4px 12px oklch(0% 0 0 / .36);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: oklch(16% 0.02 250); --surface: oklch(20% 0.022 250); --surface-raised: oklch(23% 0.024 250); --surface-sunken: oklch(14% 0.018 250);
+      --border: oklch(28% 0.025 250); --border-strong: oklch(36% 0.028 250); --border-faint: oklch(24% 0.022 250);
+      --fg: oklch(94% 0.005 240); --fg-strong: oklch(98% 0.003 240); --muted: oklch(72% 0.014 240); --dim: oklch(58% 0.018 240); --faint: oklch(40% 0.02 240);
+      --on-accent: oklch(15% 0.02 170);
+      --accent: oklch(72% 0.14 170); --accent-strong: oklch(80% 0.15 170); --accent-soft: oklch(28% 0.08 170); --accent-tint: oklch(34% 0.10 170); --accent-glow: oklch(72% 0.14 170 / .25);
+      --success-soft: oklch(28% 0.08 150); --warn-soft: oklch(30% 0.10 75); --danger-soft: oklch(28% 0.10 25); --info-soft: oklch(28% 0.08 235);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .app { font-family: var(--font-body); background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased;
+         display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; font-size: 14px; line-height: 1.55; }
+  @media (max-width: 900px){ .app { grid-template-columns: 1fr; } .sidebar { display: none; } }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  /* concept banner */
+  .concept-banner { grid-column: 1 / -1; background: var(--accent-soft); color: var(--accent-strong); border-bottom: 1px solid var(--border);
+                    font: 600 12px/1 var(--font-mono); padding: 8px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .concept-banner b { color: var(--fg-strong); }
+
+  /* sidebar */
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border-faint); }
+  .brand-mark { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), oklch(60% 0.18 200)); display: grid; place-items: center; color: var(--on-accent); font-weight: 800; box-shadow: 0 4px 12px var(--accent-glow); }
+  .brand-name { font: 700 15px/1.1 var(--font-display); color: var(--fg-strong); letter-spacing: -0.01em; }
+  .brand-tag { font: 500 10.5px/1.3 var(--font-mono); color: var(--muted); margin-top: 2px; }
+  .side-sec { padding: 14px 12px 2px; }
+  .side-label { font: 600 10px/1 var(--font-display); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); padding: 0 12px 8px; }
+  .nav { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--r-sm); color: var(--muted); font-weight: 500; font-size: 13px; position: relative; }
+  .nav-item .ic { width: 16px; height: 16px; border-radius: 4px; background: currentColor; opacity: .45; flex: 0 0 auto; }
+  .nav-item .lb { flex: 1; }
+  .nav-item[data-active] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+  .nav-item[data-active] .ic { opacity: .9; }
+  .nav-item[data-active]::before { content: ''; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--accent); }
+  .nav-badge { font: 600 9.5px/1 var(--font-mono); padding: 3px 6px; border-radius: 4px; background: var(--surface-sunken); color: var(--dim); }
+  .nav-item[data-active] .nav-badge { background: var(--accent-tint); color: var(--accent-strong); }
+  .side-foot { margin-top: auto; padding: 12px; border-top: 1px solid var(--border-faint); }
+  .run-card { background: var(--surface-sunken); border-radius: var(--r-md); padding: 12px; }
+  .run-card .r1 { display: flex; align-items: center; gap: 8px; font: 600 11px/1 var(--font-mono); color: var(--success); }
+  .run-card .r1 .d { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+  .run-card .nm { font: 600 11.5px/1.35 var(--font-mono); color: var(--fg-strong); word-break: break-all; margin-top: 8px; }
+  .run-card .mt { font: 500 10px/1 var(--font-mono); color: var(--muted); margin-top: 6px; }
+
+  /* header */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .header { position: sticky; top: 0; height: 64px; display: flex; align-items: center; gap: 16px; padding: 0 28px; z-index: 5;
+            background: color-mix(in oklab, var(--bg) 86%, transparent); backdrop-filter: blur(12px) saturate(140%); border-bottom: 1px solid var(--border-faint); }
+  .crumb { font: 500 10.5px/1 var(--font-mono); color: var(--dim); letter-spacing: .05em; text-transform: uppercase; }
+  .h-title { font: 600 18px/1.2 var(--font-display); color: var(--fg-strong); letter-spacing: -0.01em; }
+  .h-spacer { flex: 1; }
+  .h-stat { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--border); font: 600 12px/1 var(--font-mono); color: var(--fg); }
+  .h-stat .d { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 18%, transparent); }
+  .theme-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; font-size: 15px; }
+  .theme-btn:hover { background: var(--surface-sunken); color: var(--fg); }
+  @media (max-width: 720px){ .hide-sm { display: none; } }
+
+  /* page */
+  .page { padding: 28px; max-width: var(--content-max); width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .eyebrow { font: 600 11px/1.4 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .hero h1 { font: 700 30px/1.15 var(--font-display); letter-spacing: -0.022em; color: var(--fg-strong); margin: 8px 0 6px; text-wrap: balance; }
+  .hero p { color: var(--muted); max-width: 70ch; margin: 0; font-size: 14px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  /* pills / signals (real .pill) */
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--r-pill); font: 600 11px/1 var(--font-display); letter-spacing: .02em; background: var(--surface-sunken); color: var(--muted); border: 1px solid var(--border-faint); }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill.warn { background: var(--warn-soft); color: oklch(50% 0.15 75); border-color: transparent; }
+  .pill.danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+  .pill.success { background: var(--success-soft); color: var(--success); border-color: transparent; }
+  .pill.accent { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+  :root[data-theme="dark"] .pill.warn { color: var(--warn); }
+
+  /* card (real .card) */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow-sm); }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .card-title { font: 600 16px/1.3 var(--font-display); color: var(--fg-strong); letter-spacing: -0.01em; }
+  .card-eyebrow { font: 600 11px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+  /* NEW: notice/callout primitive (Phase 0) */
+  .notice { display: flex; gap: 11px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-md); font-size: 13px; color: var(--fg); background: var(--surface-sunken); border: 1px solid var(--border-faint); }
+  .notice .ic { flex: 0 0 auto; }
+  .notice b { color: var(--fg-strong); }
+  .notice.warn { background: var(--warn-soft); border-color: transparent; }
+  .notice.danger { background: var(--danger-soft); border-color: transparent; }
+
+  /* metric (real .metric) */
+  .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
+  @media (max-width: 1100px){ .grid-4 { grid-template-columns: repeat(2,1fr); } }
+  .metric { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); }
+  .metric-label { font: 600 11px/1 var(--font-display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .metric-value { font: 700 26px/1.05 var(--font-display); letter-spacing: -0.018em; color: var(--fg-strong); font-variant-numeric: tabular-nums; }
+  .metric-value.sm { font-size: 17px; }
+  .metric-unit { font: 500 13px/1 var(--font-display); color: var(--muted); margin-left: 3px; }
+  .metric-foot { font: 500 11.5px/1.3 var(--font-mono); color: var(--muted); }
+  .metric.flag .metric-value { color: var(--danger); }
+
+  /* D0-D9 compact stepper */
+  .stepline { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+  .stepline .s { border: 1px solid var(--border-faint); border-radius: var(--r-sm); padding: 8px 6px; background: var(--surface-sunken); text-align: center; }
+  .stepline .s .n { font: 700 11px/1 var(--font-mono); color: var(--dim); }
+  .stepline .s .t { font: 500 9px/1.2 var(--font-mono); color: var(--muted); margin-top: 5px; display: block; }
+  .stepline .s[data-st="WATCH"] { border-color: color-mix(in oklab, var(--warn) 45%, transparent); background: var(--warn-soft); }
+  .stepline .s[data-st="NO-GO"] { border-color: color-mix(in oklab, var(--danger) 45%, transparent); background: var(--danger-soft); }
+
+  /* reward chart (static SVG concept — real app uses EChartsRenderer) */
+  .plots { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+  @media (max-width: 900px){ .plots { grid-template-columns: 1fr; } }
+  .subcard { border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; background: var(--surface); }
+  .subcard .t { font: 600 13px/1 var(--font-display); color: var(--fg-strong); margin-bottom: 12px; }
+  .subcard .cap { font: 500 10.5px/1.4 var(--font-mono); color: var(--dim); margin-top: 10px; }
+
+  .cost-row { display: grid; grid-template-columns: 52px 1fr 54px; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .cost-row .l { font: 500 12px/1 var(--font-mono); color: var(--muted); }
+  .cost-row .bar { height: 14px; border-radius: 4px; }
+  .cost-row .v { font: 500 11px/1 var(--font-mono); color: var(--muted); text-align: right; }
+
+  /* Disclosure / accordion (NEW primitive - native details) */
+  details.disc { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+  details.disc + details.disc { margin-top: 10px; }
+  details.disc > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 14px 16px; font: 600 13px/1.3 var(--font-display); color: var(--fg-strong); }
+  details.disc > summary::-webkit-details-marker { display: none; }
+  details.disc > summary .chev { color: var(--dim); transition: transform .18s var(--ease, ease); font-size: 12px; }
+  details.disc[open] > summary .chev { transform: rotate(90deg); }
+  details.disc > summary .sum { font: 500 12px/1.3 var(--font-mono); color: var(--muted); margin-left: auto; text-align: right; }
+  details.disc .disc-body { padding: 0 16px 16px; border-top: 1px solid var(--border-faint); padding-top: 14px; }
+  @media (prefers-reduced-motion: reduce){ details.disc > summary .chev { transition: none; } }
+
+  .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 5px 0; border-bottom: 1px dashed var(--border-faint); }
+  .kv:last-child { border-bottom: 0; }
+  .kv span { color: var(--muted); } .kv strong { color: var(--fg); font-weight: 600; font-family: var(--font-mono); text-align: right; word-break: break-all; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font: 500 10.5px/1 var(--font-mono); padding: 4px 9px; border-radius: var(--r-pill); background: var(--surface-sunken); border: 1px solid var(--border-faint); color: var(--muted); }
+  .tag.off { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 30%, transparent); }
+
+  .changed { font-size: 12.5px; color: var(--muted); background: var(--surface-sunken); border: 1px solid var(--border-faint); border-radius: var(--r-md); padding: 14px 16px; }
+  .changed b { color: var(--fg-strong); }
+  .changed ul { margin: 8px 0 0; padding-left: 18px; } .changed li { margin: 3px 0; }
+</style>
+
+<div class="app" id="app">
+
+  <div class="concept-banner">
+    <span>◆ 컨셉 프로토타입</span>
+    <b>실제 core.css oklch 토큰 · light/dark 토글 · 아코디언 인터랙티브</b>
+    <span style="color:var(--muted)">— 승인용. 최종은 실제 Svelte(실데이터·ECharts·Pretendard). 차트는 정적 SVG 근사.</span>
+  </div>
+
+  <!-- ===== sidebar (faithful to real shell) ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">K</div>
+      <div><div class="brand-name">Kronos 대시보드</div><div class="brand-tag">official · operations</div></div>
+    </div>
+    <div class="side-sec"><div class="side-label">오버뷰</div><div class="nav">
+      <div class="nav-item"><span class="ic"></span><span class="lb">실시간 학습</span><span class="nav-badge">LIVE</span></div>
+      <div class="nav-item"><span class="ic"></span><span class="lb">예측 워크벤치</span></div>
+    </div></div>
+    <div class="side-sec"><div class="side-label">분석</div><div class="nav">
+      <div class="nav-item"><span class="ic"></span><span class="lb">예측 진단</span></div>
+      <div class="nav-item" data-active><span class="ic"></span><span class="lb">Daily OHLCV</span><span class="nav-badge">연구</span></div>
+      <div class="nav-item"><span class="ic"></span><span class="lb">아티팩트 & 모델</span></div>
+      <div class="nav-item"><span class="ic"></span><span class="lb">기록 & 런</span></div>
+    </div></div>
+    <div class="side-sec"><div class="side-label">시스템</div><div class="nav">
+      <div class="nav-item"><span class="ic"></span><span class="lb">시스템 상태</span></div>
+      <div class="nav-item"><span class="ic"></span><span class="lb">설정</span></div>
+    </div></div>
+    <div class="side-sec"><div class="side-label">도움말</div><div class="nav">
+      <div class="nav-item"><span class="ic"></span><span class="lb">문서 · Wiki</span></div>
+    </div></div>
+    <div class="side-foot">
+      <div class="run-card">
+        <div class="r1"><span class="d"></span>ok</div>
+        <div class="nm">stom_1s_grid_pred60_2025_full_small</div>
+        <div class="mt">predictor 100.0%</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== main ===== -->
+  <div class="main">
+    <header class="header">
+      <div><div class="crumb">Kronos</div><div class="h-title">Daily OHLCV</div></div>
+      <div class="h-spacer"></div>
+      <span class="h-stat hide-sm"><span class="d"></span>예측 성과 확인 가능</span>
+      <button class="theme-btn" id="themeBtn" title="라이트/다크 전환">◐</button>
+    </header>
+
+    <div class="page">
+
+      <!-- hero -->
+      <section class="hero">
+        <div class="eyebrow">Daily OHLCV Research</div>
+        <div class="row" style="margin-top:6px">
+          <span class="pill warn"><span class="dot"></span>READ_ONLY · WATCH</span>
+          <span class="pill"><span class="dot"></span>no live/broker/orders</span>
+        </div>
+        <h1>일봉 연구 대시보드</h1>
+        <p>D0–D9 증거를 한 흐름으로 검토하는 읽기 전용 화면. 핵심 상태를 맨 위에서 먼저 보고, 세부 증거는 필요할 때 펼칩니다.</p>
+      </section>
+
+      <!-- ★ 요약 우선 "한눈에" 카드 (14카드 벽 → 요약 1장) -->
+      <section class="card">
+        <div class="card-head">
+          <div><div class="card-eyebrow">한눈에 · D0–D9 요약</div><div class="card-title">지금 상태를 한 장으로</div></div>
+          <span class="pill warn"><span class="dot"></span>WATCH · RESEARCH_ONLY</span>
+        </div>
+        <div class="grid-4">
+          <div class="metric"><div class="metric-label">최종 판정</div><div class="metric-value sm">WATCH</div><div class="metric-foot">D5 NO-GO locked</div></div>
+          <div class="metric"><div class="metric-label">기본 비용</div><div class="metric-value">23<span class="metric-unit">bp</span></div><div class="metric-foot">민감도 0 / 23 / 46</div></div>
+          <div class="metric flag"><div class="metric-label">미해결 blocker</div><div class="metric-value">2</div><div class="metric-foot">D0 · D1</div></div>
+          <div class="metric"><div class="metric-label">모델 생성</div><div class="metric-value sm">false</div><div class="metric-foot">GO 아님 · 잠금</div></div>
+        </div>
+        <div class="stepline">
+          <div class="s"><span class="n">D0</span><span class="t">price</span></div>
+          <div class="s" data-st="WATCH"><span class="n">D1</span><span class="t">universe</span></div>
+          <div class="s"><span class="n">D2</span><span class="t">dataset</span></div>
+          <div class="s"><span class="n">D3</span><span class="t">baseline</span></div>
+          <div class="s"><span class="n">D4</span><span class="t">port RL</span></div>
+          <div class="s" data-st="NO-GO"><span class="n">D5</span><span class="t">gate</span></div>
+          <div class="s"><span class="n">D6</span><span class="t">visual</span></div>
+          <div class="s"><span class="n">D7</span><span class="t">diag</span></div>
+          <div class="s"><span class="n">D8</span><span class="t">registry</span></div>
+          <div class="s"><span class="n">D9</span><span class="t">paper</span></div>
+        </div>
+      </section>
+
+      <!-- ★ close-slot 카드 리모델 (파일럿) -->
+      <section class="card" data-daily-close-slot-card>
+        <div class="card-head">
+          <div><div class="card-eyebrow">종가매매 연구 · read-only evidence</div><div class="card-title">종가 매수 → 익일 종가 매도 · 10-slot 실험</div></div>
+          <span class="pill warn" data-daily-close-slot-status><span class="dot"></span>연구용 · WATCH · 실거래 아님</span>
+        </div>
+
+        <div class="notice danger" data-daily-close-slot-guardrail>
+          <span class="ic">⚠️</span>
+          <div><b>미해결 blocker 2건 — 게이트 통과 불가</b><br>
+          <span style="color:var(--muted)">D0_PRICE_BASIS_NOT_VERIFIED · D1_UNIVERSE_NOT_OFFICIAL · price_basis unknown · universe WATCH</span></div>
+        </div>
+
+        <div class="grid-4" data-daily-close-slot-contract>
+          <div class="metric"><div class="metric-label">readiness</div><div class="metric-value sm">WATCH</div><div class="metric-foot">RESEARCH_ONLY</div></div>
+          <div class="metric"><div class="metric-label">선택 슬롯</div><div class="metric-value">10<span class="metric-unit">max</span></div><div class="metric-foot">threshold 0–10 · hold-cash</div></div>
+          <div class="metric"><div class="metric-label">기본 비용</div><div class="metric-value">23<span class="metric-unit">bp</span></div><div class="metric-foot">0 / 23 / 46</div></div>
+          <div class="metric flag"><div class="metric-label">blocker</div><div class="metric-value">2</div><div class="metric-foot">D0 · D1</div></div>
+        </div>
+
+        <div class="plots">
+          <div class="subcard" data-daily-close-slot-policy-scores>
+            <div class="t">정책별 연구 리워드 <span style="color:var(--dim);font-weight:400;font-size:11px">(base 23bp)</span></div>
+            <svg viewBox="0 0 440 172" width="100%" style="display:block">
+              <!-- zero baseline at x=280 -->
+              <line x1="280" y1="8" x2="280" y2="152" stroke="var(--border)" stroke-width="1"/>
+              <!-- no_trade 0 -->
+              <text x="105" y="30" text-anchor="end" fill="var(--muted)" font-size="10">no_trade</text>
+              <rect x="278" y="21" width="3" height="14" rx="1.5" fill="var(--dim)"/>
+              <text x="289" y="32" fill="var(--fg)" font-size="10">0.0000</text>
+              <!-- shuffle -0.4748 (value above bar to avoid label collision) -->
+              <text x="105" y="68" text-anchor="end" fill="var(--muted)" font-size="10">shuffle (ctrl)</text>
+              <rect x="120" y="59" width="160" height="14" rx="4" fill="var(--accent)"/>
+              <text x="122" y="53" fill="var(--danger)" font-size="10">−0.4748</text>
+              <!-- momentum +0.3088 -->
+              <text x="105" y="106" text-anchor="end" fill="var(--muted)" font-size="10">momentum</text>
+              <rect x="280" y="97" width="104" height="14" rx="4" fill="var(--accent)"/>
+              <text x="390" y="108" fill="var(--fg)" font-size="10">+0.3088</text>
+              <!-- bandit 0 (bug) -->
+              <text x="105" y="142" text-anchor="end" fill="var(--muted)" font-size="10">bandit</text>
+              <rect x="278" y="133" width="3" height="14" rx="1.5" fill="var(--dim)"/>
+              <text x="289" y="144" fill="var(--warn)" font-size="10">⚠ 0종목 · 정규화 버그 (Phase 1)</text>
+            </svg>
+            <div class="cap">연구 라벨 · 비실행 상한 · 수익 주장 아님. shuffle은 baseline/control.</div>
+          </div>
+          <div class="subcard" data-daily-close-slot-cost-components>
+            <div class="t">비용 민감도</div>
+            <div class="cost-row"><span class="l">0 bp</span><span class="bar" style="width:8%;background:var(--border-strong)"></span><span class="v">control</span></div>
+            <div class="cost-row"><span class="l" style="color:var(--accent-strong)">23 bp</span><span class="bar" style="width:50%;background:var(--accent)"></span><span class="v" style="color:var(--accent-strong)">기본</span></div>
+            <div class="cost-row"><span class="l">46 bp</span><span class="bar" style="width:100%;background:color-mix(in oklab,var(--accent) 55%,var(--surface))"></span><span class="v">stress</span></div>
+            <div class="cap">primary cost = component <b style="color:var(--accent-strong)">base_23bp</b>.</div>
+          </div>
+        </div>
+
+        <details class="disc">
+          <summary><span class="chev">▶</span>세부 증거 (계보 · DB 접근 · 잠금 · no-claim · 산출물)<span class="sum">12 항목</span></summary>
+          <div class="disc-body">
+            <div class="grid-4" style="grid-template-columns:1fr 1fr;gap:14px">
+              <div data-daily-close-slot-lineage>
+                <div class="card-eyebrow" style="margin-bottom:8px">lineage / gate</div>
+                <div class="kv"><span>gate</span><strong>…gate_2026_07_03</strong></div>
+                <div class="kv"><span>train</span><strong>…policy_2026_07_03</strong></div>
+                <div class="kv"><span>dataset</span><strong>…dataset_2026_07_03</strong></div>
+              </div>
+              <div data-daily-close-slot-db-access>
+                <div class="card-eyebrow" style="margin-bottom:8px">DB access proof</div>
+                <div class="kv"><span>access / uri</span><strong>read_only · ro</strong></div>
+                <div class="kv"><span>query_only</span><strong>true</strong></div>
+                <div class="kv"><span>mutation</span><strong>false</strong></div>
+              </div>
+            </div>
+            <div style="margin-top:14px" data-daily-close-slot-locks>
+              <div class="card-eyebrow" style="margin-bottom:8px">machine-readable locks (모두 false)</div>
+              <div class="tags">
+                <span class="tag off">promotion ✕</span><span class="tag off">model_build ✕</span><span class="tag off">paper_forward ✕</span>
+                <span class="tag off">live_broker ✕</span><span class="tag off">profitability ✕</span><span class="tag off">go ✕</span>
+              </div>
+            </div>
+            <div style="margin-top:14px" data-daily-close-slot-no-claims>
+              <div class="card-eyebrow" style="margin-bottom:8px">no-claim labels</div>
+              <div class="tags">
+                <span class="tag">NO_LIVE_BROKER_ORDER</span><span class="tag">NO_PAPER_FORWARD</span><span class="tag">NO_MODEL_BUILD_GO</span><span class="tag">NO_PROFITABILITY</span>
+              </div>
+            </div>
+            <div style="margin-top:14px" data-daily-close-slot-source-scope>
+              <div class="card-eyebrow" style="margin-bottom:8px">bounded scope · selected-code (000250 문자열)</div>
+              <div class="kv"><span>max symbols / rows</span><strong>120 · 260</strong></div>
+              <div class="kv"><span>slot 1 · 2</span><strong>000250 · 005930</strong></div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- ★ 나머지 카드 = 접이식 요약 (14카드 벽 → 접이식) -->
+      <section class="card">
+        <div class="card-head">
+          <div><div class="card-eyebrow">그 외 증거 카드</div><div class="card-title">세부는 접어두고, 필요할 때만 펼치기</div></div>
+          <span class="pill accent"><span class="dot"></span>8개 접힘</span>
+        </div>
+        <div>
+          <details class="disc"><summary><span class="chev">▶</span>D0 · DB 품질<span class="sum">rows 12.4M · dup 0 · WATCH</span></summary><div class="disc-body"><div class="kv"><span>tables</span><strong>2,140</strong></div><div class="kv"><span>price_basis</span><strong>unknown (D0 blocker)</strong></div></div></details>
+          <details class="disc"><summary><span class="chev">▶</span>D1 · 유니버스<span class="sum">included 120 / 2,140 · WATCH</span></summary><div class="disc-body"><div class="kv"><span>verdict</span><strong>WATCH (D1 blocker)</strong></div><div class="kv"><span>quarantined</span><strong>Q-products 제외</strong></div></div></details>
+          <details class="disc"><summary><span class="chev">▶</span>D2 · 데이터셋 빌더<span class="sum">bounded 120×260</span></summary><div class="disc-body"><div class="kv"><span>features</span><strong>8 (정규화 버그 Phase1)</strong></div></div></details>
+          <details class="disc"><summary><span class="chev">▶</span>D3–D4 · 모델/포트폴리오 결과<span class="sum">baseline ts_imb · 23bp</span></summary><div class="disc-body"><div class="kv"><span>baseline</span><strong>ts_imb RULE (RL 아님)</strong></div></div></details>
+          <details class="disc"><summary><span class="chev">▶</span>D6 · 시나리오 랩 / 실행 원장<span class="sum">runs 0 · recorded-only</span></summary><div class="disc-body"><div class="kv"><span>model_run_generation</span><strong>false</strong></div></div></details>
+        </div>
+      </section>
+
+      <div class="changed">
+        <b>무엇이 바뀌나</b> — 현재 DailyOhlcv 탭은 카드 14개가 끝없이 쌓인 벽입니다.
+        <ul>
+          <li><b>요약 우선</b>: 맨 위 "한눈에" 카드가 판정·비용·blocker·D0–D9를 1장으로 → 스크롤 전에 상태 파악</li>
+          <li><b>접이식</b>: 세부 증거(해시·경로·락·KV)는 아코디언으로 접힘 → 첫 화면이 깔끔</li>
+          <li><b>과밀 카드 재구성</b>: close-slot이 상태칩·KPI·차트·접이식으로 (지금은 스타일 결손으로 깨져 있음)</li>
+          <li><b>보존</b>: 마커 <span class="mono">data-daily-close-slot-*</span> 19종 · 가드레일 사실(WATCH·D0/D1·false-lock·000250) 그대로</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    var root = document.documentElement;
+    btn && btn.addEventListener('click', function () {
+      var cur = root.getAttribute('data-theme');
+      if (!cur) { cur = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+      root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    });
+  })();
+</script>

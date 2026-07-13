@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { dailyOhlcvApi, type DailyRlEnvGuideResponse } from '$lib/dailyOhlcvApi';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let guide = $state<DailyRlEnvGuideResponse | null>(null);
   let loading = $state(false);
@@ -89,6 +90,16 @@
   const frameReward = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'reward');
   const frameLearning = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'learning');
   const frameNav = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'nav');
+  const frameActionExecuted = (): string => {
+    const executed = field(frameAction(), 'executed');
+    return executed === undefined || executed === null || executed === '' ? '—' : String(executed);
+  };
+  const frameRewardPenaltiesTotal = (): number | null => {
+    const penaltyKeys = ['drawdown_penalty', 'concentration_penalty', 'invalid_action_penalty', 'churn_penalty'];
+    const parts = penaltyKeys.map((key) => numberValue(field(frameReward(), key)));
+    if (parts.some((value) => value === null)) return null;
+    return parts.reduce((sum, value) => sum + (value ?? 0), 0);
+  };
   const actionDistributionRows = (): readonly Record<string, unknown>[] => rows(field(guide?.active_replay, 'action_distribution'));
   const activeActionDistributionRows = (): readonly Record<string, unknown>[] => {
     const currentAction = String(field(frameAction(), 'executed') ?? '');
@@ -129,6 +140,33 @@
   };
   const selectedWorkflowBlockers = (): string[] => stringItems(field(selectedResearchWorkflow(), 'blocked_by'));
   const selectedWorkflowArtifacts = (): string[] => stringItems(field(selectedResearchWorkflow(), 'artifact_dependencies'));
+
+  // WP-S4(B) — workflow/scenario 섹션이 공유하는 raw JSON payload 접근자.
+  // 원위치에는 사람이 읽는 key-value 요약만 남기고, 동일 payload의 원본 JSON은
+  // raw checks 섹션(6. Raw checks · isGuideSection('raw'))으로만 옮긴다. 데이터 원천은 그대로다.
+  const selectedLaneGuidance = (): Record<string, unknown> => asRecord(field(selectedResearchLane(), 'ai_guidance_format'));
+  const selectedScenarioPlan = (): Record<string, unknown> => asRecord(field(selectedScenarioTemplate(), 'plan_json_draft'));
+  const marketRegimeGuidance = (): Record<string, unknown> => asRecord(field(guide?.market_regime_audit_readiness, 'ai_guidance_format'));
+  const improvementQueueGuidance = (): Record<string, unknown> => asRecord(field(guide?.improvement_queue, 'ai_guidance_format'));
+  const safeConfigPreview = (): Record<string, unknown> => ({
+    workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
+    default_cost_bp: field(selectedResearchWorkflow(), 'default_cost_bp') ?? 23,
+    cost_sensitivity_bp: field(selectedResearchWorkflow(), 'cost_sensitivity_bp') ?? [0, 23, 46],
+    approval_required: field(selectedResearchWorkflow(), 'approval_required') ?? true,
+    execution_allowed_from_browser: field(selectedResearchWorkflow(), 'execution_allowed_from_browser') ?? false,
+    forbidden_fields: field(guide?.research_workflow_catalog, 'forbidden_fields'),
+  });
+  const jobIntentTemplate = (): Record<string, unknown> => ({
+    schema_version: 'daily_ohlcv_research_job_intent.v1',
+    approval_status: 'APPROVED_FOR_RESEARCH_INTENT',
+    idempotency_key: 'safe-operator-key',
+    config: {
+      workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
+      default_cost_bp: 23,
+      cost_sensitivity_bp: [0, 23, 46],
+      controls: ['no_trade', 'shuffle_control', 'frozen_d3_baseline'],
+    },
+  });
   const tone = (status: unknown): string => {
     const normalized = String(status ?? '').toUpperCase();
     if (normalized === 'PASS' || normalized === 'INPUT') return 'pass';
@@ -259,6 +297,7 @@
         type="button"
         class="guide-section-button"
         data-active={activeGuideSection === section.id ? 'true' : 'false'}
+        aria-pressed={activeGuideSection === section.id}
         data-guide-section={section.id}
         onclick={() => (activeGuideSection = section.id)}
       >
@@ -287,6 +326,7 @@
   </div>
 </section>
 
+<div class="text-eyebrow" style="margin-top:16px">오늘의 순환 구조 · 실데이터 상시 노출</div>
 <section class="panel visual-panel" data-daily-rl-loop-diagram>
   <div class="panel-head">
     <div>
@@ -322,17 +362,18 @@
       <text class="svg-title" x="78" y="166">D2/D3 데이터</text>
       <text class="svg-body" x="78" y="192">feature · split · rank</text>
 
-      <rect class="svg-card state-card" x="320" y="78" width="200" height="145" rx="20" />
+      <rect class="svg-card state-card" x="320" y="78" width="200" height="162" rx="20" />
       <text class="svg-kicker" x="346" y="116">STATE</text>
       <text class="svg-title" x="346" y="145">현재 관측</text>
-      <text class="svg-body" x="346" y="174">position_count</text>
-      <text class="svg-body" x="346" y="198">top_score_bucket</text>
+      <text class="svg-body" x="346" y="168">position_count {String(field(frameState(), 'position_count') ?? '—')}</text>
+      <text class="svg-body" x="346" y="190">top_score_bucket {String(field(frameState(), 'top_score_bucket') ?? '—')}</text>
+      <text class="svg-body" x="346" y="212">top_candidate_code {String(field(frameState(), 'top_candidate_code') ?? '—')}</text>
 
       <rect class="svg-card agent-card" x="610" y="78" width="230" height="145" rx="20" />
       <text class="svg-kicker" x="638" y="116">AGENT / POLICY</text>
       <text class="svg-title" x="638" y="145">행동 선택</text>
-      <text class="svg-body" x="638" y="174">hold · buy · add</text>
-      <text class="svg-body" x="638" y="198">sell · reduce</text>
+      <text class="svg-body" x="638" y="174"><tspan class={frameActionExecuted() === 'hold' ? 'svg-action-active' : ''}>hold</tspan> · <tspan class={frameActionExecuted() === 'buy' ? 'svg-action-active' : ''}>buy</tspan> · <tspan class={frameActionExecuted() === 'add' ? 'svg-action-active' : ''}>add</tspan></text>
+      <text class="svg-body" x="638" y="198"><tspan class={frameActionExecuted() === 'sell' ? 'svg-action-active' : ''}>sell</tspan> · <tspan class={frameActionExecuted() === 'reduce' ? 'svg-action-active' : ''}>reduce</tspan></text>
 
       <rect class="svg-card mask-card" x="610" y="290" width="230" height="135" rx="20" />
       <text class="svg-kicker" x="638" y="328">ENVIRONMENT</text>
@@ -342,8 +383,8 @@
       <rect class="svg-card reward-card" x="320" y="292" width="230" height="135" rx="20" />
       <text class="svg-kicker" x="348" y="330">REWARD</text>
       <text class="svg-title" x="348" y="359">점수 계산</text>
-      <text class="svg-body" x="348" y="388">future_return_1d</text>
-      <text class="svg-body" x="348" y="412">- 23bp - penalties</text>
+      <text class="svg-body" x="348" y="388">{formatNumber(field(frameReward(), 'net_return_after_cost'), 3)} − {formatNumber(field(frameReward(), 'turnover_cost'), 3)} − {formatNumber(frameRewardPenaltiesTotal(), 3)}</text>
+      <text class="svg-body" x="348" y="412">= reward {formatNumber(field(frameReward(), 'reward'), 3)}</text>
 
       <rect class="svg-card gate-card" x="55" y="292" width="180" height="135" rx="20" />
       <text class="svg-kicker" x="78" y="330">D5 GATE</text>
@@ -356,18 +397,20 @@
       <path class="svg-arrow warn" d="M725 223 C725 250 725 263 725 290" marker-end="url(#rlArrow)" />
       <path class="svg-arrow warn" d="M610 360 C590 360 570 360 550 360" marker-end="url(#rlArrow)" />
       <path class="svg-arrow" d="M320 360 C280 360 260 360 235 360" marker-end="url(#rlArrow)" />
-      <path class="svg-arrow loop" d="M435 292 C435 250 420 245 420 223" marker-end="url(#rlArrow)" />
+      <path class="svg-arrow loop" d="M435 292 C435 265 420 250 420 240" marker-end="url(#rlArrow)" />
       <path class="svg-arrow loop" d="M550 330 C585 265 595 235 625 205" marker-end="url(#rlArrow)" />
 
       <text class="svg-annotation" x="560" y="276">mask 적용 후 체결/보유 상태 갱신</text>
       <text class="svg-annotation" x="452" y="265">보상은 다음 state 학습 신호</text>
+      <text class="svg-callout" x="330" y="452">{guide?.cost_round_trip_bp ?? 23}bp 왕복 비용</text>
       <text class="svg-footer" x="55" y="470">실거래 주문이 아니라, 연구용 일봉 데이터로 “상태 → 행동 → 보상 → 검증”을 반복하는 폐쇄 루프입니다.</text>
     </svg>
   </div>
 
   <div class="process-strip" data-daily-rl-process-storyboard aria-label="일봉 RL 프로세스 스토리보드">
+    <a class="scroll-region-focus" href="#daily-rl-process-1">첫 단계부터 키보드로 탐색</a>
     {#each processSteps as step, index}
-      <article class="process-step" data-step-tone={step.tone}>
+      <article class="process-step" id={`daily-rl-process-${index + 1}`} data-step-tone={step.tone}>
         <div class="step-badge">{step.no}</div>
         <h3>{step.title}</h3>
         <p>{step.detail}</p>
@@ -377,10 +420,38 @@
       {/if}
     {/each}
   </div>
+
+  <div class="today-cycle-strip" data-daily-rl-today-cycle>
+    <div class="today-cycle-head">
+      <span class="text-eyebrow">오늘의 한 사이클 · 최신 active_replay frame</span>
+      <span class="pill warn"><span class="dot"></span>{String(field(guide?.active_replay, 'status') ?? 'MISSING_REPLAY_ARTIFACT')}</span>
+    </div>
+    <div class="today-cycle-grid">
+      <article class="today-cycle-card" data-cycle-role="state">
+        <div class="step-badge">S</div>
+        <h3>state 피처</h3>
+        <p>position_count {String(field(frameState(), 'position_count') ?? '—')}</p>
+        <p>top_score_bucket {String(field(frameState(), 'top_score_bucket') ?? '—')}</p>
+      </article>
+      <div class="process-connector" aria-hidden="true">→</div>
+      <article class="today-cycle-card" data-cycle-role="action">
+        <div class="step-badge">A</div>
+        <h3>{frameActionExecuted()}</h3>
+        <p>{frameActionExecuted() === '—' ? '—' : frameActionExecuted() === 'hold' ? '포지션 유지 (hold)' : `선택 종목 ${String(field(frameState(), 'top_candidate_code') ?? '—')}`}</p>
+      </article>
+      <div class="process-connector" aria-hidden="true">→</div>
+      <article class="today-cycle-card" data-cycle-role="reward">
+        <div class="step-badge">R</div>
+        <h3>{formatNumber(field(frameReward(), 'reward'), 4)}</h3>
+        <p>익일수익 {formatNumber(field(frameReward(), 'net_return_after_cost'), 4)} − {guide?.cost_round_trip_bp ?? 23}bp</p>
+      </article>
+    </div>
+  </div>
 </section>
 {/if}
 
 {#if isGuideSection('workflow')}
+<Disclosure summary="연구 프로세스 선택 · 한계·개선 방향" meta="RESEARCH_ONLY">
 <section class="panel process-selector-panel" data-daily-rl-research-process-selector>
   <div class="panel-head">
     <div>
@@ -399,6 +470,7 @@
         type="button"
         class="lane-select-card"
         data-active={String(field(lane, 'id')) === String(field(selectedResearchLane(), 'id'))}
+        aria-pressed={String(field(lane, 'id')) === String(field(selectedResearchLane(), 'id'))}
         onclick={() => { selectedLaneId = String(field(lane, 'id') ?? 'D4_RL_RISK_OVERLAY'); }}
       >
         <span>{String(field(lane, 'stage') ?? 'stage')}</span>
@@ -459,11 +531,16 @@
     <div class="mini-chart-card">
       <div class="text-eyebrow">AI-readable / AI 개선 지시 고정 포맷</div>
       <p class="text-muted" style="margin-bottom:8px">선택한 연구 lane의 한계·개선 방향을 AI Agent가 그대로 읽고 다음 실험 계획으로 사용할 수 있는 고정 JSON입니다.</p>
-      <pre class="ai-format-box">{selectedLaneJson()}</pre>
+      <div class="kv-row"><span>lane / status</span><b>{String(field(selectedLaneGuidance(), 'lane_id') ?? '—')} · {String(field(selectedLaneGuidance(), 'status') ?? '—')}</b></div>
+      <div class="kv-row"><span>research question</span><b>{String(field(selectedLaneGuidance(), 'research_question') ?? '—')}</b></div>
+      <div class="kv-row"><span>metrics to watch</span><b>{listText(field(selectedLaneGuidance(), 'metrics_to_watch'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </div>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="연구 workflow 센터 · blocker 확인" meta="INTENT_ONLY">
 <section class="panel workflow-center-panel" data-daily-rl-workflow-center>
   <div class="panel-head">
     <div>
@@ -492,6 +569,7 @@
         type="button"
         class="template-card"
         data-active={String(field(workflow, 'workflow_id')) === String(field(selectedResearchWorkflow(), 'workflow_id'))}
+        aria-pressed={String(field(workflow, 'workflow_id')) === String(field(selectedResearchWorkflow(), 'workflow_id'))}
         onclick={() => { selectedWorkflowId = String(field(workflow, 'workflow_id') ?? 'PAST_ONLY_MARKET_REGIME_AUDIT'); }}
       >
         <span>{String(field(workflow, 'stage') ?? 'stage')}</span>
@@ -519,14 +597,10 @@
     </article>
     <aside class="selected-process-side" data-daily-rl-workflow-safe-config-preview>
       <h3>Safe config preview</h3>
-      <pre class="ai-format-box">{safeJson({
-        workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
-        default_cost_bp: field(selectedResearchWorkflow(), 'default_cost_bp') ?? 23,
-        cost_sensitivity_bp: field(selectedResearchWorkflow(), 'cost_sensitivity_bp') ?? [0, 23, 46],
-        approval_required: field(selectedResearchWorkflow(), 'approval_required') ?? true,
-        execution_allowed_from_browser: field(selectedResearchWorkflow(), 'execution_allowed_from_browser') ?? false,
-        forbidden_fields: field(guide?.research_workflow_catalog, 'forbidden_fields')
-      })}</pre>
+      <div class="kv-row"><span>workflow / cost</span><b>{String(field(safeConfigPreview(), 'workflow_id') ?? '—')} · {String(field(safeConfigPreview(), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>approval / browser 실행</span><b>{boolText(field(safeConfigPreview(), 'approval_required'))} · {boolText(field(safeConfigPreview(), 'execution_allowed_from_browser'))}</b></div>
+      <div class="kv-row"><span>forbidden fields</span><b>{listText(field(safeConfigPreview(), 'forbidden_fields'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
   </div>
 
@@ -547,17 +621,10 @@
     <aside class="selected-process-side">
       <h3>Rejected request fields</h3>
       <p class="text-muted">command · shell · argv · env · cwd · broker · account · order · live · paper_forward · model_build · model_build_allowed · paper_forward_allowed · live_broker_order_allowed · arbitrary_path</p>
-      <pre class="ai-format-box">{safeJson({
-        schema_version: 'daily_ohlcv_research_job_intent.v1',
-        approval_status: 'APPROVED_FOR_RESEARCH_INTENT',
-        idempotency_key: 'safe-operator-key',
-        config: {
-          workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
-          default_cost_bp: 23,
-          cost_sensitivity_bp: [0, 23, 46],
-          controls: ['no_trade', 'shuffle_control', 'frozen_d3_baseline']
-        }
-      })}</pre>
+      <div class="kv-row"><span>schema / approval</span><b>{String(field(jobIntentTemplate(), 'schema_version'))} · {String(field(jobIntentTemplate(), 'approval_status'))}</b></div>
+      <div class="kv-row"><span>workflow / cost</span><b>{String(field(nestedRecord(jobIntentTemplate(), 'config'), 'workflow_id') ?? '—')} · {String(field(nestedRecord(jobIntentTemplate(), 'config'), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>controls</span><b>{listText(field(nestedRecord(jobIntentTemplate(), 'config'), 'controls'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
   </div>
 
@@ -594,9 +661,11 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.research_workflow_catalog, 'guardrail') ?? 'workflow catalog is read-only')}</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('rejection')}
+<Disclosure summary="가설 탈락 · 조기 dropout 검토" meta="REVIEW_ONLY">
 <section class="panel rejection-analytics-panel" data-daily-rl-rejection-analytics>
   <div class="panel-head">
     <div>
@@ -661,6 +730,8 @@
     </div>
   </div>
 </section>
+</Disclosure>
+<Disclosure summary="비실거래 연구 플랫폼 완료 성과 · 남은 lock" meta="NON_LIVE_ONLY">
 <section class="panel final-completion-panel" data-daily-rl-final-completion-report>
   <div class="panel-head">
     <div>
@@ -716,9 +787,11 @@
     이 완료율은 workflow center, inspector, safe config builder, intent ledger, rejection analytics, 문서/검증 표면에만 적용됩니다. 실거래·브로커 주문·페이퍼 포워드·모델 빌드·수익성 주장은 계속 0%/blocked입니다.
   </p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('scenario')}
+<Disclosure summary="시나리오 생성 · JSON 초안" meta="READ_ONLY">
 <section class="panel scenario-generator-panel" data-daily-rl-scenario-generator>
   <div class="panel-head">
     <div>
@@ -747,6 +820,7 @@
         type="button"
         class="template-card"
         data-active={String(field(template, 'template_id')) === String(field(selectedScenarioTemplate(), 'template_id'))}
+        aria-pressed={String(field(template, 'template_id')) === String(field(selectedScenarioTemplate(), 'template_id'))}
         onclick={() => { selectedTemplateId = String(field(template, 'template_id') ?? 'D3_D4_SIGNAL_QUALITY_AUDIT'); }}
       >
         <span>{String(field(template, 'lane_id') ?? 'lane')}</span>
@@ -773,12 +847,17 @@
     </article>
     <aside class="selected-process-side">
       <h3>Fixed plan JSON draft</h3>
-      <pre class="ai-format-box">{selectedScenarioPlanJson()}</pre>
+      <div class="kv-row"><span>template / cost</span><b>{String(field(selectedScenarioPlan(), 'template_id') ?? '—')} · {String(field(selectedScenarioPlan(), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>scenarios</span><b>{rows(field(selectedScenarioPlan(), 'scenarios')).length}개 draft</b></div>
+      <div class="kv-row"><span>guardrails</span><b>{listText(field(selectedScenarioPlan(), 'guardrails'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.scenario_generator, 'guardrail') ?? 'read-only scenario generator')}</p>
 </section>
+</Disclosure>
 
+<Disclosure summary="최신 신호 품질 결과 · 시나리오 비교" meta="WATCH">
 <section class="panel" data-daily-rl-signal-quality-integration>
   <div class="panel-head">
     <div>
@@ -829,7 +908,9 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.scenario_comparison, 'guardrail') ?? 'WATCH/NO-GO diagnostics only')}</p>
 </section>
+</Disclosure>
 
+<Disclosure summary="Past-only 시장 국면 감사 준비도" meta="WATCH">
 <section class="panel" data-daily-rl-market-regime-readiness>
   <div class="panel-head">
     <div>
@@ -889,10 +970,15 @@
   </div>
   <div class="mini-chart-card" style="margin-top:12px">
     <div class="text-eyebrow">AI-readable next-action guidance</div>
-    <pre class="ai-format-box">{safeJson(field(guide?.market_regime_audit_readiness, 'ai_guidance_format'))}</pre>
+    <div class="kv-row"><span>next lane</span><b>{String(field(marketRegimeGuidance(), 'next_research_lane') ?? '—')}</b></div>
+    <div class="kv-row"><span>objective</span><b>{String(field(marketRegimeGuidance(), 'objective') ?? '—')}</b></div>
+    <div class="kv-row"><span>acceptance gate</span><b>{String(field(marketRegimeGuidance(), 'acceptance_gate') ?? '—')}</b></div>
+    <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="개선 큐 · 한계→행동→산출물→gate" meta="AI_READABLE">
 <section class="panel" data-daily-rl-improvement-queue>
   <div class="panel-head">
     <div>
@@ -913,9 +999,14 @@
       </article>
     {/each}
   </div>
-  <pre class="ai-format-box" style="margin-top:12px">{safeJson(field(guide?.improvement_queue, 'ai_guidance_format'))}</pre>
+  <div class="kv-row" style="margin-top:12px"><span>queue policy</span><b>{String(field(improvementQueueGuidance(), 'queue_policy') ?? '—')}</b></div>
+  <div class="kv-row"><span>allowed next action</span><b>{String(field(improvementQueueGuidance(), 'allowed_next_action') ?? '—')}</b></div>
+  <div class="kv-row"><span>blocked actions</span><b>{listText(field(improvementQueueGuidance(), 'blocked_actions'))}</b></div>
+  <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
 </section>
+</Disclosure>
 
+<Disclosure summary="전체 페이지 성숙도 · 연구 준비도" meta="WATCH">
 <section class="panel" data-daily-rl-page-maturity-report>
   <div class="panel-head">
     <div>
@@ -958,10 +1049,12 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.page_maturity_report, 'guardrail') ?? 'page maturity is not trading readiness')}</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('replay')}
 
+<Disclosure summary="저장된 산출물 RL 리플레이" meta="RESEARCH_ONLY">
 <section class="panel live-visualizer-panel" data-daily-rl-realtime-visualizer>
   <div class="panel-head">
     <div>
@@ -1044,7 +1137,9 @@
     </article>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="학습 성과 예시 · 수익금·수익률·리스크" meta="RESEARCH_ONLY">
 <section class="panel performance-panel" data-daily-rl-performance-example>
   <div class="panel-head">
     <div>
@@ -1112,10 +1207,12 @@
 
   <p class="text-muted" style="margin-top:10px">{String(field(guide?.learning_performance, 'guardrail') ?? 'no profit guarantee, no live/broker/orders')}</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('raw')}
 
+<Disclosure summary="D2 → D5 일봉 RL 흐름">
 <section class="panel" data-daily-rl-env-visual-map>
   <div class="panel-head">
     <div>
@@ -1138,7 +1235,9 @@
     {/each}
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="RL 구성 요소 · Agent·State·Action·Reward">
 <section class="panel" data-daily-rl-env-elements>
   <div class="panel-head">
     <div>
@@ -1155,7 +1254,9 @@
     {/each}
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="상태·행동·보상 공식">
 <section class="panel" data-daily-rl-state-action-reward>
   <div class="panel-head">
     <div>
@@ -1189,7 +1290,9 @@
     </div>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="PASS/WATCH 체크리스트">
 <section class="panel" data-daily-rl-env-checks>
   <div class="panel-head">
     <div>
@@ -1217,19 +1320,59 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{guide?.guardrail ?? 'no profit guarantee, no live/broker/orders'}</p>
 </section>
+</Disclosure>
+
+<Disclosure summary="Workflow · scenario AI-guidance 원본 JSON" meta="RAW_JSON_PROVENANCE">
+<section class="panel" data-daily-rl-raw-ai-guidance-json>
+  <div class="panel-head">
+    <div>
+      <div class="text-eyebrow">Raw JSON provenance</div>
+      <h2 class="text-h3">workflow · scenario 섹션 원본 JSON</h2>
+    </div>
+    <span class="pill"><span class="dot"></span>audit trail only</span>
+  </div>
+  <p class="text-muted" style="margin-top:8px">
+    2. Workflow · 4. Scenario 섹션은 사람이 읽는 key-value 요약만 보여줍니다. 아래는 같은 payload의 고정 JSON 원본이며 audit trail 확인용입니다 (실행 버튼 아님).
+  </p>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">연구 lane · AI 개선 지시 고정 포맷</div>
+    <pre class="ai-format-box">{selectedLaneJson()}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Workflow safe config preview</div>
+    <pre class="ai-format-box">{safeJson(safeConfigPreview())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Job intent template (rejected request fields 예시)</div>
+    <pre class="ai-format-box">{safeJson(jobIntentTemplate())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Scenario fixed plan JSON draft</div>
+    <pre class="ai-format-box">{selectedScenarioPlanJson()}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Market-regime readiness · next-action guidance</div>
+    <pre class="ai-format-box">{safeJson(marketRegimeGuidance())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Improvement queue · AI guidance format</div>
+    <pre class="ai-format-box">{safeJson(improvementQueueGuidance())}</pre>
+  </div>
+</section>
+</Disclosure>
 {/if}
 
 <style>
   .guide-section-control { position:sticky; top:12px; z-index:2; }
   .guide-section-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
-  .guide-section-button { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
+  .guide-section-button { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--fg); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
   .guide-section-button[data-active='true'] { border-color:rgba(20,184,166,0.68); background:linear-gradient(180deg, rgba(20,184,166,0.14), var(--surface)); }
   .guide-section-button span { color:var(--muted); font-size:12px; line-height:1.45; }
   .replay-controls { margin-top:14px; display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:12px; border:1px solid var(--border-faint); border-radius:16px; background:var(--surface-sunken); }
   .visual-panel { overflow:hidden; }
   .rl-loop-figure { margin-top:16px; border:1px solid var(--border-faint); border-radius:24px; background:radial-gradient(circle at 22% 28%, rgba(20,184,166,0.16), transparent 34%), radial-gradient(circle at 78% 20%, rgba(59,130,246,0.13), transparent 32%), linear-gradient(135deg, rgba(15,23,42,0.02), rgba(245,158,11,0.05)); overflow:auto; }
   .rl-loop-svg { display:block; width:100%; min-width:900px; height:auto; }
-  .svg-backdrop { fill:rgba(255,255,255,0.64); stroke:var(--border-faint); }
+  .svg-backdrop { fill:var(--surface); stroke:var(--border-faint); }
   .svg-card { fill:var(--surface); stroke:var(--border-faint); stroke-width:1.5; filter:drop-shadow(0 14px 22px rgba(15,23,42,0.10)); }
   .state-card { fill:url(#stateGlow); stroke:rgba(20,184,166,0.50); }
   .agent-card { stroke:rgba(59,130,246,0.48); }
@@ -1239,16 +1382,20 @@
   .svg-section-label, .svg-kicker, .svg-status, .svg-footer { font-family:var(--font-mono); letter-spacing:0.03em; }
   .svg-section-label { fill:var(--muted); font-size:13px; font-weight:700; }
   .svg-kicker { fill:var(--muted); font-size:12px; font-weight:700; }
-  .svg-title { fill:var(--text); font-size:20px; font-weight:800; }
+  .svg-title { fill:var(--fg); font-size:20px; font-weight:800; }
   .svg-body { fill:var(--muted); font-size:15px; }
   .svg-status { fill:rgb(185,28,28); font-size:13px; font-weight:800; }
   .svg-annotation { fill:var(--muted); font-size:13px; }
-  .svg-footer { fill:var(--text); font-size:14px; font-weight:700; }
+  .svg-footer { fill:var(--fg); font-size:14px; font-weight:700; }
   .svg-arrow { fill:none; stroke:rgba(20,184,166,0.78); stroke-width:4; stroke-linecap:round; }
   .svg-arrow.warn { stroke:rgba(245,158,11,0.86); }
   .svg-arrow.loop { stroke:rgba(59,130,246,0.78); stroke-dasharray:8 8; }
   .svg-arrow-head { fill:rgba(20,184,166,0.86); }
+  .svg-action-active { fill:rgb(29,78,216); font-weight:900; }
+  .svg-callout { fill:rgb(180,83,9); font-family:var(--font-mono); font-size:12px; font-weight:800; letter-spacing:0.02em; }
   .process-strip { margin-top:16px; display:flex; align-items:stretch; gap:8px; overflow-x:auto; padding:4px 0 2px; }
+  .scroll-region-focus:focus-visible { outline:2px solid var(--accent-strong); outline-offset:2px; }
+  .scroll-region-focus { min-width:max-content; align-self:center; color:var(--accent-strong); font-size:12px; font-weight:700; }
   .process-step { min-width:180px; flex:1; border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:var(--surface); box-shadow:var(--shadow-sm); position:relative; }
   .process-step[data-step-tone='pass'] { border-color:rgba(34,197,94,0.42); background:linear-gradient(180deg, rgba(34,197,94,0.08), var(--surface)); }
   .process-step[data-step-tone='warn'] { border-color:rgba(245,158,11,0.42); background:linear-gradient(180deg, rgba(245,158,11,0.08), var(--surface)); }
@@ -1258,6 +1405,15 @@
   .process-step h3 { margin:0 0 6px; font-size:15px; }
   .process-step p { margin:0; color:var(--muted); font-size:12px; line-height:1.55; }
   .process-connector { align-self:center; color:var(--muted); font-size:24px; font-weight:900; padding:0 2px; }
+  .today-cycle-strip { margin-top:18px; }
+  .today-cycle-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .today-cycle-grid { margin-top:10px; display:flex; align-items:stretch; gap:8px; overflow-x:auto; padding:4px 0 2px; }
+  .today-cycle-card { min-width:200px; flex:1; border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:var(--surface); box-shadow:var(--shadow-sm); }
+  .today-cycle-card[data-cycle-role='state'] { border-color:rgba(20,184,166,0.42); background:linear-gradient(180deg, rgba(20,184,166,0.08), var(--surface)); }
+  .today-cycle-card[data-cycle-role='action'] { border-color:rgba(59,130,246,0.42); background:linear-gradient(180deg, rgba(59,130,246,0.08), var(--surface)); }
+  .today-cycle-card[data-cycle-role='reward'] { border-color:rgba(245,158,11,0.42); background:linear-gradient(180deg, rgba(245,158,11,0.08), var(--surface)); }
+  .today-cycle-card h3 { margin:4px 0 6px; font-size:17px; font-family:var(--font-mono); }
+  .today-cycle-card p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.5; }
   .performance-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:12px; }
   .performance-card { border:1px solid var(--border-faint); border-radius:18px; padding:16px; background:var(--surface); box-shadow:var(--shadow-sm); }
   .performance-card[data-card-tone='pass'] { border-color:rgba(34,197,94,0.40); }
@@ -1268,7 +1424,7 @@
   .performance-main small { color:var(--muted); font-size:12px; }
   .process-selector-panel { overflow:hidden; }
   .process-selector-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:10px; }
-  .lane-select-card { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
+  .lane-select-card { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--fg); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
   .lane-select-card[data-active='true'] { border-color:rgba(20,184,166,0.62); background:linear-gradient(180deg, rgba(20,184,166,0.12), var(--surface)); }
   .lane-select-card span, .lane-select-card small { color:var(--muted); font-family:var(--font-mono); font-size:11px; }
   .lane-select-card b { font-size:14px; }
@@ -1288,8 +1444,8 @@
   .triple-detail-grid div { border:1px solid var(--border-faint); border-radius:14px; padding:12px; background:var(--surface-sunken); }
   .triple-detail-grid h4 { margin:0 0 8px; font-size:13px; }
   .triple-detail-grid p, .limitation-item, .improvement-item { margin:6px 0; font-size:12px; }
-  .limitation-item { padding:8px 10px; border-radius:12px; background:rgba(239,68,68,0.07); color:var(--text); }
-  .improvement-item { padding:8px 10px; border-radius:12px; background:rgba(20,184,166,0.08); color:var(--text); }
+  .limitation-item { padding:8px 10px; border-radius:12px; background:rgba(239,68,68,0.07); color:var(--fg); }
+  .improvement-item { padding:8px 10px; border-radius:12px; background:rgba(20,184,166,0.08); color:var(--fg); }
   .ai-format-box { max-height:320px; overflow:auto; white-space:pre-wrap; font-family:var(--font-mono); font-size:11px; line-height:1.45; border:1px solid var(--border-faint); border-radius:14px; padding:12px; background:var(--surface-sunken); }
   .tabular-policy-visual { min-height:190px; display:grid; gap:12px; padding:16px; border-radius:18px; background:linear-gradient(135deg, rgba(15,23,42,0.03), rgba(20,184,166,0.06)); }
   .policy-status-pill { display:inline-flex; width:max-content; max-width:100%; padding:7px 10px; border-radius:999px; background:rgba(20,184,166,0.10); color:rgb(15,118,110); font-family:var(--font-mono); font-size:11px; font-weight:800; }
@@ -1305,7 +1461,7 @@
   .performance-card dl div { display:flex; justify-content:space-between; gap:12px; border-top:1px solid var(--border-faint); padding-top:7px; }
   .performance-card dt { color:var(--muted); font-size:12px; }
   .performance-card dd { margin:0; font-weight:800; font-family:var(--font-mono); font-size:12px; text-align:right; }
-  .outcome-note { margin-top:14px; padding:12px 14px; border-radius:14px; border:1px solid rgba(245,158,11,0.38); background:rgba(245,158,11,0.08); color:var(--text); font-weight:700; line-height:1.55; }
+  .outcome-note { margin-top:14px; padding:12px 14px; border-radius:14px; border:1px solid rgba(245,158,11,0.38); background:rgba(245,158,11,0.08); color:var(--fg); font-weight:700; line-height:1.55; }
   .learning-visual-grid { margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; }
   .mini-chart-card { border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:linear-gradient(180deg, rgba(15,23,42,0.02), var(--surface)); }
   .mini-chart-card h3 { margin:4px 0 12px; font-size:15px; }
@@ -1319,7 +1475,7 @@
   .mini-bar-row[data-tone='pass'] .mini-bar-fill { background:linear-gradient(90deg, rgba(34,197,94,0.85), rgba(20,184,166,0.72)); }
   .flow-canvas { margin-top:16px; display:flex; align-items:stretch; gap:10px; overflow-x:auto; padding:14px; border:1px solid var(--border-faint); border-radius:18px; background:linear-gradient(135deg, rgba(56,189,248,0.06), rgba(167,139,250,0.06)); }
   .scenario-template-grid, .signal-grid, .scenario-comparison-grid, .readiness-grid, .improvement-grid, .maturity-kpi-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:12px; }
-  .template-card { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
+  .template-card { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--fg); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
   .template-card[data-active='true'] { border-color:rgba(59,130,246,0.58); background:linear-gradient(180deg, rgba(59,130,246,0.10), var(--surface)); }
   .template-card span, .template-card small { color:var(--muted); font-family:var(--font-mono); font-size:11px; }
   .template-card b { font-size:14px; }
@@ -1345,7 +1501,7 @@
   .live-state-card h3, .live-reward-card h3 { margin:6px 0 12px; font-size:18px; }
   .live-state-card p { margin:12px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
   .state-meter-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0; }
-  .state-meter-grid div { border:1px solid var(--border-faint); border-radius:12px; padding:10px; background:rgba(255,255,255,0.55); }
+  .state-meter-grid div { border:1px solid var(--border-faint); border-radius:12px; padding:10px; background:var(--surface-raised); }
   .state-meter-grid dt, .live-reward-card dt { color:var(--muted); font-size:11px; font-family:var(--font-mono); }
   .state-meter-grid dd, .live-reward-card dd { margin:4px 0 0; font-weight:900; font-family:var(--font-mono); }
   .action-probabilities { margin-top:12px; display:grid; gap:7px; }

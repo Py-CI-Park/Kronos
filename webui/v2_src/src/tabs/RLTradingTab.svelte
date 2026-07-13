@@ -8,7 +8,9 @@
     type RlRunRecord,
     type RlTableRow,
   } from '$lib/rlApi';
+  import { createRequestGate } from '$lib/requestGate';
   import { errorMessage } from '$lib/rlRows';
+  import { humanizeVerdict } from '$lib/verdictLabel';
   import RLHero from './rlTrading/RLHero.svelte';
   import OrderbookReadinessCard from './rlTrading/OrderbookReadinessCard.svelte';
   import RiskSummaryCard from './rlTrading/RiskSummaryCard.svelte';
@@ -24,13 +26,18 @@
   import ModelBuildReadinessCard from './rlTrading/ModelBuildReadinessCard.svelte';
   import ForwardLedgerCard from './rlTrading/ForwardLedgerCard.svelte';
   import SessionReplayCard from './rlTrading/SessionReplayCard.svelte';
+  import RliableStatsCard from './rlTrading/RliableStatsCard.svelte';
   import EvidenceCharts from './rlTrading/EvidenceCharts.svelte';
+  import RlLiveScreen from './rlTrading/RlLiveScreen.svelte';
   import RunTables from './rlTrading/RunTables.svelte';
   import { costGatePassCount } from './rlTrading/chartOptions';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let runs = $state<readonly RlRunRecord[]>([]);
   let selectedName = $state('');
+  // G4 — 라이브 tail equity 오버레이에 겹쳐 볼 비교 run 이름들 (additive, 기본 없음).
+  let compareNames = $state<string[]>([]);
   let selectedRun = $state<RlRunDetail | null>(null);
   let progress = $state<RlProgressResponse | null>(null);
   let costGate = $state<RlCostGateResponse | null>(null);
@@ -112,7 +119,14 @@
   });
 
   function choosePreferredRun(candidates: readonly RlRunRecord[]): RlRunRecord | undefined {
+    // WP-S1 (F20/F21) — RlLiveScreen이 콜드 로드부터 빈 IDLE 화면을 보여주지 않도록
+    // live_event_count>0 인 run을 최우선으로 고른다. 기존 RULE 아티팩트 우선 순서는
+    // 그대로 유지하되(그 뒤에서 폴백), 라이브 이벤트가 있는 run이 있으면 그것을 먼저
+    // 선택한다.
+    const hasLiveEvents = (candidate: RlRunRecord): boolean =>
+      Number(candidate.summary?.live_event_count ?? 0) > 0;
     return (
+      candidates.find(hasLiveEvents) ??
       candidates.find((run) => run.artifact_type === 'opening_30m_rule_filter') ??
       candidates.find((run) => run.artifact_type === 'opening_30m_rl_workflow' && run.name.includes('oos_candidate')) ??
       candidates.find((run) => run.artifact_type === 'opening_30m_rl_workflow') ??
@@ -148,10 +162,32 @@
     }
   }
 
+  const runSelectGate = createRequestGate();
+
   async function selectRun(name: string, runPool: readonly RlRunRecord[] = runs): Promise<void> {
+    // G009 Todo 9 — capture a generation token BEFORE clearing/awaiting so a
+    // stale (superseded) selection's late results can be detected and
+    // discarded below instead of overwriting a newer selection's state.
+    const token = runSelectGate.next();
     selectedName = name;
+    // Clear the prior run's detail immediately (before any await) so the UI
+    // never shows run A's data under run B's label while the new fetch is
+    // in flight.
+    selectedRun = null;
     detailLoading = true;
     error = null;
+    leaderboardRows = [];
+    trades = [];
+    actions = [];
+    equity = [];
+    episodes = [];
+    participantProxyRows = [];
+    orderbookPersistenceRows = [];
+    participantStudyRows = [];
+    featureAblationRows = [];
+    ruleFilterControlRows = [];
+    ruleFilterAblationRows = [];
+    ruleFilterFailureRows = [];
     try {
       const costRun = runPool.find((run) => run.artifact_type === 'cost_gate');
       const leaderboardRun = runPool.find((run) => run.artifact_type === 'performance_leaderboard');
@@ -165,6 +201,9 @@
           rlApi.rlEpisodes(name, 160),
           costRun ? rlApi.rlCostGate(costRun.name, 120) : Promise.resolve(null),
         ]);
+      // A newer selectRun() call started while this one was in flight —
+      // discard these results so they cannot overwrite the current run.
+      if (!runSelectGate.isCurrent(token)) return;
       selectedRun = detail;
       ruleFilterControlRows = [];
       ruleFilterAblationRows = [];
@@ -180,6 +219,7 @@
           loadOptionalRows(name, 'rule_filter_proxy_availability'),
           loadOptionalRows(name, 'rule_filter_orderbook_persistence'),
         ]);
+        if (!runSelectGate.isCurrent(token)) return;
         leaderboardRows = [];
         costGate = null;
         trades = ruleBuckets;
@@ -204,6 +244,7 @@
           loadOptionalRows(name, 'participant_study_groups'),
           loadOptionalRows(name, 'feature_ablation'),
         ]);
+        if (!runSelectGate.isCurrent(token)) return;
         leaderboardRows = [];
         costGate = null;
         trades = candidateBuckets;
@@ -230,10 +271,18 @@
         ruleFilterFailureRows = [];
       }
     } catch (caught) {
+      if (!runSelectGate.isCurrent(token)) return;
       error = errorMessage(caught, `${name} detail load failed`);
     } finally {
-      detailLoading = false;
+      if (runSelectGate.isCurrent(token)) detailLoading = false;
     }
+  }
+
+  // G4 — 비교 run 을 오버레이 목록에 토글 (immutable 갱신).
+  function toggleCompare(name: string): void {
+    compareNames = compareNames.includes(name)
+      ? compareNames.filter((entry) => entry !== name)
+      : [...compareNames, name];
   }
 </script>
 
@@ -248,6 +297,15 @@
   blockers={rlStatusBlockers}
   nextActions={rlNextInspection}
 />
+<RunSelector
+  runs={runs}
+  multi
+  selectedNames={compareNames}
+  onToggle={toggleCompare}
+  eyebrow="OVERLAY COMPARE · RESEARCH_ONLY"
+  title="라이브 tail equity 오버레이 비교 run"
+/>
+<RlLiveScreen run={selectedName} compareRuns={compareNames} equityRows={equity} episodeRows={episodes} />
 <section class="card rl-command-cockpit" data-rl-evidence-command-cockpit>
   <div class="panel-head">
     <div>
@@ -259,7 +317,7 @@
   </div>
   <div class="mini-grid" style="margin-top:14px">
     <div><span>Rule/RL distinction</span><b>{selectedLine}</b></div>
-    <div><span>Selected verdict</span><b>{selectedVerdict}</b></div>
+    <div><span>Selected verdict</span><b>{humanizeVerdict(selectedVerdict)}</b></div>
     <div><span>Cost assumption</span><b>{selectedCost}</b></div>
     <div><span>Baseline</span><b>{selectedBaseline}</b></div>
     <div><span>Drawdown</span><b>{selectedDrawdown}</b></div>
@@ -273,16 +331,37 @@
     <p class="text-muted">{error}</p>
   </section>
 {/if}
-<OrderbookReadinessCard run={readinessRun ?? openingCandidateRun} />
+<Disclosure summary="오더북 RL 준비도 · orderbook_rl_readiness" meta="RESEARCH_ONLY">
+  <OrderbookReadinessCard run={readinessRun ?? openingCandidateRun} />
+</Disclosure>
 <section class="factory-evidence" data-rl-factory-evidence-section>
-  <FactoryStatusCard />
-  <FactoryLineageCard />
-  <CalibrationCard />
-  <EdgeLedgerCard />
-  <SizingRiskCard />
-  <ModelBuildReadinessCard />
-  <ForwardLedgerCard />
-  <SessionReplayCard />
+  <Disclosure summary="팩토리 큐 · read-only evidence" meta="RESEARCH_ONLY">
+    <FactoryStatusCard />
+  </Disclosure>
+  <Disclosure summary="팩토리 리니지 · fill-mode robustness (supervised gate · NOT RL)" meta="RESEARCH_ONLY">
+    <FactoryLineageCard />
+  </Disclosure>
+  <Disclosure summary="확률 레인 캘리브레이션 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+    <CalibrationCard />
+  </Disclosure>
+  <Disclosure summary="엣지 원장 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+    <EdgeLedgerCard />
+  </Disclosure>
+  <Disclosure summary="사이징 · 리스크 · P2 gate (P5 blocked by P2)" meta="RESEARCH_ONLY">
+    <SizingRiskCard />
+  </Disclosure>
+  <Disclosure summary="모델 빌드 준비도 · RL lock" meta="RESEARCH_ONLY">
+    <ModelBuildReadinessCard />
+  </Disclosure>
+  <Disclosure summary="포워드 · 페이퍼 원장 · read-only" meta="RESEARCH_ONLY">
+    <ForwardLedgerCard />
+  </Disclosure>
+  <Disclosure summary="세션 리플레이 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+    <SessionReplayCard />
+  </Disclosure>
+  <Disclosure summary="rliable 신뢰도 통계 · research-only" meta="RESEARCH_ONLY">
+    <RliableStatsCard />
+  </Disclosure>
 </section>
 <section class="rl-layout">
   <RunSelector runs={runs} selectedName={selectedName} onSelect={(name) => void selectRun(name)} />
@@ -290,26 +369,38 @@
     {#if loading && !runs.length}
       <section class="card"><p class="text-muted">강화학습 산출물을 불러오는 중...</p></section>
     {/if}
-    <RiskSummaryCard ruleRun={ruleRun} selectedLabel={selectedLabel} />
-    <RunDetailCard run={selectedRun} loading={detailLoading} />
-    <OpeningWorkflowCard run={selectedRun} {progress} />
-    <ParticipantProxyCard
-      run={selectedRun}
-      proxyRows={participantProxyRows}
-      orderbookRows={orderbookPersistenceRows}
-      studyRows={participantStudyRows}
-      ablationRows={featureAblationRows}
-    />
-    <EvidenceCharts
-      {leaderboardRows}
-      gateRows={gateRows}
-      equityRows={equity}
-      actionRows={actions}
-      episodeRows={episodes}
-      tradeRows={trades}
-      {selectedName}
-    />
-    <RunTables leaderboardRows={leaderboardRows} tradeRows={trades} ruleFilterControlRows={ruleFilterControlRows} ruleFilterAblationRows={ruleFilterAblationRows} ruleFilterFailureRows={ruleFilterFailureRows} />
+    <Disclosure summary="RULE 메인라인 리스크 · ts_imb baseline sizing" meta="RESEARCH_ONLY">
+      <RiskSummaryCard ruleRun={ruleRun} selectedLabel={selectedLabel} />
+    </Disclosure>
+    <Disclosure summary="선택 run 상세 · selected run detail" meta="RESEARCH_ONLY">
+      <RunDetailCard run={selectedRun} loading={detailLoading} />
+    </Disclosure>
+    <Disclosure summary="오프닝 30분 워크플로 · opening_30m evidence" meta="RESEARCH_ONLY">
+      <OpeningWorkflowCard run={selectedRun} {progress} />
+    </Disclosure>
+    <Disclosure summary="참여자 프록시 · orderbook persistence · feature ablation" meta="RESEARCH_ONLY">
+      <ParticipantProxyCard
+        run={selectedRun}
+        proxyRows={participantProxyRows}
+        orderbookRows={orderbookPersistenceRows}
+        studyRows={participantStudyRows}
+        ablationRows={featureAblationRows}
+      />
+    </Disclosure>
+    <Disclosure summary="증거 차트 · leaderboard · cost gate · equity · trades" meta="RESEARCH_ONLY">
+      <EvidenceCharts
+        {leaderboardRows}
+        gateRows={gateRows}
+        equityRows={equity}
+        actionRows={actions}
+        episodeRows={episodes}
+        tradeRows={trades}
+        {selectedName}
+      />
+    </Disclosure>
+    <Disclosure summary="원시 run 테이블 · leaderboard · trades (원인 분석 마지막 단계)" meta="RESEARCH_ONLY">
+      <RunTables leaderboardRows={leaderboardRows} tradeRows={trades} ruleFilterControlRows={ruleFilterControlRows} ruleFilterAblationRows={ruleFilterAblationRows} ruleFilterFailureRows={ruleFilterFailureRows} />
+    </Disclosure>
   </div>
 </section>
 
@@ -335,7 +426,7 @@
   :global(.run-list button) {
     border: 1px solid var(--border);
     border-radius: 12px;
-    background: var(--card);
+    background: var(--surface);
     padding: 10px;
     text-align: left;
     display: flex;
@@ -359,7 +450,7 @@
   }
   :global(.mini-grid span) {
     display: block;
-    color: var(--text-muted);
+    color: var(--muted);
     font-size: 12px;
     margin-bottom: 4px;
   }

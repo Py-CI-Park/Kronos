@@ -9,11 +9,16 @@ Tick databases remain strictly read-only and are never touched here.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
+import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from functools import cmp_to_key
 from pathlib import Path
 from typing import Any, Iterator
+
 
 DEFAULT_REGISTRY_PATH = Path("webui") / "rl_runs" / "factory_registry.sqlite"
 
@@ -68,11 +73,46 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {key: row[key] for key in row.keys()}
 
 
+_MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("authoritative", "INTEGER NOT NULL DEFAULT 0"),
+    ("completed_at", "TEXT"),
+    ("source_git_sha", "TEXT"),
+    ("artifact_hashes", "TEXT"),
+    ("run_dir", "TEXT"),
+    ("total_bytes", "INTEGER"),
+)
+
+
+_STATUS_RANK: dict[str, int] = {"done": 0, "running": 1, "queued": 2, "failed": 3}
+_HASH64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def _validate_artifact_hashes(artifact_hashes: dict[str, str]) -> str:
+    if not isinstance(artifact_hashes, dict) or not artifact_hashes:
+        raise RegistryError("empty_artifact_hashes")
+    clean: dict[str, str] = {}
+    for key, value in artifact_hashes.items():
+        clean_key = str(key or "").strip()
+        clean_value = str(value or "").strip()
+        if not clean_key:
+            raise RegistryError("empty_artifact_hash_key")
+        if not _HASH64_RE.match(clean_value):
+            raise RegistryError(f"malformed_artifact_hash:{clean_key}")
+        clean[clean_key] = clean_value.lower()
+    return json.dumps(clean, sort_keys=True)
+
+
+
+
 def init_registry(registry_path: Path | str) -> None:
-    """Create the runs table if missing. Safe to call repeatedly."""
+    """Create the runs table if missing and apply additive migrations. Safe to call repeatedly."""
 
     with _connect(registry_path) as conn:
         conn.execute(_SCHEMA)
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+        for column, ddl in _MIGRATION_COLUMNS:
+            if column not in existing:
+                conn.execute(f"ALTER TABLE runs ADD COLUMN {column} {ddl}")
 
 
 def register_run(
@@ -85,6 +125,9 @@ def register_run(
     stage: str,
     prereg_doc: str,
     parent_run: str | None = None,
+    source_git_sha: str | None = None,
+    run_dir: str | None = None,
+    artifact_hashes: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Insert a run in ``queued`` status and return its row dict."""
 
@@ -92,13 +135,28 @@ def register_run(
         raise RegistryError(f"invalid_stage:{stage}")
     init_registry(registry_path)
     now = _utc_now()
+    artifact_hashes_json = json.dumps(artifact_hashes) if artifact_hashes is not None else None
     try:
         with _connect(registry_path) as conn:
             conn.execute(
                 "INSERT INTO runs (run_id, split_hash, cost_bps, seed, stage, parent_run,"
-                " prereg_doc, status, verdict, created_utc, updated_utc)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', '', ?, ?)",
-                (run_id, split_hash, float(cost_bps), seed, stage, parent_run, prereg_doc, now, now),
+                " prereg_doc, status, verdict, created_utc, updated_utc,"
+                " source_git_sha, run_dir, artifact_hashes)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', '', ?, ?, ?, ?, ?)",
+                (
+                    run_id,
+                    split_hash,
+                    float(cost_bps),
+                    seed,
+                    stage,
+                    parent_run,
+                    prereg_doc,
+                    now,
+                    now,
+                    source_git_sha,
+                    run_dir,
+                    artifact_hashes_json,
+                ),
             )
     except sqlite3.IntegrityError as exc:
         raise RegistryError(f"duplicate_run_id:{run_id}") from exc
@@ -123,17 +181,67 @@ def set_status(
         raise RegistryError(f"unknown_run_id:{run_id}")
     if not _LEGAL_TRANSITIONS.get((current["status"], status)):
         raise RegistryError(f"illegal_transition:{current['status']}->{status}")
+    completed_at = None
+    if status == "done" and not current.get("completed_at"):
+        completed_at = _utc_now()
     with _connect(registry_path) as conn:
         if verdict is None:
-            conn.execute(
-                "UPDATE runs SET status = ?, updated_utc = ? WHERE run_id = ?",
-                (status, _utc_now(), run_id),
-            )
+            if completed_at is not None:
+                conn.execute(
+                    "UPDATE runs SET status = ?, updated_utc = ?, completed_at = ? WHERE run_id = ?",
+                    (status, _utc_now(), completed_at, run_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE runs SET status = ?, updated_utc = ? WHERE run_id = ?",
+                    (status, _utc_now(), run_id),
+                )
         else:
-            conn.execute(
-                "UPDATE runs SET status = ?, verdict = ?, updated_utc = ? WHERE run_id = ?",
-                (status, verdict, _utc_now(), run_id),
-            )
+            if completed_at is not None:
+                conn.execute(
+                    "UPDATE runs SET status = ?, verdict = ?, updated_utc = ?, completed_at = ?"
+                    " WHERE run_id = ?",
+                    (status, verdict, _utc_now(), completed_at, run_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE runs SET status = ?, verdict = ?, updated_utc = ? WHERE run_id = ?",
+                    (status, verdict, _utc_now(), run_id),
+                )
+    row = get_run(registry_path, run_id)
+    assert row is not None
+    return row
+
+def update_run_artifacts(
+    registry_path: Path | str,
+    run_id: str,
+    *,
+    run_dir: str,
+    artifact_hashes: dict[str, str],
+    total_bytes: int,
+) -> dict[str, Any]:
+    """Attach post-run artifact metadata to an existing queued/running run."""
+
+    current = get_run(registry_path, run_id)
+    if current is None:
+        raise RegistryError(f"unknown_run_id:{run_id}")
+    if current["status"] not in {"queued", "running"}:
+        raise RegistryError(f"artifact_update_status:{current['status']}")
+    clean_run_dir = str(run_dir or "").strip()
+    if not clean_run_dir:
+        raise RegistryError("empty_run_dir")
+    try:
+        clean_total_bytes = int(total_bytes)
+    except (TypeError, ValueError) as exc:
+        raise RegistryError("invalid_total_bytes") from exc
+    if clean_total_bytes < 0:
+        raise RegistryError("invalid_total_bytes")
+    artifact_hashes_json = _validate_artifact_hashes(artifact_hashes)
+    with _connect(registry_path) as conn:
+        conn.execute(
+            "UPDATE runs SET run_dir = ?, artifact_hashes = ?, total_bytes = ?, updated_utc = ? WHERE run_id = ?",
+            (clean_run_dir, artifact_hashes_json, clean_total_bytes, _utc_now(), run_id),
+        )
     row = get_run(registry_path, run_id)
     assert row is not None
     return row
@@ -192,3 +300,142 @@ def lineage(registry_path: Path | str, run_id: str) -> list[dict[str, Any]]:
         current_id = row.get("parent_run")
     chain.reverse()
     return chain
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def promote_run(
+    registry_path: Path | str,
+    run_id: str,
+    *,
+    artifact_dir: Path | str,
+    expected_hashes: dict[str, str],
+    max_total_bytes: int,
+    require_status: str = "done",
+) -> dict[str, Any]:
+    """Validate and promote a run to authoritative for its stage.
+
+    All validation happens before any write; on failure the registry is left
+    byte-unchanged. On success, exactly one other update demotes every other
+    run sharing the same ``stage`` inside the same transaction.
+    """
+
+    row = get_run(registry_path, run_id)
+    if row is None:
+        raise RegistryError(f"unknown_run_id:{run_id}")
+    if row.get("status") != require_status:
+        raise RegistryError(f"not_ready_status:{row.get('status')}")
+
+    for field, kind in (
+        ("prereg_doc", "text"),
+        ("cost_bps", "numeric"),
+        ("split_hash", "text"),
+        ("seed", "numeric"),
+        ("source_git_sha", "text"),
+    ):
+        value = row.get(field)
+        if value is None:
+            raise RegistryError(f"missing_metadata:{field}")
+        if kind == "text" and isinstance(value, str) and not value.strip():
+            raise RegistryError(f"missing_metadata:{field}")
+
+    artifact_path = Path(artifact_dir)
+    if not artifact_path.is_dir():
+        raise RegistryError(f"artifact_dir_missing:{artifact_dir}")
+
+    total_bytes = 0
+    for relpath, expected_hex in expected_hashes.items():
+        file_path = artifact_path / relpath
+        if not file_path.is_file():
+            raise RegistryError(f"hash_mismatch:{relpath}")
+        actual_hex = _sha256_file(file_path)
+        if actual_hex.lower() != str(expected_hex).lower():
+            raise RegistryError(f"hash_mismatch:{relpath}")
+        total_bytes += file_path.stat().st_size
+
+    if total_bytes > int(max_total_bytes):
+        raise RegistryError(f"oversize:{total_bytes}>{max_total_bytes}")
+
+    stage = row.get("stage")
+    now = _utc_now()
+    artifact_hashes_json = json.dumps(expected_hashes)
+    with _connect(registry_path) as conn:
+        conn.execute(
+            "UPDATE runs SET authoritative = 1, run_dir = ?, artifact_hashes = ?,"
+            " total_bytes = ?, updated_utc = ? WHERE run_id = ?",
+            (str(artifact_path), artifact_hashes_json, total_bytes, now, run_id),
+        )
+        conn.execute(
+            "UPDATE runs SET authoritative = 0 WHERE stage = ? AND run_id != ?",
+            (stage, run_id),
+        )
+    updated = get_run(registry_path, run_id)
+    assert updated is not None
+    return updated
+
+
+def _authoritative_sort_key(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _compare(a: dict[str, Any], b: dict[str, Any]) -> int:
+        a_auth = int(a.get("authoritative") or 0)
+        b_auth = int(b.get("authoritative") or 0)
+        if a_auth != b_auth:
+            return -1 if a_auth > b_auth else 1
+        a_rank = _STATUS_RANK.get(a.get("status"), 99)
+        b_rank = _STATUS_RANK.get(b.get("status"), 99)
+        if a_rank != b_rank:
+            return -1 if a_rank < b_rank else 1
+        a_completed = a.get("completed_at")
+        b_completed = b.get("completed_at")
+        if a_completed != b_completed:
+            if a_completed is None:
+                return 1
+            if b_completed is None:
+                return -1
+            return -1 if a_completed > b_completed else 1
+        a_updated = a.get("updated_utc") or ""
+        b_updated = b.get("updated_utc") or ""
+        if a_updated != b_updated:
+            return -1 if a_updated > b_updated else 1
+        return 0
+
+    return sorted(rows, key=cmp_to_key(_compare))
+
+
+def select_authoritative(
+    registry_path: Path | str,
+    *,
+    stage: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return runs ordered by authoritative selection precedence.
+
+    Order: authoritative DESC, status rank (done > running > queued > failed),
+    completed_at DESC with NULLs last, then updated_utc DESC as the final
+    tie-break.
+    """
+
+    init_registry(registry_path)
+    query = "SELECT * FROM runs"
+    params: list[Any] = []
+    if stage is not None:
+        query += " WHERE stage = ?"
+        params.append(stage)
+    with _connect(registry_path) as conn:
+        rows = conn.execute(query, params).fetchall()
+    return _authoritative_sort_key([_row_to_dict(row) for row in rows])
+
+
+def get_authoritative(
+    registry_path: Path | str,
+    *,
+    stage: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the top-ranked authoritative run for ``stage``, or None."""
+
+    rows = select_authoritative(registry_path, stage=stage)
+    return rows[0] if rows else None

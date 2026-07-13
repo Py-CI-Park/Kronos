@@ -1,0 +1,1110 @@
+{
+  "absent": {
+    "webui/v2_src/package.json + webui/v2_src/src/app.css + webui/v2_src/src/layout/Header.svelte + webui/v2_src/src/layout/Sidebar.svelte + webui/v2_src/src/tabs/ArtifactsModelsTab.svelte + webui/v2_src/src/tabs/DocsTab.svelte + webui/v2_src/src/tabs/SettingsTab.svelte + webui/v2_src/src/tabs/SystemHealthTab.svelte": [
+      "KRONOS_V2_DIST",
+      "Kronos v2",
+      "P1 미리보기",
+      "P1.5",
+      "RL Lab",
+      "강화학습 실험실",
+      "실험실"
+    ],
+    "webui/v2_src/src/App.svelte": [
+      "data-trading-command-center-redirect"
+    ],
+    "webui/v2_src/src/tabs/DailyRlGuideTab.svelte ::lower": [
+      "fake"
+    ],
+    "webui/v2_src/src/tabs/RLTradingTab.svelte + webui/v2_src/src/lib/rlApi.ts + glob:sorted:webui/v2_src/src/tabs/rlTrading/*": [
+      "Cumulative profit curve",
+      "].filter(Boolean).join('<br/>')",
+      "`<strong>#${row",
+      "`<strong>${row"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyDatasetBuilderCard.svelte": [
+      "DATASET_RESEARCH_READY_WITH_WATCH_GUARDRAILS"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyProgressTimeline.svelte": [
+      "slice(0, 4)"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyVisualLabCard.svelte": [
+      "const asNumber",
+      "registry?.model_build_allowed ?? false",
+      "rows(decision?.blockers, 4)"
+    ],
+    "webui/v2_src/src/tabs/rlTrading/ParticipantProxyCard.svelte": [
+      "RL EXPERIMENT"
+    ]
+  },
+  "bindings": {
+    "webui/v2_src/package.json + webui/v2_src/src/app.css + webui/v2_src/src/layout/Header.svelte + webui/v2_src/src/layout/Sidebar.svelte + webui/v2_src/src/tabs/ArtifactsModelsTab.svelte + webui/v2_src/src/tabs/DocsTab.svelte + webui/v2_src/src/tabs/SettingsTab.svelte + webui/v2_src/src/tabs/SystemHealthTab.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/app.css"
+        },
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/layout/Header.svelte"
+        },
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/layout/Sidebar.svelte"
+        },
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/ArtifactsModelsTab.svelte"
+        },
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/DocsTab.svelte"
+        },
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/SettingsTab.svelte"
+        },
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/SystemHealthTab.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/App.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/App.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/layout/Header.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/layout/Header.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/layout/Sidebar.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/layout/Sidebar.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/cardRequest.test.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/cardRequest.test.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/cardRequest.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/cardRequest.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/dailyOhlcvApi.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/dailyOhlcvApi.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/latencyGate.test.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/latencyGate.test.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/rlApi.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/rlApi.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/routes.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/routes.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/lib/safeHtml.ts": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/safeHtml.ts"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/DailyOhlcvTab.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/DailyOhlcvTab.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/DailyRlGuideTab.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/DailyRlGuideTab.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/DailyRlGuideTab.svelte ::lower": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/DailyRlGuideTab.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [
+        {
+          "kind": "lower"
+        }
+      ],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/RLTradingTab.svelte + webui/v2_src/src/lib/rlApi.ts + glob:sorted:webui/v2_src/src/tabs/rlTrading/*": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/RLTradingTab.svelte"
+        },
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/lib/rlApi.ts"
+        },
+        {
+          "dir": "webui/v2_src/src/tabs/rlTrading",
+          "kind": "glob",
+          "pattern": "*",
+          "sorted": true
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/ResearchStatusShell.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/ResearchStatusShell.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/CloseSlotAgentScreen.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/CloseSlotAgentScreen.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyCloseSlotCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyCloseSlotCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyDatasetBuilderCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyDatasetBuilderCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyDbQualityCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyDbQualityCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyGateLadder.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyGateLadder.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyModelResultsCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyModelResultsCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyProgressTimeline.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyProgressTimeline.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyProgressTimeline.svelte ::replace('<!-- Status vocabulary marker: NOT_STARTED RUNNING PASS WATCH RESEARCH_ONLY NO-GO BLOCKED -->'->'')": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyProgressTimeline.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [
+        {
+          "kind": "replace",
+          "new": "",
+          "old": "<!-- Status vocabulary marker: NOT_STARTED RUNNING PASS WATCH RESEARCH_ONLY NO-GO BLOCKED -->"
+        }
+      ],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyScenarioLabCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyScenarioLabCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyScenarioRunLedgerCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyScenarioRunLedgerCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyUniverseCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyUniverseCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyVisualLabCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/dailyOhlcv/DailyVisualLabCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/rlTrading/OpeningWorkflowCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/rlTrading/OpeningWorkflowCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    },
+    "webui/v2_src/src/tabs/rlTrading/ParticipantProxyCard.svelte": {
+      "components": [
+        {
+          "kind": "file",
+          "path": "webui/v2_src/src/tabs/rlTrading/ParticipantProxyCard.svelte"
+        }
+      ],
+      "non_source": false,
+      "normalizers": [],
+      "separator": "\n"
+    }
+  },
+  "counts": {
+    "absent": 12,
+    "classified": 608,
+    "e1": 0,
+    "e2": 5,
+    "loop_absent_expanded": 7,
+    "loop_nodes": 3,
+    "loop_present_expanded": 59,
+    "per_file": {
+      "tests/test_daily_ohlcv_dashboard_tab.py": {
+        "physical_assert_nodes": 495,
+        "total_asserts": 495
+      },
+      "tests/test_stom_rl_dashboard_tab.py": {
+        "physical_assert_nodes": 55,
+        "total_asserts": 118
+      }
+    },
+    "physical_assert_nodes": 550,
+    "present": 530,
+    "total_asserts": 613
+  },
+  "e1": [],
+  "e2": [
+    {
+      "file": "tests/test_stom_rl_dashboard_tab.py",
+      "form": "'Trading Command Center' in bundle_text",
+      "lineno": 184
+    },
+    {
+      "file": "tests/test_stom_rl_dashboard_tab.py",
+      "form": "'data-rl-trading-tab' in bundle_text",
+      "lineno": 185
+    },
+    {
+      "file": "tests/test_stom_rl_dashboard_tab.py",
+      "form": "'data-rl-orderbook-readiness-card' in bundle_text",
+      "lineno": 186
+    },
+    {
+      "file": "tests/test_stom_rl_dashboard_tab.py",
+      "form": "'data-trading-command-center-redirect' not in bundle_text",
+      "lineno": 187
+    },
+    {
+      "file": "tests/test_stom_rl_dashboard_tab.py",
+      "form": "'Cumulative profit curve' not in bundle_text",
+      "lineno": 188
+    }
+  ],
+  "present": {
+    "webui/v2_src/package.json + webui/v2_src/src/app.css + webui/v2_src/src/layout/Header.svelte + webui/v2_src/src/layout/Sidebar.svelte + webui/v2_src/src/tabs/ArtifactsModelsTab.svelte + webui/v2_src/src/tabs/DocsTab.svelte + webui/v2_src/src/tabs/SettingsTab.svelte + webui/v2_src/src/tabs/SystemHealthTab.svelte": [
+      "\"name\": \"kronos-dashboard\"",
+      "Kronos official dashboard",
+      "Kronos 대시보드",
+      "RL Trading"
+    ],
+    "webui/v2_src/src/App.svelte": [
+      "'/daily-ohlcv'",
+      "'/daily-ohlcv/rl-guide'",
+      "'/daily-rl-guide'",
+      "DailyOhlcvTab",
+      "DailyRlGuideTab",
+      "RLTradingTab",
+      "popstate",
+      "tab === 'rl'"
+    ],
+    "webui/v2_src/src/layout/Header.svelte": [
+      "Daily OHLCV",
+      "routeLabel(tab)",
+      "일봉 RL 설명서"
+    ],
+    "webui/v2_src/src/layout/Sidebar.svelte": [
+      "Daily OHLCV",
+      "Trading Command Center",
+      "id: 'daily-ohlcv'",
+      "id: 'rl'",
+      "label: 'Trading Command Center'",
+      "navigateToTab(id)"
+    ],
+    "webui/v2_src/src/lib/cardRequest.test.ts": [
+      "independent cards publish independently when one request stalls",
+      "new request aborts and suppresses stale same-card response",
+      "timeout aborts only the stalled card"
+    ],
+    "webui/v2_src/src/lib/cardRequest.ts": [
+      "controllers.get(key)?.abort()",
+      "new AbortController()"
+    ],
+    "webui/v2_src/src/lib/dailyOhlcvApi.ts": [
+      "/api/daily-ohlcv/charts/close-slot-equity",
+      "/api/daily-ohlcv/charts/close-slot-selection",
+      "/api/daily-ohlcv/charts/dataset",
+      "/api/daily-ohlcv/charts/decision-cockpit",
+      "/api/daily-ohlcv/charts/equity-overlay",
+      "/api/daily-ohlcv/charts/research-diagnostics",
+      "/api/daily-ohlcv/charts/run-scatter",
+      "/api/daily-ohlcv/charts/symbol/",
+      "/api/daily-ohlcv/charts/universe-breakdown",
+      "/api/daily-ohlcv/charts/walk-forward",
+      "/api/daily-ohlcv/charts/walk-forward-heatmap",
+      "/api/daily-ohlcv/close-slot/artifacts",
+      "/api/daily-ohlcv/close-slot/gate/latest",
+      "/api/daily-ohlcv/close-slot/latest",
+      "/api/daily-ohlcv/dataset/latest",
+      "/api/daily-ohlcv/db-summary",
+      "/api/daily-ohlcv/market-regime-audit",
+      "/api/daily-ohlcv/portfolio/latest",
+      "/api/daily-ohlcv/prediction/latest",
+      "/api/daily-ohlcv/registry/latest",
+      "/api/daily-ohlcv/rejection-analytics",
+      "/api/daily-ohlcv/research-jobs",
+      "/api/daily-ohlcv/research-workflows",
+      "/api/daily-ohlcv/rl-env-guide",
+      "/api/daily-ohlcv/scenario-runs",
+      "/api/daily-ohlcv/scenarios",
+      "/api/daily-ohlcv/symbol/",
+      "/api/daily-ohlcv/universe/preview",
+      "/api/daily-ohlcv/walk-forward/latest",
+      "AbortSignal",
+      "DailyCloseSlotCostScenario",
+      "DailyCloseSlotLatestResponse",
+      "DailyCloseSlotPolicyScoreRow",
+      "DailyCloseSlotSamples",
+      "DailyCloseSlotSelectedHoldSummary",
+      "DailyCloseSlotSelectionRow",
+      "DailyCloseSlotThresholdSelection",
+      "closeSlotEquity",
+      "closeSlotGate",
+      "closeSlotLatest",
+      "closeSlotSelection",
+      "marketRegimeAudit",
+      "rejectionAnalytics",
+      "replay_summary",
+      "researchJobIntents",
+      "selected_hold_summary",
+      "threshold_selection",
+      "walk_forward_summary"
+    ],
+    "webui/v2_src/src/lib/latencyGate.test.ts": [
+      "cold critical API breach fails rather than passing silently",
+      "warm critical API breach fails rather than passing silently"
+    ],
+    "webui/v2_src/src/lib/rlApi.ts": [
+      "/api/rl/runs",
+      "factoryForwardLedger",
+      "factoryForwardLedgers",
+      "factoryFreshValidationRuns",
+      "factoryModelBuildReadiness",
+      "factoryRiskPolicyRuns",
+      "factorySizingRuns",
+      "rlActions",
+      "rlCostGate",
+      "rlEpisodes",
+      "rlEquity",
+      "rlRun",
+      "rlRuns",
+      "rlTable",
+      "rlTrades"
+    ],
+    "webui/v2_src/src/lib/routes.ts": [
+      "'daily-rl-guide'",
+      "DASHBOARD_ROUTES",
+      "history.pushState",
+      "history.replaceState",
+      "id: 'daily-ohlcv'",
+      "id: 'daily-rl-guide'",
+      "id: 'rl'",
+      "navigateToTab",
+      "syncTabFromLocation"
+    ],
+    "webui/v2_src/src/lib/safeHtml.ts": [
+      ".replace(/</g, '&lt;')",
+      "function escapeHtml"
+    ],
+    "webui/v2_src/src/tabs/DailyOhlcvTab.svelte": [
+      "000250",
+      "000250 string preserved",
+      "API_UNAVAILABLE",
+      "Daily OHLCV는 데이터·게이트 증거 화면입니다",
+      "DailyCloseSlotCard",
+      "DailyDatasetBuilderCard",
+      "DailyModelResultsCard",
+      "DailyScenarioLabCard",
+      "DailyScenarioRunLedgerCard",
+      "DailyVisualLabCard",
+      "NO-GO / model_build_allowed=false",
+      "NO-GO/RESEARCH_ONLY",
+      "NOT_STARTED",
+      "READ_ONLY",
+      "ResearchStatusShell",
+      "auxiliaryFailures",
+      "close-slot auxiliary request unavailable",
+      "close-slot primary request unavailable",
+      "createCardRequestManager(CARD_TIMEOUT_MS)",
+      "data-daily-api-error",
+      "data-daily-card-error={endpoint}",
+      "data-daily-close-slot-card-error",
+      "data-daily-ohlcv-tab",
+      "data-daily-progress-card-error",
+      "data-daily-symbol-panel",
+      "if (result === 'TIMEOUT')",
+      "live/model/paper/profit",
+      "no live/broker/orders",
+      "primaryFailures",
+      "progress = null;",
+      "retrySecondaryCard(endpoint)",
+      "secondaryCardStates"
+    ],
+    "webui/v2_src/src/tabs/DailyRlGuideTab.svelte": [
+      "AI Agent",
+      "AI-readable / AI 개선 지시 고정 포맷",
+      "APPROVAL_GATED_INTENT_RECORD_ONLY",
+      "Agent ↔ Environment ↔ Reward",
+      "Artifact-backed RL Replay",
+      "D3_D4_SIGNAL_QUALITY_AUDIT",
+      "D4_RL_RISK_OVERLAY",
+      "DEFAULT_COMPACT_OVERVIEW",
+      "False-negative review queue",
+      "HYPOTHESIS_REJECTION_AUDIT",
+      "MARKET_REGIME_AUDIT_BINDING",
+      "MISSING_POLICY_ARTIFACT",
+      "MISSING_SIGNAL_QUALITY_AUDIT",
+      "NON_LIVE_RESEARCH_PLATFORM_COMPLETE",
+      "PAST_ONLY_MARKET_REGIME_AUDIT",
+      "RESEARCH_ONLY_PERFORMANCE_DIAGNOSTIC",
+      "RL_ENV_VISUAL_GUIDE_MVP",
+      "ResearchStatusShell",
+      "activeGuideSection = $state('overview')",
+      "data-daily-rl-action-probability-bars",
+      "data-daily-rl-ai-guidance-format",
+      "data-daily-rl-approval-trigger-surface",
+      "data-daily-rl-env-checks",
+      "data-daily-rl-env-elements",
+      "data-daily-rl-env-visual-map",
+      "data-daily-rl-final-completion-report",
+      "data-daily-rl-guide-section-control",
+      "data-daily-rl-guide-tab",
+      "data-daily-rl-improvement-queue",
+      "data-daily-rl-intent-ledger",
+      "data-daily-rl-learning-curve-visual",
+      "data-daily-rl-loop-diagram",
+      "data-daily-rl-market-regime-audit",
+      "data-daily-rl-market-regime-readiness",
+      "data-daily-rl-nav-preview",
+      "data-daily-rl-page-maturity-report",
+      "data-daily-rl-performance-example",
+      "data-daily-rl-performance-pnl",
+      "data-daily-rl-policy-network-visual",
+      "data-daily-rl-process-lane-picker",
+      "data-daily-rl-process-storyboard",
+      "data-daily-rl-realtime-visualizer",
+      "data-daily-rl-rejection-analytics",
+      "data-daily-rl-replay-controls",
+      "data-daily-rl-research-limitations",
+      "data-daily-rl-research-process-selector",
+      "data-daily-rl-scenario-comparison",
+      "data-daily-rl-scenario-generator",
+      "data-daily-rl-scenario-plan-json",
+      "data-daily-rl-selected-process-detail",
+      "data-daily-rl-signal-quality-integration",
+      "data-daily-rl-state-action-reward",
+      "data-daily-rl-workflow-center",
+      "data-daily-rl-workflow-inspector",
+      "data-daily-rl-workflow-picker",
+      "data-daily-rl-workflow-safe-config-preview",
+      "future_return_1d",
+      "hold · buy · add · sell · reduce",
+      "isGuideSection('raw')",
+      "isGuideSection('rejection')",
+      "isGuideSection('replay')",
+      "isGuideSection('scenario')",
+      "isGuideSection('workflow')",
+      "live_trading_readiness_pct",
+      "model_build_readiness_pct",
+      "no live/broker/orders",
+      "non_live_goal_completion_pct",
+      "paper_forward_readiness_pct",
+      "position_count",
+      "prefers-reduced-motion",
+      "promotion_allowed",
+      "replayPaused = $state(true)",
+      "scenario_platform_maturity_pct",
+      "top_score_bucket",
+      "비실거래 연구 플랫폼 완료 성과",
+      "상태 → 행동 → 보상 → 검증",
+      "실거래·브로커 주문·페이퍼 포워드·모델 빌드·수익성 주장은 계속 0%/blocked",
+      "일봉 RL 설명서는 이해용·검토용 화면입니다",
+      "일봉 강화학습 환경 순환 다이어그램",
+      "저장된 산출물로 움직이는 강화학습 리플레이",
+      "학습 성과 예시: 수익금"
+    ],
+    "webui/v2_src/src/tabs/RLTradingTab.svelte + webui/v2_src/src/lib/rlApi.ts + glob:sorted:webui/v2_src/src/tabs/rlTrading/*": [
+      "23bp",
+      "25bp cost gate",
+      "Baseline",
+      "CUMULATIVE REWARD EVIDENCE",
+      "Cost assumption",
+      "DQN/PPO",
+      "Drawdown",
+      "FILL-MODE ROBUSTNESS",
+      "FORWARD / PAPER LEDGER",
+      "FRESH_VALIDATION_REQUIRED",
+      "Kronos",
+      "LOCKED_FRESH_OOS_FORWARD_REQUIRED",
+      "MODEL BUILD READINESS",
+      "NO-GO",
+      "ORDERBOOK RL READINESS",
+      "P5_BLOCKED_BY_P2",
+      "RL EXPERIMENT",
+      "RL LOCK",
+      "RL Trading은 증거 검토 화면입니다",
+      "RULE MAINLINE",
+      "ResearchStatusShell",
+      "Rule/RL distinction",
+      "Selected verdict",
+      "Trade count",
+      "actionPnlChartOption",
+      "costGateChartOption",
+      "cumulative reward evidence",
+      "data-rl-cost-gate-table",
+      "data-rl-evidence-command-cockpit",
+      "data-rl-factory-lineage-card",
+      "data-rl-forward-ledger-card",
+      "data-rl-fresh-validation-table",
+      "data-rl-leaderboard-chart",
+      "data-rl-leaderboard-table",
+      "data-rl-model-build-readiness-card",
+      "data-rl-orderbook-readiness-card",
+      "data-rl-sizing-risk-card",
+      "data-rl-trade-table",
+      "data-rl-trading-tab",
+      "equityChartOption",
+      "factoryFreshValidationRuns",
+      "factoryModelBuildReadiness",
+      "factoryRiskPolicyRuns",
+      "fresh_oos/fresh_forward",
+      "from '$lib/safeHtml'",
+      "leaderboardChartOption",
+      "markLine",
+      "market_buy",
+      "market_exit",
+      "model/live/paper/profit locks remain false",
+      "not live-ready",
+      "orderbook_rl_readiness",
+      "readiness artifact",
+      "tooltipLines",
+      "tooltipText(",
+      "tooltipTitle",
+      "tooltipTitle(",
+      "tradeChartOption",
+      "ts_imb RULE baseline",
+      "ts_imb baseline"
+    ],
+    "webui/v2_src/src/tabs/ResearchStatusShell.svelte": [
+      "NO LIVE · NO BROKER · NO PROFIT CLAIM",
+      "data-current-blockers",
+      "data-next-inspection",
+      "data-research-status-page={pageId}",
+      "data-research-status-shell"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/CloseSlotAgentScreen.svelte": [
+      "gate?.artifact_selection_errors",
+      "latest?.artifact_selection_errors",
+      "latest_selection 없음 · PRIMARY OOS 결과 미확인 (fail-closed).",
+      "selection?.artifact_selection_errors",
+      "selection?.latest_selection ?? latest?.latest_selection ?? null"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyCloseSlotCard.svelte": [
+      "000250",
+      "23bp round trip cost",
+      "D3 re-ledgered when applicable",
+      "EXPERIMENTAL_ONLY",
+      "NO-GO_RESEARCH_ONLY/WATCH_RESEARCH_ONLY",
+      "NO_LIVE_BROKER_ORDER_ACCOUNT_SURFACE",
+      "NO_MODEL_BUILD_GO",
+      "NO_PAPER_FORWARD_EXECUTION",
+      "NO_PROFITABILITY_CLAIM",
+      "RESEARCH_ONLY",
+      "base_23bp",
+      "bounded_latest_evidence_not_full_universe_or_decision_grade",
+      "buy_commission_bp",
+      "buy_slippage_bp",
+      "close_to_next_close_research_label",
+      "data-daily-close-slot-artifacts",
+      "data-daily-close-slot-card",
+      "data-daily-close-slot-contract",
+      "data-daily-close-slot-cost-components",
+      "data-daily-close-slot-db-access",
+      "data-daily-close-slot-equity",
+      "data-daily-close-slot-labels",
+      "data-daily-close-slot-lineage",
+      "data-daily-close-slot-locks",
+      "data-daily-close-slot-no-claims",
+      "data-daily-close-slot-policy-scores",
+      "data-daily-close-slot-replay-walk-forward",
+      "data-daily-close-slot-selected-hold",
+      "data-daily-close-slot-selection",
+      "data-daily-close-slot-source-scope",
+      "data-daily-close-slot-threshold-contract",
+      "data-daily-close-slot-v2-evidence",
+      "episode_count",
+      "go_summary_allowed",
+      "held_out_feedback_used_for_fit_count",
+      "hold_cash_action",
+      "hold_cash_count",
+      "live_broker_order_allowed",
+      "model_build_allowed",
+      "never coerce to int",
+      "no live/broker/account/order/paper-forward/profitability/model-build/GO claim",
+      "non_executable upper bound",
+      "paper_forward_allowed",
+      "price_basis unknown",
+      "profitability_claim_allowed",
+      "promotion_allowed",
+      "selected / hold-cash counts",
+      "selected_count",
+      "sell_commission_bp",
+      "sell_slippage_bp",
+      "sell_tax_bp",
+      "split_counts",
+      "stom_rl.daily_ohlcv_db.connect_readonly",
+      "stress_46bp",
+      "threshold_grid_count",
+      "threshold_selected_0_to_10",
+      "total_bp",
+      "train-only replay / frozen validation-test",
+      "universe WATCH",
+      "window_count",
+      "zero_control_0bp"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyDatasetBuilderCard.svelte": [
+      "DATASET_RESEARCH_PREVIEW_BLOCKED_BY_MISSING_READINESS_EVIDENCE",
+      "data-daily-dataset-blocked-windows",
+      "data-daily-dataset-leakage-detail",
+      "data-daily-dataset-manifest-detail",
+      "data-daily-dataset-normalization-detail",
+      "data-daily-dataset-split-intervals",
+      "data-daily-dataset-upstream-blockers",
+      "data-daily-dataset-user-guidance",
+      "data-daily-ohlcv-dataset-card",
+      "dataset_blocked_uses",
+      "embargo_days",
+      "fit_row_count",
+      "fit_split",
+      "forbidden_feature_columns",
+      "leakage_status",
+      "manifest_sha",
+      "no training/order/live/profit",
+      "purge_days",
+      "split_chronology_status",
+      "universe_certification_status",
+      "universe_manifest_sha",
+      "upstream_gate_blockers"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyDbQualityCard.svelte": [
+      "UNKNOWN_CONFIRMED",
+      "data-daily-ohlcv-db-card",
+      "data-daily-price-basis-usage",
+      "decision_grade_return_status",
+      "material_unknown_adjustment_windows",
+      "price_basis",
+      "price_basis_required_evidence",
+      "price_basis_status",
+      "price_basis_user_guidance"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyGateLadder.svelte": [
+      "dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']",
+      "data-daily-ohlcv-command-cockpit",
+      "data-daily-ohlcv-d0-d9-cockpit"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyModelResultsCard.svelte": [
+      "0/23/46bp sensitivity",
+      "D0_PRICE_BASIS_NOT_VERIFIED",
+      "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED",
+      "D3-D5 Model Evidence",
+      "D3_BASELINE_WATCH_RESEARCH_ONLY",
+      "D3_WATCH_RESEARCH_ONLY",
+      "D4=",
+      "D4_OBSERVATION_STATE_MANIFEST",
+      "D4_OBSERVATION_STATE_MANIFEST_CONSUMED",
+      "D4_RESEARCH_ONLY_DIAGNOSTICS",
+      "D4_STATE_CONTRACT_EVIDENCE_MISSING_OR_STALE",
+      "D4_STATE_CONTRACT_EVIDENCE_MISSING_OR_STALE', ...d5ArtifactIssues.map",
+      "D5_NO_GO_RESEARCH_ONLY_GATE",
+      "D5_REASONS_MISSING_OR_STALE",
+      "D5_WALK_FORWARD_NOT_PASS",
+      "MISSING_D4_OBSERVATION_STATE_MANIFEST_GATE",
+      "NO-GO",
+      "PRICE_BASIS_UNKNOWN",
+      "RESEARCH_ONLY",
+      "RESEARCH_ONLY diagnostics",
+      "UNIVERSE_WATCH_HEURISTIC",
+      "baseline_delta_total_net_return",
+      "best_rule_baseline_strategy",
+      "best_supervised_delta_vs_shuffle_control",
+      "concentration_penalty",
+      "d4GoFlag",
+      "d4ModelFlag",
+      "d4_reward_action_ablation_rows",
+      "d4_source_hash_count",
+      "d5ModelFlag",
+      "data-daily-d3-cost-assumption",
+      "data-daily-d3-gate-blockers",
+      "data-daily-d3-user-guidance",
+      "data-daily-decision-panel",
+      "data-daily-model-results-card",
+      "data-daily-portfolio-chart",
+      "data-daily-prediction-chart",
+      "data-daily-rl-action-distribution",
+      "data-daily-rl-invalid-action-rate",
+      "data-daily-rl-invalid-actions",
+      "data-daily-rl-leakage-checks",
+      "data-daily-rl-learning-curve",
+      "data-daily-rl-policy-baseline-comparison",
+      "data-daily-rl-portfolio-trajectory",
+      "data-daily-rl-provenance-hashes",
+      "data-daily-rl-readiness",
+      "data-daily-rl-reward-components",
+      "data-daily-rl-reward-return-curve",
+      "data-daily-rl-state-contract",
+      "data-daily-rl-state-observations",
+      "data-daily-rl-training-status",
+      "data-daily-rl-turnover-drawdown",
+      "data-daily-walk-forward-chart",
+      "data-daily-walk-forward-controls",
+      "data-daily-walk-forward-cost-sensitivity",
+      "data-daily-walk-forward-d4-state-contract",
+      "data-daily-walk-forward-fold-windows",
+      "data-daily-walk-forward-provenance-hashes",
+      "data-daily-walk-forward-readiness",
+      "exposure_penalty",
+      "fold_metrics=",
+      "frozen_baseline_delta",
+      "future_label_exposed",
+      "go_summary_allowed",
+      "invalid={String(row.invalid_action)}",
+      "invalid_action_penalty",
+      "invalid_action_rate",
+      "joinedFlagText",
+      "live_broker_order_allowed",
+      "min_required_purge_days",
+      "model_build_allowed",
+      "model_build_or_candidate_promotion",
+      "no_oos_retuning",
+      "paper_forward_allowed",
+      "portfolioArtifactHashes.policy_nav",
+      "portfolioPredictionHashes.predictions",
+      "positiveNumber(d5RewardActionAblationRowCount)",
+      "positiveNumber(d5SourceHashCount)",
+      "positiveNumber(d5StateObservationRowCount)",
+      "prediction_manifest_sha",
+      "predictions=",
+      "purge/embargo",
+      "reward_action_telemetry_sufficient_for_d4",
+      "sha256(date:code)_ascending",
+      "shuffle_control_strategy",
+      "walkForwardChart?.d4_state_contract_artifacts_consumed === true"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyProgressTimeline.svelte": [
+      "D0-D9 Progress",
+      "D0-D9 provenance",
+      "command-list",
+      "data-daily-d0-d9-provenance-matrix",
+      "data-daily-ohlcv-progress",
+      "data-daily-progress-empty",
+      "lock_labels",
+      "verification_commands"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyProgressTimeline.svelte ::replace('<!-- Status vocabulary marker: NOT_STARTED RUNNING PASS WATCH RESEARCH_ONLY NO-GO BLOCKED -->'->'')": [
+      "NOT_STARTED"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyScenarioLabCard.svelte": [
+      "SCENARIO_GENERATOR_MVP",
+      "cost_23bp_current_evidence",
+      "data-daily-scenario-grid",
+      "data-daily-scenario-lab-card",
+      "data-daily-scenario-model-contract",
+      "fresh_oos_walk_forward_manifest.json",
+      "model_run_generation_available",
+      "no live/broker/orders",
+      "scenario_manifest.json"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyScenarioRunLedgerCard.svelte": [
+      "SCENARIO_BATCH_RUNNER_MVP",
+      "comparison_rows",
+      "data-daily-scenario-batch-grid",
+      "data-daily-scenario-run-grid",
+      "data-daily-scenario-run-ledger",
+      "model_run_generation_available",
+      "no live/broker/orders",
+      "scenario_batch_manifest.json",
+      "stom_rl.daily_scenario_batch"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyUniverseCard.svelte": [
+      "WATCH_HEURISTIC_UNIVERSE",
+      "code,name,market,instrument_type",
+      "data-daily-ohlcv-universe-card",
+      "data-daily-symbol-drilldown",
+      "data-daily-universe-review-contract",
+      "data-daily-universe-user-guidance",
+      "model_build_or_candidate_promotion",
+      "official_metadata_coverage_status",
+      "official_metadata_status",
+      "quarantine_artifact_count",
+      "universe_certification_status",
+      "unmatched_quarantine_count"
+    ],
+    "webui/v2_src/src/tabs/dailyOhlcv/DailyVisualLabCard.svelte": [
+      "D6는 증거를 읽는 화면",
+      "D7 Research Diagnostics",
+      "D7_CORRELATION_RISK",
+      "D7_FAILURE_ANALYSIS",
+      "D7_FALLBACK_DIAGNOSTICS",
+      "D7_FEATURE_DIAGNOSTICS",
+      "D7_REGIME_DIAGNOSTICS",
+      "D7은 실패 원인과 다음 가설",
+      "INCOMPLETE_NUMERIC_EVIDENCE",
+      "MISSING_EFFECTIVE_GATE_EVIDENCE",
+      "MISSING_INVARIANT_EVIDENCE",
+      "MISSING_REGISTRY_FLAG_UNSAFE",
+      "MISSING_SAMPLE_EVIDENCE",
+      "PLACEHOLDER_READY",
+      "STOM-inspired Visual Lab",
+      "allowed_use",
+      "allowed_use: card.allowed_use || fallback.allowed_use",
+      "blocked_use",
+      "blocked_use: card.blocked_use || fallback.blocked_use",
+      "config_hash",
+      "correlation_cluster_summary.csv가 생성되기 전까지 PLACEHOLDER_READY",
+      "current_gap",
+      "current_gap: card.current_gap || fallback.current_gap",
+      "data-daily-d6-d7-usage-guide",
+      "data-daily-decision-cockpit",
+      "data-daily-equity-overlay",
+      "data-daily-flow-map",
+      "data-daily-metric-glossary",
+      "data-daily-page-progress-guide",
+      "data-daily-registry-effective-gates",
+      "data-daily-registry-hidden-counts",
+      "data-daily-registry-paper-forward",
+      "data-daily-research-diagnostics",
+      "data-daily-run-scatter",
+      "data-daily-symbol-chart",
+      "data-daily-symbol-usage-guide",
+      "data-daily-universe-breakdown",
+      "data-daily-visual-lab-card",
+      "data-daily-walk-forward-heatmap",
+      "drift_hidden",
+      "effective_gate_blockers",
+      "failure_reason_attribution.csv",
+      "feature_importance_by_fold.csv",
+      "feature별 fold 기여도와 drift",
+      "finiteNumber",
+      "guardrail: card.guardrail || fallback.guardrail",
+      "how_to_read_ko",
+      "how_to_read_ko: card.how_to_read_ko || fallback.how_to_read_ko",
+      "invariant_errors",
+      "items.length === 0",
+      "live_broker_order_allowed",
+      "mergeD7DiagnosticCard",
+      "next_artifact: card.next_artifact || fallback.next_artifact",
+      "no_live_broker_order_readiness",
+      "paper_forward_allowed",
+      "paper_forward_drawdown",
+      "promotion_status",
+      "registryBlockScore",
+      "registryEvidenceText",
+      "registryFlagText",
+      "registryRows",
+      "registryRows(registry?.samples?.drift",
+      "research_policy_nav_not_live_account",
+      "row.metric ?? row.evidence_status",
+      "summary: card.summary || fallback.summary",
+      "symbolUsageGuideRows",
+      "수익 보장·실거래·브로커·주문 준비 상태가 아닙니다",
+      "실패 fold를 숨기거나 성공 fold만 골라"
+    ],
+    "webui/v2_src/src/tabs/rlTrading/OpeningWorkflowCard.svelte": [
+      "RULE FILTER evidence panel",
+      "isRuleFilterRun",
+      "rule/meta-label evidence",
+      "run?.artifact_type === 'opening_30m_rule_filter'"
+    ],
+    "webui/v2_src/src/tabs/rlTrading/ParticipantProxyCard.svelte": [
+      "RULE FILTER EVIDENCE",
+      "run?.artifact_type === 'opening_30m_rule_filter'",
+      "run?.strategy_context?.label"
+    ]
+  },
+  "schema_version": 1
+}

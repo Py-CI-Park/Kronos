@@ -9,15 +9,17 @@ export interface DashboardRoute {
 }
 
 export const DASHBOARD_ROUTES: readonly DashboardRoute[] = [
+  { id: 'mission-control', label: 'Mission Control', path: '/', queryTabs: ['mission-control', 'mission', 'home'] },
   { id: 'live-training', label: '실시간 학습', path: '/', aliases: ['/training', '/dashboard'], queryTabs: ['live-training', 'training'] },
   { id: 'forecast', label: '예측 워크벤치', path: '/', queryTabs: ['forecast'] },
   { id: 'stom', label: '예측 진단', path: '/', queryTabs: ['stom'] },
+  { id: 'daily-ohlcv', label: 'Daily OHLCV', path: '/', queryTabs: ['daily-ohlcv', 'daily-ohlcv-panel'] },
+  { id: 'daily-rl-guide', label: '일봉 RL 가이드', path: '/', queryTabs: ['daily-rl-guide', 'daily-ohlcv-rl-guide'] },
   {
     id: 'rl',
     label: 'Trading Command Center',
-    path: '/rl',
-    aliases: ['/daily-ohlcv', '/daily', '/daily-rl-guide', '/daily-ohlcv/rl-guide', '/rl-lab', '/v2/rl-trading', '/v2/rl-lab'],
-    queryTabs: ['rl', 'rl-lab', 'rl-trading', 'daily-ohlcv', 'daily', 'daily-rl-guide', 'daily-ohlcv-rl-guide'],
+    path: '/',
+    queryTabs: ['rl', 'rl-lab', 'rl-trading'],
   },
   { id: 'artifacts', label: '아티팩트 & 모델', path: '/', queryTabs: ['artifacts'] },
   { id: 'history', label: '기록 & 런', path: '/', queryTabs: ['history'] },
@@ -71,7 +73,7 @@ export function routeUrl(tabId: string): string {
   const route = routeForTab(tabId);
   if (!route) return '/';
   if (route.path !== '/') return route.path;
-  return route.id === 'live-training' ? '/' : `/?tab=${encodeURIComponent(route.id)}`;
+  return route.id === 'mission-control' ? '/' : `/?tab=${encodeURIComponent(route.id)}`;
 }
 
 export function resolveRoute(locationLike: Location = window.location): DashboardRoute | null {
@@ -80,8 +82,8 @@ export function resolveRoute(locationLike: Location = window.location): Dashboar
 }
 
 export function syncTabFromLocation(options: { replaceAlias?: boolean } = {}): string {
-  if (typeof window === 'undefined') return 'live-training';
-  const route = resolveRoute(window.location) ?? routeForTab('live-training')!;
+  if (typeof window === 'undefined') return 'mission-control';
+  const route = resolveRoute(window.location) ?? routeForTab('mission-control')!;
   const canonical = canonicalUrlForRoute(route);
   const current = `${window.location.pathname}${window.location.search}`;
   if (shouldHardNavigate(route) && current !== canonical) {

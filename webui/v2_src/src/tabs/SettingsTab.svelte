@@ -1,5 +1,6 @@
 <script lang="ts">
   import { refreshSeconds, theme, sidebarCollapsed } from '$lib/stores';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let sec = $state(5);
   refreshSeconds.subscribe((v) => (sec = v));
@@ -112,7 +113,7 @@
       <div class="desc">데스크탑(≥900px)에서 사이드바를 축소 상태로 시작</div>
     </div>
     <label class="switch">
-      <input type="checkbox" checked={collapsed} onchange={(e) => sidebarCollapsed.set((e.currentTarget as HTMLInputElement).checked)} />
+      <input type="checkbox" aria-label="데스크탑 사이드바를 축소 상태로 시작" checked={collapsed} onchange={(e) => sidebarCollapsed.set((e.currentTarget as HTMLInputElement).checked)} />
       <span class="switch-track"><span class="switch-thumb"></span></span>
     </label>
   </div>
@@ -146,6 +147,7 @@
 </section>
 
 <!-- ===== Notifications ===== -->
+<Disclosure summary="브라우저 알림" meta="NOTIFICATIONS">
 <section class="card">
   <div class="card-header">
     <div>
@@ -178,8 +180,10 @@
     {/if}
   </div>
 </section>
+</Disclosure>
 
 <!-- ===== Reset ===== -->
+<Disclosure summary="설정 초기화" meta="RESET">
 <section class="card">
   <div class="card-header">
     <div>
@@ -195,8 +199,10 @@
     <button class="btn danger" onclick={resetAll}>모든 설정 초기화</button>
   </div>
 </section>
+</Disclosure>
 
 <!-- ===== P2+ Roadmap ===== -->
+<Disclosure summary="차후 추가 예정 설정" meta="ROADMAP">
 <section class="card" style="background:var(--surface-sunken);border-color:var(--border-faint)">
   <div class="card-header">
     <div>
@@ -212,6 +218,7 @@
     <li>고급 / 진단 (디버그 패널, 캐시 강제 갱신, dist 파일 hash 표시)</li>
   </ul>
 </section>
+</Disclosure>
 
 <style>
   .page-hero { padding: 8px 0; }
@@ -268,6 +275,10 @@
     cursor: pointer;
   }
   .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch input:focus-visible + .switch-track {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 3px;
+  }
   .switch-track {
     width: 40px;
     height: 22px;

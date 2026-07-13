@@ -10,6 +10,7 @@
     icon: IconName;
     badge?: string | null;
     status?: 'live' | 'warn' | null;
+    children?: NavItem[];
   }
 
   interface NavGroup {
@@ -17,39 +18,48 @@
     items: NavItem[];
   }
 
+  // v3 "AI Quant" technique-based IA (code-grounded):
+  //   커맨드 → Kronos 예측(독립 파운데이션) → 트레이딩 리서치(일봉 D0–D9 ⊃ D4 RL·종가매매,
+  //   + 인트라데이 커맨드센터) → 라이브·시스템. Kronos와 RL은 독립 축(데이터만 공유).
   const groups: NavGroup[] = [
     {
-      label: '오버뷰',
+      label: '커맨드',
+      items: [
+        { id: 'mission-control', label: 'Mission Control', icon: 'pulse', badge: null },
+      ],
+    },
+    {
+      label: 'Kronos 예측',
+      items: [
+        { id: 'forecast', label: '예측 워크벤치', icon: 'wand', badge: null },
+        { id: 'stom', label: '예측 진단', icon: 'pulse', badge: null },
+      ],
+    },
+    {
+      label: '트레이딩 리서치',
+      items: [
+        {
+          id: 'daily-ohlcv',
+          label: 'Daily OHLCV',
+          icon: 'pulse',
+          badge: '연구',
+          // daily-rl-guide는 daily-ohlcv 라인의 하위(자식) 항목으로 귀속.
+          children: [
+            { id: 'daily-rl-guide', label: '일봉 RL 설명서', icon: 'file', badge: null },
+          ],
+        },
+        { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: 'RL' },
+      ],
+    },
+    {
+      label: '라이브 · 시스템',
       items: [
         { id: 'live-training', label: '실시간 학습', icon: 'activity', badge: 'LIVE', status: 'live' },
-        { id: 'forecast', label: '예측 워크벤치', icon: 'wand', badge: null },
-      ],
-    },
-    {
-      label: '분석',
-      items: [
-        { id: 'stom', label: '예측 진단', icon: 'pulse', badge: null },
+        { id: 'system-health', label: '시스템 상태', icon: 'cpu', badge: null },
         { id: 'artifacts', label: '아티팩트 & 모델', icon: 'package', badge: null },
         { id: 'history', label: '기록 & 런', icon: 'history', badge: null },
-      ],
-    },
-    {
-      label: '시스템',
-      items: [
-        { id: 'system-health', label: '시스템 상태', icon: 'cpu', badge: null },
         { id: 'settings', label: '설정', icon: 'settings', badge: null },
-      ],
-    },
-    {
-      label: '도움말',
-      items: [
         { id: 'docs', label: '문서 · Wiki', icon: 'file', badge: null },
-      ],
-    },
-    {
-      label: '트레이딩',
-      items: [
-        { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: '정규' },
       ],
     },
   ];
@@ -115,6 +125,28 @@
               {/if}
             {/if}
           </button>
+          {#if !collapsed && item.children}
+            {#each item.children as child}
+              <button
+                type="button"
+                class="nav-item nav-item--child"
+                data-tab={child.id}
+                data-nav-child="true"
+                data-active={current === child.id ? 'true' : 'false'}
+                data-status={child.status ?? ''}
+                aria-current={current === child.id ? 'page' : undefined}
+                onclick={() => pick(child.id)}
+              >
+                <span class="nav-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">{@html ICONS[child.icon]}</svg>
+                </span>
+                <span class="nav-label">{child.label}</span>
+                {#if child.badge}
+                  <span class="nav-badge">{child.badge}</span>
+                {/if}
+              </button>
+            {/each}
+          {/if}
         {/each}
       </div>
     </div>

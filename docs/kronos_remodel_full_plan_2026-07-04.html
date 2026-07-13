@@ -1,0 +1,271 @@
+<style>
+  /* ===== STOM V4 design tokens — aligned to existing claude.ai/design "Design System" ===== */
+  :root {
+    --bg-0:#f5f6f8; --bg-1:#ffffff; --bg-2:#f0f2f6; --bg-3:#e6eaf0;
+    --line-1:#e1e5ec; --line-2:#c8d0db;
+    --ink-0:#0e131a; --ink-1:#3c4655; --ink-2:#5f6a79; --ink-3:#a4adba;
+    --teal:#0d9b78; --green:#128a55; --amber:#b27200; --red:#d63d3d;
+    --violet:#6a55d6; --blue:#2c6ed4; --mesa-gold:#b8860b;
+    --sans:"IBM Plex Sans","Malgun Gothic","맑은 고딕",ui-sans-serif,system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,"JetBrains Mono","Malgun Gothic",monospace;
+    --sp:8px; --rad:8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-0:#07090c; --bg-1:#0c1014; --bg-2:#11161c; --bg-3:#161c24;
+      --line-1:#1d2530; --line-2:#2a3441;
+      --ink-0:#e8edf2; --ink-1:#a8b3c0; --ink-2:#778496; --ink-3:#45505e;
+      --teal:#4cd6b3; --green:#6ee7a8; --amber:#f0b35a; --red:#ff6b6b;
+      --violet:#a594ff; --blue:#6aa6ff; --mesa-gold:#d4af37;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg-0:#07090c; --bg-1:#0c1014; --bg-2:#11161c; --bg-3:#161c24;
+    --line-1:#1d2530; --line-2:#2a3441;
+    --ink-0:#e8edf2; --ink-1:#a8b3c0; --ink-2:#778496; --ink-3:#45505e;
+    --teal:#4cd6b3; --green:#6ee7a8; --amber:#f0b35a; --red:#ff6b6b;
+    --violet:#a594ff; --blue:#6aa6ff; --mesa-gold:#d4af37;
+  }
+  :root[data-theme="light"] {
+    --bg-0:#f5f6f8; --bg-1:#ffffff; --bg-2:#f0f2f6; --bg-3:#e6eaf0;
+    --line-1:#e1e5ec; --line-2:#c8d0db;
+    --ink-0:#0e131a; --ink-1:#3c4655; --ink-2:#5f6a79; --ink-3:#a4adba;
+    --teal:#0d9b78; --green:#128a55; --amber:#b27200; --red:#d63d3d;
+    --violet:#6a55d6; --blue:#2c6ed4; --mesa-gold:#b8860b;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    font-family: var(--sans); background: var(--bg-0); color: var(--ink-0);
+    font-size: 14px; line-height: 1.5; letter-spacing: .005em; -webkit-font-smoothing: antialiased;
+    padding: 34px 30px 80px;
+    background-image:
+      radial-gradient(1200px 600px at 82% -12%, color-mix(in srgb, var(--teal) 6%, transparent), transparent 60%),
+      radial-gradient(900px 500px at -10% 108%, color-mix(in srgb, var(--violet) 5%, transparent), transparent 60%);
+  }
+  .col { max-width: 1060px; margin: 0 auto; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .kicker { font-family: var(--mono); font-size: 11px; color: var(--teal); letter-spacing: .06em;
+            border: 1px solid color-mix(in srgb, var(--teal) 32%, transparent); background: color-mix(in srgb, var(--teal) 6%, transparent);
+            border-radius: 4px; padding: 3px 9px; display: inline-block; }
+  h1 { font-size: 27px; font-weight: 500; letter-spacing: -0.015em; margin: 14px 0 8px; line-height: 1.22; text-wrap: balance; }
+  .lede { color: var(--ink-1); font-size: 15px; max-width: 780px; }
+  .lede b { color: var(--ink-0); font-weight: 600; }
+
+  h2.sec { font-size: 11px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-1);
+           margin: 38px 0 14px; display: flex; align-items: center; gap: 9px; }
+  h2.sec::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--teal); flex: 0 0 auto; }
+  h2.sec .n { font-family: var(--mono); color: var(--ink-3); }
+
+  /* discovery callout */
+  .callout { display: flex; gap: 13px; align-items: flex-start; margin: 22px 0 6px; padding: 15px 17px; border-radius: var(--rad);
+             background: color-mix(in srgb, var(--amber) 9%, var(--bg-1)); border: 1px solid color-mix(in srgb, var(--amber) 34%, transparent); }
+  .callout .ic { font-size: 17px; }
+  .callout .ct { font-size: 13.5px; color: var(--ink-1); }
+  .callout .ct b { color: var(--ink-0); }
+
+  .panel { background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--rad); padding: 18px 20px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.tbl { background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--rad); overflow: hidden; }
+  .tbl th { text-align: left; font-weight: 500; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+            color: var(--ink-2); padding: 10px 13px; background: var(--bg-2); border-bottom: 1px solid var(--line-1); }
+  .tbl td { padding: 10px 13px; border-bottom: 1px solid var(--line-1); color: var(--ink-1); vertical-align: top; }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl td b, .tbl td strong { color: var(--ink-0); font-weight: 600; }
+  .good { color: var(--teal); } .bad { color: var(--red); } .warn { color: var(--amber); }
+  .yes::before { content: "✅ "; } .no::before { content: "❌ "; }
+
+  /* token swatches */
+  .sw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .sw { border: 1px solid var(--line-1); border-radius: 6px; overflow: hidden; background: var(--bg-1); }
+  .sw .chip { height: 34px; }
+  .sw .m { padding: 6px 9px; }
+  .sw .v { font-family: var(--mono); font-size: 11px; color: var(--ink-0); }
+  .sw .r { font-size: 10.5px; color: var(--ink-2); }
+
+  /* flow diagram */
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; }
+  @media (max-width: 720px){ .flow { grid-template-columns: 1fr; } .flow .ar { transform: rotate(90deg); justify-self: center; } }
+  .flow .ar { font-size: 22px; color: var(--ink-3); text-align: center; }
+  .box { border: 1px solid var(--line-1); border-radius: 7px; padding: 9px 11px; margin-bottom: 7px; font-size: 12.5px; background: var(--bg-2); }
+  .box .t { font-weight: 600; color: var(--ink-0); } .box .d { color: var(--ink-2); font-size: 11.5px; }
+  .box.keep { border-left: 3px solid var(--teal); } .box.fold { border-left: 3px solid var(--amber); } .box.drop { border-left: 3px solid var(--red); opacity: .74; }
+
+  /* roadmap timeline */
+  .road { display: flex; flex-direction: column; gap: 0; }
+  .step { display: grid; grid-template-columns: 34px 1fr; gap: 14px; }
+  .step .rail { display: flex; flex-direction: column; align-items: center; }
+  .step .dot { width: 26px; height: 26px; border-radius: 50%; background: var(--bg-2); border: 1.5px solid var(--line-2);
+               display: grid; place-items: center; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink-1); flex: 0 0 auto; }
+  .step .dot.done { background: color-mix(in srgb, var(--teal) 20%, var(--bg-1)); border-color: var(--teal); color: var(--teal); }
+  .step .dot.gate { background: color-mix(in srgb, var(--amber) 18%, var(--bg-1)); border-color: var(--amber); color: var(--amber); }
+  .step .ln { width: 2px; flex: 1; background: var(--line-1); min-height: 12px; }
+  .step .body { padding-bottom: 18px; }
+  .step .body h3 { margin: 3px 0 4px; font-size: 14px; font-weight: 600; color: var(--ink-0); }
+  .step .body p { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+  .badge { font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+  .badge.g { color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent); }
+  .badge.d { color: var(--teal); border: 1px solid color-mix(in srgb, var(--teal) 40%, transparent); }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line-1); color: var(--ink-1); }
+  .tag.off { color: var(--red); border-color: color-mix(in srgb, var(--red) 32%, transparent); }
+
+  .note { font-size: 12.5px; color: var(--ink-1); background: var(--bg-2); border: 1px solid var(--line-1); border-radius: var(--rad); padding: 13px 16px; }
+  .note b { color: var(--ink-0); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px){ .two { grid-template-columns: 1fr; } }
+  .discl { font-size: 11px; color: var(--ink-3); margin-top: 8px; }
+</style>
+
+<div class="wrap"><div class="col">
+
+  <span class="kicker">KRONOS · 전체 실행 계획 · 2026-07-04</span>
+  <h1>대시보드 통합 &amp; Claude 디자인 리모델링 — 전체 계획</h1>
+  <p class="lede">
+    두 프론트엔드를 <b>Svelte 하나로 통합</b>(React 은퇴)하고, 이미 계정에 존재하는
+    <b>claude.ai/design "STOM V4 디자인 시스템"</b>에 정합시켜 대시보드를 리모델합니다.
+    컴포넌트는 <b>DesignSync</b>로 claude.ai/design과 양방향 동기화합니다.
+  </p>
+
+  <div class="callout">
+    <span class="ic">🔎</span>
+    <div class="ct">
+      <b>발견 — 이미 디자인 시스템이 존재합니다.</b> claude.ai/design의 <b>"Design System"</b> 프로젝트에
+      <span class="mono">foundations/theme-tokens.html</span>(V4 토큰)과 <span class="mono">components/research-live-hero.html</span>이 있습니다.
+      정체성은 <b>조용한 quant-terminal</b>(dark-first · teal/violet/amber 시그널 · IBM Plex · graph-first).
+      따라서 리모델은 새 팔레트를 만드는 게 아니라 <b>이 V4 시스템을 상속·정합</b>합니다. (첫 목업의 generic 파랑 팔레트는 폐기)
+    </div>
+  </div>
+
+  <!-- 1 -->
+  <h2 class="sec"><span class="n">01</span> 현황 &amp; 문제</h2>
+  <table class="tbl">
+    <thead><tr><th>영역</th><th>Svelte (주력)</th><th>Next.js (보조)</th></tr></thead>
+    <tbody>
+      <tr><td>규모</td><td><b>~70파일 · 12탭 · 34카드</b></td><td>~11파일 · 1페이지</td></tr>
+      <tr><td>URL</td><td class="mono">/ · /?tab=daily-ohlcv</td><td class="mono">/rl</td></tr>
+      <tr><td>연구 자산</td><td class="yes">close-slot · 일봉 탭</td><td class="no">없음</td></tr>
+      <tr><td>문제</td><td colspan="2">일봉 탭 중복(301 리다이렉트) · 디자인 언어 2개 · RL UI 중복(Svelte에 완성됐으나 미연결) · close-slot 카드 <b>글자 과밀</b></td></tr>
+    </tbody>
+  </table>
+
+  <!-- 2 -->
+  <h2 class="sec"><span class="n">02</span> 통합 방향 — Svelte 수렴 (React 은퇴)</h2>
+  <div class="flow">
+    <div class="panel">
+      <div class="box fold"><div class="t">Svelte 대시보드 · 12탭</div><div class="d">본체 · close-slot 위치</div></div>
+      <div class="box fold"><div class="t">Next.js 커맨드 센터 · 1페이지</div><div class="d">/rl · pixel 디자인</div></div>
+      <div class="box"><div class="t">301 리다이렉트</div><div class="d">/daily-ohlcv → /rl (중복 원인)</div></div>
+    </div>
+    <div class="ar">→</div>
+    <div class="panel">
+      <div class="box keep"><div class="t">Svelte 단일 셸 · V4 토큰 1벌</div><div class="d">모든 탭 동일 디자인 시스템</div></div>
+      <div class="box fold"><div class="t">Trading 탭 (흡수)</div><div class="d">기존 RLTradingTab 재활용 · API 그대로</div></div>
+      <div class="box drop"><div class="t">Next.js 은퇴 · 리다이렉트 정리</div><div class="d">파괴적 → 승인 게이트</div></div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <h2 class="sec"><span class="n">03</span> Claude 디자인 = 원칙(A) + 시스템(B)</h2>
+  <div class="two">
+    <div class="panel">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">A · 디자인 원칙 / 방법</div>
+      <p style="font-size:12.5px;color:var(--ink-2);margin:0 0 8px">스킬 <span class="mono">artifact-design</span> · <span class="mono">dataviz</span></p>
+      <div class="tags"><span class="tag">정보 위계</span><span class="tag">상태칩</span><span class="tag">요약 우선</span><span class="tag">차트 우선</span><span class="tag">light/dark</span></div>
+    </div>
+    <div class="panel">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">B · claude.ai/design 시스템 <span class="badge d">실재</span></div>
+      <p style="font-size:12.5px;color:var(--ink-2);margin:0 0 8px">프로젝트 "Design System" · <span class="mono">DesignSync</span></p>
+      <div class="tags"><span class="tag">foundations/theme-tokens</span><span class="tag">components/research-live-hero</span><span class="tag">+ 신규 카드 추가</span></div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <h2 class="sec"><span class="n">04</span> 정합 대상 — V4 토큰 (실제 시스템)</h2>
+  <div class="sw-grid">
+    <div class="sw"><div class="chip" style="background:var(--teal)"></div><div class="m"><div class="v">--teal</div><div class="r">수익 / 성공 · WATCH-pass</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--red)"></div><div class="m"><div class="v">--red</div><div class="r">손실 / 리스크 · blocker</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--amber)"></div><div class="m"><div class="v">--amber</div><div class="r">진행 / 주의 · WATCH</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--violet)"></div><div class="m"><div class="v">--violet</div><div class="r">winner accent</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--blue)"></div><div class="m"><div class="v">--blue</div><div class="r">gate-passed</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--mesa-gold)"></div><div class="m"><div class="v">--mesa-gold</div><div class="r">plateau highlight</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--ink-0)"></div><div class="m"><div class="v">--ink-0</div><div class="r">primary text</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-1);border-bottom:1px solid var(--line-2)"></div><div class="m"><div class="v">--bg-1</div><div class="r">panel base</div></div></div>
+  </div>
+  <div class="note" style="margin-top:12px">
+    <b>폰트</b> IBM Plex Sans/Mono + Malgun Gothic · <b>타입</b> label 11 / dense 12 / prose 14 / stat 22 / stat-lg 26–28 ·
+    <b>Graph-first</b> 첫 뷰포트 차트 35–45% 면적, min-height 330px · 축 텍스트 mono 10px.
+    <span class="discl">이 계획 페이지 자체가 V4 토큰으로 렌더됨. (IBM Plex는 CSP로 미로드 → Malgun/system 폴백)</span>
+  </div>
+
+  <!-- 5 -->
+  <h2 class="sec"><span class="n">05</span> 로드맵 (승인 게이트 표시)</h2>
+  <div class="road">
+    <div class="step"><div class="rail"><div class="dot done">✓</div><div class="ln"></div></div>
+      <div class="body"><h3>0 · 조사 &amp; 방향 확정 <span class="badge d">완료</span></h3><p>두 앱 실측 · Svelte 수렴 결정 · 목업 발행 · <b>V4 디자인 시스템 발견</b>.</p></div></div>
+
+    <div class="step"><div class="rail"><div class="dot">A</div><div class="ln"></div></div>
+      <div class="body"><h3>A · 디자인 토큰 정합</h3><p>claude.ai/design <span class="mono">theme-tokens.html</span>를 소스로, Svelte 공용 토큰 CSS(<span class="mono">webui/v2_src</span>)를 V4에 byte-정합. 첫 목업 팔레트 폐기.</p></div></div>
+
+    <div class="step"><div class="rail"><div class="dot">B</div><div class="ln"></div></div>
+      <div class="body"><h3>B · close-slot 카드 리모델 (파일럿)</h3><p>V4 토큰 + graph-first로 <span class="mono">DailyCloseSlotCard.svelte</span> 재구성. 마커 19종 · 가드레일 보존. bandit=0 버그를 차트로 노출.</p></div></div>
+
+    <div class="step"><div class="rail"><div class="dot gate">S</div><div class="ln"></div></div>
+      <div class="body"><h3>S · DesignSync 동기화 <span class="badge g">외부 발행</span></h3><p>리모델된 카드를 claude.ai/design "Design System"에 컴포넌트로 추가(<span class="mono">components/daily-close-slot-card.html</span>, @dsCard). 기존 시스템에 <b>얹기</b> — 덮어쓰기 아님.</p></div></div>
+
+    <div class="step"><div class="rail"><div class="dot">C</div><div class="ln"></div></div>
+      <div class="body"><h3>C · 나머지 탭 순차 리모델</h3><p>동일 토큰 재사용으로 12탭·34카드 일관 적용. 탭마다 pytest 회귀.</p></div></div>
+
+    <div class="step"><div class="rail"><div class="dot gate">D</div><div class="ln"></div></div>
+      <div class="body"><h3>D · Trading 탭 흡수 <span class="badge g">승인</span></h3><p>Next.js 커맨드 센터 6뷰 → Svelte <span class="mono">RLTradingTab</span> 재연결. 패리티 대조 후.</p></div></div>
+
+    <div class="step"><div class="rail"><div class="dot gate">E</div><div class="ln"></div></div>
+      <div class="body"><h3>E · Next.js 은퇴 · 리다이렉트 정리 <span class="badge g">필수 승인</span></h3><p><span class="mono">trading_src</span> 제거 · 301 정리. 파괴적 → 사용자 승인 후.</p></div></div>
+
+    <div class="step"><div class="rail"><div class="dot">F</div></div>
+      <div class="body"><h3>F · 검증</h3><p><span class="mono">npm run build</span> + pytest 스위트 + 브라우저 스크린샷 증거.</p></div></div>
+  </div>
+
+  <!-- 6 -->
+  <h2 class="sec"><span class="n">06</span> DesignSync 워크플로우 (claude.ai/design 양방향)</h2>
+  <table class="tbl">
+    <thead><tr><th>순서</th><th>동작</th><th>방향</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1</td><td><b>get_file</b> foundations/theme-tokens → Svelte 토큰 정합</td><td class="good">design → repo</td></tr>
+      <tr><td class="mono">2</td><td>Svelte 카드 리모델 후, 프리뷰 HTML 작성(<span class="mono">@dsCard</span> 마커)</td><td>repo</td></tr>
+      <tr><td class="mono">3</td><td><b>finalize_plan</b> → 쓸 경로 확정 (write만, 기존 삭제 없음)</td><td>gate</td></tr>
+      <tr><td class="mono">4</td><td><b>write_files</b> components/daily-close-slot-card.html</td><td class="warn">repo → design</td></tr>
+      <tr><td class="mono">5</td><td>Design System 패널에 카드 자동 등재 · 팀 공유 가능</td><td class="good">design</td></tr>
+    </tbody>
+  </table>
+  <div class="note" style="margin-top:12px">원칙: <b>증분 · 한 번에 한 컴포넌트 · 전체 교체 금지.</b> 기존 <span class="mono">research-live-hero</span>·<span class="mono">theme-tokens</span>는 건드리지 않고 신규 카드만 추가.</div>
+
+  <!-- 7 -->
+  <h2 class="sec"><span class="n">07</span> 보존 계약 (변경 금지)</h2>
+  <div class="two">
+    <div class="panel">
+      <div style="font-size:12px;font-weight:600;color:var(--ink-0);margin-bottom:8px">테스트 마커 (19종) — 시각만 변경</div>
+      <div class="tags"><span class="tag">card</span><span class="tag">status</span><span class="tag">contract</span><span class="tag">guardrail</span><span class="tag">policy-scores</span><span class="tag">cost-components</span><span class="tag">lineage</span><span class="tag">db-access</span><span class="tag">source-scope</span><span class="tag">locks</span><span class="tag">no-claims</span><span class="tag">selection</span></div>
+    </div>
+    <div class="panel">
+      <div style="font-size:12px;font-weight:600;color:var(--ink-0);margin-bottom:8px">가드레일 사실 — 삭제 금지</div>
+      <div class="tags"><span class="tag">WATCH verdict</span><span class="tag off">D0 blocker</span><span class="tag off">D1 blocker</span><span class="tag off">6 false-locks</span><span class="tag">read-only DB</span><span class="tag">000250 문자열</span><span class="tag">v2 경로명</span></div>
+    </div>
+  </div>
+
+  <!-- 8 -->
+  <h2 class="sec"><span class="n">08</span> 다음 스텝 추천</h2>
+  <table class="tbl">
+    <thead><tr><th>선택</th><th>내용</th><th>성격</th></tr></thead>
+    <tbody>
+      <tr><td class="mono good">①</td><td><b>A → B 착수</b>: V4 토큰을 Svelte에 심고 close-slot 카드 리모델</td><td class="good">저위험 · 추천</td></tr>
+      <tr><td class="mono">②</td><td><b>S 먼저</b>: close-slot 카드를 claude.ai/design에 컴포넌트로 올려 승인받고 진행</td><td class="warn">외부 발행</td></tr>
+      <tr><td class="mono">③</td><td><b>D 준비</b>: RLTradingTab ↔ Next.js 패리티 대조부터</td><td>조사</td></tr>
+    </tbody>
+  </table>
+
+</div></div>

@@ -216,6 +216,112 @@ def _write_rl_fixture(root: Path) -> None:
         json.dumps({"schema_version": "stom_rl_live_event.v1", "event_count": 1, "phases": {"eval": 1}}),
         encoding="utf-8-sig",
     )
+    daily_sb3 = root / "daily_ohlcv_portfolio_sb3" / "daily_sb3_run"
+    daily_sb3.mkdir(parents=True)
+    (daily_sb3 / "sb3_smoke_summary.json").write_text(
+        json.dumps(
+            {
+                "mode": "stom_rl_sb3_smoke",
+                "schema_version": "daily_portfolio_sb3_as_sb3_smoke.v1",
+                "summary": {
+                    "algorithm_count": 1,
+                    "best_model": "fold_00_dqn",
+                    "best_algorithm_by_avg_episode_net": "dqn",
+                    "feature_columns": ["feature_score"],
+                    "live_event_count": 2,
+                    "live_event_phases": {"fold_completed": 1, "completed": 1},
+                    "primary_cost_label": "base_23bp",
+                    "primary_cost_bps": 23.0,
+                    "oos_rows_used_for_fit": 0,
+                    "model_build_allowed": False,
+                    "paper_forward_allowed": False,
+                    "live_broker_order_allowed": False,
+                    "profit_claim_allowed": False,
+                },
+                "models": [
+                    {
+                        "algorithm": "dqn",
+                        "model": "fold_00_dqn",
+                        "policy": "stable_baselines3_dqn",
+                        "model_path": "models/fold_00/portfolio_dqn_model.zip",
+                        "model_sha256": "a" * 64,
+                        "training_timesteps": 512,
+                        "avg_episode_net_return_pct": 0.0,
+                        "trade_count": 0,
+                        "cost_bps": 23.0,
+                        "passes_cost_gate": False,
+                        "is_smoke": False,
+                        "research_only": True,
+                    }
+                ],
+                "live_events": {"schema_version": "stom_rl_live_event.v1", "event_count": 2, "phases": {"fold_completed": 1, "completed": 1}},
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+    (daily_sb3 / "rl_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "daily_portfolio_sb3_rl_manifest.v1",
+                "artifact_type": "sb3_smoke",
+                "stage": "G016_SLICE3_DAILY_PORTFOLIO_SB3_RESEARCH",
+                "status": "COMPLETED_RESEARCH_ONLY",
+                "authority": "D3_D2_DB_LINEAGE_APPROVED_RESEARCH_ONLY",
+                "oos_rows_used_for_fit": 0,
+                "false_locks": {
+                    "model_build_allowed": False,
+                    "paper_forward_allowed": False,
+                    "live_broker_order_allowed": False,
+                    "profit_claim_allowed": False,
+                },
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+    (daily_sb3 / "rl_live_events.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "schema_version": "stom_rl_live_event.v1",
+                    "run_id": "daily_sb3_run",
+                    "algorithm": "portfolio_dqn",
+                    "phase": phase,
+                    "global_step": step,
+                    "action": None,
+                    "action_name": None,
+                    "reward": 0.0,
+                    "equity": 1000000.0,
+                    "source": "daily_portfolio_sb3",
+                    "info": {
+                        "fold": 0 if phase == "fold_completed" else None,
+                        "cost_scenario": "base_23bp",
+                        "reward_kind": "raw_reward",
+                        "reward_unit": "score",
+                        "equity_kind": "krw_nav",
+                        "equity_unit": "krw",
+                        "action_recorded": False,
+                        "device": {"requested": "cpu", "used": "cpu", "eval": "cpu"},
+                        "source_lineage": {"d2_daily_db_sha256": "b" * 64},
+                    },
+                }
+            )
+            for step, phase in [(1, "fold_completed"), (2, "completed")]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (daily_sb3 / "rl_live_summary.json").write_text(
+        json.dumps({"schema_version": "stom_rl_live_event.v1", "event_count": 2, "phases": {"fold_completed": 1, "completed": 1}}),
+        encoding="utf-8-sig",
+    )
+    (daily_sb3 / "source_hashes.json").write_text(
+        json.dumps({"schema_version": "daily_portfolio_sb3_source_hashes.v1", "config_sha256": "c" * 64, "model_hashes": {"fold_00": "a" * 64}}),
+        encoding="utf-8-sig",
+    )
+    (daily_sb3 / "training_manifest.json").write_text(
+        json.dumps({"schema_version": "daily_portfolio_sb3_training_manifest.v1", "oos_rows_used_for_fit": 0, "primary_cost_label": "base_23bp"}),
+        encoding="utf-8-sig",
+    )
 
     readiness = root / "orderbook_readiness_run"
     readiness.mkdir()

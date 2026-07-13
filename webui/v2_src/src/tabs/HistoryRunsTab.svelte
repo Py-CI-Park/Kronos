@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { activeTab } from '$lib/stores';
   import { fmt } from '$lib/format';
+  import Disclosure from '$lib/Disclosure.svelte';
+  import { humanizeLifecycle } from '$lib/verdictLabel';
 
   interface TrainingRun {
     name: string;
@@ -95,12 +97,6 @@
     return '';
   }
 
-  function statusLabel(s: string): string {
-    if (s === 'completed' || s === 'complete' || s === 'success') return '완료';
-    if (s === 'failed' || s === 'error') return '실패';
-    if (s === 'running' || s === 'active') return '진행 중';
-    return s || '미상';
-  }
 </script>
 
 <section class="page-hero">
@@ -154,15 +150,15 @@
 <!-- ===== Toolbar ===== -->
 <section class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
   <div class="tabs">
-    <button data-active={filter === 'all' ? 'true' : 'false'} onclick={() => (filter = 'all')}>전체 ({counts.total})</button>
-    <button data-active={filter === 'completed' ? 'true' : 'false'} onclick={() => (filter = 'completed')}>완료 ({counts.completed})</button>
-    <button data-active={filter === 'failed' ? 'true' : 'false'} onclick={() => (filter = 'failed')}>실패 ({counts.failed})</button>
-    <button data-active={filter === 'running' ? 'true' : 'false'} onclick={() => (filter = 'running')}>진행 중 ({counts.running})</button>
+    <button data-active={filter === 'all' ? 'true' : 'false'} aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>전체 ({counts.total})</button>
+    <button data-active={filter === 'completed' ? 'true' : 'false'} aria-pressed={filter === 'completed'} onclick={() => (filter = 'completed')}>완료 ({counts.completed})</button>
+    <button data-active={filter === 'failed' ? 'true' : 'false'} aria-pressed={filter === 'failed'} onclick={() => (filter = 'failed')}>실패 ({counts.failed})</button>
+    <button data-active={filter === 'running' ? 'true' : 'false'} aria-pressed={filter === 'running'} onclick={() => (filter = 'running')}>진행 중 ({counts.running})</button>
   </div>
   <div class="seg" style="margin-left:auto">
-    <button data-active={sortBy === 'recent' ? 'true' : 'false'} onclick={() => (sortBy = 'recent')}>최신순</button>
-    <button data-active={sortBy === 'name' ? 'true' : 'false'} onclick={() => (sortBy = 'name')}>이름순</button>
-    <button data-active={sortBy === 'progress' ? 'true' : 'false'} onclick={() => (sortBy = 'progress')}>진척순</button>
+    <button data-active={sortBy === 'recent' ? 'true' : 'false'} aria-pressed={sortBy === 'recent'} onclick={() => (sortBy = 'recent')}>최신순</button>
+    <button data-active={sortBy === 'name' ? 'true' : 'false'} aria-pressed={sortBy === 'name'} onclick={() => (sortBy = 'name')}>이름순</button>
+    <button data-active={sortBy === 'progress' ? 'true' : 'false'} aria-pressed={sortBy === 'progress'} onclick={() => (sortBy = 'progress')}>진척순</button>
   </div>
   <button class="btn ghost sm" onclick={load} disabled={loading}>
     {loading ? '갱신 중…' : '새로고침'}
@@ -187,6 +183,7 @@
     </div>
   </div>
 {:else}
+  <Disclosure summary="전체 런 목록" meta="finetune/outputs">
   <section class="runs-grid">
     {#each filtered as run}
       <div class="card run-card" data-status={run.status}>
@@ -198,7 +195,7 @@
             </div>
           </div>
           <span class="pill {statusKind(run.status)}" style="flex-shrink:0">
-            <span class="dot"></span>{statusLabel(run.status)}
+            <span class="dot"></span>{humanizeLifecycle(run.status)}
           </span>
         </div>
 
@@ -222,6 +219,7 @@
       </div>
     {/each}
   </section>
+  </Disclosure>
 {/if}
 
 <style>

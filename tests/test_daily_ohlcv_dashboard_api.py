@@ -2,13 +2,131 @@ import json
 import hashlib
 import csv
 import sys
+import threading
+import time
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from webui.app import app as flask_app  # noqa: E402
+
+
+def test_daily_progress_coalesces_only_overlapping_builds(monkeypatch):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    calls = 0
+    call_started = threading.Event()
+    release_call = threading.Event()
+    caller_barrier = threading.Barrier(4)
+    results = []
+    errors = []
+
+    def fake_compute():
+        nonlocal calls
+        calls += 1
+        call_started.set()
+        assert release_call.wait(timeout=5)
+        return {"generation": calls}
+
+    def worker():
+        try:
+            caller_barrier.wait(timeout=5)
+            results.append(daily_dashboard.load_daily_progress())
+        except BaseException as exc:
+            errors.append(exc)
+
+    monkeypatch.setattr(daily_dashboard, "_compute_daily_progress", fake_compute)
+    monkeypatch.setattr(daily_dashboard, "_daily_progress_artifact_signature", lambda: None)
+    with daily_dashboard._PROGRESS_CONDITION:
+        daily_dashboard._PROGRESS_IN_FLIGHT = False
+        daily_dashboard._PROGRESS_GENERATION = 0
+        daily_dashboard._PROGRESS_RESULT = None
+
+    threads = [threading.Thread(target=worker) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    caller_barrier.wait(timeout=5)
+    assert call_started.wait(timeout=5)
+    time.sleep(0.05)
+    release_call.set()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert errors == []
+    assert calls == 1
+    assert results == [{"generation": 1}] * 3
+
+    assert daily_dashboard.load_daily_progress() == {"generation": 2}
+    assert calls == 2
+
+
+def test_daily_progress_cache_invalidates_on_any_source_stat_change(tmp_path, monkeypatch):
+    from webui import artifact_cache
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    primary = tmp_path / "db_summary.json"
+    secondary = tmp_path / "prediction_manifest.json"
+    primary.write_text("{}", encoding="utf-8")
+    secondary.write_text("{}", encoding="utf-8")
+    calls = 0
+
+    def signature():
+        entries = []
+        for path in (primary, secondary):
+            stat = path.stat()
+            entries.append((str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+        return primary, tuple(entries)
+
+    def fake_load():
+        nonlocal calls
+        calls += 1
+        return {"generation": calls}
+
+    artifact_cache.clear_cache()
+    monkeypatch.setattr(daily_dashboard, "_daily_progress_artifact_signature", signature)
+    monkeypatch.setattr(daily_dashboard, "_load_daily_progress_singleflight", fake_load)
+
+    assert daily_dashboard.load_daily_progress() == {"generation": 1}
+    assert daily_dashboard.load_daily_progress() == {"generation": 1}
+    assert calls == 1
+
+    secondary.write_text('{"changed": true}', encoding="utf-8")
+    assert daily_dashboard.load_daily_progress() == {"generation": 2}
+    assert calls == 2
+    artifact_cache.clear_cache()
+
+
+def test_daily_progress_cache_isolates_replaced_loaders(tmp_path, monkeypatch):
+    from webui import artifact_cache
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    primary = tmp_path / "db_summary.json"
+    primary.write_text("{}", encoding="utf-8")
+    stat = primary.stat()
+    signature = lambda: (
+        primary,
+        ((str(primary.resolve()), stat.st_mtime_ns, stat.st_size),),
+    )
+    calls = 0
+
+    def fake_load():
+        nonlocal calls
+        calls += 1
+        return {"generation": calls}
+
+    artifact_cache.clear_cache()
+    monkeypatch.setattr(daily_dashboard, "_daily_progress_artifact_signature", signature)
+    monkeypatch.setattr(daily_dashboard, "_load_daily_progress_singleflight", fake_load)
+
+    assert daily_dashboard.load_daily_progress() == {"generation": 1}
+    monkeypatch.setattr(daily_dashboard, "load_daily_db_summary", lambda **_: {})
+    assert daily_dashboard.load_daily_progress() == {"generation": 2}
+    assert calls == 2
+    artifact_cache.clear_cache()
 
 
 def test_daily_ohlcv_db_summary_api_is_read_only_and_bounded():
@@ -1464,8 +1582,12 @@ def test_daily_ohlcv_model_result_apis_expose_d3_d5_guardrails():
     registry = client.get('/api/daily-ohlcv/registry/latest?limit=2')
     assert registry.status_code == 200
     registry_payload = registry.get_json()
-    assert registry_payload['status'] == 'RESEARCH_ONLY_BLOCKED'
-    assert registry_payload['promotion_status'] == 'BLOCKED_RESEARCH_ONLY_NO_LIVE_BROKER_ORDER'
+    assert registry_payload['status'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
+    assert registry_payload['promotion_status'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
+    assert registry_payload['artifact_status'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
+    assert registry_payload['promotion_allowed'] is False
+    assert registry_payload['profitability_claim_allowed'] is False
+    assert registry_payload['go_summary_allowed'] is False
     assert registry_payload['model_build_allowed'] is False
     assert registry_payload['paper_forward_allowed'] is False
     assert registry_payload['live_broker_order_allowed'] is False
@@ -1473,20 +1595,15 @@ def test_daily_ohlcv_model_result_apis_expose_d3_d5_guardrails():
     assert len(registry_payload['config_hash']) == 64
     assert len(registry_payload['data_hash']) == 64
     assert len(registry_payload['code_hash']) == 64
-    assert registry_payload['candidate_registry']['candidates'][0]['promotion_status'] == 'BLOCKED_RESEARCH_ONLY_NO_LIVE_BROKER_ORDER'
+    assert registry_payload['candidate_registry']['candidates'][0]['promotion_status'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
     assert registry_payload['candidate_registry']['candidates'][0]['model_build_allowed'] is False
     assert registry_payload['candidate_registry']['candidates'][0]['paper_forward_allowed'] is False
     assert registry_payload['candidate_registry']['candidates'][0]['live_broker_order_allowed'] is False
     assert registry_payload['candidate_registry']['candidates'][0]['no_live_broker_order_readiness'] is True
     assert 'D5_WALK_FORWARD_NOT_PASS' in registry_payload['effective_gate_blockers']
-    assert registry_payload['samples']['drawdown'][0]['source'] == 'research_policy_nav_not_live_account'
+    assert 'REGISTRY_EVIDENCE_PAPER_SELECTED_HASH_MISSING' in registry_payload['invariant_errors']
     assert registry_payload['read_only_dashboard_note'].startswith('GET-only D8/D9')
-    assert len(registry_payload['samples']['paper_selected']) <= 2
-    assert registry_payload['samples']['paper_selected'][0]['selection_status'] == 'BLOCKED_BY_D5_NO_GO'
-    assert len(registry_payload['samples']['realized_returns']) <= 2
-    assert len(registry_payload['samples']['drift']) <= 2
-    assert len(registry_payload['samples']['drawdown']) <= 2
-    assert len(registry_payload['samples']['decision_log']) <= 2
+    assert all(not rows for rows in registry_payload['samples'].values())
 
     chart = client.get('/api/daily-ohlcv/charts/walk-forward').get_json()
     prediction_chart = client.get('/api/daily-ohlcv/charts/prediction').get_json()
@@ -2514,6 +2631,105 @@ def _write_registry_nonempty_evidence(run_dir: Path) -> None:
     )
 
 
+def _seal_registry_test_manifest(run_dir: Path) -> None:
+    manifest_path = run_dir / "registry_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    artifacts = {
+        "candidate_registry": "candidate_registry.json",
+        "paper_selected": "paper_selected.csv",
+        "realized_returns": "realized_returns.csv",
+        "drift": "drift.csv",
+        "drawdown": "drawdown.csv",
+        "decision_log": "decision_log.jsonl",
+    }
+    manifest["artifact_hashes"] = {
+        key: hashlib.sha256((run_dir / filename).read_bytes()).hexdigest()
+        for key, filename in artifacts.items()
+    }
+    manifest["row_counts"] = {
+        "candidate_registry_rows": 1,
+        "paper_selected_rows": 1,
+        "realized_return_rows": 1,
+        "drift_rows": 1,
+        "drawdown_rows": 1,
+        "decision_log_rows": 1,
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_daily_registry_api_accepts_only_hash_and_row_count_bound_evidence(tmp_path, monkeypatch):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    fake_hash = "9" * 64
+    root = tmp_path / "registry"
+    run_dir = root / "signed_registry"
+    run_dir.mkdir(parents=True)
+    _write_registry_safe_manifest_and_candidate(run_dir, fake_hash)
+    _write_registry_nonempty_evidence(run_dir)
+    _seal_registry_test_manifest(run_dir)
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_DAILY_REGISTRY_ROOT", root)
+
+    client = flask_app.test_client()
+    payload = client.get("/api/daily-ohlcv/registry/latest?run=signed_registry").get_json()
+
+    assert payload["status"] == "RESEARCH_ONLY_BLOCKED"
+    assert payload["artifact_status"] == "LOADED_GENERATED_ARTIFACT"
+    assert payload["invariant_errors"] == []
+    assert payload["samples"]["drawdown"][0]["source"] == "research_policy_nav_not_live_account"
+    _assert_close_slot_locks_false(payload)
+
+    (run_dir / "drawdown.csv").write_text(
+        (run_dir / "drawdown.csv").read_text(encoding="utf-8").replace("research_policy_nav_not_live_account", "tampered"),
+        encoding="utf-8",
+    )
+    tampered = client.get("/api/daily-ohlcv/registry/latest?run=signed_registry").get_json()
+
+    assert tampered["status"] == "BLOCKED_UNSAFE_REGISTRY_ARTIFACT"
+    assert tampered["artifact_status"] == "BLOCKED_UNSAFE_REGISTRY_ARTIFACT"
+    assert "REGISTRY_EVIDENCE_DRAWDOWN_HASH_MISMATCH" in tampered["invariant_errors"]
+    assert all(not rows for rows in tampered["samples"].values())
+    _assert_close_slot_locks_false(tampered)
+
+
+@pytest.mark.parametrize(
+    ("row_count_key", "expected_error"),
+    [
+        ("drawdown_rows", "REGISTRY_EVIDENCE_DRAWDOWN_ROW_COUNT_MISMATCH"),
+        ("candidate_registry_rows", "REGISTRY_EVIDENCE_CANDIDATE_REGISTRY_ROW_COUNT_MISMATCH"),
+        ("decision_log_rows", "REGISTRY_EVIDENCE_DECISION_LOG_ROW_COUNT_MISMATCH"),
+    ],
+)
+def test_daily_registry_api_fails_closed_on_exact_row_count_mismatch(
+    tmp_path,
+    monkeypatch,
+    row_count_key,
+    expected_error,
+):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    fake_hash = "8" * 64
+    root = tmp_path / "registry"
+    run_dir = root / "row_count_mismatch_registry"
+    run_dir.mkdir(parents=True)
+    _write_registry_safe_manifest_and_candidate(run_dir, fake_hash)
+    _write_registry_nonempty_evidence(run_dir)
+    _seal_registry_test_manifest(run_dir)
+    manifest_path = run_dir / "registry_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["row_counts"][row_count_key] = 2
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_DAILY_REGISTRY_ROOT", root)
+
+    payload = flask_app.test_client().get(
+        "/api/daily-ohlcv/registry/latest?run=row_count_mismatch_registry"
+    ).get_json()
+
+    assert payload["status"] == "BLOCKED_UNSAFE_REGISTRY_ARTIFACT"
+    assert expected_error in payload["invariant_errors"]
+    assert all(not rows for rows in payload["samples"].values())
+    _assert_close_slot_locks_false(payload)
+
+
 def test_daily_registry_api_blocks_unsafe_generated_artifact(tmp_path, monkeypatch):
     import webui.daily_ohlcv_dashboard as daily_dashboard
 
@@ -2937,6 +3153,543 @@ def test_daily_registry_api_blocks_candidate_optimistic_with_missing_baseline_de
 
 
 
+def _prepare_close_slot_dashboard_run(tmp_path: Path, monkeypatch, *, with_d3: bool = True):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+    from stom_rl.daily_close_slot_gate import write_close_slot_gate_artifacts
+    from tests.test_stom_rl_daily_close_slot_gate import _train_run
+
+    result = _train_run(tmp_path, with_d3=with_d3)
+    gate_root = tmp_path / "gate_root"
+    written = write_close_slot_gate_artifacts(
+        train_manifest_path=result["paths"]["train_manifest"],
+        train_manifest_sha=result["manifest"]["manifest_sha"],
+        output_root=gate_root,
+        run_id="gate_for_dashboard",
+    )
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_CLOSE_SLOT_DATASET_ROOT", tmp_path / "dataset_root")
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_CLOSE_SLOT_TRAIN_ROOT", tmp_path / "train_root")
+    monkeypatch.setattr(daily_dashboard, "DEFAULT_CLOSE_SLOT_GATE_ROOT", gate_root)
+    monkeypatch.setattr(
+        daily_dashboard,
+        "load_daily_db_summary",
+        lambda **_: {
+            "price_basis": "unknown",
+            "price_basis_status": "UNKNOWN_CONFIRMED",
+            "decision_grade_return_status": "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED",
+        },
+    )
+    monkeypatch.setattr(
+        daily_dashboard,
+        "load_universe_preview",
+        lambda **_: {
+            "verdict": "OFFICIAL_OR_MANUAL_REVIEWED",
+            "universe_review_status": "OFFICIAL_OR_MANUAL_REVIEWED",
+            "official_metadata_status": "OFFICIAL_VERIFIED",
+            "official_metadata_coverage_status": "COMPLETE",
+            "universe_certification_status": "OFFICIAL_OR_MANUAL_REVIEWED",
+        },
+    )
+    return daily_dashboard, result, written
+def _assert_close_slot_locks_false(payload: dict) -> None:
+    for key in (
+        "promotion_allowed",
+        "model_build_allowed",
+        "paper_forward_allowed",
+        "live_broker_order_allowed",
+        "profitability_claim_allowed",
+        "go_summary_allowed",
+    ):
+        assert payload.get(key) is False
+
+
+
+
+def test_daily_close_slot_dashboard_endpoints_expose_read_only_gate_payload(tmp_path, monkeypatch):
+    _, _, _written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    client = flask_app.test_client()
+
+    latest_response = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard&limit=3")
+    assert latest_response.status_code == 200
+    latest = latest_response.get_json()
+    assert latest["surface"] == "daily_close_slot"
+    assert latest["status"] == "WATCH_RESEARCH_ONLY"
+    assert latest["dashboard_validation_status"] == "PASS"
+    assert latest["read_only"] is True
+    _assert_close_slot_locks_false(latest)
+    assert latest["model_build_allowed"] is False
+    assert latest["paper_forward_allowed"] is False
+    assert latest["live_broker_order_allowed"] is False
+    assert latest["profitability_claim_allowed"] is False
+    assert latest["source_run_ids"]["dataset_run_id"] == "dataset_unit"
+    assert latest["source_run_ids"]["train_run_id"] == "train_for_gate"
+    assert latest["round_trip_cost_bp"] == 23
+    assert latest["cost_sensitivity_bp"] == [0, 23, 46]
+    assert latest["slot_count"] == 10
+    assert latest["fill_mode"] == "close_to_next_close_research_label"
+    assert latest["execution_realism"] == "non_executable_upper_bound_without_preclose_features"
+    assert "RESEARCH_ONLY" in latest["labels"]
+    assert "EXPERIMENTAL_ONLY" in latest["labels"]
+    assert "D3 re-ledgered through close-slot accounting" in latest["labels"]
+    assert latest["current_required_blockers"] == ["D0_PRICE_BASIS_NOT_VERIFIED"]
+    assert "D0_PRICE_BASIS_NOT_VERIFIED" in latest["upstream_gate_blockers"]
+    assert latest["dataset_lineage"]["status"] == "PASS"
+    assert latest["samples"]["policy_scores"][0]["code"] == "000001"
+    assert latest["train_schema_version"] == 2
+    assert latest["cost_model_schema_version"] == 2
+    assert latest["primary_cost_scenario_id"] == "base_23bp"
+    assert latest["cost_components"] == [
+        "sell_tax_bp",
+        "buy_commission_bp",
+        "sell_commission_bp",
+        "buy_slippage_bp",
+        "sell_slippage_bp",
+    ]
+    assert latest["cost_scenarios"]["zero_control_0bp"]["total_bp"] == 0.0
+    assert latest["cost_scenarios"]["base_23bp"]["sell_tax_bp"] == 20.0
+    assert latest["cost_scenarios"]["base_23bp"]["total_bp"] == 23.0
+    assert latest["cost_scenarios"]["stress_46bp"]["buy_slippage_bp"] == 11.5
+    assert latest["cost_scenarios"]["stress_46bp"]["total_bp"] == 46.0
+    assert latest["threshold_selection"]["policy"] == "linear_score_and_pick_train_only"
+    assert latest["threshold_selection"]["split"] == "train"
+    assert latest["threshold_selection"]["oos_rows_used_for_fit"] == 0
+    assert latest["threshold_selection"]["max_slot_count"] == 10
+    assert latest["threshold_selection"]["selection_cardinality"] == "threshold_selected_0_to_10"
+    assert latest["threshold_selection"]["hold_cash_action"] is True
+    assert latest["walk_forward_summary"]["mode_id"] == "expanding_train_replay_reward_weighted_refit_v1"
+    assert latest["walk_forward_summary"]["held_out_replay_splits"] == ["test", "val"]
+    assert latest["replay_summary"]["split_counts"] == {"test": 1, "val": 1}
+    assert latest["replay_summary"]["held_out_feedback_used_for_fit_count"] == 0
+    assert latest["selected_hold_summary"]["max_slot_count"] == 10
+    assert latest["selected_hold_summary"]["hold_cash_action"] is True
+    assert any(
+        row["policy"] == "linear_score_and_pick_train_only"
+        and row["cost_scenario_id"] == "base_23bp"
+        and row["total_component_bp"] == 23.0
+        and 0 <= row["selected_count"] <= 10
+        for row in latest["selected_hold_summary"]["rows"]
+    )
+    assert latest["false_locks"]["paper_forward_allowed"] is False
+    assert "NO_PROFITABILITY_CLAIM" in latest["no_claim_labels"]
+    assert "threshold_search_rows" in latest["row_counts"]
+    assert latest["samples"]["threshold_search"][0]["split"] == "train"
+    assert latest["samples"]["cost_scenario_summary"][0]["cost_scenario_id"] in {
+        "zero_control_0bp",
+        "base_23bp",
+        "stress_46bp",
+    }
+
+    artifacts = client.get("/api/daily-ohlcv/close-slot/artifacts?limit=5").get_json()
+    assert artifacts["read_only"] is True
+    _assert_close_slot_locks_false(artifacts)
+    assert artifacts["runs"][0]["kind"] == "daily_close_slot_gate"
+    assert artifacts["runs"][0]["status"] == "WATCH_RESEARCH_ONLY"
+    _assert_close_slot_locks_false(artifacts["runs"][0])
+
+    gate = client.get("/api/daily-ohlcv/close-slot/gate?run=gate_for_dashboard").get_json()
+    assert gate["surface"] == "daily_close_slot_gate"
+    assert gate["samples"] == {}
+    assert gate["gate_report"]["status"] == "PASS"
+    _assert_close_slot_locks_false(gate)
+    gate_alias = client.get("/api/daily-ohlcv/close-slot/gate/latest?run=gate_for_dashboard").get_json()
+    assert gate_alias["surface"] == "daily_close_slot_gate"
+
+    equity = client.get("/api/daily-ohlcv/close-slot/equity?run=gate_for_dashboard").get_json()
+    assert equity["surface"] == "daily_close_slot_equity"
+    assert equity["series"][0]["policy"] == "linear_score_and_pick_train_only"
+    assert equity["series"][0]["points"][0]["research_only"] is True
+    _assert_close_slot_locks_false(equity)
+    equity_alias = client.get("/api/daily-ohlcv/charts/close-slot-equity?run=gate_for_dashboard").get_json()
+    assert equity_alias["surface"] == "daily_close_slot_equity"
+    _assert_close_slot_locks_false(equity_alias)
+
+    selection = client.get("/api/daily-ohlcv/close-slot/selection?run=gate_for_dashboard&limit=5").get_json()
+    assert selection["surface"] == "daily_close_slot_selection"
+    assert selection["selection_rows"][0]["code"] == "000001"
+    assert selection["selection_rows"][0]["fill_mode"] == "close_to_next_close_research_label"
+    assert "selected-code lists are replay adapters only" in selection["guardrail"]
+    _assert_close_slot_locks_false(selection)
+    assert selection["threshold_selection"]["max_slot_count"] == 10
+    assert selection["selected_hold_summary"]["hold_cash_action"] is True
+    assert selection["cost_scenarios"]["base_23bp"]["total_bp"] == 23.0
+    assert selection["false_locks"]["live_broker_order_allowed"] is False
+    assert "NO_LIVE_BROKER_ORDER_ACCOUNT_SURFACE" in selection["no_claim_labels"]
+    assert selection["policy_score_sample"]
+    assert all(row["policy"] == "linear_score_and_pick_train_only" for row in selection["policy_score_sample"])
+    comparable_selection_latest = dict(selection["latest_selection"])
+    comparable_latest = dict(latest["latest_selection"])
+    comparable_selection_latest.pop("artifact_age_seconds")
+    comparable_latest.pop("artifact_age_seconds")
+    assert comparable_selection_latest == comparable_latest
+    assert selection["latest_selection"]["artifact_age_seconds"] >= latest["latest_selection"]["artifact_age_seconds"]
+    assert latest["latest_selection"]["split"] == "test"
+    assert latest["latest_selection"]["cost_scenario_id"] == "base_23bp"
+    assert latest["latest_selection"]["label"] == "primary_oos_test_result"
+    selection_alias = client.get("/api/daily-ohlcv/charts/close-slot-selection?run=gate_for_dashboard&limit=5").get_json()
+    assert selection_alias["surface"] == "daily_close_slot_selection"
+    _assert_close_slot_locks_false(selection_alias)
+
+
+def test_daily_close_slot_csv_facts_are_bound_to_manifest_sha(tmp_path, monkeypatch):
+    daily_dashboard, result, _written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    import stom_rl.daily_close_slot_gate as gate_module
+
+    policy_path = Path(result["manifest"]["artifacts"]["policy_scores"])
+    expected_sha = result["manifest"]["artifact_hashes"]["policy_scores"]
+    facts = daily_dashboard._close_slot_cached_csv_facts(
+        policy_path,
+        sample_limit=15,
+        retain_all_rows=False,
+        audit_columns=tuple(sorted(gate_module.REQUIRED_POLICY_SCORE_AUDIT_FIELDS)),
+        expected_sha256=expected_sha,
+    )
+    same_sha_facts = daily_dashboard._close_slot_cached_csv_facts(
+        policy_path,
+        sample_limit=15,
+        retain_all_rows=False,
+        audit_columns=tuple(sorted(gate_module.REQUIRED_POLICY_SCORE_AUDIT_FIELDS)),
+        expected_sha256=expected_sha,
+    )
+    different_sha_facts = daily_dashboard._close_slot_cached_csv_facts(
+        policy_path,
+        sample_limit=15,
+        retain_all_rows=False,
+        audit_columns=tuple(sorted(gate_module.REQUIRED_POLICY_SCORE_AUDIT_FIELDS)),
+        expected_sha256="f" * 64,
+    )
+
+    assert same_sha_facts is facts
+    assert different_sha_facts is not facts
+    assert different_sha_facts.resolved_path == facts.resolved_path
+    assert different_sha_facts.mtime_ns == facts.mtime_ns
+    assert different_sha_facts.size == facts.size
+    assert gate_module._csv_fact({"policy_scores": facts}, "policy_scores", policy_path, expected_sha) is facts
+    assert gate_module._csv_fact({"policy_scores": facts}, "policy_scores", policy_path, "f" * 64) is None
+
+
+def test_close_slot_csv_facts_retain_bounded_samples_per_policy(tmp_path):
+    import webui.daily_ohlcv_dashboard as daily_dashboard
+
+    policy_path = tmp_path / "policy_scores.csv"
+    policy_path.write_text(
+        "date,split,policy,code\n"
+        + "".join(f"2026-01-{day:02d},test,no_trade_control,000001\n" for day in range(1, 8))
+        + "2026-01-08,test,linear_score_and_pick_train_only,000002\n"
+        + "2026-01-09,test,linear_score_and_pick_train_only,000003\n",
+        encoding="utf-8",
+    )
+
+    facts = daily_dashboard._close_slot_analyze_csv_facts(
+        policy_path,
+        sample_limit=2,
+        retain_all_rows=False,
+    )
+    samples_by_policy = {
+        policy: daily_dashboard._close_slot_rows_from_tuples(rows)
+        for policy, rows in facts.sample_rows_by_policy
+    }
+
+    assert [dict(row)["policy"] for row in facts.sample_rows] == ["no_trade_control", "no_trade_control"]
+    assert [row["code"] for row in samples_by_policy["linear_score_and_pick_train_only"]] == ["000002", "000003"]
+
+
+@pytest.mark.parametrize("malformed_hash", [[], {"nested": "value"}])
+def test_daily_close_slot_latest_fails_closed_on_unhashable_manifest_sha(tmp_path, monkeypatch, malformed_hash):
+    daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    gate_manifest = json.loads(Path(written["gate_manifest_path"]).read_text(encoding="utf-8"))
+    train_manifest_path = Path(gate_manifest["train_manifest_path"])
+    train_manifest = json.loads(train_manifest_path.read_text(encoding="utf-8"))
+    train_manifest["artifact_hashes"]["policy_scores"] = malformed_hash
+    train_manifest_path.write_text(json.dumps(train_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    response = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_TRAIN_POLICY_SCORES_HASH_MISSING" in payload["artifact_selection_errors"]
+    _assert_close_slot_locks_false(payload)
+
+
+def test_daily_close_slot_latest_fails_closed_on_non_mapping_gate_hashes(tmp_path, monkeypatch):
+    _daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    gate_manifest_path = Path(written["gate_manifest_path"])
+    gate_manifest = json.loads(gate_manifest_path.read_text(encoding="utf-8"))
+    gate_manifest["artifact_hashes"] = ["not", "a", "mapping"]
+    gate_manifest_path.write_text(json.dumps(gate_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    response = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_GATE_MANIFEST_SHA_INVALID" in payload["artifact_selection_errors"]
+    assert "CLOSE_SLOT_GATE_REPORT_HASH_MISSING" in payload["artifact_selection_errors"]
+    _assert_close_slot_locks_false(payload)
+
+
+def test_daily_close_slot_latest_fails_closed_on_non_mapping_gate_artifacts(tmp_path, monkeypatch):
+    _daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    gate_manifest_path = Path(written["gate_manifest_path"])
+    gate_manifest = json.loads(gate_manifest_path.read_text(encoding="utf-8"))
+    gate_manifest["artifacts"] = ["not", "a", "mapping"]
+    gate_manifest_path.write_text(json.dumps(gate_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    response = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_GATE_REPORT_MISSING" in payload["artifact_selection_errors"]
+    _assert_close_slot_locks_false(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_error"),
+    [
+        ("artifacts", "CLOSE_SLOT_TRAIN_POLICY_SCORES_MISSING"),
+        ("row_counts", "CLOSE_SLOT_POLICY_SCORE_ROW_COUNT_MISMATCH"),
+    ],
+)
+def test_daily_close_slot_latest_fails_closed_on_non_mapping_train_containers(
+    tmp_path, monkeypatch, field, expected_error
+):
+    _daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    gate_manifest = json.loads(Path(written["gate_manifest_path"]).read_text(encoding="utf-8"))
+    train_manifest_path = Path(gate_manifest["train_manifest_path"])
+    train_manifest = json.loads(train_manifest_path.read_text(encoding="utf-8"))
+    train_manifest[field] = ["not", "a", "mapping"]
+    train_manifest_path.write_text(json.dumps(train_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    response = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert expected_error in payload["artifact_selection_errors"]
+    _assert_close_slot_locks_false(payload)
+
+def test_daily_close_slot_latest_reuses_single_policy_csv_facts_for_dashboard_and_gate(tmp_path, monkeypatch):
+    daily_dashboard, _, _written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=True)
+    original_analyze = daily_dashboard._close_slot_analyze_csv_facts
+    original_validate = daily_dashboard.validate_close_slot_gate
+    calls = {"policy_analyze": 0, "gate_saw_policy_facts": 0}
+
+    def counted_analyze(path, **kwargs):
+        if Path(path).name == "policy_scores.csv":
+            calls["policy_analyze"] += 1
+        return original_analyze(path, **kwargs)
+
+    def counted_validate(train_manifest_or_path, *, csv_facts=None):
+        policy_facts = (csv_facts or {}).get("policy_scores") if isinstance(csv_facts, dict) else None
+        if policy_facts is not None:
+            calls["gate_saw_policy_facts"] += 1
+            assert policy_facts.row_count is not None
+            assert "code" in policy_facts.fieldnames
+            assert policy_facts.all_rows is None
+            assert policy_facts.distinct_values
+            assert policy_facts.expected_sha256
+        return original_validate(train_manifest_or_path, csv_facts=csv_facts)
+
+    monkeypatch.setattr(daily_dashboard, "_close_slot_analyze_csv_facts", counted_analyze)
+    monkeypatch.setattr(daily_dashboard, "validate_close_slot_gate", counted_validate)
+
+    latest = flask_app.test_client().get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard&limit=15").get_json()
+
+    assert latest["status"] == "WATCH_RESEARCH_ONLY"
+    assert latest["samples"]["policy_scores"][0]["code"] == "000001"
+    assert calls == {"policy_analyze": 1, "gate_saw_policy_facts": 1}
+
+def test_daily_close_slot_dashboard_fails_closed_on_hash_and_current_d1_mismatch(tmp_path, monkeypatch):
+    daily_dashboard, _, written = _prepare_close_slot_dashboard_run(tmp_path, monkeypatch, with_d3=False)
+    client = flask_app.test_client()
+    manifest_path = Path(written["gate_manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["artifact_hashes"]["gate_report"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    invalid_hash = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert invalid_hash["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_GATE_REPORT_HASH_MISMATCH" in invalid_hash["artifact_selection_errors"]
+    assert invalid_hash["model_build_allowed"] is False
+    assert invalid_hash["live_broker_order_allowed"] is False
+    _assert_close_slot_locks_false(invalid_hash)
+    invalid_hash_row = client.get("/api/daily-ohlcv/close-slot/artifacts?limit=1").get_json()["runs"][0]
+    assert "CLOSE_SLOT_GATE_REPORT_HASH_MISMATCH" in invalid_hash_row["artifact_selection_errors"]
+    _assert_close_slot_locks_false(invalid_hash_row)
+
+    gate_report_path = Path(written["gate_report_path"])
+    import webui.daily_ohlcv_dashboard as daily_dashboard_module
+
+    manifest["artifact_hashes"]["gate_report"] = daily_dashboard_module._file_sha256(gate_report_path)
+    manifest["manifest_sha"] = daily_dashboard_module._close_slot_gate_manifest_expected_sha(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    gate_report = json.loads(gate_report_path.read_text(encoding="utf-8"))
+    gate_report["live_broker_order_allowed"] = True
+    gate_report_path.write_text(json.dumps(gate_report, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest["artifact_hashes"]["gate_report"] = daily_dashboard_module._file_sha256(gate_report_path)
+    manifest["manifest_sha"] = daily_dashboard_module._close_slot_gate_manifest_expected_sha(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    nested_lock = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert nested_lock["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_GATE_REPORT_LOCK_NOT_FALSE:live_broker_order_allowed" in nested_lock["artifact_selection_errors"]
+    nested_lock_row = client.get("/api/daily-ohlcv/close-slot/artifacts?limit=1").get_json()["runs"][0]
+    assert "CLOSE_SLOT_GATE_REPORT_LOCK_NOT_FALSE:live_broker_order_allowed" in nested_lock_row["artifact_selection_errors"]
+
+    gate_report.pop("live_broker_order_allowed")
+    gate_report_path.write_text(json.dumps(gate_report, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest["artifact_hashes"]["gate_report"] = daily_dashboard_module._file_sha256(gate_report_path)
+    manifest["manifest_sha"] = daily_dashboard_module._close_slot_gate_manifest_expected_sha(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    manifest["live_broker_order_allowed"] = True
+    manifest["status"] = "READY"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    artifact_row = client.get("/api/daily-ohlcv/close-slot/artifacts?limit=1").get_json()["runs"][0]
+    assert artifact_row["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_GATE_MANIFEST_LOCK_NOT_FALSE:live_broker_order_allowed" in artifact_row["artifact_selection_errors"]
+    assert artifact_row["live_broker_order_allowed"] is False
+
+    manifest["live_broker_order_allowed"] = False
+    manifest["status"] = "WATCH_RESEARCH_ONLY"
+    manifest["manifest_sha"] = daily_dashboard_module._close_slot_gate_manifest_expected_sha(manifest)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    monkeypatch.setattr(
+        daily_dashboard,
+        "load_universe_preview",
+        lambda **_: {
+            "verdict": "WATCH_HEURISTIC_UNIVERSE",
+            "universe_review_status": "WATCH_REQUIRES_OFFICIAL_OR_MANUAL_REVIEW",
+            "official_metadata_status": "MISSING",
+            "official_metadata_coverage_status": "MISSING",
+            "universe_certification_status": "BLOCKED_UNTIL_OFFICIAL_OR_MANUAL_REVIEW",
+        },
+    )
+
+    current_blocker = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert current_blocker["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_CURRENT_D0_D1_BLOCKERS_NOT_INJECTED" in current_blocker["artifact_selection_errors"]
+    assert current_blocker["profitability_claim_allowed"] is False
+    current_blocker_row = client.get("/api/daily-ohlcv/close-slot/artifacts?limit=1").get_json()["runs"][0]
+    assert "CLOSE_SLOT_CURRENT_D0_D1_BLOCKERS_NOT_INJECTED" in current_blocker_row["artifact_selection_errors"]
+
+    monkeypatch.setattr(
+        daily_dashboard,
+        "load_universe_preview",
+        lambda **_: {
+            "verdict": "OFFICIAL_OR_MANUAL_REVIEWED",
+            "universe_review_status": "OFFICIAL_OR_MANUAL_REVIEWED",
+            "official_metadata_status": "OFFICIAL_VERIFIED",
+            "official_metadata_coverage_status": "COMPLETE",
+            "universe_certification_status": "OFFICIAL_OR_MANUAL_REVIEWED",
+        },
+    )
+
+    train_manifest_path = Path(json.loads(manifest_path.read_text(encoding="utf-8"))["train_manifest_path"])
+    train_manifest = json.loads(train_manifest_path.read_text(encoding="utf-8"))
+    original_train_artifact_dir = train_manifest["artifact_dir"]
+    train_manifest["artifact_dir"] = str(tmp_path / "outside_train_artifacts")
+    train_manifest_path.write_text(json.dumps(train_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    unsafe_train_dir = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert unsafe_train_dir["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_TRAIN_ARTIFACT_DIR_UNSAFE" in unsafe_train_dir["artifact_selection_errors"]
+    unsafe_train_dir_row = client.get("/api/daily-ohlcv/close-slot/artifacts?limit=1").get_json()["runs"][0]
+    assert "CLOSE_SLOT_TRAIN_ARTIFACT_DIR_UNSAFE" in unsafe_train_dir_row["artifact_selection_errors"]
+    train_manifest["artifact_dir"] = original_train_artifact_dir
+    train_manifest_path.write_text(json.dumps(train_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    original_train_manifest_text = train_manifest_path.read_text(encoding="utf-8")
+    train_manifest = json.loads(original_train_manifest_text)
+    bad_threshold_manifest = json.loads(original_train_manifest_text)
+    bad_threshold_manifest["threshold_selection"]["oos_rows_used_for_fit"] = 1
+    train_manifest_path.write_text(json.dumps(bad_threshold_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    threshold_leak = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert threshold_leak["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_THRESHOLD_SELECTION_INVALID" in threshold_leak["artifact_selection_errors"]
+    train_manifest_path.write_text(original_train_manifest_text, encoding="utf-8")
+
+    bad_scenario_manifest = json.loads(original_train_manifest_text)
+    bad_scenario_manifest["cost_scenarios"]["paper_go_999bp"] = dict(
+        bad_scenario_manifest["cost_scenarios"]["base_23bp"]
+    )
+    train_manifest_path.write_text(json.dumps(bad_scenario_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    unexpected_scenario = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert unexpected_scenario["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_TRAIN_COST_SCENARIOS_UNEXPECTED_IDS" in unexpected_scenario["artifact_selection_errors"]
+    train_manifest_path.write_text(original_train_manifest_text, encoding="utf-8")
+
+    threshold_search_path = Path(train_manifest["artifacts"]["threshold_search"])
+    original_threshold_search_text = threshold_search_path.read_text(encoding="utf-8")
+    with threshold_search_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        threshold_rows = list(reader)
+        threshold_columns = list(reader.fieldnames or [])
+    threshold_rows[0]["mean_selected_count"] = "11.0"
+    threshold_rows[1]["chosen"] = "true"
+    with threshold_search_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=threshold_columns)
+        writer.writeheader()
+        writer.writerows(threshold_rows)
+    bad_threshold_artifact_manifest = json.loads(original_train_manifest_text)
+    bad_threshold_artifact_manifest["artifact_hashes"]["threshold_search"] = daily_dashboard_module._file_sha256(
+        threshold_search_path
+    )
+    train_manifest_path.write_text(json.dumps(bad_threshold_artifact_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    threshold_cardinality = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert threshold_cardinality["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_THRESHOLD_SEARCH_SELECTED_COUNT_INVALID" in threshold_cardinality["artifact_selection_errors"]
+    assert "CLOSE_SLOT_THRESHOLD_SEARCH_CHOSEN_COUNT_INVALID" in threshold_cardinality["artifact_selection_errors"]
+    threshold_search_path.write_text(original_threshold_search_text, encoding="utf-8")
+    train_manifest_path.write_text(original_train_manifest_text, encoding="utf-8")
+
+    cost_summary_path = Path(train_manifest["artifacts"]["cost_scenario_summary"])
+    original_cost_summary_text = cost_summary_path.read_text(encoding="utf-8")
+    with cost_summary_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        cost_rows = list(reader)
+        cost_columns = list(reader.fieldnames or [])
+    cost_rows[0]["total_component_bp"] = "999.0"
+    cost_rows[0]["selected_count"] = "11"
+    with cost_summary_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=cost_columns)
+        writer.writeheader()
+        writer.writerows(cost_rows)
+    bad_cost_manifest = json.loads(original_train_manifest_text)
+    bad_cost_manifest["artifact_hashes"]["cost_scenario_summary"] = daily_dashboard_module._file_sha256(cost_summary_path)
+    train_manifest_path.write_text(json.dumps(bad_cost_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    cost_component_drift = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert cost_component_drift["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert any(
+        error.startswith("CLOSE_SLOT_COST_SUMMARY_COMPONENT_MISMATCH:")
+        for error in cost_component_drift["artifact_selection_errors"]
+    )
+    assert "CLOSE_SLOT_COST_SUMMARY_SELECTED_HOLD_INVALID" in cost_component_drift["artifact_selection_errors"]
+    cost_summary_path.write_text(original_cost_summary_text, encoding="utf-8")
+    train_manifest_path.write_text(original_train_manifest_text, encoding="utf-8")
+    policy_path = Path(train_manifest["artifacts"]["policy_scores"])
+    with policy_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        policy_rows = [{key: value for key, value in row.items() if key != "code"} for row in reader]
+        policy_columns = [column for column in (reader.fieldnames or []) if column != "code"]
+    with policy_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=policy_columns)
+        writer.writeheader()
+        writer.writerows(policy_rows)
+    train_manifest["artifact_hashes"]["policy_scores"] = daily_dashboard_module._file_sha256(policy_path)
+    train_manifest_path.write_text(json.dumps(train_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    malformed_csv = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert malformed_csv["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_POLICY_SCORE_CSV_SCHEMA_MISSING_COLUMNS:code" in malformed_csv["artifact_selection_errors"]
+    malformed_csv_row = client.get("/api/daily-ohlcv/close-slot/artifacts?limit=1").get_json()["runs"][0]
+    assert "CLOSE_SLOT_POLICY_SCORE_CSV_SCHEMA_MISSING_COLUMNS:code" in malformed_csv_row["artifact_selection_errors"]
+
+    baseline_path = train_manifest_path.parent / "baseline_summary.csv"
+    baseline_path.unlink()
+    missing_csv = client.get("/api/daily-ohlcv/close-slot/latest?run=gate_for_dashboard").get_json()
+    assert missing_csv["status"] == "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT"
+    assert "CLOSE_SLOT_TRAIN_BASELINE_SUMMARY_MISSING" in missing_csv["artifact_selection_errors"]
+
+
 def test_daily_ohlcv_unsafe_run_and_mutating_methods_rejected():
     client = flask_app.test_client()
     assert client.get('/api/daily-ohlcv/db-summary?run=..').status_code == 400
@@ -2946,8 +3699,16 @@ def test_daily_ohlcv_unsafe_run_and_mutating_methods_rejected():
     assert client.get('/api/daily-ohlcv/portfolio/latest?run=..').status_code == 400
     assert client.get('/api/daily-ohlcv/walk-forward/latest?run=..').status_code == 400
     assert client.get('/api/daily-ohlcv/registry/latest?run=..').status_code == 400
+    assert client.get('/api/daily-ohlcv/close-slot/latest?run=..').status_code == 400
+    assert client.get('/api/daily-ohlcv/close-slot/gate?run=..').status_code == 400
+    assert client.get('/api/daily-ohlcv/close-slot/gate/latest?run=..').status_code == 400
+    assert client.get('/api/daily-ohlcv/close-slot/equity?run=..').status_code == 400
+    assert client.get('/api/daily-ohlcv/close-slot/selection?run=..').status_code == 400
     assert client.get('/api/daily-ohlcv/charts/equity-overlay?run=..').status_code == 400
     assert client.get('/api/daily-ohlcv/charts/walk-forward-heatmap?run=..').status_code == 400
+    assert client.get('/api/daily-ohlcv/charts/close-slot-equity?run=..').status_code == 400
+    assert client.get('/api/daily-ohlcv/charts/close-slot-selection?run=..').status_code == 400
+    assert client.get('/api/daily-ohlcv/charts/close-slot-gate?run=..').status_code == 400
     for path in [
         '/api/daily-ohlcv/db-summary',
         '/api/daily-ohlcv/universe/preview',
@@ -2958,6 +3719,12 @@ def test_daily_ohlcv_unsafe_run_and_mutating_methods_rejected():
         '/api/daily-ohlcv/walk-forward/latest',
         '/api/daily-ohlcv/registry/latest',
         '/api/daily-ohlcv/gate/latest',
+        '/api/daily-ohlcv/close-slot/latest',
+        '/api/daily-ohlcv/close-slot/artifacts',
+        '/api/daily-ohlcv/close-slot/gate',
+        '/api/daily-ohlcv/close-slot/gate/latest',
+        '/api/daily-ohlcv/close-slot/equity',
+        '/api/daily-ohlcv/close-slot/selection',
         '/api/daily-ohlcv/charts/dataset',
         '/api/daily-ohlcv/charts/prediction',
         '/api/daily-ohlcv/charts/portfolio',
@@ -2968,6 +3735,9 @@ def test_daily_ohlcv_unsafe_run_and_mutating_methods_rejected():
         '/api/daily-ohlcv/charts/research-diagnostics',
         '/api/daily-ohlcv/charts/equity-overlay',
         '/api/daily-ohlcv/charts/walk-forward-heatmap',
+        '/api/daily-ohlcv/charts/close-slot-gate',
+        '/api/daily-ohlcv/charts/close-slot-equity',
+        '/api/daily-ohlcv/charts/close-slot-selection',
         '/api/daily-ohlcv/charts/run-scatter',
         '/api/daily-ohlcv/charts/universe-breakdown',
         '/api/daily-ohlcv/charts/symbol/000250',
@@ -2993,8 +3763,8 @@ def test_daily_ohlcv_progress_and_model_surfaces_are_locked():
     assert statuses['D5'] == 'NO-GO'
     assert statuses['D6'] == 'PASS'
     assert statuses['D7'] == 'WATCH'
-    assert statuses['D8'] == 'RESEARCH_ONLY_BLOCKED'
-    assert statuses['D9'] == 'BLOCKED_RESEARCH_ONLY_NO_LIVE_BROKER_ORDER'
+    assert statuses['D8'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
+    assert statuses['D9'] == 'BLOCKED_UNSAFE_REGISTRY_ARTIFACT'
     assert 'no live/broker/orders' in progress['guardrail']
     assert len(progress['page_usage_guide']) == 10
     assert progress['stages'][6]['usage_guide']['stage'] == 'D6'

@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { fmt } from '$lib/format';
   import EChartsRenderer from '../charts/EChartsRenderer.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
+  import { theme } from '$lib/stores';
 
   interface StomSummary {
     compatible_stock_table_count?: number;
@@ -43,6 +45,9 @@
   let backtestReport = $state<any>(null);
   let loadingDiag = $state(false);
   let diagError = $state<string | null>(null);
+
+  let currentTheme = $state<'light' | 'dark'>('light');
+  theme.subscribe((v) => (currentTheme = v));
 
   onMount(() => {
     void loadSummary();
@@ -211,56 +216,76 @@
     const direction = Number(overall?.direction_accuracy ?? 0);
     const avgReturn = Number(overall?.avg_actual_return ?? 0);
     if (direction >= 0.5 && avgReturn >= 0) {
-      return { label: '실전 후보 검토 가능', tone: 'success', message: '방향 적중률이 50% 이상입니다. 그래도 비용 반영 rolling 검증을 함께 확인해야 합니다.' };
+      return { label: '연구 후보 · 추가 검증 필요', tone: 'warn', message: '방향 적중률이 50% 이상이지만 비용 반영 test OOS·rolling 게이트 전에는 승격하거나 실전 후보로 해석할 수 없습니다.' };
     }
     if (direction >= 0.4) {
-      return { label: '조건식 보완 필요', tone: 'warn', message: '방향성은 일부 있지만 50%를 넘지 못했거나 비용 검증이 부족합니다. 조건식과 horizon 비교가 필요합니다.' };
+      return { label: '연구 조건 보완 필요', tone: 'warn', message: '방향성은 일부 있지만 비용 검증이 부족합니다. 조건식과 horizon 비교 후 test OOS 게이트가 필요합니다.' };
     }
-    return { label: '실전 사용 보류', tone: 'danger', message: '현재 결과만으로 자동매매 신호로 사용하기 어렵습니다.' };
+    return { label: '연구 NO-GO', tone: 'danger', message: '현재 결과는 자동매매·실전·수익 준비 근거가 아니며 연구용 진단으로만 사용합니다.' };
   }
 
   const resultVerdict = $derived(verdict(diagnostics?.overall));
 
   const horizonRows = $derived(horizonComparison?.rows ?? []);
   const bestHorizon = $derived(horizonComparison?.best_by_rolling_net ?? horizonComparison?.best_by_direction ?? null);
+
+  let palette = $derived.by(() => {
+    void currentTheme;
+    if (typeof window === 'undefined') return null;
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      accent: cs.getPropertyValue('--accent').trim(),
+      success: cs.getPropertyValue('--success').trim(),
+      danger: cs.getPropertyValue('--danger').trim(),
+      c4: cs.getPropertyValue('--c-4').trim(),
+      grid: cs.getPropertyValue('--border-faint').trim(),
+      dim: cs.getPropertyValue('--dim').trim(),
+      muted: cs.getPropertyValue('--muted').trim(),
+      text: cs.getPropertyValue('--fg').trim(),
+    };
+  });
+
   const horizonChartOption = $derived.by(() => {
+    void currentTheme;
     const rows = horizonRows;
-    if (!rows.length) return {};
+    if (!rows.length || !palette) return {};
     return {
       backgroundColor: 'transparent',
       grid: { left: 52, right: 24, top: 42, bottom: 44 },
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, textStyle: { color: 'inherit' } },
-      xAxis: { type: 'category', data: rows.map((r: any) => `${r.horizon}s`), axisLabel: { color: '#64748b' } },
-      yAxis: { type: 'value', axisLabel: { formatter: '{value}%', color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.2)' } } },
+      legend: { top: 0, textStyle: { color: palette.dim } },
+      xAxis: { type: 'category', data: rows.map((r: any) => `${r.horizon}s`), axisLabel: { color: palette.dim } },
+      yAxis: { type: 'value', axisLabel: { formatter: '{value}%', color: palette.dim }, splitLine: { lineStyle: { color: palette.grid } } },
       series: [
-        { name: 'Kronos 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.direction_accuracy ?? 0) * 100), itemStyle: { color: '#2563eb' } },
-        { name: 'Random 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.random_direction_accuracy ?? 0) * 100), itemStyle: { color: '#94a3b8' } },
-        { name: 'Rolling net', type: 'line', data: rows.map((r: any) => Number(r.rolling_net_return_pct ?? 0)), lineStyle: { color: '#ef4444', width: 3 }, symbolSize: 8 },
+        { name: 'Kronos 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.direction_accuracy ?? 0) * 100), itemStyle: { color: palette.accent } },
+        { name: 'Random 방향 적중률', type: 'bar', data: rows.map((r: any) => Number(r.random_direction_accuracy ?? 0) * 100), itemStyle: { color: palette.muted } },
+        { name: 'Rolling net', type: 'line', data: rows.map((r: any) => Number(r.rolling_net_return_pct ?? 0)), lineStyle: { color: palette.c4, width: 3 }, symbolSize: 8 },
       ],
     };
   });
 
   const actualPredictionOption = $derived.by(() => {
+    void currentTheme;
     const rows = predictionDetail?.visual?.window_series ?? [];
-    if (!rows.length) return {};
+    if (!rows.length || !palette) return {};
     return {
       backgroundColor: 'transparent',
       grid: { left: 52, right: 24, top: 34, bottom: 42 },
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, textStyle: { color: 'inherit' } },
-      xAxis: { type: 'category', data: rows.map((r: any) => String(r.timestamp).slice(11, 19)), axisLabel: { color: '#64748b' } },
-      yAxis: { type: 'value', scale: true, axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.22)' } } },
+      legend: { top: 0, textStyle: { color: palette.dim } },
+      xAxis: { type: 'category', data: rows.map((r: any) => String(r.timestamp).slice(11, 19)), axisLabel: { color: palette.dim } },
+      yAxis: { type: 'value', scale: true, axisLabel: { color: palette.dim }, splitLine: { lineStyle: { color: palette.grid } } },
       series: [
-        { name: '실제 종가', type: 'line', smooth: 0.25, symbol: 'none', data: rows.map((r: any) => r.actual_close), lineStyle: { color: '#0f172a', width: 2.2 } },
-        { name: 'Kronos 예측', type: 'line', smooth: 0.25, symbol: 'none', data: rows.map((r: any) => r.pred_close), lineStyle: { color: '#ef4444', width: 2, type: 'dashed' } },
+        { name: '실제 종가', type: 'line', smooth: 0.25, symbol: 'none', data: rows.map((r: any) => r.actual_close), lineStyle: { color: palette.text, width: 2.2 } },
+        { name: 'Kronos 예측', type: 'line', smooth: 0.25, symbol: 'none', data: rows.map((r: any) => r.pred_close), lineStyle: { color: palette.c4, width: 2, type: 'dashed' } },
       ],
     };
   });
 
   const returnScatterOption = $derived.by(() => {
+    void currentTheme;
     const rows = predictionDetail?.visual?.return_scatter ?? [];
-    if (!rows.length) return {};
+    if (!rows.length || !palette) return {};
     return {
       backgroundColor: 'transparent',
       grid: { left: 54, right: 24, top: 26, bottom: 46 },
@@ -271,15 +296,15 @@
           return `${r.symbol}<br/>예측 ${num(r.pred_return_window, 3)}%<br/>실제 ${num(r.actual_return_window, 3)}%<br/>${r.direction_hit_window ? '방향 적중' : '방향 실패'}`;
         },
       },
-      xAxis: { type: 'value', name: '예측 등락률 %', axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.2)' } } },
-      yAxis: { type: 'value', name: '실제 등락률 %', axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.2)' } } },
+      xAxis: { type: 'value', name: '예측 등락률 %', axisLabel: { color: palette.dim }, splitLine: { lineStyle: { color: palette.grid } } },
+      yAxis: { type: 'value', name: '실제 등락률 %', axisLabel: { color: palette.dim }, splitLine: { lineStyle: { color: palette.grid } } },
       series: [
         {
           name: 'window',
           type: 'scatter',
           symbolSize: 7,
           data: rows.map((r: any) => [r.pred_return_window, r.actual_return_window]),
-          itemStyle: { color: (p: any) => rows[p.dataIndex]?.direction_hit_window ? '#22c55e' : '#ef4444', opacity: 0.72 },
+          itemStyle: { color: (p: any) => rows[p.dataIndex]?.direction_hit_window ? palette!.success : palette!.danger, opacity: 0.72 },
         },
       ],
     };
@@ -319,12 +344,13 @@
 {/if}
 
 {#if horizonRows.length}
+  <Disclosure summary="Horizon 비교" meta="30/60/120/300초">
   <section class="card horizon-card">
     <div class="section-head">
       <div>
         <div class="card-eyebrow">HORIZON COMPARISON · 30/60/120/300초 비교</div>
         <h2>어느 예측 시간이 가장 의미 있는가?</h2>
-        <p>동일 checkpoint로 각 horizon을 walk-forward 평가하고, 비용 25bp 기준 rolling gate까지 비교합니다.</p>
+        <p>동일 checkpoint로 각 horizon을 walk-forward 평가합니다. 이 STOM 1초봉 레거시 gate는 거래비용 15bp + 슬리피지 10bp = 총 25bp로 사전 고정되며, 일봉 연구의 primary 23bp 가정과는 별도입니다.</p>
       </div>
       <span class="pill {horizonComparison?.passes_any_gate ? 'success' : 'warn'}">
         {horizonComparison?.passes_any_gate ? '확장 가능' : '확장 보류'}
@@ -340,7 +366,7 @@
         <span class="pill accent">Rolling net {pct(bestHorizon.rolling_net_return_pct, 3)}</span>
       {/if}
     </div>
-    <EChartsRenderer option={horizonChartOption} height="320px" />
+    <EChartsRenderer option={horizonChartOption} height="320px" caption="호라이즌별 예측 성능" />
     <div class="table-scroll">
       <table class="result-table">
         <thead>
@@ -365,6 +391,7 @@
       </table>
     </div>
   </section>
+  </Disclosure>
 {/if}
 
 <section class="card workspace">
@@ -441,18 +468,19 @@
                 <span class="pill accent">{predictionDetail.visual.selected_window.symbol} · window {predictionDetail.visual.selected_window.window_id}</span>
               {/if}
             </div>
-            <EChartsRenderer option={actualPredictionOption} height="320px" />
+            <EChartsRenderer option={actualPredictionOption} height="320px" caption="선택 window 실제 종가 vs Kronos 예측 종가" />
           </div>
           <div class="chart-section">
             <div class="chart-title">
               <div><div class="card-eyebrow">RETURN SCATTER</div><h3>전체 window 예측 등락률 vs 실제 등락률</h3></div>
               <span class="text-caption">초록=방향 적중 · 빨강=방향 실패</span>
             </div>
-            <EChartsRenderer option={returnScatterOption} height="320px" />
+            <EChartsRenderer option={returnScatterOption} height="320px" caption="예측 등락률 vs 실제 등락률 산점도" />
           </div>
         {/if}
 
         {#if predictionDetail?.recommendations?.length}
+          <Disclosure summary="Kronos 점수 상위 후보">
           <div class="card-eyebrow" style="margin:16px 0 8px">KRONOS 점수 상위 후보</div>
           <div class="table-scroll">
             <table class="result-table">
@@ -468,6 +496,7 @@
               </tbody>
             </table>
           </div>
+          </Disclosure>
         {/if}
       {:else if selectedArtifact}
         <div class="artifact-summary">
@@ -495,7 +524,9 @@
               <div class="eval-kpi"><span>coverage</span><strong>{ratioPct(selectedArtifact.best_filter.coverage, 2)}</strong></div>
             </div>
           {/if}
+          <Disclosure summary="원본 JSON" meta="raw">
           <pre class="diag-json">{JSON.stringify(selectedArtifact, null, 2).slice(0, 2000)}{JSON.stringify(selectedArtifact).length > 2000 ? '\n...' : ''}</pre>
+          </Disclosure>
         </div>
       {:else}
         <div class="empty detail-empty">왼쪽에서 산출물을 선택하세요.</div>
@@ -515,7 +546,7 @@
   .kpi span,
   .eval-kpi span { color: var(--muted); font-size: 12px; }
   .kpi strong,
-  .eval-kpi strong { display: block; margin-top: 6px; font-size: 24px; color: var(--text); }
+  .eval-kpi strong { display: block; margin-top: 6px; font-size: 24px; color: var(--fg); }
   .kpi small,
   .eval-kpi small { color: var(--muted); }
   .horizon-card { margin-bottom: 16px; }
@@ -538,22 +569,22 @@
     margin: 14px 0;
     border-radius: 16px;
     border: 1px solid rgba(148,163,184,.24);
-    background: rgba(248,250,252,.72);
+    background: var(--surface-sunken);
   }
-  .verdict-card.success { border-color: rgba(34,197,94,.35); background: rgba(240,253,244,.72); }
-  .verdict-card.warn { border-color: rgba(245,158,11,.35); background: rgba(255,251,235,.8); }
-  .verdict-card.danger { border-color: rgba(239,68,68,.35); background: rgba(254,242,242,.78); }
+  .verdict-card.success { border-color: rgba(34,197,94,.35); background: color-mix(in oklab, var(--success) 12%, var(--surface)); }
+  .verdict-card.warn { border-color: rgba(245,158,11,.35); background: color-mix(in oklab, var(--warn) 12%, var(--surface)); }
+  .verdict-card.danger { border-color: rgba(239,68,68,.35); background: color-mix(in oklab, var(--danger) 12%, var(--surface)); }
   .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .tabs button,
   .ghost {
     border: 1px solid var(--border);
     background: var(--surface);
-    color: var(--text);
+    color: var(--fg);
     border-radius: 999px;
     padding: 8px 14px;
     cursor: pointer;
   }
-  .tabs button.active { background: var(--primary); color: white; border-color: var(--primary); }
+  .tabs button.active { background: var(--accent-strong); color: var(--on-accent); border-color: var(--accent-strong); }
   .workspace-grid { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 16px; }
   .file-list { border-right: 1px solid var(--border); padding-right: 14px; max-height: 980px; overflow: auto; }
   .file-row {
@@ -569,35 +600,35 @@
   }
   .file-row strong { display: block; font-size: 12px; word-break: break-all; }
   .file-row span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
-  .file-row.selected { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.14); }
+  .file-row.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,.14); }
   .detail-panel { min-width: 0; }
   .filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .filter-card,
   .eval-kpi {
     border: 1px solid var(--border);
-    background: rgba(255,255,255,.72);
+    background: var(--surface);
     border-radius: 14px;
     padding: 12px;
   }
   .filter-card strong { display:block; font-size: 22px; margin: 4px 0; }
-  .chart-section { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: rgba(255,255,255,.62); }
+  .chart-section { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
   .table-scroll { overflow: auto; margin-top: 10px; }
   .result-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .result-table th,
   .result-table td { border-bottom: 1px solid var(--border); padding: 8px 10px; text-align: left; white-space: nowrap; }
   .result-table th { color: var(--muted); font-size: 12px; }
   .best-row { background: rgba(37,99,235,.07); }
-  .positive { color: #16a34a; font-weight: 700; }
-  .negative { color: #dc2626; font-weight: 700; }
-  .diag-json { margin-top: 16px; padding: 14px; border-radius: 14px; background: #0f172a; color: #e2e8f0; overflow: auto; max-height: 420px; font-size: 12px; }
+  .positive { color: var(--success); font-weight: 700; }
+  .negative { color: var(--danger); font-weight: 700; }
+  .diag-json { margin-top: 16px; padding: 14px; border-radius: 14px; background: var(--fg-strong); color: var(--surface); overflow: auto; max-height: 420px; font-size: 12px; }
   .empty,
   .loading-box,
   .error-card { padding: 18px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted); }
   .error-card { color: var(--danger); border-color: rgba(239,68,68,.4); }
-  .pill.success { background: rgba(34,197,94,.12); color: #15803d; }
-  .pill.warn { background: rgba(245,158,11,.14); color: #b45309; }
-  .pill.danger { background: rgba(239,68,68,.12); color: #b91c1c; }
-  .pill.accent { background: rgba(37,99,235,.12); color: #1d4ed8; }
+  .pill.success { background: rgba(34,197,94,.12); color: var(--success); }
+  .pill.warn { background: rgba(245,158,11,.14); color: var(--warn); }
+  .pill.danger { background: rgba(239,68,68,.12); color: var(--danger); }
+  .pill.accent { background: rgba(37,99,235,.12); color: var(--accent); }
   @media (max-width: 1000px) {
     .workspace-grid,
     .kpi-grid,

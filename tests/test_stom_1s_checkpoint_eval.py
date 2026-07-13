@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,7 +45,7 @@ def _frame(rows: int = 12) -> pd.DataFrame:
     )
 
 
-def test_checkpoint_eval_baselines_write_dashboard_compatible_artifacts(tmp_path):
+def test_checkpoint_eval_baselines_write_dashboard_compatible_artifacts(tmp_path, monkeypatch):
     dataset = tmp_path / "processed_datasets"
     dataset.mkdir()
     payload = {
@@ -53,6 +54,7 @@ def test_checkpoint_eval_baselines_write_dashboard_compatible_artifacts(tmp_path
     }
     with (dataset / "test_data.pkl").open("wb") as f:
         pickle.dump(payload, f)
+    monkeypatch.setenv("KRONOS_TRUST_PICKLE", "1")
 
     data = load_pickle_dataset(dataset)
     windows = select_aligned_windows(data, lookback_window=4, predict_window=3, max_symbols=2)
@@ -75,6 +77,61 @@ def test_checkpoint_eval_baselines_write_dashboard_compatible_artifacts(tmp_path
     assert "history_mean_amount" in persistence_df.columns
     assert "pred_path_consistency" in persistence_df.columns
 
+def test_pickle_loader_refuses_unknown_external_provenance(tmp_path, monkeypatch):
+    external_root = tmp_path / "external"
+    external_root.mkdir()
+    with (external_root / "test_data.pkl").open("wb") as f:
+        pickle.dump({"KR000250_20260102": _frame()}, f)
+
+    import evaluate_stom_1s_checkpoint as checkpoint_eval
+
+    monkeypatch.setattr(checkpoint_eval, "PROJECT_ROOT", tmp_path / "project")
+    monkeypatch.delenv("KRONOS_TRUST_PICKLE", raising=False)
+
+    try:
+        load_pickle_dataset(external_root)
+    except PermissionError as exc:
+        assert "unknown provenance" in str(exc)
+    else:
+        raise AssertionError("external pickle should require explicit trust")
+
+
+def test_pickle_loader_uses_resolved_trusted_path(tmp_path, monkeypatch):
+    trusted_root = tmp_path / "project"
+    dataset = trusted_root / "processed_datasets"
+    dataset.mkdir(parents=True)
+    with (dataset / "test_data.pkl").open("wb") as f:
+        pickle.dump({"KR000250_20260102": _frame()}, f)
+
+    import evaluate_stom_1s_checkpoint as checkpoint_eval
+
+    monkeypatch.setattr(checkpoint_eval, "PROJECT_ROOT", trusted_root)
+    monkeypatch.delenv("KRONOS_TRUST_PICKLE", raising=False)
+
+    loaded = load_pickle_dataset(dataset)
+
+    assert list(loaded) == ["KR000250_20260102"]
+
+
+def test_pickle_guard_rejects_symlink_branch_without_os_privileges(tmp_path, monkeypatch):
+    candidate = tmp_path / "test_data.pkl"
+    candidate.write_bytes(b"not read")
+
+    import evaluate_stom_1s_checkpoint as checkpoint_eval
+
+    monkeypatch.setattr(Path, "is_symlink", lambda path: path == candidate)
+    with pytest.raises(PermissionError, match="symlink"):
+        checkpoint_eval._assert_trusted_pickle(candidate)
+
+
+def test_pickle_guard_rejects_non_regular_file(tmp_path):
+    candidate = tmp_path / "test_data.pkl"
+    candidate.mkdir()
+
+    import evaluate_stom_1s_checkpoint as checkpoint_eval
+
+    with pytest.raises(FileNotFoundError, match="regular file"):
+        checkpoint_eval._assert_trusted_pickle(candidate)
 
 def test_filter_search_reports_best_filter_from_prediction_csv(tmp_path):
     rows = []

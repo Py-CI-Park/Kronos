@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping
 
@@ -119,6 +120,86 @@ def _baseline_policies(run_dir: Path) -> List[str]:
     return policies
 
 
+DEFAULT_POLL_INTERVAL_SECONDS = 2.0
+
+
+def _find_event_file(run_dir: Path) -> Path | None:
+    """Return the run's live-event JSONL file if one exists, else None."""
+    for name in _files.LIVE_EVENT_FILE_NAMES:
+        candidate = run_dir / name
+        if _is_run_file(run_dir, candidate):
+            return candidate
+    return None
+
+
+def _run_lifecycle(run_dir: Path) -> Dict[str, Any]:
+    """Truthful run-lifecycle snapshot for the dashboard (never LIVE).
+
+    A single read cannot observe an advancing step, so this returns a fail-closed
+    snapshot status (COMPLETED / REPLAY / IDLE / MISSING) via the frozen
+    ``stom_rl_live_event.v1`` contract helper ``derive_run_status`` with
+    ``declared_running=False``, plus the raw signals (``last_step``,
+    ``event_mtime_age_sec``) the live client uses to upgrade to RUNNING/STALE
+    only while the step actually advances across polls. Polling, row presence,
+    or fetch time never make a run LIVE here.
+    """
+    from stom_rl import rl_events as _ev
+
+    try:
+        from . import artifact_cache as _cache
+    except ImportError:  # pragma: no cover - script-style import
+        import artifact_cache as _cache
+
+    event_path = _find_event_file(run_dir)
+    now = time.time()
+    if event_path is None:
+        return {
+            "status": _ev.RUN_STATUS_MISSING,
+            "is_live": False,
+            "event_file": None,
+            "event_count": 0,
+            "last_step": None,
+            "event_mtime_age_sec": None,
+            "last_phase": None,
+            "is_replay": False,
+            "poll_interval_seconds": DEFAULT_POLL_INTERVAL_SECONDS,
+        }
+    # Bounded (path,mtime,size)-keyed tail-read memoization (Todo 9); re-stats
+    # every call and never serves stale data for a changed event file.
+    rows, _truncated = _cache.cached_read_live_events(event_path, limit=_ev.MAX_EVENT_LIMIT, tail=True)
+    event_count = len(rows)
+    last = rows[-1] if rows else {}
+    raw_step = last.get("global_step") if isinstance(last, Mapping) else None
+    try:
+        last_step = int(raw_step) if raw_step is not None else None
+    except (TypeError, ValueError):
+        last_step = None
+    age = max(0.0, now - event_path.stat().st_mtime)
+    last_phase = str(last.get("phase") or "") if isinstance(last, Mapping) else ""
+    last_source = str(last.get("source") or "") if isinstance(last, Mapping) else ""
+    is_replay = last_phase == "backtest" or "backtest" in last_source
+    status = _ev.derive_run_status(
+        event_file_exists=True,
+        event_count=event_count,
+        declared_running=False,  # a dashboard read is not an active-producer claim
+        last_step=last_step,
+        prev_step=None,
+        seconds_since_last_advance=age,
+        poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
+        is_replay=is_replay,
+    )
+    return {
+        "status": status,
+        "is_live": _ev.is_live_status(status),  # always False for a snapshot
+        "event_file": event_path.name,
+        "event_count": event_count,
+        "last_step": last_step,
+        "event_mtime_age_sec": round(age, 3),
+        "last_phase": last_phase or None,
+        "is_replay": is_replay,
+        "poll_interval_seconds": DEFAULT_POLL_INTERVAL_SECONDS,
+    }
+
 def _run_record(run_dir: Path) -> Dict[str, Any]:
     artifact_type = _detect_artifact_type(run_dir)
     summary = _find_json_summary(run_dir, artifact_type)
@@ -129,6 +210,7 @@ def _run_record(run_dir: Path) -> Dict[str, Any]:
         "summary": summary,
         "strategy_context": build_strategy_context(artifact_type, summary),
         "policies": _baseline_policies(run_dir) if artifact_type == "baseline" else [],
+        "lifecycle": _run_lifecycle(run_dir),
     }
 
 

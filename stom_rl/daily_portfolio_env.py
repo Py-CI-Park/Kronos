@@ -210,6 +210,7 @@ class DailyPortfolioEnv:
         self.index = 0
         self.positions: list[str] = []
         self.equity = 1.0
+        self.shaped_equity = 1.0
         self.peak_equity = 1.0
         self.current_drawdown = 0.0
         self.invalid_actions = 0
@@ -362,14 +363,21 @@ class DailyPortfolioEnv:
         churn_cost = turnover * self.churn_penalty
         no_trade_hold_reward = 0.0
         reward_before_drawdown = net_return_after_cost - exposure_cost - concentration_cost - invalid_cost - churn_cost + no_trade_hold_reward
-        projected_equity = self.equity * (1.0 + reward_before_drawdown)
-        projected_peak = max(self.peak_equity, projected_equity)
-        projected_drawdown = projected_equity / projected_peak - 1.0 if projected_peak else 0.0
+        # Drawdown telemetry/penalty tracks the *shaped* (reward-compounded) curve, unchanged
+        # from the pre-existing formula -- only the variable name changed to make explicit
+        # that this is a shaping proxy, not NAV.
+        projected_shaped_equity = self.shaped_equity * (1.0 + reward_before_drawdown)
+        projected_peak = max(self.peak_equity, projected_shaped_equity)
+        projected_drawdown = projected_shaped_equity / projected_peak - 1.0 if projected_peak else 0.0
         drawdown_cost = abs(min(0.0, projected_drawdown)) * self.drawdown_penalty
         reward = reward_before_drawdown - drawdown_cost
-        self.equity *= 1.0 + reward
-        self.peak_equity = max(self.peak_equity, self.equity)
-        self.current_drawdown = self.equity / self.peak_equity - 1.0 if self.peak_equity else 0.0
+        # equity compounds pure NAV (net_return_after_cost only, no shaping penalties) so the
+        # plotted curve can rise even while the (unchanged) reward signal is penalized.
+        # shaped_equity keeps compounding the full reward for diagnostics/drawdown tracking.
+        self.equity *= 1.0 + net_return_after_cost
+        self.shaped_equity *= 1.0 + reward
+        self.peak_equity = max(self.peak_equity, self.shaped_equity)
+        self.current_drawdown = self.shaped_equity / self.peak_equity - 1.0 if self.peak_equity else 0.0
         date = self.dates[self.index]
         self.index += 1
         self.steps += 1
@@ -399,6 +407,7 @@ class DailyPortfolioEnv:
             "reward_before_drawdown_penalty": reward_before_drawdown,
             "reward": reward,
             "equity": self.equity,
+            "shaped_equity": self.shaped_equity,
             "action_mask": _action_mask_payload(mask),
             "action_mask_reasons": {name: str(value["reason"]) for name, value in details.items()},
             "fill_assumption": self.fill_assumption,

@@ -12,7 +12,7 @@ export const systemStatus: Writable<SystemResponse | null> = writable(null);
 
 // 사용자 설정 — refresh 주기, 활성 탭, 사이드바 collapse 상태
 export const refreshSeconds: Writable<number> = writable(5);
-export const activeTab: Writable<string> = writable('live-training');
+export const activeTab: Writable<string> = writable('mission-control');
 export const sidebarCollapsed: Writable<boolean> = writable(false);
 export const sidebarMobileOpen: Writable<boolean> = writable(false);
 

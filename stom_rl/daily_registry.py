@@ -648,14 +648,25 @@ def write_registry_artifacts(
         "drawdown": out_dir / "drawdown.csv",
         "decision_log": out_dir / "decision_log.jsonl",
     }
-    manifest = {**result["manifest"], "run_id": rid, "artifact_dir": str(out_dir), "artifacts": {key: str(path) for key, path in paths.items()}}
-    _write_json(paths["registry_manifest"], manifest)
     _write_json(paths["candidate_registry"], result["candidate_registry"])
     _write_csv(paths["paper_selected"], result["paper_selected"], ["date", "code", "rank", "paper_weight", "paper_only_selected", "selection_status", "strategy", "reason"])
     _write_csv(paths["realized_returns"], result["realized_returns"], ["date", "split", "paper_nav", "realized_return", "policy_reward", "current_drawdown", "evidence_status", "numeric_error", "source"])
     _write_csv(paths["drift"], result["drift"], ["metric", "value", "reference", "status", "action"])
     _write_csv(paths["drawdown"], result["drawdown"], ["date", "split", "paper_nav", "paper_forward_drawdown", "computed_drawdown", "evidence_status", "numeric_error", "source"])
     _write_jsonl(paths["decision_log"], result["decision_log"])
+    hash_keys = tuple(key for key in paths if key != "registry_manifest")
+    artifact_hashes = {key: _sha256_file(paths[key]) for key in hash_keys}
+    if any(value is None for value in artifact_hashes.values()):
+        raise OSError("Failed to hash a required daily registry artifact")
+    manifest = {
+        **result["manifest"],
+        "run_id": rid,
+        "artifact_dir": str(out_dir),
+        "artifacts": {key: str(path) for key, path in paths.items()},
+        "artifact_hashes": artifact_hashes,
+        "artifact_sizes_bytes": {key: paths[key].stat().st_size for key in hash_keys},
+    }
+    _write_json(paths["registry_manifest"], manifest)
     return {"run_id": rid, "artifact_dir": str(out_dir), **{f"{key}_path": str(path) for key, path in paths.items()}}
 
 

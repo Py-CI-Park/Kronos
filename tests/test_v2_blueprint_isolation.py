@@ -58,10 +58,12 @@ def test_versioned_dashboard_urls_redirect_to_canonical_routes():
         assert resp.status_code == 301
         assert _location_path(resp.headers.get("Location")) == "/"
 
+    # Consolidation A: legacy RL bookmarks canonicalize to the Svelte RL tab.
     for path in ("/rl-lab", "/v2/rl-trading", "/v2/rl-lab"):
         resp = client.get(path, follow_redirects=False)
         assert resp.status_code == 301
-        assert _location_path(resp.headers.get("Location")) == "/rl"
+        parsed = urlparse(resp.headers.get("Location"))
+        assert f"{parsed.path or '/'}?{parsed.query}" == "/?tab=rl"
 
 
 def test_api_routes_unchanged():

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { marked } from 'marked';
+  import DOMPurify from 'dompurify';
   import { fmt } from '$lib/format';
   import { ICONS } from '$lib/icons';
   import { activeTab } from '$lib/stores';
@@ -100,14 +101,19 @@
     let html = marked.parse(content) as string;
     // 마크다운 내부의 [텍스트](XX-slug) 링크를 data-doc-slug 로 변환 (외부 URL 제외)
     html = html.replace(/<a href="([^"]+)">/g, (match, href) => {
-      if (href.startsWith('http') || href.startsWith('/') || href.startsWith('#')) {
+      // Any protocol-bearing (contains ':') or absolute/anchor href is left as-is
+      // for DOMPurify to sanitize (strips javascript:/data: etc.); only a bare
+      // relative doc slug becomes an internal navigation link.
+      if (href.includes(':') || href.startsWith('http') || href.startsWith('/') || href.startsWith('#')) {
         return match;
       }
       // 마크다운 내부 링크 (예: 00-index, 01-overview.md)
       const slug = href.replace(/\.md$/, '');
       return `<a href="#" data-doc-slug="${slug}" class="docs-internal-link">`;
     });
-    return html;
+    // Defense-in-depth: sanitize the marked() HTML before {@html} injection.
+    // Docs are local trusted markdown, but never inject unsanitized HTML.
+    return DOMPurify.sanitize(html, { ADD_ATTR: ['data-doc-slug'] });
   });
 
   // 내부 링크 클릭 → loadDoc 호출
@@ -119,6 +125,15 @@
       const slug = link.dataset.docSlug;
       if (slug) loadDoc(slug);
     }
+  }
+
+  function internalLinkNavigation(node: HTMLElement) {
+    node.addEventListener('click', handleContentClick);
+    return {
+      destroy() {
+        node.removeEventListener('click', handleContentClick);
+      },
+    };
   }
 
   let currentDoc = $derived(docs.find((d) => d.slug === selectedSlug));
@@ -192,7 +207,7 @@
           </span>
         {/if}
       </div>
-      <article class="markdown-body" role="article" onclick={handleContentClick}>
+      <article class="markdown-body" use:internalLinkNavigation>
         {@html renderedHtml}
       </article>
     {/if}
@@ -207,6 +222,7 @@
     grid-template-columns: 260px minmax(0, 1fr);
     gap: 16px;
     align-items: start;
+    min-width: 0;
   }
   @media (max-width: 900px) {
     .docs-layout { grid-template-columns: 1fr; }
@@ -221,6 +237,7 @@
     padding: 12px 8px;
     max-height: calc(100vh - 120px);
     overflow-y: auto;
+    min-width: 0;
   }
   @media (max-width: 900px) {
     .docs-nav { position: static; max-height: none; }
@@ -274,6 +291,7 @@
 
   .docs-content {
     padding: 24px 32px 48px;
+    min-width: 0;
   }
   @media (max-width: 640px) {
     .docs-content { padding: 16px 16px 32px; }
@@ -294,6 +312,9 @@
     color: var(--fg);
     line-height: 1.7;
     font-size: 14.5px;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
   }
   .markdown-body :global(h1) {
     font: 700 30px/1.25 var(--font-display);
@@ -388,6 +409,8 @@
     padding: 8px 12px;
     border-bottom: 1px solid var(--border-faint);
     text-align: left;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .markdown-body :global(th) {
     background: var(--surface-sunken);

@@ -1,355 +1,440 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { KeyboardEvent } from 'react';
+import type { ApiState, AuditPayload, DrilldownPayload, EvidenceArtifact, EvidencePayload, StatusLock, StatusPayload, WorkflowPayload } from './tradingTypes';
+import { FALLBACK_AUDIT, FALLBACK_DRILLDOWN, FALLBACK_EVIDENCE, FALLBACK_STATUS, FALLBACK_WORKFLOW, loadCommandSummaries } from './tradingApi';
+import {
+  CARD_COPY,
+  EXPERIMENT_PRESETS,
+  GLOSSARY,
+  LOCK_COPY,
+  REQUIRED_CARD_ORDER,
+  STATUS_LOCK_ORDER,
+  STAGE_COPY,
+  compactCardValue,
+  splitSymbols,
+  statusLabel,
+  statusTone,
+} from './tradingFormat';
+import {
+  EvidenceSourceStrip,
+  EvidenceDecisionNote,
+  ResearchChart,
+  baselineChartOption,
+  chartEmptyState,
+  controlsChartOption,
+  drawdownChartOption,
+  evidenceChartOption,
+  freshnessChartOption,
+  tradeTurnoverChartOption,
+} from './components/ResearchCharts';
+import { WorkflowGraph } from './components/WorkflowGraph';
+import { ArtifactManifestTable, AuditTimelineTable, RunComparisonTable } from './components/EvidenceTables';
+import { ArtifactDrilldowns } from './components/ArtifactDrilldowns';
+import { IntentHistory } from './components/IntentHistory';
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+const DASHBOARD_VIEWS = [
+  { id: 'home', label: '연구 홈', hint: 'NO-GO 판정', panelId: 'dashboard-panel-home' },
+  { id: 'setup', label: '실험 설정', hint: '연구 전용', panelId: 'dashboard-panel-setup' },
+  { id: 'queue', label: '연구 큐', hint: '의도 기록', panelId: 'dashboard-panel-queue' },
+  { id: 'compare', label: '결과 비교', hint: '차트', panelId: 'dashboard-panel-compare' },
+  { id: 'evidence', label: '증거 감사', hint: '증거 묶음', panelId: 'dashboard-panel-evidence' },
+  { id: 'guide', label: '사용 가이드', hint: '잠금 유지', panelId: 'dashboard-panel-guide' },
+] as const;
 
-type CommandCard = {
-  id: string;
-  title: string;
-  value: JsonValue;
-  status: string;
-  label: string;
-};
+type DashboardViewId = typeof DASHBOARD_VIEWS[number]['id'];
 
-type StatusLock = {
-  locked: boolean;
-  status: string;
-  label: string;
-};
+function isDashboardViewId(value: string | null): value is DashboardViewId {
+  return DASHBOARD_VIEWS.some((view) => view.id === value);
+}
 
-type StatusPayload = {
-  api_status: string;
-  mode: string;
-  labels: string[];
-  cost_assumption_bps: number;
-  claim_locks: Record<string, boolean>;
-  status_locks: Record<string, StatusLock>;
-  controls: {
-    research_intent_record_allowed: boolean;
-    unsafe_trading_controls_allowed: boolean;
-    job_post_endpoint: string;
-    allowed_workflows: string[];
-  };
-  first_viewport: {
-    sections: string[];
-    cards: CommandCard[];
-  };
-  evidence_health: Record<string, { present: boolean; status: string; fields: string[] }>;
-};
-
-type WorkflowStep = {
-  step: string;
-  name: string;
-  status: string;
-  allowed: boolean;
-};
-
-type WorkflowPayload = {
-  workflow_id: string;
-  status: string;
-  labels: string[];
-  process_map: WorkflowStep[];
-  forbidden_work: string[];
-};
-
-type AuditPayload = {
-  status: string;
-  labels: string[];
-  run_id: string;
-  events: Array<{ event: string; status: string; details?: string; workflow?: string; job_id?: string }>;
-};
-
-type ApiState<T> = {
-  data: T;
-  failedClosed: boolean;
-};
-
-type ExperimentPreset = {
-  id: string;
-  nameKo: string;
-  nameEn: string;
-  description: string;
-  status: string;
-  safeAction: string;
-};
-
-const FALLBACK_STATUS: StatusPayload = {
-  api_status: 'API_UNAVAILABLE',
-  mode: 'RESEARCH_ONLY',
-  labels: ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
-  cost_assumption_bps: 23,
-  claim_locks: {
-    live: false,
-    broker: false,
-    order: false,
-    account: false,
-    paper: false,
-    model: false,
-    profit: false,
-  },
-  status_locks: {
-    live: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO live trading disabled' },
-    broker: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO broker disabled' },
-    order: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO order routing disabled' },
-    account: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO account access disabled' },
-    paper: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO paper trading disabled' },
-    model: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO model build disabled' },
-    profit: { locked: false, status: 'API_UNAVAILABLE', label: 'NO-GO profit readiness disabled' },
-  },
-  controls: {
-    research_intent_record_allowed: false,
-    unsafe_trading_controls_allowed: false,
-    job_post_endpoint: '/api/trading-command/jobs',
-    allowed_workflows: ['record_research_intent'],
-  },
-  first_viewport: {
-    sections: ['status_locks', 'workflow_process_map', 'kpi_cards'],
-    cards: [
-      { id: 'selected_run_verdict', title: 'Selected run verdict', value: 'NO-GO', status: 'NO_GO', label: 'NO-GO / RESEARCH_ONLY' },
-      { id: 'cost_baseline_delta_23bp', title: '23bp cost/baseline delta', value: null, status: 'API_UNAVAILABLE', label: '23bp vs ts_imb RULE baseline' },
-      { id: 'drawdown', title: 'Drawdown', value: null, status: 'API_UNAVAILABLE', label: 'Fail-closed drawdown' },
-      { id: 'trade_count_turnover', title: 'Trade count/turnover', value: { trade_count: 0, turnover: null }, status: 'API_UNAVAILABLE', label: 'Fail-closed turnover' },
-      { id: 'job_progress', title: 'Job progress', value: { active_job_count: 0, recorded_intent_count: 0, latest_status: 'NOT_STARTED' }, status: 'NOT_STARTED', label: 'Research intent only' },
-      { id: 'd0_d9_gate_status', title: 'D0-D9 gate status', value: 'NO-GO', status: 'NO_GO', label: 'D0-D9 gate remains NO-GO' },
-    ],
-  },
-  evidence_health: {
-    missing: { present: true, status: 'MISSING', fields: ['backend_status'] },
-    stale: { present: true, status: 'STALE', fields: [] },
-    malformed: { present: true, status: 'MALFORMED', fields: [] },
-    no_go: { present: true, status: 'NO_GO', fields: ['selected_run_verdict'] },
-  },
-};
-
-const FALLBACK_WORKFLOW: WorkflowPayload = {
-  workflow_id: 'trading_command_research_only_fallback',
-  status: 'NO-GO',
-  labels: ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
-  process_map: [
-    { step: 'D0', name: 'Backend unavailable', status: 'API_UNAVAILABLE', allowed: false },
-    { step: 'D9', name: 'Trading readiness', status: 'NO_GO', allowed: false },
-  ],
-  forbidden_work: ['live', 'broker', 'order', 'account', 'paper', 'model_build', 'profit_claim'],
-};
-
-const FALLBACK_AUDIT: AuditPayload = {
-  status: 'RESEARCH_ONLY_AUDIT',
-  labels: ['NO-GO', 'RESEARCH_ONLY', '23bp', 'ts_imb RULE baseline'],
-  run_id: 'unavailable',
-  events: [{ event: 'fail_closed_fallback_rendered', status: 'NO_GO', details: 'Flask audit API unavailable.' }],
-};
-
-const REQUIRED_CARD_ORDER = [
-  'selected_run_verdict',
-  'cost_baseline_delta_23bp',
-  'drawdown',
-  'trade_count_turnover',
-  'job_progress',
-  'd0_d9_gate_status',
-];
-
-const STATUS_LOCK_ORDER = ['live', 'broker', 'order', 'account', 'paper', 'model', 'profit'];
-
-const EXPERIMENT_PRESETS: ExperimentPreset[] = [
-  {
-    id: 'ts_imb_rule_baseline',
-    nameKo: 'ts_imb 룰 기준선',
-    nameEn: 'RULE baseline',
-    description: '현재 메인 기준선입니다. 강화학습 모델이 아니라 비교 기준입니다.',
-    status: 'MAINLINE_RULE',
-    safeAction: '증거 비교만 가능',
-  },
-  {
-    id: 'dqn_ppo_research_compare',
-    nameKo: 'DQN/PPO 연구 비교',
-    nameEn: 'RL experiment',
-    description: '실패/반증 포함 연구 산출물만 검토합니다. 수익성·실거래 판정이 아닙니다.',
-    status: 'RESEARCH_ONLY',
-    safeAction: '연구 의도 기록',
-  },
-  {
-    id: 'orderbook_falsification',
-    nameKo: '호가창 RL 반증 실험',
-    nameEn: 'Orderbook falsification',
-    description: 'market_buy/market_exit 같은 행동 설계를 확인하는 격리 실험입니다.',
-    status: 'NO_GO_REVIEW',
-    safeAction: '결과 시각화 검토',
-  },
-];
-
-const CARD_COPY: Record<string, { title: string; help: string }> = {
-  selected_run_verdict: { title: '선택 산출물 판정', help: 'GO/NO-GO와 연구 전용 여부를 먼저 확인합니다.' },
-  cost_baseline_delta_23bp: { title: '23bp 비용·기준선 차이', help: '23bp 비용과 ts_imb 룰 기준선 대비 차이를 봅니다.' },
-  drawdown: { title: '최대 낙폭', help: '신선한 drawdown 증거가 없으면 통과하지 않습니다.' },
-  trade_count_turnover: { title: '거래 수·회전율', help: '표본 수와 과도한 회전율을 같이 봅니다.' },
-  job_progress: { title: '연구 의도 진행', help: '이 화면에서는 연구 의도만 기록하고 실제 주문/학습 실행은 열지 않습니다.' },
-  d0_d9_gate_status: { title: 'D0-D9 증거 게이트', help: '데이터부터 최종 연구 검토까지 빠진 증거를 확인합니다.' },
-};
-
-const SECTION_COPY: Record<string, string> = {
-  status: '상태 잠금',
-  workflow: '연구 흐름',
-  evidence: '증거 검토',
-  'daily-gates': '일봉 게이트',
-};
-
-const LOCK_COPY: Record<string, string> = {
-  live: '실거래',
-  broker: '브로커 연결',
-  order: '주문 전송',
-  account: '계좌 접근',
-  paper: '페이퍼 트레이딩',
-  model: '모델 빌드',
-  profit: '수익 준비 판정',
-};
-
-const STAGE_COPY: Record<string, string> = {
-  D0: '데이터·증거 발견',
-  D1: '룰 기준선 비교',
-  D2: '23bp 비용 게이트',
-  D3: '낙폭 검토',
-  D4: '거래 수·회전율',
-  D5: '음성/셔플 통제',
-  D6: 'OOS 분리 검토',
-  D7: '감사 증거 묶음',
-  D8: '사람 연구 검토',
-  D9: '거래 준비 판정',
-};
-
-async function fetchJson<T>(path: string, fallback: T): Promise<ApiState<T>> {
-  try {
-    const response = await fetch(path, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`${path} returned ${response.status}`);
-    return { data: (await response.json()) as T, failedClosed: false };
-  } catch {
-    return { data: fallback, failedClosed: true };
+function evidenceStatusCounts(evidence: EvidencePayload): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const artifact of evidence.artifacts.length ? evidence.artifacts : FALLBACK_EVIDENCE.artifacts) {
+    counts[artifact.status] = (counts[artifact.status] ?? 0) + 1;
   }
+  return counts;
 }
 
-function stringifyValue(value: JsonValue): string {
-  if (value == null || value === '') return '—';
-  if (Array.isArray(value)) return value.map(stringifyValue).join(', ');
-  if (typeof value === 'object') {
-    return Object.entries(value)
-      .map(([key, item]) => `${key}: ${stringifyValue(item)}`)
-      .join(' · ');
-  }
-  return String(value);
+function ViewPurposeCard({ eyebrow, title, body, checks }: { eyebrow: string; title: string; body: string; checks: string[] }) {
+  return (
+    <section className="view-purpose-card" aria-label={`${title} 화면 목적`}>
+      <p className="eyebrow">{eyebrow}</p>
+      <h2>{title}</h2>
+      <p>{body}</p>
+      <div>
+        {checks.map((check) => <span key={check}>{check}</span>)}
+      </div>
+    </section>
+  );
 }
 
-function statusLabel(status: string): string {
-  const normalized = status.toUpperCase();
-  if (normalized === 'API_UNAVAILABLE') return 'API 미연결(안전 잠금)';
-  if (normalized === 'NO_GO') return 'NO-GO';
-  if (normalized === 'NOT_STARTED') return '대기';
-  if (normalized === 'STALE') return '오래됨';
-  if (normalized === 'MISSING') return '증거 없음';
-  if (normalized === 'MALFORMED') return '형식 문제';
-  if (normalized === 'RECORDED_RESEARCH_INTENT') return '연구 의도 기록됨';
-  return status.replaceAll('_', ' ');
+function HomeDecisionPanel({ status, evidence, workflow }: { status: StatusPayload; evidence: EvidencePayload; workflow: WorkflowPayload }) {
+  const counts = evidenceStatusCounts(evidence);
+  const finalGate = workflow.process_map.find((stage) => stage.step === 'D9');
+  const missingLike = (counts.MISSING ?? 0) + (counts.NO_GO ?? 0) + (counts.MALFORMED ?? 0) + (counts.STALE ?? 0);
+  return (
+    <section className="home-decision-grid" aria-label="연구 홈 핵심 판단">
+      <article className="decision-tile danger">
+        <span>현재 판정</span>
+        <strong>NO-GO</strong>
+        <p>{status.mode} · 실거래/브로커/주문/계좌/페이퍼/모델 빌드/수익 주장은 열리지 않습니다.</p>
+      </article>
+      <article className="decision-tile">
+        <span>비교 기준</span>
+        <strong>ts_imb RULE baseline</strong>
+        <p>강화학습 정책이 아니라 23bp 비용 가정으로 비교하는 규칙 기준선입니다.</p>
+      </article>
+      <article className="decision-tile warn">
+        <span>증거 부족</span>
+        <strong>{missingLike}개 점검</strong>
+        <p>missing/stale/malformed/no-go 증거는 결과 비교와 증거 감사 화면에서 원인만 보여줍니다.</p>
+      </article>
+      <article className="decision-tile danger">
+        <span>D9 게이트</span>
+        <strong>{statusLabel(finalGate?.status ?? 'NO_GO')}</strong>
+        <p>{finalGate?.blocker_reason ?? '최종 연구 검토가 끝날 때까지 배포·실거래는 금지됩니다.'}</p>
+      </article>
+    </section>
+  );
 }
 
-function compactCardValue(card: CommandCard): string {
-  if (card.id === 'job_progress' && card.value && typeof card.value === 'object' && !Array.isArray(card.value)) {
-    const value = card.value as Record<string, JsonValue>;
-    return `진행 ${stringifyValue(value.active_job_count)} · 기록 ${stringifyValue(value.recorded_intent_count)} · ${statusLabel(stringifyValue(value.latest_status))}`;
-  }
-  if (card.id === 'trade_count_turnover' && card.value && typeof card.value === 'object' && !Array.isArray(card.value)) {
-    const value = card.value as Record<string, JsonValue>;
-    return `거래 ${stringifyValue(value.trade_count)} · 회전율 ${stringifyValue(value.turnover)}`;
-  }
-  return stringifyValue(card.value);
+function EvidenceHealthSummary({ evidence, workflow }: { evidence: EvidencePayload; workflow: WorkflowPayload }) {
+  const artifacts = evidence.artifacts.length ? evidence.artifacts : FALLBACK_EVIDENCE.artifacts;
+  const counts = evidenceStatusCounts(evidence);
+  const finalBlocker = workflow.process_map.find((stage) => stage.step === 'D9')?.blocker_reason ?? artifacts[0]?.blocker_reason ?? '최종 차단 사유 없음';
+  return (
+    <section className="evidence-summary-grid" aria-label="증거 감사 요약">
+      {[
+        ['FRESH', counts.FRESH ?? 0, '검증된 backend-owned 증거'],
+        ['MISSING', counts.MISSING ?? 0, '누락되어 NO-GO 원인이 되는 증거'],
+        ['MALFORMED', counts.MALFORMED ?? 0, 'schema/hash/path 형식 문제'],
+        ['STALE', counts.STALE ?? 0, '오래되어 신선한 비교로 쓰지 않는 증거'],
+      ].map(([label, value, help]) => (
+        <article key={String(label)} className="evidence-summary-card" data-status={String(label).toLowerCase()}>
+          <span>{label}</span>
+          <strong>{value}</strong>
+          <p>{help}</p>
+        </article>
+      ))}
+      <article className="evidence-summary-card blocker">
+        <span>최종 blocker</span>
+        <strong>NO-GO 유지</strong>
+        <p>{finalBlocker}</p>
+      </article>
+    </section>
+  );
 }
 
-function statusTone(status: string): string {
-  const normalized = status.toUpperCase();
-  if (normalized.includes('NO') || normalized.includes('MISSING') || normalized.includes('MALFORMED') || normalized.includes('UNAVAILABLE')) return 'danger';
-  if (normalized.includes('STALE') || normalized.includes('NOT_STARTED')) return 'warn';
-  return 'research';
+function GuideDecisionManual() {
+  return (
+    <section className="guide-manual-grid" aria-label="사용 가이드 핵심 판정 기준">
+      {[
+        ['ts_imb', 'RULE baseline', '강화학습 모델이 아니라 시계열 불균형 규칙 기준선입니다.'],
+        ['23bp', '비용 가정', '기본 왕복 비용이며 낮춰 잡지 않습니다.'],
+        ['API_UNAVAILABLE', '안전 API lock', '장애가 아니라 실거래·주문·계좌·수익 경로를 열지 않는 안전 잠금입니다.'],
+        ['NO-GO', '연구 전용 판정', 'OOS/비용/낙폭/통제 증거가 부족하면 실험은 연구 증거 검토로만 남습니다.'],
+        ['000250', '문자열 종목 코드', '선행 0은 숫자로 변환하지 않고 그대로 보존합니다.'],
+        ['금지 주장', 'readiness 차단', 'live/broker/order/account/paper/model-build/profit 준비·수익성 주장은 표시하지 않습니다.'],
+      ].map(([term, label, body]) => (
+        <article key={term}>
+          <span>{term}</span>
+          <strong>{label}</strong>
+          <p>{body}</p>
+        </article>
+      ))}
+    </section>
+  );
+}
+function SafetyLockPanel({ orderedLocks }: { orderedLocks: readonly (readonly [string, StatusLock])[] }) {
+  return (
+    <article className="panel lock-panel">
+      <div className="panel-heading">
+        <p className="eyebrow">B · 안전 잠금</p>
+        <h2>거래·수익 경로는 모두 꺼짐</h2>
+      </div>
+      <div className="lock-head" aria-hidden="true">
+        <span>경로</span>
+        <span>잠금 상태</span>
+        <span>상세</span>
+      </div>
+      <div className="lock-list">
+        {orderedLocks.map(([key, lock]) => (
+          <div className="lock-row" data-tone={statusTone(lock.status)} key={key} title={lock.reason ?? lock.label}>
+            <span>{statusLabel(lock.status)}</span>
+            <strong>{`${LOCK_COPY[key] ?? key} 꺼짐`}</strong>
+            <small>{lock.label}</small>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
 }
 
-function evidenceScore(status: string): number {
-  const normalized = status.toUpperCase();
-  if (normalized.includes('NO')) return 18;
-  if (normalized.includes('MISSING')) return 24;
-  if (normalized.includes('MALFORMED')) return 30;
-  if (normalized.includes('STALE')) return 42;
-  return 68;
+function SetupPanel({
+  status,
+  selectedExperimentId,
+  symbolInput,
+  jobEnabled,
+  onExperimentChange,
+  onSymbolChange,
+  onRecordIntent,
+}: {
+  status: StatusPayload;
+  selectedExperimentId: string;
+  symbolInput: string;
+  jobEnabled: boolean;
+  onExperimentChange: (id: string) => void;
+  onSymbolChange: (symbols: string) => void;
+  onRecordIntent: () => void;
+}) {
+  const selectedExperiment = EXPERIMENT_PRESETS.find((preset) => preset.id === selectedExperimentId) ?? EXPERIMENT_PRESETS[0];
+  return (
+    <article className="panel setup-panel">
+      <div className="panel-heading">
+        <p className="eyebrow">A · 연구 설정</p>
+        <h2>실험 선택과 안전 세팅</h2>
+      </div>
+      <label htmlFor="experiment-preset">모델/실험 선택</label>
+      <select
+        id="experiment-preset"
+        value={selectedExperimentId}
+        onChange={(event) => onExperimentChange(event.target.value)}
+        aria-label="연구 모델 또는 실험 선택"
+        title="실행 버튼이 아니라 연구 의도와 비교 기준을 고르는 선택입니다."
+      >
+        {EXPERIMENT_PRESETS.map((preset) => (
+          <option key={preset.id} value={preset.id}>{preset.nameKo} · {preset.nameEn}</option>
+        ))}
+      </select>
+      <p className="copy-muted">{selectedExperiment.description}</p>
+      <div className="chip-row">
+        <span>{statusLabel(selectedExperiment.status)}</span>
+        <span>{selectedExperiment.safeAction}</span>
+      </div>
+      <div className="setup-fields">
+        <label htmlFor="symbol-input">종목 코드</label>
+        <input
+          id="symbol-input"
+          value={symbolInput}
+          onChange={(event) => onSymbolChange(event.target.value)}
+          aria-label="종목 코드 문자열 입력"
+          title="쉼표로 구분하며 000250처럼 선행 0을 유지합니다."
+        />
+        <small>쉼표로 구분합니다. 선행 0은 문자열로 유지합니다.</small>
+      </div>
+      <div className="setup-safe-explainer" aria-label="실험 설정 안전 설명">
+        <span>API_UNAVAILABLE = 안전 API lock</span>
+        <strong>설정은 연구 의도 기록만 바꾸며 실행·주문·브로커 경로를 열지 않습니다.</strong>
+        <p>선택값: {selectedExperiment.nameKo} · 종목 {symbolInput} · 비용 {status.cost_assumption_bps}bp · 기준선 ts_imb RULE baseline</p>
+      </div>
+      <div className="setting-pair">
+        <div><span>비용 가정</span><strong>{status.cost_assumption_bps}bp</strong></div>
+        <div><span>비교 기준</span><strong>ts_imb RULE baseline</strong></div>
+      </div>
+      <div className="control-row">
+        <button
+          type="button"
+          onClick={onRecordIntent}
+          disabled={!jobEnabled}
+          aria-label="선택한 연구 의도를 안전 큐에 기록"
+          title="허용된 workflow만 연구 의도로 기록하며 실제 학습·주문은 실행하지 않습니다."
+        >
+          선택한 연구 의도 기록
+        </button>
+        <button
+          type="button"
+          disabled
+          aria-label="실제 학습 실행은 안전 잠금"
+          title="이 대시보드는 연구 증거 검토 전용이므로 실제 학습 실행 버튼을 열지 않습니다."
+        >
+          실제 학습 실행 잠금
+        </button>
+      </div>
+      <p className="danger-note">이 버튼은 연구 의도만 기록하며 주문·브로커·수익 경로를 열지 않습니다.</p>
+    </article>
+  );
 }
 
-function splitSymbols(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((symbol) => symbol.trim())
-    .filter(Boolean);
-}
-
-async function loadCommandSummaries(): Promise<[
-  ApiState<StatusPayload>,
-  ApiState<WorkflowPayload>,
-  ApiState<AuditPayload>,
-]> {
-  return Promise.all([
-    fetchJson('/api/trading-command/status', FALLBACK_STATUS),
-    fetchJson('/api/trading-command/workflow', FALLBACK_WORKFLOW),
-    fetchJson('/api/trading-command/audit', FALLBACK_AUDIT),
-  ]);
+function WorkflowPanel({ workflow, evidence, processProgress, artifactsByStage }: {
+  workflow: WorkflowPayload;
+  evidence: EvidencePayload;
+  processProgress: number;
+  artifactsByStage: Map<string, EvidenceArtifact>;
+}) {
+  return (
+    <article className="panel workflow-panel" id="section-2">
+      <div className="panel-heading with-progress">
+        <div>
+          <p className="eyebrow">C · D0-D9 evidence workflow</p>
+          <h2>D0-D9 증거 경로</h2>
+        </div>
+        <strong>{processProgress}%</strong>
+      </div>
+      <div className="progress-meter" aria-label={`D0-D9 연구 검토 가능 단계 비율 ${processProgress}%`}><span style={{ width: `${Math.max(processProgress, 3)}%` }} /></div>
+      <div className="workflow-legend" aria-label="D0-D9 상태 범례">
+        <span data-tone="success">통과/검토 가능</span>
+        <span data-tone="warn">점검 필요</span>
+        <span data-tone="danger">누락/NO-GO</span>
+        <span data-tone="lock">실거래 금지</span>
+      </div>
+      <div className="workflow-nodes">
+        {workflow.process_map.map((stage, index) => {
+          const artifact = artifactsByStage.get(stage.step);
+          const artifactHash = artifact?.hash ?? 'hash 없음';
+          const artifactFreshness = artifact ? `${statusLabel(artifact.freshness)} / ${statusLabel(artifact.schema_status)}` : '증거 없음';
+          const artifactBlocker = artifact?.blocker_reason ?? stage.blocker_reason ?? '차단 사유 없음';
+          return (
+            <article className="workflow-node" data-tone={statusTone(stage.status)} data-final={stage.step === 'D9'} key={stage.step} title={artifactBlocker}>
+              <span>{stage.step}</span>
+              <strong>{STAGE_COPY[stage.step] ?? stage.name}</strong>
+              <small>{statusLabel(stage.status)}</small>
+              {stage.artifact_refs?.[0] && <em>{stage.artifact_refs[0]}</em>}
+              {index < workflow.process_map.length - 1 && <i aria-hidden="true" />}
+              <b>{artifactHash}</b>
+              <b>{artifactFreshness}</b>
+            </article>
+          );
+        })}
+      </div>
+      <WorkflowGraph steps={workflow.process_map} />
+      <p className="workflow-note">금지된 작업: {workflow.forbidden_work.join(' · ')}</p>
+      <EvidenceSourceStrip evidence={evidence} />
+    </article>
+  );
 }
 
 export default function TradingCommandCenter() {
   const [statusState, setStatusState] = useState<ApiState<StatusPayload>>({ data: FALLBACK_STATUS, failedClosed: true });
   const [workflowState, setWorkflowState] = useState<ApiState<WorkflowPayload>>({ data: FALLBACK_WORKFLOW, failedClosed: true });
   const [auditState, setAuditState] = useState<ApiState<AuditPayload>>({ data: FALLBACK_AUDIT, failedClosed: true });
+  const [evidenceState, setEvidenceState] = useState<ApiState<EvidencePayload>>({ data: FALLBACK_EVIDENCE, failedClosed: true });
+  const [drilldownState, setDrilldownState] = useState<ApiState<DrilldownPayload>>({ data: FALLBACK_DRILLDOWN, failedClosed: true });
   const [jobMessage, setJobMessage] = useState('아직 이 화면에서 기록한 연구 의도가 없습니다.');
-  const [requestedSection, setRequestedSection] = useState('status');
   const [selectedExperimentId, setSelectedExperimentId] = useState(EXPERIMENT_PRESETS[0].id);
   const [symbolInput, setSymbolInput] = useState('000250,005930,035420');
+  const [activeView, setActiveView] = useState<DashboardViewId>('home');
 
   useEffect(() => {
     let active = true;
-    loadCommandSummaries().then(([status, workflow, audit]) => {
-      if (typeof window !== 'undefined') {
-        setRequestedSection(new URLSearchParams(window.location.search).get('section') ?? 'status');
-      }
+    loadCommandSummaries().then(([status, workflow, audit, evidence, drilldown]) => {
       if (!active) return;
       setStatusState(status);
       setWorkflowState(workflow);
       setAuditState(audit);
+      setEvidenceState(evidence);
+      setDrilldownState(drilldown);
     });
     return () => {
       active = false;
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const applyUrlView = () => {
+      const urlView = new URL(window.location.href).searchParams.get('view');
+      setActiveView(isDashboardViewId(urlView) ? urlView : 'home');
+    };
+
+    applyUrlView();
+    window.addEventListener('popstate', applyUrlView);
+    return () => window.removeEventListener('popstate', applyUrlView);
+  }, []);
+
   const status = statusState.data;
   const workflow = workflowState.data;
   const audit = auditState.data;
+  const evidence = evidenceState.data;
+  const drilldown = drilldownState.data;
   const selectedExperiment = EXPERIMENT_PRESETS.find((preset) => preset.id === selectedExperimentId) ?? EXPERIMENT_PRESETS[0];
   const selectedSymbols = splitSymbols(symbolInput);
   const cards = useMemo(() => {
     const byId = new Map(status.first_viewport.cards.map((card) => [card.id, card]));
     return REQUIRED_CARD_ORDER.map((id) => byId.get(id) ?? FALLBACK_STATUS.first_viewport.cards.find((card) => card.id === id)!);
   }, [status.first_viewport.cards]);
-  const fetchBanner = statusState.failedClosed || workflowState.failedClosed || auditState.failedClosed
+  const fetchBanner = statusState.failedClosed || workflowState.failedClosed || auditState.failedClosed || evidenceState.failedClosed || drilldownState.failedClosed
     ? '백엔드 요약 중 하나가 닫힘 우선(fail-closed)으로 표시되었습니다. API 미연결은 오류가 아니라 안전 잠금입니다.'
     : 'Flask 백엔드 상태·워크플로우·감사 요약을 불러왔습니다.';
   const canRecordResearchIntent = Boolean(status.controls?.research_intent_record_allowed);
-  const controlsDisabled = !canRecordResearchIntent;
+  const allowedWorkflowLabel = status.queue_summary?.allowed_workflows?.join(', ') || status.controls?.allowed_workflows?.join(', ') || 'record_research_intent';
   const orderedLocks = STATUS_LOCK_ORDER
     .map((key) => [key, status.status_locks[key]] as const)
     .filter((entry): entry is readonly [string, StatusLock] => Boolean(entry[1]));
-  const processProgress = Math.round((workflow.process_map.filter((stage) => stage.allowed).length / Math.max(workflow.process_map.length, 1)) * 100);
+  const processProgress = Math.round((workflow.process_map.filter((stage) => stage.review_allowed ?? stage.allowed).length / Math.max(workflow.process_map.length, 1)) * 100);
+  const artifactsByStage = useMemo(() => {
+    const mapped = new Map<string, EvidenceArtifact>();
+    for (const artifact of evidence.artifacts.length ? evidence.artifacts : FALLBACK_EVIDENCE.artifacts) {
+      if (!mapped.has(artifact.source_stage)) mapped.set(artifact.source_stage, artifact);
+    }
+    return mapped;
+  }, [evidence.artifacts]);
+
+  function selectDashboardView(viewId: DashboardViewId): void {
+    setActiveView(viewId);
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (viewId === 'home') url.searchParams.delete('view');
+    else url.searchParams.set('view', viewId);
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function focusDashboardTab(viewId: DashboardViewId): void {
+    if (typeof window === 'undefined') return;
+    window.setTimeout(() => document.getElementById(`dashboard-tab-${viewId}`)?.focus(), 0);
+  }
+
+  function selectDashboardViewByIndex(index: number): void {
+    const next = DASHBOARD_VIEWS[(index + DASHBOARD_VIEWS.length) % DASHBOARD_VIEWS.length];
+    selectDashboardView(next.id);
+    focusDashboardTab(next.id);
+  }
+
+  function handleDashboardTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number): void {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      selectDashboardViewByIndex(index + 1);
+    } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+      event.preventDefault();
+      selectDashboardViewByIndex(index - 1);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      selectDashboardViewByIndex(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      selectDashboardViewByIndex(DASHBOARD_VIEWS.length - 1);
+    }
+  }
+
+  function showView(...viewIds: DashboardViewId[]): boolean {
+    return activeView === 'home' || viewIds.includes(activeView);
+  }
+  const primaryAuditArtifact = evidence.artifacts[0] ?? FALLBACK_EVIDENCE.artifacts[0];
 
   async function refreshSummaries(): Promise<void> {
-    const [nextStatus, nextWorkflow, nextAudit] = await loadCommandSummaries();
+    const [nextStatus, nextWorkflow, nextAudit, nextEvidence, nextDrilldown] = await loadCommandSummaries();
     setStatusState(nextStatus);
     setWorkflowState(nextWorkflow);
     setAuditState(nextAudit);
+    setEvidenceState(nextEvidence);
+    setDrilldownState(nextDrilldown);
+  }
+
+  function koreanRejectReason(message: string): string {
+    if (message.includes('path traversal')) return '경로 이동/절대 경로 요청은 차단됐습니다.';
+    if (message.includes('symbols must be strings')) return '종목 코드는 선행 0 보존을 위해 문자열만 허용됩니다.';
+    if (message.includes('unsafe research command token')) return '실거래·주문·계좌·수익 주장이나 준비 상태 표현은 연구 큐에서 차단됐습니다.';
+    if (message.includes('not allowlisted')) return '허용된 연구 workflow가 아니어서 차단됐습니다.';
+    return message || '알 수 없는 오류';
   }
 
   async function recordResearchIntent(): Promise<void> {
-    if (!canRecordResearchIntent) return;
+    if (!canRecordResearchIntent || !status.controls?.job_post_endpoint) {
+      setJobMessage('연구 의도 기록 API가 안전 잠금 상태입니다. 실제 학습·주문 실행은 열지 않습니다.');
+      return;
+    }
     setJobMessage('연구 의도를 기록하는 중입니다. 실제 학습·주문 실행은 열지 않습니다.');
     try {
       const response = await fetch(status.controls.job_post_endpoint, {
@@ -372,187 +457,308 @@ export default function TradingCommandCenter() {
       setJobMessage(`${statusLabel(payload.status ?? 'RECORDED_RESEARCH_INTENT')} · ${payload.job_id ?? 'job id 없음'}`);
       await refreshSummaries();
     } catch (error) {
-      setJobMessage(`연구 의도 기록 거부: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      setJobMessage(`연구 의도 기록 거부: ${error instanceof Error ? koreanRejectReason(error.message) : '알 수 없는 오류'}`);
     }
   }
 
   return (
-    <main className="command-shell" data-kronos-trading-command-center="true">
-      <section className="hero" aria-labelledby="page-title">
-        <div className="hero-copy">
-          <p className="eyebrow">Kronos Trading Command Center · 강화학습 연구 화면</p>
-          <h1 id="page-title">강화학습 연구 커맨드 센터</h1>
-          <p className="lede">모델 선택·세팅·증거 확인을 한 화면에서 합니다. 단, 이 화면은 연구 전용이라 실거래, 브로커, 주문, 계좌, 페이퍼, 모델 빌드, 수익 준비 경로를 열지 않습니다.</p>
-        </div>
-        <div className="verdict-pill tone-danger" aria-label="Selected run verdict">
-          <span>NO-GO</span>
-          <small>{status.mode}</small>
-        </div>
-      </section>
-
-      <section className="guardrail-strip" aria-label="Visible trading guardrails">
-        {status.labels.map((label) => <span key={label}>{label}</span>)}
-        <span>실거래 없음 · 브로커 없음 · 주문 없음 · 수익 주장 없음</span>
-      </section>
-      <section className="section-request" aria-label="Requested route section">
-        현재 섹션: <strong>{SECTION_COPY[requestedSection] ?? requestedSection}</strong>
-      </section>
-
-      <section className="research-console panel" aria-label="Korean RL research setup and progress">
-        <div className="panel-heading">
+    <main className="pixel-dashboard" data-kronos-trading-command-center="true" data-active-view={activeView}>
+      <aside className="side-rail" aria-label="Kronos 연구 대시보드 탐색">
+        <div className="brand-mark">
+          <span>K</span>
           <div>
-            <p className="eyebrow">RL research setup</p>
-            <h2>1) 실험을 고르고 2) 안전 세팅을 확인하고 3) 결과 증거를 봅니다</h2>
-          </div>
-          <span className="safe-badge">실행 잠금 · 연구 의도만 기록</span>
-        </div>
-        <div className="setup-grid">
-          <div className="setup-card setup-card-wide">
-            <label htmlFor="experiment-preset">모델/실험 선택</label>
-            <select id="experiment-preset" value={selectedExperimentId} onChange={(event) => setSelectedExperimentId(event.target.value)}>
-              {EXPERIMENT_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>{preset.nameKo} · {preset.nameEn}</option>
-              ))}
-            </select>
-            <p>{selectedExperiment.description}</p>
-            <div className="preset-meta">
-              <span>{statusLabel(selectedExperiment.status)}</span>
-              <span>{selectedExperiment.safeAction}</span>
-            </div>
-          </div>
-          <div className="setup-card">
-            <label htmlFor="symbol-input">종목 코드</label>
-            <input id="symbol-input" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} aria-describedby="symbol-help" />
-            <p id="symbol-help">쉼표로 구분합니다. 선행 0은 문자열로 유지합니다.</p>
-          </div>
-          <div className="setup-card locked-setting">
-            <span>비용 가정</span>
-            <strong>{status.cost_assumption_bps}bp</strong>
-            <p>기본 라운드트립 비용. 임의로 낮추지 않습니다.</p>
-          </div>
-          <div className="setup-card locked-setting">
-            <span>비교 기준</span>
-            <strong>ts_imb RULE baseline</strong>
-            <p>강화학습 모델이 아니라 룰 기준선입니다.</p>
+            <strong>Kronos</strong>
+            <small>research ops</small>
           </div>
         </div>
-        <div className="visual-flow" aria-label="Research workflow visual flow">
-          {['선택', '세팅', '의도 기록', '증거 수집', '차트 검토', 'NO-GO 판정'].map((step, index) => (
-            <div className="flow-step" key={step} data-active={index <= 2}>
+        <nav role="tablist" aria-label="대시보드 화면 탭" data-dashboard-view-tabs="true">
+          {DASHBOARD_VIEWS.map((view, index) => (
+            <button
+              type="button"
+              role="tab"
+              id={`dashboard-tab-${view.id}`}
+              aria-selected={activeView === view.id}
+              aria-controls={view.panelId}
+              data-active={activeView === view.id}
+              data-view={view.id}
+              tabIndex={activeView === view.id ? 0 : -1}
+              onClick={() => selectDashboardView(view.id)}
+              onKeyDown={(event) => handleDashboardTabKeyDown(event, index)}
+              key={view.id}
+            >
               <span>{String(index + 1).padStart(2, '0')}</span>
-              <strong>{step}</strong>
-            </div>
+              <strong>{view.label}</strong>
+              <small>{view.hint}</small>
+            </button>
           ))}
+        </nav>
+        <div className="source-card">
+          <span>design source</span>
+          <strong>pixel_svg_v4.zip</strong>
+          <small>원본 zip 백업 완료</small>
         </div>
-      </section>
+      </aside>
 
-      <section className="first-viewport" aria-label="Approved first viewport">
-        <section className="status-locks panel" aria-labelledby="status-locks-title">
-          <div className="panel-heading">
-            <p className="eyebrow">안전 잠금</p>
-            <h2 id="status-locks-title">거래·수익 관련 경로는 모두 꺼짐</h2>
+      <section className="main-stage">
+        <header className="command-header" id="section-0">
+          <div>
+            <p className="eyebrow">Kronos Trading Command Center · research-only evidence</p>
+            <h1>강화학습 연구 커맨드 센터</h1>
+            <p className="lede">연구 전용 증거 검토 화면입니다. 실거래, 브로커, 주문, 계좌, 페이퍼, 모델 빌드, 수익 주장 경로는 열리지 않습니다.</p>
           </div>
-          <div className="lock-list">
-            {orderedLocks.map(([key, lock]) => (
-              <article className="lock-row" data-tone={statusTone(lock.status)} key={key}>
-                <span className="lock-state" title={lock.status}>{statusLabel(lock.status)}</span>
-                <div>
-                  <strong>{`${LOCK_COPY[key] ?? key} 꺼짐`}</strong>
-                  <p>{lock.label.replace('NO-GO ', 'NO-GO · ')}</p>
-                </div>
-              </article>
-            ))}
+          <div className="status-orb">
+            <span>NO-GO</span>
+            <small>{status.mode}</small>
           </div>
+        </header>
+
+        <section className="badge-strip" aria-label="연구 전용 안전 가드레일">
+          {status.labels.map((label) => <span key={label}>{label}</span>)}
+          <span>실거래 없음</span>
+          <span>브로커 없음</span>
+          <span>주문 없음</span>
+          <span>수익 주장 없음</span>
         </section>
 
-        <section className="workflow-map panel" aria-labelledby="workflow-map-title">
-          <div className="panel-heading">
-            <p className="eyebrow">시각적 연구 흐름</p>
-            <h2 id="workflow-map-title">D0-D9 증거 경로</h2>
-          </div>
-          <div className="progress-meter" aria-label={`D0-D9 allowed progress ${processProgress}%`}>
-            <span style={{ width: `${Math.max(processProgress, 3)}%` }} />
-            <strong>{processProgress}%</strong>
-          </div>
-          <div className="stage-track">
-            {workflow.process_map.map((stage) => (
-              <article className="stage-node" data-allowed={stage.allowed} data-tone={statusTone(stage.status)} key={stage.step}>
-                <span>{stage.step}</span>
-                <strong>{STAGE_COPY[stage.step] ?? stage.name}</strong>
-                <small title={stage.status}>{statusLabel(stage.status)}</small>
-              </article>
-            ))}
-          </div>
-          <p className="workflow-note">금지된 작업: {workflow.forbidden_work.join(' · ')}</p>
+        <section
+          className="dashboard-view-intro"
+          id="dashboard-panel-home"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-home"
+          data-dashboard-view-panel="home"
+          hidden={activeView !== 'home'}
+        >
+          <strong>전체 연구 홈</strong>
+          <span>첫 화면은 NO-GO 안전 상태, 연구 설정, 증거 경로, KPI, 6개 증거 차트를 한 번에 보는 개요입니다.</span>
+        </section>
+        {activeView === 'home' && <HomeDecisionPanel status={status} evidence={evidence} workflow={workflow} />}
+
+        <section
+          className="topology-grid dashboard-view-panel"
+          id="dashboard-panel-setup"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-setup"
+          data-dashboard-view-panel="setup"
+          hidden={!showView('setup')}
+        >
+          {activeView === 'setup' && (
+            <ViewPurposeCard
+              eyebrow="Page 2 · setup"
+              title="실험 설정은 실행 버튼이 아니라 연구 의도와 비교 기준을 고르는 화면입니다"
+              body="API_UNAVAILABLE은 장애가 아니라 안전 잠금입니다. 선택값은 연구 의도 기록과 증거 비교 문맥에만 사용됩니다."
+              checks={['NO-GO 유지', '23bp 비용 가정', 'ts_imb RULE baseline', '000250 문자열 보존']}
+            />
+          )}
+          <SetupPanel
+            status={status}
+            selectedExperimentId={selectedExperimentId}
+            symbolInput={symbolInput}
+            jobEnabled={canRecordResearchIntent}
+            onExperimentChange={setSelectedExperimentId}
+            onSymbolChange={setSymbolInput}
+            onRecordIntent={() => void recordResearchIntent()}
+          />
+          <WorkflowPanel workflow={workflow} evidence={evidence} processProgress={processProgress} artifactsByStage={artifactsByStage} />
+          <SafetyLockPanel orderedLocks={orderedLocks} />
         </section>
 
-        <section className="kpi-grid" aria-label="Exactly six backend-owned KPI and chart cards">
+        <section
+          className="kpi-strip dashboard-view-panel"
+          aria-label="백엔드 소유 핵심 지표 카드 6개"
+          data-dashboard-view-panel="kpi"
+          hidden={!showView('compare')}
+        >
           {cards.map((card, index) => (
-            <article className="kpi-card" data-tone={statusTone(card.status)} key={card.id}>
-              <p className="card-index">{String(index + 1).padStart(2, '0')}</p>
+            <article className="kpi-card" data-tone={statusTone(card.status)} key={card.id} title={CARD_COPY[card.id]?.help ?? card.label}>
+              <span>{String(index + 1).padStart(2, '0')}</span>
               <h3>{CARD_COPY[card.id]?.title ?? card.title}</h3>
               <strong>{compactCardValue(card)}</strong>
               <p>{CARD_COPY[card.id]?.help ?? card.label}</p>
-              <small title={card.status}>{statusLabel(card.status)}</small>
+              <small>{statusLabel(card.status)}</small>
             </article>
           ))}
         </section>
-      </section>
 
-      <section className="below-viewport" aria-label="Evidence drilldowns and disabled controls">
-        <div className="job-controls panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">연구 의도 / 컨트롤</p>
-              <h2>버튼은 연구 기록용입니다. 학습·주문 실행 버튼이 아닙니다.</h2>
-            </div>
-            <span className="safe-badge">{selectedExperiment.nameKo}</span>
-          </div>
-          <p className="status-line">{fetchBanner}</p>
-          <div className="control-row" aria-disabled={controlsDisabled}>
-            <button type="button" onClick={() => void refreshSummaries()}>백엔드 상태 새로고침</button>
-            <button type="button" disabled>증거 묶음 열기</button>
-            <button type="button" disabled={!canRecordResearchIntent} onClick={() => void recordResearchIntent()}>선택한 연구 의도 기록</button>
-          </div>
-          <p className="disabled-note">{jobMessage} 이 UI는 live/broker/order/model/profit 경로를 열지 않습니다.</p>
-        </div>
-
-        <div className="chart-grid">
-          <section className="panel" aria-labelledby="evidence-chart-title">
+        <section
+          className="analytics-grid dashboard-view-panel"
+          id="dashboard-panel-compare"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-compare"
+          data-dashboard-view-panel="compare"
+          hidden={!showView('compare')}
+        >
+          {activeView === 'compare' && (
+            <ViewPurposeCard
+              eyebrow="Page 4 · comparison"
+              title="결과 비교는 NO-GO 근거를 빠르게 찾는 화면입니다"
+              body="각 차트는 검증된 backend-owned series가 있을 때만 값을 표시하며, 빈 상태는 누락·오래됨·형식 문제를 설명합니다."
+              checks={['차트별 blocker', 'source run/hash', 'freshness/schema', '다음 증거 행동']}
+            />
+          )}
+          <article className="panel chart-panel evidence-card">
             <div className="panel-heading">
-              <p className="eyebrow">차트형 증거 상태</p>
-              <h2 id="evidence-chart-title">부족한 증거가 어디인지 한눈에 보기</h2>
+              <p className="eyebrow">ECharts · evidence health</p>
+              <h2>부족한 증거가 어디인지 한눈에 보기</h2>
             </div>
-            <div className="evidence-bars">
-              {Object.entries(status.evidence_health).map(([key, item]) => (
-                <div className="evidence-bar-row" key={key}>
-                  <div>
-                    <strong>{key}</strong>
-                    <span>{statusLabel(item.status)}</span>
-                  </div>
-                  <div className="evidence-bar"><span style={{ width: `${evidenceScore(item.status)}%` }} /></div>
-                  <small>{item.fields.length ? item.fields.join(' · ') : '백엔드 필드 없음'}</small>
+            <EvidenceDecisionNote evidence={evidence} title="증거 상태 판단" nextAction="missing/stale/malformed 원인을 먼저 해소" />
+            <ResearchChart option={evidenceChartOption(evidence)} ariaLabel="증거 상태 ECharts 막대 차트" emptyState={chartEmptyState(evidence)} />
+            <EvidenceSourceStrip evidence={evidence} />
+          </article>
+
+          <article className="panel chart-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">ECharts · baseline vs candidate</p>
+              <h2>23bp 후 기준선 대비 비교</h2>
+            </div>
+            <EvidenceDecisionNote evidence={evidence} stage="D1" title="기준선 비교 판단" nextAction="fresh ts_imb RULE 비교 artifact 확보" />
+            <ResearchChart option={baselineChartOption(status, evidence)} ariaLabel="23bp 기준선 대비 ECharts 차트" emptyState={chartEmptyState(evidence, 'D1')} />
+            <EvidenceSourceStrip evidence={evidence} stage="D1" />
+          </article>
+
+          <article className="panel chart-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">ECharts · drawdown</p>
+              <h2>낙폭 곡선 / 증거 없음</h2>
+            </div>
+            <EvidenceDecisionNote evidence={evidence} stage="D3" title="낙폭 판단" nextAction="D3 drawdown artifact 재생성" />
+            <ResearchChart option={drawdownChartOption(evidence)} ariaLabel="낙폭 ECharts 라인 차트" emptyState={chartEmptyState(evidence, 'D3')} />
+            <EvidenceSourceStrip evidence={evidence} stage="D3" />
+          </article>
+          <article className="panel chart-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">ECharts · trade / turnover</p>
+              <h2>거래 수·회전율 증거</h2>
+            </div>
+            <EvidenceDecisionNote evidence={evidence} stage="D4" title="거래 수·회전율 판단" nextAction="D4 trade_count/turnover artifact 확인" />
+            <ResearchChart option={tradeTurnoverChartOption(status, evidence)} ariaLabel="거래 수와 회전율 ECharts 차트" emptyState={chartEmptyState(evidence, 'D4')} />
+            <EvidenceSourceStrip evidence={evidence} stage="D4" />
+          </article>
+
+          <article className="panel chart-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">ECharts · OOS / controls</p>
+              <h2>OOS·음성 통제 매트릭스</h2>
+            </div>
+            <EvidenceDecisionNote evidence={evidence} stage="D5" title="OOS·음성 통제 판단" nextAction="D5/D6 control artifact 확보" />
+            <ResearchChart option={controlsChartOption(workflow, evidence)} ariaLabel="OOS와 음성 통제 ECharts 히트맵" emptyState={chartEmptyState(evidence, 'D5')} />
+            <EvidenceSourceStrip evidence={evidence} stage="D5" />
+          </article>
+
+          <article className="panel chart-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">ECharts · artifact freshness</p>
+              <h2>증거 신선도 타임라인</h2>
+            </div>
+            <EvidenceDecisionNote evidence={evidence} title="신선도 판단" nextAction="7일 이내 schema-valid artifact만 비교에 사용" />
+            <ResearchChart option={freshnessChartOption(evidence)} ariaLabel="artifact freshness ECharts chart" emptyState={chartEmptyState(evidence)} />
+            <EvidenceSourceStrip evidence={evidence} />
+          </article>
+        </section>
+
+        <section
+          className="evidence-table-section dashboard-view-panel"
+          id="dashboard-panel-evidence"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-evidence"
+          data-dashboard-view-panel="evidence"
+          hidden={!showView('evidence')}
+        >
+          <ViewPurposeCard
+            eyebrow="Page 5 · evidence audit"
+            title="증거 감사는 테이블을 읽기 전에 건강 상태와 최종 차단 사유를 먼저 보여줍니다"
+            body="manifest, run 비교, audit timeline, raw JSON preview는 hash-backed/path-safe 증거만 보여주는 읽기 전용 화면입니다."
+            checks={['fresh/missing/malformed/stale 요약', '최종 NO-GO blocker', 'artifact lineage', 'path-safe preview']}
+          />
+          <EvidenceHealthSummary evidence={evidence} workflow={workflow} />
+          <article className="panel table-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">TanStack Table · evidence manifest</p>
+              <h2>증거 manifest · hash/path/timestamp/freshness/schema/blocker</h2>
+            </div>
+            <ArtifactManifestTable artifacts={evidence.artifacts} />
+          </article>
+          <article className="panel table-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">TanStack Table · run comparison</p>
+              <h2>선택 산출물·비용·낙폭·거래 지표 비교</h2>
+            </div>
+            <RunComparisonTable status={status} evidence={evidence} />
+          </article>
+
+          <article className="panel table-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">TanStack Table · audit timeline</p>
+              <h2>감사 타임라인 / 연구 의도 기록</h2>
+            </div>
+            <AuditTimelineTable audit={audit} />
+          </article>
+
+          <article className="panel table-panel raw-json-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">Raw JSON · drilldown tabs</p>
+              <h2>manifest/run/audit/연구 의도 원본 드릴다운</h2>
+            </div>
+            <ArtifactDrilldowns drilldown={drilldown} />
+          </article>
+        </section>
+
+        <section
+          className="audit-and-guide dashboard-view-panel"
+          id="dashboard-panel-queue"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-queue"
+          data-dashboard-view-panel="queue"
+          hidden={!showView('queue')}
+        >
+          <ViewPurposeCard
+            eyebrow="Page 3 · research queue"
+            title="연구 큐는 실행 큐가 아니라 recorded-only 감사 큐입니다"
+            body="허용 workflow는 record_research_intent이며 active job count는 0이어야 합니다. 실거래·주문·브로커·모델 빌드는 차단됩니다."
+            checks={['recorded-only', 'active count zero', 'config_hash/idempotency', 'blocked workflows']}
+          />
+          <IntentHistory
+            audit={audit}
+            evidence={evidence}
+            status={status}
+            fetchBanner={fetchBanner}
+            jobMessage={jobMessage}
+            allowedWorkflowLabel={allowedWorkflowLabel}
+            primaryAuditArtifact={primaryAuditArtifact}
+            drilldown={drilldown}
+          />
+
+        </section>
+
+        <section
+          className="audit-and-guide guide-only dashboard-view-panel"
+          id="dashboard-panel-guide"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-guide"
+          data-dashboard-view-panel="guide"
+          hidden={!showView('guide')}
+        >
+          <ViewPurposeCard
+            eyebrow="Page 6 · guide"
+            title="사용 가이드는 연구자가 오해 없이 NO-GO와 안전 잠금을 해석하는 매뉴얼입니다"
+            body="ts_imb는 RULE baseline이고, 23bp는 비용 가정이며, API_UNAVAILABLE은 안전 잠금입니다."
+            checks={['NO-GO 정의', 'RESEARCH_ONLY', 'API lock', '금지 readiness 문구']}
+          />
+          <GuideDecisionManual />
+          <article className="panel glossary-panel">
+            <div className="panel-heading">
+              <p className="eyebrow">사용 가이드</p>
+              <h2>용어와 해석 기준</h2>
+            </div>
+            <div className="glossary-grid">
+              {GLOSSARY.map(([term, explanation]) => (
+                <div key={term} title={explanation}>
+                  <strong>{term}</strong>
+                  <p>{explanation}</p>
                 </div>
               ))}
             </div>
-          </section>
-
-          <section className="panel" aria-labelledby="audit-title">
-            <div className="panel-heading">
-              <p className="eyebrow">감사 로그</p>
-              <h2 id="audit-title">무엇이 기록됐는지</h2>
-            </div>
-            <div className="audit-log">
-              {audit.events.map((entry, index) => (
-                <article key={`${entry.event}-${index}`}>
-                  <span title={entry.status}>{statusLabel(entry.status)}</span>
-                  <strong>{entry.event}</strong>
-                  <p>{entry.details ?? entry.workflow ?? entry.job_id ?? '백엔드 감사 이벤트'}</p>
-                </article>
-              ))}
-            </div>
-          </section>
-        </div>
+          </article>
+        </section>
       </section>
     </main>
   );

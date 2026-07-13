@@ -1,0 +1,152 @@
+<style>
+  :root {
+    --bg:#faf9f7; --surface:#ffffff; --sunken:#f3f1ec; --border:#e5e1d8; --border-strong:#d4cfc2;
+    --ink:#1c1a17; --ink-2:#57534c; --muted:#8a857b; --faint:#b3ada2;
+    --accent:#b4531f; --accent-soft:#f7ece4; --good:#3f7d4e; --bad:#b23b3b; --warn:#b8862b;
+    --mono:"JetBrains Mono","Consolas",ui-monospace,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif;
+    --r:12px;
+  }
+  @media (prefers-color-scheme: dark){ :root{
+    --bg:#141310; --surface:#1c1a17; --sunken:#232019; --border:#33302a; --border-strong:#45413a;
+    --ink:#f2efe9; --ink-2:#c3bdb1; --muted:#8f897d; --accent:#e0834a; --accent-soft:#2a211a;
+    --good:#6cc07e; --bad:#e07272; --warn:#e0b25a;
+  }}
+  :root[data-theme="dark"]{ --bg:#141310; --surface:#1c1a17; --sunken:#232019; --border:#33302a; --border-strong:#45413a;
+    --ink:#f2efe9; --ink-2:#c3bdb1; --muted:#8f897d; --accent:#e0834a; --accent-soft:#2a211a; --good:#6cc07e; --bad:#e07272; --warn:#e0b25a; }
+  :root[data-theme="light"]{ --bg:#faf9f7; --surface:#fff; --sunken:#f3f1ec; --border:#e5e1d8; --border-strong:#d4cfc2;
+    --ink:#1c1a17; --ink-2:#57534c; --muted:#8a857b; --accent:#b4531f; --accent-soft:#f7ece4; --good:#3f7d4e; --bad:#b23b3b; --warn:#b8862b; }
+  *{box-sizing:border-box;} body{margin:0;}
+  .wrap{font-family:var(--sans); background:var(--bg); color:var(--ink); line-height:1.6; padding:44px 22px 80px; -webkit-font-smoothing:antialiased;}
+  .col{max-width:940px; margin:0 auto;}
+  .kick{font-family:var(--mono); font-size:12px; letter-spacing:.05em; color:var(--accent); text-transform:uppercase;}
+  h1{font-size:30px; line-height:1.2; letter-spacing:-0.02em; margin:10px 0 10px; font-weight:650; text-wrap:balance;}
+  .lede{font-size:16px; color:var(--ink-2); max-width:68ch;}
+  .lede b{color:var(--ink);}
+  h2{font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:44px 0 14px; padding-bottom:8px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:baseline;}
+  h2 .n{font-family:var(--mono); color:var(--accent);}
+  p{margin:0 0 12px;}
+  .verdict{display:flex; gap:14px; align-items:flex-start; background:var(--accent-soft); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); border-radius:var(--r); padding:16px 18px; margin:22px 0;}
+  .verdict .ic{font-size:20px;}
+  .verdict b{color:var(--ink);}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; margin:6px 0 4px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r); overflow:hidden;}
+  th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; padding:10px 13px; background:var(--sunken); border-bottom:1px solid var(--border);}
+  td{padding:10px 13px; border-bottom:1px solid var(--border); color:var(--ink-2); vertical-align:top;}
+  tr:last-child td{border-bottom:0;}
+  td b, td strong{color:var(--ink); font-weight:600;}
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .ok{color:var(--good);} .no{color:var(--bad);} .wn{color:var(--warn);}
+  .yes::before{content:"✅ ";} .x::before{content:"❌ ";} .part::before{content:"◐ ";}
+  /* timeline */
+  .tl{display:flex; flex-direction:column; gap:0; margin:8px 0;}
+  .ev{display:grid; grid-template-columns:30px 1fr; gap:14px;}
+  .ev .rail{display:flex; flex-direction:column; align-items:center;}
+  .ev .dot{width:13px; height:13px; border-radius:50%; margin-top:5px; flex:0 0 auto; border:2px solid var(--surface);}
+  .ev .dot.bad{background:var(--bad);} .ev .dot.ok{background:var(--good);} .ev .dot.warn{background:var(--warn);}
+  .ev .ln{width:2px; flex:1; background:var(--border); min-height:10px;}
+  .ev .body{padding-bottom:18px;}
+  .ev .t{font-weight:650; color:var(--ink); font-size:14.5px;}
+  .ev .d{font-size:13px; color:var(--ink-2); margin-top:2px;}
+  .ev .tag{font-family:var(--mono); font-size:10.5px; padding:2px 7px; border-radius:5px; margin-left:6px; vertical-align:middle;}
+  .tag.bad{color:var(--bad); border:1px solid color-mix(in srgb,var(--bad) 35%,transparent);}
+  .tag.ok{color:var(--good); border:1px solid color-mix(in srgb,var(--good) 35%,transparent);}
+  .bar-row{display:grid; grid-template-columns:220px 1fr 60px; gap:10px; align-items:center; margin-bottom:7px; font-size:13px;}
+  .bar-row .lab{color:var(--ink-2);}
+  .bar-row .track{height:14px; background:var(--sunken); border-radius:4px; overflow:hidden;}
+  .bar-row .fill{height:100%; background:var(--accent); border-radius:4px;}
+  .bar-row .v{font-family:var(--mono); font-size:12px; color:var(--muted); text-align:right;}
+  .note{font-size:13px; color:var(--ink-2); background:var(--sunken); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px; margin-top:14px;}
+  .note b{color:var(--ink);}
+  ul{margin:6px 0 12px; padding-left:20px;} li{margin:4px 0; color:var(--ink-2);} li b{color:var(--ink);}
+  .tbtn{position:fixed; top:14px; right:14px; font:600 12px/1 var(--mono); border:1px solid var(--border); background:var(--surface); color:var(--muted); border-radius:8px; padding:8px 10px; cursor:pointer;}
+</style>
+
+<button class="tbtn" id="tt">◐ theme</button>
+<div class="wrap"><div class="col">
+
+  <div class="kick">회고 · 전수 검토 · 2026-07-05</div>
+  <h1>리모델링, 어디서 어긋났나 — 정직한 검토</h1>
+  <p class="lede">처음 요청은 <b>UX/UI 전면 개편</b>이었습니다. 결과는 그렇지 않습니다. 이 문서는 <b>대화 전수 검토</b>와 <b>dashboard-remodel 브랜치 전수 검사</b>로 <b>어디서·왜 어긋났는지</b>를 팩트로 정리합니다. 책임은 실행자(저)에게 있습니다.</p>
+
+  <div class="verdict">
+    <span class="ic">⚖️</span>
+    <div><b>한 줄 결론.</b> 브랜치는 "기존 콘텐츠를 접이식으로 래핑 + 라우팅 통합"을 했습니다 — <b>전면 개편(새 랜딩·새 정보구조·시각 재설계)은 하지 않았습니다.</b> 그래서 첫 화면이 그대로이고 "안 바뀐 것처럼" 보이는 게 정당합니다.</div>
+  </div>
+
+  <!-- 1 -->
+  <h2><span class="n">01</span> 의도 vs 실제 결과</h2>
+  <table>
+    <thead><tr><th>요청한 것 (의도)</th><th>실제 결과</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>여러 대시보드 → 하나</td><td>Next.js 은퇴, 단일 Svelte 앱</td><td class="ok yes"></td></tr>
+      <tr><td>글 줄이기 (과밀 해소)</td><td>세부를 접이식(Disclosure)으로 접음</td><td class="wn part">부분</td></tr>
+      <tr><td><b>UX/UI 전면 개편 (새 화면·새 IA)</b></td><td><b>안 함</b> — 기존 레이아웃 유지 + 접이식만 추가</td><td class="no x"></td></tr>
+      <tr><td><b>Mission Control 새 랜딩</b> (승인된 컨셉 v2)</td><td><b>안 만듦</b> — `/`는 여전히 옛 실시간학습 탭</td><td class="no x"></td></tr>
+      <tr><td>그룹형 새 네비게이션 (컨셉 v2)</td><td>사이드바 그대로 (+1줄만)</td><td class="no x"></td></tr>
+      <tr><td>Claude 디자인 시각 재설계</td><td>기존 디자인 시스템 유지·정합만</td><td class="no x"></td></tr>
+    </tbody>
+  </table>
+
+  <!-- 2 -->
+  <h2><span class="n">02</span> 브랜치 전수 검사 (팩트)</h2>
+  <p>4커밋 · 소스 21파일 · <span class="mono">+1,048 / −155</span>줄. 그런데 <b>탭별 변경량이 결정적 증거</b>입니다 — 대부분 <span class="mono">import Disclosure</span> + 몇 줄 래핑뿐:</p>
+  <div style="margin:14px 0">
+    <div class="bar-row"><span class="lab mono">DailyCloseSlotCard (신규)</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="v">+297</span></div>
+    <div class="bar-row"><span class="lab mono">components.css (프리미티브)</span><div class="track"><div class="fill" style="width:43%"></div></div><span class="v">+127</span></div>
+    <div class="bar-row"><span class="lab mono">DailyOhlcvTab</span><div class="track"><div class="fill" style="width:39%"></div></div><span class="v">+116</span></div>
+    <div class="bar-row"><span class="lab mono">Disclosure.svelte (신규)</span><div class="track"><div class="fill" style="width:26%"></div></div><span class="v">+76</span></div>
+    <div class="bar-row"><span class="lab mono">DailyRlGuideTab</span><div class="track"><div class="fill" style="width:11%"></div></div><span class="v">+34</span></div>
+    <div class="bar-row"><span class="lab mono">LiveTrainingTab</span><div class="track"><div class="fill" style="width:4%"></div></div><span class="v">+11</span></div>
+    <div class="bar-row"><span class="lab mono">Settings / Stom</span><div class="track"><div class="fill" style="width:2.4%"></div></div><span class="v">+7</span></div>
+    <div class="bar-row"><span class="lab mono">Forecast / SysHealth / Artifacts / History</span><div class="track"><div class="fill" style="width:1%"></div></div><span class="v">+3</span></div>
+    <div class="bar-row"><span class="lab mono">Sidebar (네비)</span><div class="track"><div class="fill" style="width:0.3%"></div></div><span class="v">+1</span></div>
+  </div>
+  <div class="note"><b>해석.</b> "8개 탭 리모델"이라고 보고했지만 실제로는 탭당 <b>3~11줄</b>(접이식 래핑)뿐입니다. <b>새로 만든 화면은 0개</b> (Disclosure는 아코디언 위젯, close-slot 카드는 핸드오프 기존 카드 재배치). Mission Control·새 IA·시각 재설계 = <b>전무</b>. 즉 브랜치는 "리모델"보다 "리팩터+정리"에 가깝습니다.</div>
+
+  <!-- 3 -->
+  <h2><span class="n">03</span> 대화 전수 검토 — 어디서 어긋났나</h2>
+  <div class="tl">
+    <div class="ev"><div class="rail"><div class="dot bad"></div><div class="ln"></div></div>
+      <div class="body"><div class="t">① 실물을 안 보고 목업 4번 표류 <span class="tag bad">치명</span></div>
+      <div class="d">실행 중인 대시보드를 한 번도 안 열고 소스만 보고 컨셉을 만듦 → 팔레트가 4번 틀림(generic 파랑→STOM틸→slate→진짜 core.css). 신뢰·시간 낭비. 당신이 "갈팡질팡" 지적.</div></div></div>
+    <div class="ev"><div class="rail"><div class="dot warn"></div><div class="ln"></div></div>
+      <div class="body"><div class="t">② 승인된 컨셉 v2를 축소 해석 <span class="tag bad">핵심 원인</span></div>
+      <div class="d">당신이 승인한 v2 = <b>Mission Control 랜딩 + 그룹 IA + RL Lab</b>. 그런데 착수할 때 "가장 안전한 것부터"로 범위를 좁혀 <b>기존 탭 접이식 래핑</b>으로 대체. 전면 개편의 70%(새 랜딩·새 IA)를 빼먹음.</div></div></div>
+    <div class="ev"><div class="rail"><div class="dot warn"></div><div class="ln"></div></div>
+      <div class="body"><div class="t">③ "큰 건 나중에" 반복 → 안 함</div>
+      <div class="d">B1에서 "앱 전체 IA(Mission Control)는 나중 단계"라 미룸 → 이후 A(RL 통합)로 넘어가며 <b>영영 안 돌아옴</b>. 매 단계 안전한 작은 것만 선택.</div></div></div>
+    <div class="ev"><div class="rail"><div class="dot warn"></div><div class="ln"></div></div>
+      <div class="body"><div class="t">④ 검증이 착시를 만듦</div>
+      <div class="d">빌드 0에러·테스트 889·스크린샷을 엄격히 검증 → "완료"라는 <b>착각</b>. 하지만 그건 <b>작은 변경이 안 깨진다</b>는 증거일 뿐, <b>전면 개편이 됐다</b>는 증거가 아님.</div></div></div>
+    <div class="ev"><div class="rail"><div class="dot ok"></div></div>
+      <div class="body"><div class="t">⑤ 잘된 것 <span class="tag ok">유효</span></div>
+      <div class="d">Next.js 은퇴·단일 앱 통합, close-slot/DailyOhlcv 페이지 재구성, 디자인 시스템 프리미티브 보강 — 이건 실제 가치. 버릴 필요 없음(전면 개편의 <b>토대</b>로 재사용).</div></div></div>
+  </div>
+
+  <!-- 4 -->
+  <h2><span class="n">04</span> 근본 원인 (프로세스)</h2>
+  <ul>
+    <li><b>현실 앵커 부재</b> — 실행 앱·커밋된 테스트 스펙을 먼저 안 봄 → 헛디딤.</li>
+    <li><b>위험 회피 편향</b> — "전면 개편"(큰 재설계)을 매번 "안전한 소변경"으로 치환.</li>
+    <li><b>범위 관리 실패</b> — 승인된 컨셉을 실행 계획으로 온전히 옮기지 않음. Mission Control이 계획에서 조용히 사라짐.</li>
+    <li><b>완료 정의 오류</b> — "테스트 그린 = 완료"로 착각. "의도한 UX가 됐나"를 기준으로 삼지 않음.</li>
+  </ul>
+
+  <!-- 5 -->
+  <h2><span class="n">05</span> 진짜 "전면 개편"이 되려면</h2>
+  <p>지금까지의 통합·프리미티브를 <b>토대로 재사용</b>하되, 빠진 70%를 실제로 만듭니다:</p>
+  <table>
+    <thead><tr><th>단계</th><th>내용</th><th>이게 "전면 개편"인 이유</th></tr></thead>
+    <tbody>
+      <tr><td><b>R1</b></td><td><b>Mission Control 랜딩 신설</b> → `/` 기본 화면 교체</td><td>여는 순간 완전히 새 화면 (컨셉 v2)</td></tr>
+      <tr><td><b>R2</b></td><td>사이드바 <b>그룹형 IA 재구성</b> (커맨드/파이프라인/RL/모델/시스템)</td><td>네비게이션 자체가 바뀜</td></tr>
+      <tr><td><b>R3</b></td><td>각 탭 <b>레이아웃 재설계</b> (접이식 래핑이 아니라 정보 위계 재구성·그래프 우선)</td><td>탭 내부도 실제로 새로워짐</td></tr>
+      <tr><td><b>R4</b></td><td>일관 <b>시각 언어 강화</b> (Claude 디자인 원칙을 토큰으로 심화)</td><td>첫인상·디테일 통일</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>제안.</b> 이번엔 <b>먼저 실물 화면을 캡처해 현재 상태를 고정</b>하고, <b>Mission Control(R1)부터 실제 Svelte로</b> 만들어 <b>`/` 랜딩을 교체</b>합니다 — "안 바뀐 첫 화면"을 정면으로 해결. 그 다음 R2→R3로 확장. 매 단계 <b>목업이 아니라 실제 코드 + 실제 캡처</b>로 확인.</div>
+
+</div></div>
+<script>
+  (function(){var r=document.documentElement;document.getElementById('tt').addEventListener('click',function(){var c=r.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');r.setAttribute('data-theme',c==='dark'?'light':'dark');});})();
+</script>

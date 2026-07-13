@@ -1,0 +1,386 @@
+<style>
+  :root{
+    --bg:#eef1f4; --surface:#ffffff; --surface-2:#f6f8fa; --sunken:#eceff3; --elev:#ffffff;
+    --border:#dde2e8; --border-strong:#c8cfd8;
+    --ink:#0e1726; --ink-2:#41505f; --muted:#6b7787; --faint:#9aa5b1;
+    --accent:#0d9488; --accent-2:#0ea5b7; --accent-soft:#d6f2ee; --accent-ink:#0a6c63;
+    --sky:#2563eb; --violet:#6d28d9; --gold:#b7791f;
+    --good:#15803d; --good-soft:#dcf5e4; --warn:#b45309; --warn-soft:#fdeccf; --danger:#b91c1c; --danger-soft:#fbe1e1; --info:#1d4ed8; --info-soft:#dfe8fd;
+    --mono:"JetBrains Mono","D2Coding","Consolas",ui-monospace,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI","Malgun Gothic","Pretendard",sans-serif;
+    --r-s:8px; --r:12px; --r-l:16px; --r-xl:22px;
+    --sh:0 1px 2px rgba(16,23,38,.05),0 4px 14px -8px rgba(16,23,38,.14);
+    --sh-lg:0 8px 30px -12px rgba(16,23,38,.28);
+    --sbw:250px;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0a0f16; --surface:#111823; --surface-2:#0d141d; --sunken:#0c121a; --elev:#161f2b;
+    --border:#243040; --border-strong:#33445a;
+    --ink:#eef2f7; --ink-2:#b7c2cf; --muted:#7d8a99; --faint:#556173;
+    --accent:#2dd4bf; --accent-2:#22d3ee; --accent-soft:#0d2b29; --accent-ink:#5eead4;
+    --sky:#60a5fa; --violet:#a78bfa; --gold:#e2b155;
+    --good:#34d399; --good-soft:#0c2a1e; --warn:#fbbf24; --warn-soft:#2c2211; --danger:#f87171; --danger-soft:#2c1516; --info:#60a5fa; --info-soft:#0f2036;
+    --sh:0 1px 2px rgba(0,0,0,.4); --sh-lg:0 10px 34px -12px rgba(0,0,0,.7);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0a0f16; --surface:#111823; --surface-2:#0d141d; --sunken:#0c121a; --elev:#161f2b;
+    --border:#243040; --border-strong:#33445a; --ink:#eef2f7; --ink-2:#b7c2cf; --muted:#7d8a99; --faint:#556173;
+    --accent:#2dd4bf; --accent-2:#22d3ee; --accent-soft:#0d2b29; --accent-ink:#5eead4; --sky:#60a5fa; --violet:#a78bfa; --gold:#e2b155;
+    --good:#34d399; --good-soft:#0c2a1e; --warn:#fbbf24; --warn-soft:#2c2211; --danger:#f87171; --danger-soft:#2c1516; --info:#60a5fa; --info-soft:#0f2036;
+    --sh:0 1px 2px rgba(0,0,0,.4); --sh-lg:0 10px 34px -12px rgba(0,0,0,.7);
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1f4; --surface:#fff; --surface-2:#f6f8fa; --sunken:#eceff3; --elev:#fff;
+    --border:#dde2e8; --border-strong:#c8cfd8; --ink:#0e1726; --ink-2:#41505f; --muted:#6b7787; --faint:#9aa5b1;
+    --accent:#0d9488; --accent-2:#0ea5b7; --accent-soft:#d6f2ee; --accent-ink:#0a6c63; --sky:#2563eb; --violet:#6d28d9; --gold:#b7791f;
+    --good:#15803d; --good-soft:#dcf5e4; --warn:#b45309; --warn-soft:#fdeccf; --danger:#b91c1c; --danger-soft:#fbe1e1; --info:#1d4ed8; --info-soft:#dfe8fd;
+    --sh:0 1px 2px rgba(16,23,38,.05),0 4px 14px -8px rgba(16,23,38,.14); --sh-lg:0 8px 30px -12px rgba(16,23,38,.28);
+  }
+  *{box-sizing:border-box;} body{margin:0;}
+  .app{font-family:var(--sans); background:var(--bg); color:var(--ink); min-height:100vh; display:grid; grid-template-columns:var(--sbw) 1fr; -webkit-font-smoothing:antialiased;}
+  @media(max-width:900px){.app{grid-template-columns:1fr;} .sb{display:none;}}
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .draft{position:fixed; bottom:14px; left:14px; z-index:50; font:600 11px/1 var(--mono); color:var(--warn); background:var(--warn-soft); border:1px solid color-mix(in srgb,var(--warn) 40%,transparent); border-radius:999px; padding:6px 11px;}
+
+  /* sidebar */
+  .sb{background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto;}
+  .brand{display:flex; align-items:center; gap:11px; padding:18px 18px 16px;}
+  .logo{width:38px; height:38px; border-radius:11px; background:linear-gradient(135deg,var(--accent),var(--sky)); display:grid; place-items:center; color:#fff; font-weight:800; font-size:17px; box-shadow:0 6px 16px -6px var(--accent);}
+  .brand b{display:block; font-size:15px; letter-spacing:-.01em;} .brand span{font:500 10.5px/1.3 var(--mono); color:var(--muted);}
+  .navgrp{padding:6px 10px 2px;} .navlbl{font:600 10px/1 var(--sans); letter-spacing:.11em; text-transform:uppercase; color:var(--faint); padding:12px 12px 7px;}
+  .nav{display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:var(--r-s); color:var(--ink-2); font-size:13.5px; font-weight:500; cursor:pointer; position:relative; user-select:none;}
+  .nav:hover{background:var(--sunken); color:var(--ink);}
+  .nav .ic{width:17px; height:17px; opacity:.7; flex:0 0 auto;}
+  .nav[data-on="1"]{background:var(--accent-soft); color:var(--accent-ink); font-weight:650;}
+  .nav[data-on="1"] .ic{opacity:1;}
+  .nav[data-on="1"]::before{content:""; position:absolute; left:-10px; top:8px; bottom:8px; width:3px; border-radius:2px; background:var(--accent);}
+  .nav .bdg{margin-left:auto; font:600 9px/1 var(--mono); padding:3px 6px; border-radius:5px; background:var(--sunken); color:var(--muted);}
+  .nav[data-on="1"] .bdg{background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent-ink);}
+  .nav .stat{margin-left:auto; width:7px; height:7px; border-radius:50%; flex:0 0 auto;}
+  .nav .nlab{display:flex; flex-direction:column; gap:1px; flex:1; min-width:0;}
+  .nav .nnote{font:500 9px/1.2 var(--mono); color:var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .nav[data-sub="1"]{padding-left:22px;} .nav[data-sub="1"] .ic{opacity:.45; font-size:12px;}
+  .st-warn{background:var(--warn);} .st-danger{background:var(--danger);} .st-good{background:var(--good);} .st-idle{background:var(--faint);}
+  .sbfoot{margin-top:auto; padding:12px;} .runc{background:var(--sunken); border:1px solid var(--border); border-radius:var(--r); padding:11px 12px;}
+  .runc .r1{display:flex; align-items:center; gap:7px; font:600 11px/1 var(--mono); color:var(--good);} .runc .dot{width:7px; height:7px; border-radius:50%; background:var(--good);}
+  .runc .nm{font:600 11px/1.35 var(--mono); color:var(--ink); word-break:break-all; margin-top:7px;}
+
+  /* main */
+  .main{min-width:0; display:flex; flex-direction:column;}
+  .hdr{position:sticky; top:0; z-index:20; height:60px; display:flex; align-items:center; gap:14px; padding:0 26px; background:color-mix(in srgb,var(--bg) 82%,transparent); backdrop-filter:blur(14px) saturate(140%); border-bottom:1px solid var(--border);}
+  .crumb{font:500 10.5px/1 var(--mono); color:var(--muted); letter-spacing:.05em; text-transform:uppercase;}
+  .htitle{font:650 17px/1.2 var(--sans); letter-spacing:-.01em;}
+  .sp{flex:1;}
+  .hbtn{height:34px; padding:0 12px; border-radius:9px; border:1px solid var(--border); background:var(--surface); color:var(--ink-2); font:600 12px/1 var(--sans); display:inline-flex; align-items:center; gap:7px; cursor:pointer;}
+  .hbtn:hover{background:var(--sunken); color:var(--ink);}
+  .hchip{display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 11px; border-radius:999px; background:var(--warn-soft); color:var(--warn); font:650 11.5px/1 var(--mono); border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);}
+  .hchip .d{width:7px; height:7px; border-radius:50%; background:var(--warn);}
+
+  .page{padding:22px 26px 70px; max-width:1520px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:20px;}
+  .eyebrow{font:650 11px/1.3 var(--sans); letter-spacing:.09em; text-transform:uppercase; color:var(--muted);}
+  h1.pt{font:700 26px/1.15 var(--sans); letter-spacing:-.02em; margin:6px 0 4px; text-wrap:balance;}
+  .lede{color:var(--muted); font-size:14.5px; max-width:76ch; margin:0;}
+  .sec{display:flex; align-items:baseline; gap:10px; margin:8px 0 2px;} .sec h2{font:650 15px/1 var(--sans); letter-spacing:-.01em;} .sec .m{font:500 12px/1 var(--mono); color:var(--muted);}
+  .row{display:flex; gap:9px; flex-wrap:wrap; align-items:center;}
+
+  .pill{display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 10px; border-radius:999px; font:650 11px/1 var(--sans); background:var(--sunken); color:var(--muted); border:1px solid var(--border);}
+  .pill .d{width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .pill.warn{background:var(--warn-soft); color:var(--warn); border-color:transparent;}
+  .pill.danger{background:var(--danger-soft); color:var(--danger); border-color:transparent;}
+  .pill.good{background:var(--good-soft); color:var(--good); border-color:transparent;}
+  .pill.info{background:var(--info-soft); color:var(--info); border-color:transparent;}
+  .pill.accent{background:var(--accent-soft); color:var(--accent-ink); border-color:transparent;}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-l); padding:18px; box-shadow:var(--sh);}
+  .grid{display:grid; gap:16px;}
+  .g4{grid-template-columns:repeat(4,1fr);} .g3{grid-template-columns:repeat(3,1fr);} .g2{grid-template-columns:repeat(2,1fr);} .g6{grid-template-columns:repeat(6,1fr);}
+  .g-2-1{grid-template-columns:1.7fr 1fr;}
+  @media(max-width:1100px){.g4,.g6{grid-template-columns:repeat(2,1fr);} .g3,.g-2-1{grid-template-columns:1fr;}}
+  @media(max-width:640px){.g4,.g2,.g6{grid-template-columns:1fr;}}
+
+  /* posture bar */
+  .posture{display:flex; align-items:center; gap:16px; padding:14px 18px; border-radius:var(--r-l); background:linear-gradient(100deg,var(--accent-soft),transparent 60%),var(--surface); border:1px solid var(--border); flex-wrap:wrap; box-shadow:var(--sh);}
+  .posture .big{font:700 15px/1.1 var(--sans); display:flex; align-items:center; gap:10px;} .posture .big .d{width:11px; height:11px; border-radius:50%; background:var(--warn); box-shadow:0 0 0 5px var(--warn-soft);}
+  .locks{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto;} .lock{font:600 10px/1 var(--mono); padding:5px 9px; border-radius:999px; background:var(--danger-soft); color:var(--danger);}
+
+  /* line status card */
+  .line{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-l); padding:16px 16px 14px; cursor:pointer; position:relative; overflow:hidden; box-shadow:var(--sh); transition:transform .13s,box-shadow .13s,border-color .13s;}
+  .line:hover{transform:translateY(-3px); box-shadow:var(--sh-lg); border-color:var(--border-strong);}
+  .line::after{content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--warn);}
+  .line[data-v=danger]::after{background:var(--danger);} .line[data-v=good]::after{background:var(--good);} .line[data-v=idle]::after{background:var(--faint);} .line[data-v=accent]::after{background:var(--accent);}
+  .line .top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .line .nm{font:650 14px/1.25 var(--sans);} .line .sub{font:500 11px/1 var(--mono); color:var(--muted); margin-top:3px;}
+  .line .big{font:750 26px/1 var(--sans); letter-spacing:-.02em; margin:14px 0 2px;} .line .big small{font:500 13px/1 var(--sans); color:var(--muted); letter-spacing:0;}
+  .line .foot{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:11px; font:600 11px/1 var(--mono);}
+  .line .bk{color:var(--danger);} .line .go{color:var(--accent-ink);}
+  .spark{height:30px; width:100%; margin-top:8px; display:block;}
+
+  .metric{padding:15px 16px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-l); box-shadow:var(--sh);}
+  .metric .l{font:600 10.5px/1 var(--sans); letter-spacing:.06em; text-transform:uppercase; color:var(--muted);}
+  .metric .v{font:750 24px/1.05 var(--sans); letter-spacing:-.02em; margin-top:7px;} .metric .v.sm{font-size:16px;} .metric .v small{font:500 13px/1 var(--sans); color:var(--muted);}
+  .metric .f{font:500 11px/1.3 var(--mono); color:var(--muted); margin-top:5px;}
+  .metric.flag .v{color:var(--danger);} .metric.okv .v{color:var(--good);}
+
+  .rail .card + .card{margin-top:16px;}
+  .rail h3{font:650 13px/1 var(--sans); margin:0 0 12px; display:flex; align-items:center; gap:8px;}
+  .blk{display:flex; gap:11px; padding:10px 0; border-bottom:1px dashed var(--border); font-size:12.5px;} .blk:last-child{border-bottom:0;}
+  .blk .g{font:700 10px/1.6 var(--mono); color:var(--danger); flex:0 0 auto;} .blk .tx{color:var(--muted);} .blk .tx b{color:var(--ink);}
+  .step{display:flex; gap:9px; padding:9px 0; font-size:12.5px; color:var(--muted); border-bottom:1px dashed var(--border);} .step:last-child{border-bottom:0;} .step .n{color:var(--accent-ink); font-weight:700;}
+
+  .steps{display:grid; grid-template-columns:repeat(10,1fr); gap:6px;}
+  .steps .s{border:1px solid var(--border); border-radius:var(--r-s); padding:9px 5px; background:var(--sunken); text-align:center;}
+  .steps .s .n{font:700 11px/1 var(--mono); color:var(--muted);} .steps .s .t{font:500 8.5px/1.2 var(--mono); color:var(--muted); margin-top:5px; display:block; min-height:19px;}
+  .steps .s[data-st=warn]{border-color:color-mix(in srgb,var(--warn) 45%,transparent); background:var(--warn-soft);}
+  .steps .s[data-st=danger]{border-color:color-mix(in srgb,var(--danger) 45%,transparent); background:var(--danger-soft);}
+  .steps .s[data-st=good]{border-color:color-mix(in srgb,var(--good) 45%,transparent); background:var(--good-soft);}
+
+  .notice{display:flex; gap:11px; padding:13px 15px; border-radius:var(--r); font-size:13px; align-items:flex-start;}
+  .notice.danger{background:var(--danger-soft);} .notice.warn{background:var(--warn-soft);} .notice b{color:var(--ink);}
+  .lrow{display:flex; gap:7px; flex-wrap:wrap;} .l2{font:600 10.5px/1 var(--mono); padding:6px 9px; border-radius:999px; background:var(--danger-soft); color:var(--danger);}
+
+  details.disc{border:1px solid var(--border); border-radius:var(--r); background:var(--surface); box-shadow:var(--sh);}
+  details.disc + details.disc{margin-top:10px;}
+  details.disc>summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:12px; padding:14px 16px; font:650 13px/1.3 var(--sans);}
+  details.disc>summary::-webkit-details-marker{display:none;}
+  details.disc>summary .cv{color:var(--muted); transition:transform .18s;} details.disc[open]>summary .cv{transform:rotate(90deg);}
+  details.disc>summary .sm{margin-left:auto; font:500 11.5px/1 var(--mono); color:var(--muted);}
+  details.disc .bd{padding:2px 16px 16px;}
+  .kv{display:flex; justify-content:space-between; gap:12px; font-size:12px; padding:6px 0; border-bottom:1px dashed var(--border);} .kv:last-child{border-bottom:0;} .kv span{color:var(--muted);} .kv strong{color:var(--ink); font-family:var(--mono); font-weight:600;}
+  table.t{width:100%; border-collapse:collapse; font-size:12px;} table.t th{text-align:left; font:600 10px/1 var(--sans); text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--border); background:var(--sunken);}
+  table.t td{padding:8px 10px; border-bottom:1px solid var(--border); color:var(--ink-2);} table.t tr:last-child td{border-bottom:0;}
+  .tag{font:600 9.5px/1 var(--mono); padding:3px 7px; border-radius:5px;} .tag.good{background:var(--good-soft); color:var(--good);} .tag.danger{background:var(--danger-soft); color:var(--danger);} .tag.warn{background:var(--warn-soft); color:var(--warn);}
+  @media(prefers-reduced-motion:reduce){.line,details.disc>summary .cv{transition:none;}}
+  .ph{border:1.5px dashed var(--border-strong); border-radius:var(--r-l); padding:40px 24px; text-align:center; color:var(--muted); background:var(--surface);}
+  .ph .big{font:700 18px/1.2 var(--sans); color:var(--ink-2); margin-bottom:6px;}
+</style>
+
+<div class="draft">◆ 초안 · UX/UI 전면 재설계 프로토타입 · 실데이터 아님(대표 샘플)</div>
+<div class="app" id="app"></div>
+
+<script>
+(function(){
+  "use strict";
+  var R = document.documentElement;
+
+  // Nav grounded in real code: Kronos foundation → forecast layer (independent of RL);
+  // daily D0–D9 pipeline → D4 강화학습 → {portfolio RL, close-slot}; intraday trading is separate.
+  var NAV = [
+    { grp:"커맨드", items:[ {id:"mission", label:"Mission Control", ic:"◎", stat:"warn"} ] },
+    { grp:"① 파운데이션 · 예측  (Kronos 모델)", items:[
+        {id:"training", label:"실시간 학습", note:"tokenizer→predictor", stat:"good"},
+        {id:"forecast", label:"예측 워크벤치", note:"K-line 예측"},
+        {id:"stom", label:"예측 진단", note:"Kronos vs baseline"} ] },
+    { grp:"② 일봉 연구  (D0–D9)", items:[
+        {id:"daily", label:"일봉 파이프라인", note:"DB·유니버스·데이터셋·게이트", bdg:"D0–D9"} ] },
+    { grp:"③ 강화학습  (RL · research-only)", items:[
+        {id:"closeslot", label:"종가매매 (close-slot)", note:"일봉 D4 · contextual bandit", stat:"warn"},
+        {id:"portfolio", label:"포트폴리오 RL", note:"일봉 D4 · 제약 RL", stat:"warn"},
+        {id:"opening", label:"오프닝 30m", note:"인트라데이 · RULE+RL", stat:"idle"},
+        {id:"rl", label:"트레이딩 커맨드 센터", note:"인트라데이 · 오더북·참가자·factory", stat:"danger"} ] },
+    { grp:"산출물 · 시스템", items:[
+        {id:"artifacts", label:"아티팩트 · 레지스트리"},
+        {id:"system", label:"시스템 상태", stat:"good"},
+        {id:"settings", label:"설정 · 문서"} ] }
+  ];
+  var TITLES = {
+    mission:["커맨드","Mission Control"],
+    training:["① 파운데이션 · 예측","실시간 학습 (tokenizer → predictor)"],
+    forecast:["① 파운데이션 · 예측","예측 워크벤치"],
+    stom:["① 파운데이션 · 예측","예측 진단"],
+    daily:["② 일봉 연구 · D0–D9","일봉 연구 파이프라인"],
+    closeslot:["③ 강화학습 · 일봉 D4","종가매매 (close-slot)"],
+    portfolio:["③ 강화학습 · 일봉 D4","포트폴리오 RL"],
+    opening:["③ 강화학습 · 인트라데이","오프닝 30m RL"],
+    rl:["③ 강화학습 · 인트라데이","트레이딩 커맨드 센터"],
+    artifacts:["산출물 · 시스템","아티팩트 · 레지스트리"],
+    system:["산출물 · 시스템","시스템 상태"],
+    settings:["산출물 · 시스템","설정 · 문서"]
+  };
+
+  function spark(pts, color){ return '<svg class="spark" viewBox="0 0 120 30" preserveAspectRatio="none"><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round"/></svg>'; }
+
+  var LINES = [
+    {id:"daily", v:"warn", nm:"일봉 연구 D0–D9", sub:"daily-ohlcv", big:'D5 <small>NO-GO locked</small>', foot:'<span class="bk">blocker 2 · D0·D1</span><span class="go">열기 →</span>', pts:"0,22 20,20 40,21 60,15 80,16 100,12 120,13", pill:'<span class="pill warn"><span class="d"></span>WATCH</span>', color:"var(--warn)"},
+    {id:"closeslot", v:"warn", nm:"종가매매 (close-slot)", sub:"close_to_next_close", big:'10 <small>slots · 23bp</small>', foot:'<span class="bk">⚠ bandit 0종목</span><span class="go">열기 →</span>', pts:"0,14 20,14 40,22 60,10 80,14 100,14 120,14", pill:'<span class="pill warn"><span class="d"></span>WATCH</span>', color:"var(--warn)"},
+    {id:"rl", v:"danger", nm:"강화학습 RL", sub:"ts_imb baseline", big:'23<small>bp · D9 gate</small>', foot:'<span class="bk">locks 7 off</span><span class="go">열기 →</span>', pts:"0,17 20,18 40,16 60,17 80,15 100,16 120,15", pill:'<span class="pill danger"><span class="d"></span>NO-GO</span>', color:"var(--danger)"},
+    {id:"opening", v:"idle", nm:"오프닝 30m RL", sub:"opening_30m", big:'—', foot:'<span class="bk" style="color:var(--muted)">대기</span><span class="go">열기 →</span>', pts:"0,15 120,15", pill:'<span class="pill"><span class="d"></span>NOT_STARTED</span>', color:"var(--faint)"},
+    {id:"portfolio", v:"accent", nm:"포트폴리오 RL (D4)", sub:"daily_portfolio_env", big:'ts_imb <small>RULE 대비</small>', foot:'<span class="bk" style="color:var(--muted)">제약 RL · 자매=종가매매</span><span class="go">열기 →</span>', pts:"0,20 20,17 40,18 60,13 80,14 100,10 120,9", pill:'<span class="pill accent"><span class="d"></span>RESEARCH</span>', color:"var(--accent)"},
+    {id:"training", v:"good", nm:"시스템 · 학습", sub:"predictor", big:'100.0<small>%</small>', foot:'<span class="bk" style="color:var(--good)">정상</span><span class="go">열기 →</span>', pts:"0,22 20,17 40,13 60,11 80,9 100,7 120,6", pill:'<span class="pill good"><span class="d"></span>ok</span>', color:"var(--good)"}
+  ];
+
+  function postureBar(){
+    return '<div class="posture"><div class="big"><span class="d"></span>연구 전용 · 실거래 경로 전부 잠금</div>'+
+      '<div class="locks">'+["실거래","브로커","주문","계좌","페이퍼","모델빌드","수익주장"].map(function(x){return '<span class="lock">'+x+' ✕</span>';}).join("")+'</div></div>';
+  }
+
+  var VIEWS = {};
+
+  VIEWS.mission = function(){
+    var cards = LINES.map(function(l){
+      return '<div class="line" data-v="'+l.v+'" data-go="'+l.id+'"><div class="top"><div><div class="nm">'+l.nm+'</div><div class="sub">'+l.sub+'</div></div>'+l.pill+'</div>'+
+        '<div class="big">'+l.big+'</div>'+spark(l.pts,l.color)+'<div class="foot">'+l.foot+'</div></div>';
+    }).join("");
+    return '<div class="eyebrow">Mission Control · 전 연구 라인 통합 상태</div>'+
+      '<h1 class="pt">모든 연구 라인을 한 화면에서</h1>'+
+      '<p class="lede">각 라인의 판정·핵심 지표·미해결 blocker를 한눈에 보고, 카드를 눌러 상세로 들어갑니다. 실거래·수익 경로는 전부 잠금입니다.</p>'+
+      postureBar()+
+      '<div class="grid g-2-1" style="margin-top:4px"><div>'+
+        '<div class="sec"><h2>연구 라인</h2><span class="m">6 lines · 실시간 posture</span></div>'+
+        '<div class="grid g3">'+cards+'</div></div>'+
+        '<div class="rail">'+
+          '<div class="card"><h3>미해결 blocker 전체</h3>'+
+            '<div class="blk"><span class="g">D0</span><span class="tx"><b>price_basis 미검증</b> — 조정가격 증거 필요 (일봉·종가매매)</span></div>'+
+            '<div class="blk"><span class="g">D1</span><span class="tx"><b>universe 비공식</b> — governance 증거·Q-products 격리</span></div>'+
+            '<div class="blk"><span class="g">D5</span><span class="tx"><b>walk-forward NO-GO</b> — 사전등록 증거 통과 전 잠금</span></div>'+
+          '</div>'+
+          '<div class="card"><h3>다음 확인</h3>'+
+            '<div class="step"><span class="n">1</span><span>D0–D9 게이트에서 PASS/WATCH/NOT_STARTED 먼저 확인</span></div>'+
+            '<div class="step"><span class="n">2</span><span>close-slot 피처 정규화 버그 — contextual_bandit 0종목</span></div>'+
+            '<div class="step"><span class="n">3</span><span>artifact hash·stale/malformed fail-closed 상태 점검</span></div>'+
+          '</div>'+
+          '<div class="card"><h3>시스템</h3>'+
+            '<div class="kv"><span>predictor</span><strong>100.0% · ok</strong></div>'+
+            '<div class="kv"><span>GPU 활용</span><strong>9.0% · 47°C</strong></div>'+
+            '<div class="kv"><span>실행 run</span><strong>stom_1s_grid_pred60</strong></div>'+
+          '</div>'+
+        '</div></div>';
+  };
+
+  function kpi(l,v,f,cls){ return '<div class="metric '+(cls||"")+'"><div class="l">'+l+'</div><div class="v">'+v+'</div>'+(f?'<div class="f">'+f+'</div>':'')+'</div>'; }
+
+  VIEWS.daily = function(){
+    var stepsHtml = [["D0","price"],["D1","universe","warn"],["D2","dataset"],["D3","baseline"],["D4","port RL"],["D5","gate","danger"],["D6","visual"],["D7","diag"],["D8","registry"],["D9","paper"]].map(function(s){
+      return '<div class="s"'+(s[2]?' data-st="'+s[2]+'"':'')+'><span class="n">'+s[0]+'</span><span class="t">'+s[1]+'</span></div>';
+    }).join("");
+    return '<div class="eyebrow">연구 파이프라인 · 일봉 D0–D9</div><h1 class="pt">일봉 연구 파이프라인</h1>'+
+      '<p class="lede">요약을 먼저, 세부 증거는 접이식으로. 핵심 판정과 blocker가 맨 위에서 바로 보입니다.</p>'+
+      '<div class="card"><div class="sec"><h2>한눈에</h2><span class="m">D0–D9 요약</span></div>'+
+        '<div class="grid g4" style="margin-top:12px">'+kpi("최종 판정",'WATCH','D5 NO-GO locked','')+kpi("기본 비용",'23<small> bp</small>','민감도 0/23/46')+kpi("미해결 blocker",'2','D0 · D1','flag')+kpi("유니버스",'120','/ 2,140 · WATCH','')+'</div>'+
+        '<div class="steps" style="margin-top:16px">'+stepsHtml+'</div></div>'+
+      '<div class="sec"><h2>종가매매 카드</h2><span class="m">close-slot · read-only</span></div>'+ closeSlotCard() +
+      '<div class="sec"><h2>세부 증거 카드</h2><span class="m">필요할 때 펼치기</span></div>'+
+        accordion("D0 · DB 품질","rows 12.4M · dup 0 · WATCH",'<div class="kv"><span>tables</span><strong>2,140</strong></div><div class="kv"><span>price_basis</span><strong>unknown (D0 blocker)</strong></div>')+
+        accordion("D1 · 유니버스","included 120 / 2,140",'<div class="kv"><span>verdict</span><strong>WATCH (D1 blocker)</strong></div>')+
+        accordion("D2 · 데이터셋 빌더","bounded 120×260",'<div class="kv"><span>features</span><strong>8 (정규화 버그 Phase1)</strong></div>')+
+        accordion("D3–D4 · 모델·포트폴리오","baseline ts_imb · 23bp",'<div class="kv"><span>baseline</span><strong>ts_imb RULE (RL 아님)</strong></div>');
+  };
+
+  function closeSlotCard(){
+    return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font:650 15px/1.3 var(--sans)">종가 매수 → 익일 종가 매도 · 10-slot</div><span class="pill warn"><span class="d"></span>연구용 · WATCH · 실거래 아님</span></div>'+
+      '<div class="notice danger" style="margin-top:14px"><span>⚠️</span><div><b>미해결 blocker 2건 — 게이트 통과 불가</b><br><span style="color:var(--muted)">D0 price_basis · D1 universe WATCH</span></div></div>'+
+      '<div class="grid g4" style="margin-top:14px">'+kpi("readiness",'WATCH','','')+kpi("선택 슬롯",'10<small> max</small>','')+kpi("비용",'23<small> bp</small>','')+kpi("blocker",'2','','flag')+'</div>'+
+      '<div class="grid g2" style="margin-top:16px">'+
+        '<div class="card" style="box-shadow:none;background:var(--surface-2)"><div class="eyebrow" style="margin-bottom:10px">정책별 연구 리워드 (base 23bp)</div>'+ rewardChart() +'<div class="f" style="font:500 10.5px/1.4 var(--mono);color:var(--muted);margin-top:8px">연구 라벨 · 비실행 상한 · 수익 주장 아님</div></div>'+
+        '<div class="card" style="box-shadow:none;background:var(--surface-2)"><div class="eyebrow" style="margin-bottom:10px">비용 민감도</div>'+ costBars() +'</div>'+
+      '</div>'+
+      '<div style="margin-top:14px">'+accordion("세부 증거 (계보·DB·잠금·no-claim)","12 항목",'<div class="kv"><span>DB access</span><strong>read_only · ro · mutation false</strong></div><div class="kv"><span>locks</span><strong>promotion/model_build/… 전부 false</strong></div><div class="kv"><span>selected code</span><strong>000250 문자열 보존</strong></div>')+'</div></div>';
+  }
+
+  function rewardChart(){
+    return '<svg viewBox="0 0 440 168" width="100%" style="display:block">'+
+      '<line x1="280" y1="8" x2="280" y2="152" stroke="var(--border-strong)" stroke-width="1"/>'+
+      '<text x="105" y="30" text-anchor="end" fill="var(--muted)" font-size="10">no_trade</text><rect x="278" y="21" width="3" height="14" rx="1.5" fill="var(--faint)"/><text x="289" y="32" fill="var(--ink)" font-size="10">0.0000</text>'+
+      '<text x="105" y="68" text-anchor="end" fill="var(--muted)" font-size="10">shuffle (ctrl)</text><rect x="120" y="59" width="160" height="14" rx="4" fill="var(--sky)"/><text x="122" y="53" fill="var(--danger)" font-size="10">−0.4748</text>'+
+      '<text x="105" y="106" text-anchor="end" fill="var(--muted)" font-size="10">momentum</text><rect x="280" y="97" width="104" height="14" rx="4" fill="var(--accent)"/><text x="390" y="108" fill="var(--ink)" font-size="10">+0.3088</text>'+
+      '<text x="105" y="142" text-anchor="end" fill="var(--muted)" font-size="10">bandit</text><rect x="278" y="133" width="3" height="14" rx="1.5" fill="var(--faint)"/><text x="289" y="144" fill="var(--warn)" font-size="10">⚠ 0종목 · 정규화 버그 (Phase 1)</text>'+
+      '</svg>';
+  }
+  function costBars(){
+    var row=function(l,w,c,v){return '<div style="display:grid;grid-template-columns:52px 1fr 52px;gap:9px;align-items:center;margin-bottom:11px"><span class="mono" style="font-size:12px;color:var(--muted)">'+l+'</span><span style="height:15px;border-radius:4px;background:'+c+';width:'+w+'"></span><span class="mono" style="font-size:11px;color:var(--muted);text-align:right">'+v+'</span></div>';};
+    return row("0 bp","8%","var(--border-strong)","control")+row("23 bp","50%","var(--accent)","기본")+row("46 bp","100%","color-mix(in srgb,var(--accent) 55%,var(--surface))","stress");
+  }
+
+  function accordion(sum,meta,body,open){
+    return '<details class="disc"'+(open?" open":"")+'><summary><span class="cv">▶</span>'+sum+'<span class="sm">'+(meta||"")+'</span></summary><div class="bd">'+body+'</div></details>';
+  }
+
+  VIEWS.closeslot = function(){ return '<div class="eyebrow">연구 파이프라인 · 종가매매</div><h1 class="pt">종가매매 실험 (close-slot)</h1><p class="lede">종가 매수 → 익일 종가 매도 10-slot 실험 증거. 비실행 상한(연구 라벨).</p>'+ closeSlotCard(); };
+
+  VIEWS.rl = function(){
+    var runs=[["probability_lane_stacked_slgap_full","walkforward","GO_CANDIDATE","good"],["probability_lane_stacked_slgap","smoke","NO-GO_CONTROL","danger"],["probability_lane_matched","walkforward","SUPPORTING_FAIL","warn"],["probability_lane_tp5sl1","walkforward","NO-GO_BASELINE","danger"]];
+    return '<div class="eyebrow">강화학습 · RL Trading (research-only)</div><h1 class="pt">강화학습 증거 — NO-GO / 연구 전용</h1>'+
+      '<p class="lede">ts_imb RULE 기준선 대비 23bp 비용 반영 비교. 실거래·브로커·주문·계좌·페이퍼·모델빌드·수익주장 경로는 열리지 않습니다.</p>'+
+      postureBar()+
+      '<div class="grid g6" style="margin-top:4px">'+kpi("선택 판정",'NO-GO','research_only','flag')+kpi("23bp 대비",'기준선','ts_imb','')+kpi("최대 낙폭",'증거없음','D3 필요','')+kpi("거래·회전",'—','D4','')+kpi("연구 큐",'0','recorded-only','')+kpi("D9 게이트",'NO-GO','사람 검토','flag')+'</div>'+
+      '<div class="sec"><h2>D0–D9 증거 게이트</h2><span class="m">RL 연구 워크플로우</span></div>'+
+      '<div class="card"><div class="steps">'+[["D0","데이터"],["D1","룰 비교"],["D2","23bp"],["D3","낙폭","warn"],["D4","거래"],["D5","통제"],["D6","OOS"],["D7","감사"],["D8","사람"],["D9","NO-GO","danger"]].map(function(s){return '<div class="s"'+(s[2]?' data-st="'+s[2]+'"':'')+'><span class="n">'+s[0]+'</span><span class="t">'+s[1]+'</span></div>';}).join("")+'</div></div>'+
+      '<div class="sec"><h2>Factory Queue</h2><span class="m">read-only evidence · done 8</span></div>'+
+      '<div class="card" style="padding:0;overflow:auto"><table class="t"><thead><tr><th>run_id</th><th>stage</th><th>verdict</th></tr></thead><tbody>'+
+        runs.map(function(r){return '<tr><td class="mono">'+r[0]+'</td><td>'+r[1]+'</td><td><span class="tag '+r[3]+'">'+r[2]+'</span></td></tr>';}).join("")+
+      '</tbody></table></div>'+
+      '<div class="sec"><h2>원장 · 리스크 (접이식)</h2></div>'+
+        accordion("엣지 · 포워드 원장","edge / forward ledger",'<div class="kv"><span>edge ledger</span><strong>fresh 증거만 · hash-backed</strong></div><div class="kv"><span>forward ledger</span><strong>paper_forward=false (잠금)</strong></div>')+
+        accordion("캘리브레이션 · 리스크 사이징","calibration / sizing",'<div class="kv"><span>sizing/risk</span><strong>model_build_allowed=false</strong></div>');
+  };
+
+  VIEWS.training = function(){
+    return '<div class="eyebrow">시스템 · 실시간 학습</div><h1 class="pt">실시간 학습 모니터</h1><p class="lede">학습 진행·손실·GPU·건강도를 실시간으로. 주요 지표는 노출, 세부는 접이식.</p>'+
+      '<div class="grid g4">'+kpi("전체 진행",'0.0<small>%</small>','단계 구간 아래','')+kpi("현재 손실",'—','최근값','')+kpi("처리 속도",'—','samples/s','')+kpi("LR",'—','scheduled','')+'</div>'+
+      '<div class="card"><div class="sec"><h2>학습 건강도</h2><span class="m">정상 진행</span></div>'+
+        '<div class="grid g3" style="margin-top:12px">'+kpi("진행률",'정상','LR·loss·step 기준','okv')+kpi("Rolling loss",'—','최근 200pt 평균','')+kpi("Host CPU",'미측정','CPU<95% 권장','')+'</div>'+
+        '<div style="margin-top:16px" class="card"><div class="eyebrow" style="margin-bottom:10px">학습 손실 곡선</div>'+spark("0,26 20,24 40,20 60,18 80,15 100,12 120,10","var(--accent)").replace('height:30px','height:120px')+'</div></div>'+
+      accordion("GPU 추세 · 로그 tail","secondary",'<div class="kv"><span>GPU</span><strong>9.0% · 47°C · 4.4/16 GiB</strong></div>');
+  };
+
+  VIEWS.system = function(){
+    return '<div class="eyebrow">시스템 상태</div><h1 class="pt">시스템 · 하드웨어</h1><p class="lede">GPU/CPU/메모리 상태와 폴링. 읽기 전용.</p>'+
+      '<div class="grid g4">'+kpi("GPU 활용률",'9.0<small>%</small>','RTX · 정상','okv')+kpi("온도",'47<small>°C</small>','< 85 권장','okv')+kpi("VRAM",'4.4<small>/16 GiB</small>','')+kpi("predictor",'100<small>%</small>','ok','okv')+'</div>'+
+      '<div class="card"><div class="eyebrow" style="margin-bottom:10px">GPU 활용 추세</div>'+spark("0,18 20,20 40,15 60,22 80,14 100,17 120,15","var(--accent)").replace('height:30px','height:120px')+'</div>'+
+      accordion("하드웨어 상세 · 폴링 상태","GPU 디바이스 · Flask 폴링",'<div class="kv"><span>device</span><strong>cuda:0</strong></div><div class="kv"><span>polling</span><strong>30s</strong></div>');
+  };
+
+  VIEWS.settings = function(){
+    return '<div class="eyebrow">설정 · 문서</div><h1 class="pt">설정</h1><p class="lede">테마·새로고침·알림 등 클라이언트 환경 설정. 모든 설정은 브라우저에 저장됩니다.</p>'+
+      '<div class="card"><div class="eyebrow" style="margin-bottom:12px">외관 · 테마</div><div class="row"><button class="hbtn" onclick="__t(\'light\')">☀ 라이트</button><button class="hbtn" onclick="__t(\'dark\')">🌙 다크</button><span class="pill">우상단 토글과 동일</span></div></div>'+
+      '<div class="card"><div class="eyebrow" style="margin-bottom:12px">새로고침 주기</div><div class="row">'+["2초","5초","10초","30초","60초"].map(function(x,i){return '<span class="pill'+(i===1?' accent':'')+'">'+x+'</span>';}).join("")+'</div></div>'+
+      accordion("브라우저 알림 · 초기화 · 로드맵","클라이언트 저장",'<div class="kv"><span>notifications</span><strong>off</strong></div>');
+  };
+
+  VIEWS.forecast = function(){ return stub("예측 워크벤치","forecast · Kronos 추론","사전학습/파인튜닝 Kronos 모델로 K-line 시계열 예측을 실행합니다 (lookback · pred_len · temperature · top_p · n_samples · seed)."); };
+  VIEWS.stom = function(){ return stub("예측 진단","stom · Kronos vs baseline","Kronos 예측 vs random/persistence 베이스라인의 방향 정확도·MAPE, horizon 30/60/120/300s 비교, Kronos 점수 상위 후보."); };
+  VIEWS.portfolio = function(){ return stub("포트폴리오 RL (D4)","daily_portfolio_env · constrained RL","보유/추가/매도/축소가 가능한 제약 포트폴리오 강화학습(D4). 종가매매(close-slot)는 이를 단순화한 자매 라인입니다. ts_imb는 RULE baseline(RL 아님)."); };
+  VIEWS.artifacts = function(){ return stub("아티팩트 · 레지스트리","artifacts","생성 증거 파일·모델 레지스트리 조회. GET-only.")+'<div class="card" style="padding:0;overflow:auto;margin-top:16px"><table class="t"><thead><tr><th>kind</th><th>run</th><th>file</th></tr></thead><tbody><tr><td>dataset</td><td class="mono">…dataset_2026_07_03</td><td class="mono">dataset.parquet</td></tr><tr><td>gate</td><td class="mono">…gate_2026_07_03</td><td class="mono">gate_report.json</td></tr></tbody></table></div>'; };
+  VIEWS.opening = function(){ return stub("오프닝 30m RL","opening_30m · RULE 필터 + RL 실험","시초 30분 라인. RULE 필터(rule_filter, 비-RL 증거)와 RL 실험(rl_workflow)으로 갈립니다. ts_imb RULE 메인라인과만 비교."); };
+
+  function stub(t,sub,desc){ return '<div class="eyebrow">'+sub+'</div><h1 class="pt">'+t+'</h1><p class="lede">'+desc+'</p><div class="ph"><div class="big">'+t+' — 상세 화면</div>이 초안에서는 자리표시자입니다. 승인 시 실데이터·차트로 구성합니다.</div>'; }
+
+  function shell(){
+    var nav = NAV.map(function(g){
+      return '<div class="navlbl">'+g.grp+'</div>'+g.items.map(function(it){
+        var right = it.bdg ? '<span class="bdg">'+it.bdg+'</span>' : (it.stat ? '<span class="stat st-'+it.stat+'"></span>' : '');
+        var lbl = '<span class="nlab"><span>'+it.label+'</span>'+(it.note?'<span class="nnote">'+it.note+'</span>':'')+'</span>';
+        return '<div class="nav" data-go="'+it.id+'"'+(it.sub?' data-sub="1"':'')+'><span class="ic">'+(it.ic||(it.sub?"└":"›"))+'</span>'+lbl+right+'</div>';
+      }).join("");
+    }).join("");
+    return '<aside class="sb">'+
+      '<div class="brand"><div class="logo">K</div><div><b>Kronos</b><span>research command</span></div></div>'+
+      '<div class="navgrp">'+nav+'</div>'+
+      '<div class="sbfoot"><div class="runc"><div class="r1"><span class="dot"></span>predictor ok</div><div class="nm">stom_1s_grid_pred60_2025_full_small</div></div></div>'+
+      '</aside>'+
+      '<div class="main">'+
+        '<header class="hdr"><div><div class="crumb" id="crumb"></div><div class="htitle" id="htitle"></div></div><div class="sp"></div>'+
+          '<span class="hchip"><span class="d"></span>WATCH · RESEARCH_ONLY</span>'+
+          '<button class="hbtn" id="themeBtn">◐ 테마</button>'+
+        '</header>'+
+        '<div class="page" id="page"></div>'+
+      '</div>';
+  }
+
+  var view = "mission";
+  function paint(){
+    document.querySelectorAll(".nav").forEach(function(n){ n.setAttribute("data-on", n.getAttribute("data-go")===view?"1":"0"); });
+    var t = TITLES[view]||["",""]; document.getElementById("crumb").textContent="Kronos · "+t[0]; document.getElementById("htitle").textContent=t[1];
+    document.getElementById("page").innerHTML = (VIEWS[view]||VIEWS.mission)();
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  window.__t=function(m){ R.setAttribute("data-theme",m); };
+
+  document.getElementById("app").innerHTML = shell();
+  document.getElementById("app").addEventListener("click", function(e){
+    var go = e.target.closest("[data-go]");
+    if(go){ view = go.getAttribute("data-go"); paint(); return; }
+    if(e.target.closest("#themeBtn")){ var c=R.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light"); R.setAttribute("data-theme", c==="dark"?"light":"dark"); }
+  });
+  paint();
+})();
+</script>
