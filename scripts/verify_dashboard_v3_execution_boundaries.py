@@ -61,6 +61,7 @@ PERMITTED_PURPOSE_BRANCHES: Tuple[str, ...] = (
     "research/daily-close-r4-honesty",
     "feature/rl-governance-r6-r7",
     "release/dashboard-v3-95",
+    "feature/dashboard-v4-ux-rearchitecture",
 )
 
 # Frozen-file ownership. rl_events.py is SCHEMA-frozen (additive info permitted),

@@ -1,3 +1,4 @@
+import { preserveShellQuery } from './shellMode';
 import { activeTab } from './stores';
 
 export interface DashboardRoute {
@@ -13,12 +14,19 @@ export const DASHBOARD_ROUTES: readonly DashboardRoute[] = [
   { id: 'live-training', label: '실시간 학습', path: '/', aliases: ['/training', '/dashboard'], queryTabs: ['live-training', 'training'] },
   { id: 'forecast', label: '예측 워크벤치', path: '/', queryTabs: ['forecast'] },
   { id: 'stom', label: '예측 진단', path: '/', queryTabs: ['stom'] },
-  { id: 'daily-ohlcv', label: 'Daily OHLCV', path: '/', queryTabs: ['daily-ohlcv', 'daily-ohlcv-panel'] },
-  { id: 'daily-rl-guide', label: '일봉 RL 가이드', path: '/', queryTabs: ['daily-rl-guide', 'daily-ohlcv-rl-guide'] },
+  { id: 'daily-ohlcv', label: 'Daily OHLCV', path: '/', aliases: ['/daily-ohlcv'], queryTabs: ['daily-ohlcv', 'daily-ohlcv-panel'] },
+  {
+    id: 'daily-rl-guide',
+    label: '일봉 RL 가이드',
+    path: '/',
+    aliases: ['/daily-rl-guide', '/daily-ohlcv/rl-guide'],
+    queryTabs: ['daily-rl-guide', 'daily-ohlcv-rl-guide'],
+  },
   {
     id: 'rl',
     label: 'Trading Command Center',
     path: '/',
+    aliases: ['/rl'],
     queryTabs: ['rl', 'rl-lab', 'rl-trading'],
   },
   { id: 'artifacts', label: '아티팩트 & 모델', path: '/', queryTabs: ['artifacts'] },
@@ -44,21 +52,17 @@ function routeFromPath(pathname: string): DashboardRoute | null {
   const path = normalizePath(pathname);
   return DASHBOARD_ROUTES.find((route) => route.path === path || route.aliases?.includes(path)) ?? null;
 }
-
 const RL_SECTIONS = new Set(['daily-gates', 'workflow', 'evidence']);
 
-function canonicalUrlForRoute(route: DashboardRoute, locationLike: Location = window.location): string {
+
+function canonicalUrlForRoute(route: DashboardRoute, locationLike: Pick<Location, 'pathname' | 'search'>): string {
   if (route.id === 'rl' && normalizePath(locationLike.pathname) === '/rl') {
     const section = new URLSearchParams(locationLike.search).get('section');
     if (section && RL_SECTIONS.has(section)) {
-      return `/rl?section=${encodeURIComponent(section)}`;
+      return preserveShellQuery(`/rl?section=${encodeURIComponent(section)}`, locationLike.search);
     }
   }
-  return routeUrl(route.id);
-}
-
-function shouldHardNavigate(route: DashboardRoute): boolean {
-  return route.id === 'rl' && route.path !== '/';
+  return routeUrl(route.id, { currentSearch: locationLike.search });
 }
 
 export function routeForTab(tabId: string): DashboardRoute | null {
@@ -69,27 +73,26 @@ export function routeLabel(tabId: string): string {
   return routeForTab(tabId)?.label ?? tabId;
 }
 
-export function routeUrl(tabId: string): string {
+export function routeUrl(tabId: string, options: { currentSearch?: string } = {}): string {
+  const currentSearch = options.currentSearch ?? (typeof window === 'undefined' ? '' : window.location.search);
   const route = routeForTab(tabId);
-  if (!route) return '/';
-  if (route.path !== '/') return route.path;
-  return route.id === 'mission-control' ? '/' : `/?tab=${encodeURIComponent(route.id)}`;
+  if (!route) return preserveShellQuery('/', currentSearch);
+  const baseUrl = route.path !== '/' ? route.path : route.id === 'mission-control' ? '/' : `/?tab=${encodeURIComponent(route.id)}`;
+  return preserveShellQuery(baseUrl, currentSearch);
 }
 
-export function resolveRoute(locationLike: Location = window.location): DashboardRoute | null {
-  const requested = new URLSearchParams(locationLike.search).get('tab');
-  return routeFromQuery(requested) ?? routeFromPath(locationLike.pathname);
+export function resolveRoute(locationLike?: Pick<Location, 'pathname' | 'search'>): DashboardRoute | null {
+  const currentLocation = locationLike ?? (typeof window === 'undefined' ? null : window.location);
+  if (!currentLocation) return null;
+  const requested = new URLSearchParams(currentLocation.search).get('tab');
+  return routeFromQuery(requested) ?? routeFromPath(currentLocation.pathname);
 }
 
 export function syncTabFromLocation(options: { replaceAlias?: boolean } = {}): string {
   if (typeof window === 'undefined') return 'mission-control';
   const route = resolveRoute(window.location) ?? routeForTab('mission-control')!;
-  const canonical = canonicalUrlForRoute(route);
+  const canonical = canonicalUrlForRoute(route, window.location);
   const current = `${window.location.pathname}${window.location.search}`;
-  if (shouldHardNavigate(route) && current !== canonical) {
-    window.location.replace(canonical);
-    return route.id;
-  }
   activeTab.set(route.id);
   if (options.replaceAlias) {
     if (current !== canonical) {
@@ -104,11 +107,6 @@ export function navigateToTab(tabId: string, options: { replace?: boolean } = {}
   if (typeof window === 'undefined') return;
   const nextUrl = routeUrl(tabId);
   const current = `${window.location.pathname}${window.location.search}`;
-  const route = routeForTab(tabId);
-  if (route && shouldHardNavigate(route) && current !== nextUrl) {
-    window.location.assign(nextUrl);
-    return;
-  }
   const state = { tab: tabId };
   if (options.replace || current === nextUrl) {
     window.history.replaceState(state, '', nextUrl);

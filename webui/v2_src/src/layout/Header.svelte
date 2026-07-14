@@ -12,6 +12,8 @@
   import { ICONS } from '$lib/icons';
   import { fmt } from '$lib/format';
   import { routeLabel } from '$lib/routes';
+  import { dashboardShell, type DashboardShell } from '$lib/shellMode';
+  import { requestCommandPalette } from '$lib/commandPalette';
   // Header route label markers: Daily OHLCV · 일봉 RL 설명서 · RL Trading
 
   const tabLabels: Record<string, string> = {};
@@ -24,6 +26,8 @@
   lastUpdatedAt.subscribe((v) => (last = v));
   let currentTheme = $state<'light' | 'dark'>('light');
   theme.subscribe((v) => (currentTheme = v));
+  let shell = $state<DashboardShell>('v3');
+  dashboardShell.subscribe((v) => (shell = v));
 
   let now = $state(fmt.kstTime(Date.now()));
   let timer: number | undefined;
@@ -43,7 +47,7 @@
   }
 </script>
 
-<header class="header">
+<header class="header" data-kronos-shell={shell} data-v4-shell={shell === 'v4' ? 'header' : undefined}>
   <button
     type="button"
     class="btn icon ghost"
@@ -70,6 +74,11 @@
         <span>{status.readiness.label ?? status.readiness.level}</span>
       </span>
     {/if}
+    {#if shell === 'v4'}
+      <span class="header-stat text-caption" data-v4-status-marker title="V4 shell opt-in status">
+        V4 opt-in · read-only
+      </span>
+    {/if}
   </div>
 
   <div class="header-actions">
@@ -80,6 +89,20 @@
     <span class="header-stat text-caption" title="마지막 갱신">
       갱신 <span class="text-mono">{last}</span>
     </span>
+    {#if shell === 'v4'}
+      <button
+        type="button"
+        class="btn ghost command-trigger"
+        data-v4-command-trigger
+        onclick={requestCommandPalette}
+        aria-label="명령 팔레트 열기"
+        title="명령 팔레트 열기 (Ctrl/Cmd+K)"
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">{@html ICONS.grid}</svg>
+        <span class="command-label">Command</span>
+        <span class="shortcut">Ctrl/Cmd+K</span>
+      </button>
+    {/if}
     <button
       type="button"
       class="btn icon ghost"
@@ -153,9 +176,29 @@
     background: var(--success);
     box-shadow: 0 0 6px var(--success);
   }
+  .command-trigger {
+    gap: 8px;
+    padding: 0 10px;
+    min-width: auto;
+  }
+  .shortcut {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--dim);
+  }
   @media (max-width: 640px) {
-    .header-stat.text-caption {
+    .header-meta,
+    .header-stat,
+    .crumb-root,
+    .crumb-sep,
+    .command-label,
+    .shortcut {
       display: none;
+    }
+    .command-trigger {
+      min-width: 36px;
+      padding: 0;
+      justify-content: center;
     }
   }
 </style>
