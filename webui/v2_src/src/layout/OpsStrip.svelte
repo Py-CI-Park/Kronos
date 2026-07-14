@@ -8,6 +8,7 @@
   import { gpuStatus, systemStatus, refreshSeconds, lastUpdatedAt } from '$lib/stores';
   import { rlApi } from '$lib/rlApi';
   import { deriveDisplayStatus, isLive as isRunningStatus, type RunLifecycle } from '$lib/runLifecycle';
+  import { dashboardShell, type DashboardShell } from '$lib/shellMode';
 
   // Same subscribe + $state pattern SystemHealthTab uses.
   let gpu = $state<any>(null);
@@ -18,6 +19,8 @@
 
   let sec = $state(5);
   refreshSeconds.subscribe((v) => (sec = v));
+  let shell = $state<DashboardShell>('v3');
+  dashboardShell.subscribe((v) => (shell = v));
 
   // `lastUpdatedAt` is a localized display string (not a timestamp), so we
   // anchor a real epoch every time it changes to derive "Xs ago" honestly.
@@ -116,7 +119,13 @@
   }
 </script>
 
-<div class="ops-strip" data-ops-strip aria-label="시스템 운영 상태 요약">
+<div
+  class="ops-strip"
+  data-ops-strip
+  data-kronos-shell={shell}
+  data-v4-shell={shell === 'v4' ? 'ops-strip' : undefined}
+  aria-label="시스템 운영 상태 요약"
+>
   <div class="ops-row">
     <span class="ops-lead" title="라이브 상태">
       <span class="ops-pulse" class:live={sourceLive}></span>
@@ -147,6 +156,13 @@
       <span class="ops-key">자세</span>
       <span class="ops-val" title="RESEARCH_ONLY">연구전용</span>
     </span>
+
+    {#if shell === 'v4'}
+      <span class="ops-cell" data-v4-status-marker title="V4 shell opt-in — read-only command surface">
+        <span class="ops-key">V4</span>
+        <span class="ops-val">opt-in · read-only</span>
+      </span>
+    {/if}
   </div>
 </div>
 

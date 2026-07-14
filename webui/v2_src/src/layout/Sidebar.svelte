@@ -3,6 +3,8 @@
   import { ICONS, type IconName } from '$lib/icons';
   import { fmt } from '$lib/format';
   import { navigateToTab } from '$lib/routes';
+  import { dashboardShell, type DashboardShell } from '$lib/shellMode';
+  import { requestCommandPalette } from '$lib/commandPalette';
 
   interface NavItem {
     id: string;
@@ -21,7 +23,7 @@
   // v3 "AI Quant" technique-based IA (code-grounded):
   //   커맨드 → Kronos 예측(독립 파운데이션) → 트레이딩 리서치(일봉 D0–D9 ⊃ D4 RL·종가매매,
   //   + 인트라데이 커맨드센터) → 라이브·시스템. Kronos와 RL은 독립 축(데이터만 공유).
-  const groups: NavGroup[] = [
+  const v3Groups: NavGroup[] = [
     {
       label: '커맨드',
       items: [
@@ -64,6 +66,59 @@
     },
   ];
 
+  const v4Groups: NavGroup[] = [
+    {
+      label: 'Home / Mission Control',
+      items: [
+        { id: 'mission-control', label: 'Mission Control', icon: 'pulse', badge: null },
+      ],
+    },
+    {
+      label: 'Forecast',
+      items: [
+        { id: 'forecast', label: '예측 워크벤치', icon: 'wand', badge: null },
+        { id: 'stom', label: '예측 진단', icon: 'pulse', badge: null },
+      ],
+    },
+    {
+      label: 'Daily Research',
+      items: [
+        {
+          id: 'daily-ohlcv',
+          label: 'Daily OHLCV',
+          icon: 'pulse',
+          badge: '연구',
+          // daily-rl-guide는 daily-ohlcv 라인의 하위(자식) 항목으로 귀속.
+          children: [
+            { id: 'daily-rl-guide', label: '일봉 RL 설명서', icon: 'file', badge: null },
+          ],
+        },
+      ],
+    },
+    {
+      label: 'RL Evidence',
+      items: [
+        { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: 'RL' },
+      ],
+    },
+    {
+      label: 'Operations',
+      items: [
+        { id: 'live-training', label: '실시간 학습', icon: 'activity', badge: 'LIVE', status: 'live' },
+        { id: 'system-health', label: '시스템 상태', icon: 'cpu', badge: null },
+        { id: 'artifacts', label: '아티팩트 & 모델', icon: 'package', badge: null },
+        { id: 'history', label: '기록 & 런', icon: 'history', badge: null },
+      ],
+    },
+    {
+      label: 'Admin & Docs',
+      items: [
+        { id: 'settings', label: '설정', icon: 'settings', badge: null },
+        { id: 'docs', label: '문서 · Wiki', icon: 'file', badge: null },
+      ],
+    },
+  ];
+
   let current = $state('live-training');
   activeTab.subscribe((v) => (current = v));
 
@@ -79,13 +134,23 @@
   let m = $state<any>({});
   metricsLatest.subscribe((v) => (m = v));
 
+  let shell = $state<DashboardShell>('v3');
+  dashboardShell.subscribe((v) => (shell = v));
+  let navGroups = $derived(shell === 'v4' ? v4Groups : v3Groups);
+
   function pick(id: string) {
     navigateToTab(id);
     sidebarMobileOpen.set(false);
   }
 </script>
 
-<aside class="sidebar" data-sidebar-collapsed={collapsed} data-mobile-open={mobileOpen}>
+<aside
+  class="sidebar"
+  data-sidebar-collapsed={collapsed}
+  data-mobile-open={mobileOpen}
+  data-kronos-shell={shell}
+  data-v4-shell={shell === 'v4' ? 'sidebar' : undefined}
+>
   <div class="brand">
     <div class="brand-mark">
       <svg viewBox="0 0 24 24" aria-hidden="true">{@html ICONS.flame}</svg>
@@ -98,7 +163,28 @@
     {/if}
   </div>
 
-  {#each groups as g}
+  {#if shell === 'v4'}
+    <div class="sidebar-command">
+      <button
+        type="button"
+        class="nav-item nav-item--command"
+        data-v4-command-trigger
+        aria-label="명령 팔레트 열기"
+        title="명령 팔레트 열기 (Ctrl/Cmd+K)"
+        onclick={requestCommandPalette}
+      >
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">{@html ICONS.grid}</svg>
+        </span>
+        {#if !collapsed}
+          <span class="nav-label">Command Palette</span>
+          <span class="nav-badge">Ctrl/Cmd+K</span>
+        {/if}
+      </button>
+    </div>
+  {/if}
+
+  {#each navGroups as g}
     <div class="sidebar-section">
       {#if !collapsed}
         <div class="sidebar-section-label">{g.label}</div>
@@ -176,3 +262,14 @@
     </div>
   {/if}
 </aside>
+
+<style>
+  .sidebar-command {
+    padding: 12px 20px 0;
+  }
+  .nav-item--command {
+    width: 100%;
+    border: 1px solid var(--border-faint);
+    background: var(--surface-sunken);
+  }
+</style>
