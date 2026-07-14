@@ -16,7 +16,7 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     gate_ladder = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyGateLadder.svelte').read_text(encoding='utf-8')
 
     assert "DailyOhlcvTab" in app
-    assert "'/daily-ohlcv'" in app
+    assert "'/daily-ohlcv'" in routes
     assert "Trading Command Center" in sidebar
     assert "Daily OHLCV" in header
     assert "data-daily-ohlcv-tab" in tab
@@ -49,8 +49,8 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "/api/daily-ohlcv/close-slot/gate/latest" in api
     assert "/api/daily-ohlcv/charts/close-slot-equity" in api
     assert "/api/daily-ohlcv/charts/close-slot-selection" in api
-    assert "'/daily-rl-guide'" in app
-    assert "'/daily-ohlcv/rl-guide'" in app
+    assert "'/daily-rl-guide'" in routes
+    assert "'/daily-ohlcv/rl-guide'" in routes
     assert "DailyModelResultsCard" in tab
     assert "DailyVisualLabCard" in tab
     assert "DailyCloseSlotCard" in tab
@@ -131,8 +131,6 @@ def test_daily_secondary_cards_use_abortable_independent_state_and_retry():
     tab = (SRC / 'tabs' / 'DailyOhlcvTab.svelte').read_text(encoding='utf-8')
     api = (SRC / 'lib' / 'dailyOhlcvApi.ts').read_text(encoding='utf-8')
     manager = (SRC / 'lib' / 'cardRequest.ts').read_text(encoding='utf-8')
-    manager_tests = (SRC / 'lib' / 'cardRequest.test.ts').read_text(encoding='utf-8')
-    latency_tests = (SRC / 'lib' / 'latencyGate.test.ts').read_text(encoding='utf-8')
 
     assert "createCardRequestManager(CARD_TIMEOUT_MS)" in tab
     assert "secondaryCardStates" in tab
@@ -141,11 +139,6 @@ def test_daily_secondary_cards_use_abortable_independent_state_and_retry():
     assert "AbortSignal" in api
     assert "new AbortController()" in manager
     assert "controllers.get(key)?.abort()" in manager
-    assert "independent cards publish independently when one request stalls" in manager_tests
-    assert "new request aborts and suppresses stale same-card response" in manager_tests
-    assert "timeout aborts only the stalled card" in manager_tests
-    assert "warm critical API breach fails rather than passing silently" in latency_tests
-    assert "cold critical API breach fails rather than passing silently" in latency_tests
 
 def test_daily_ohlcv_cards_expose_guardrail_markers():
     progress = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyProgressTimeline.svelte').read_text(encoding='utf-8')

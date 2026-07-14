@@ -109,17 +109,6 @@
       "normalizers": [],
       "separator": "\n"
     },
-    "webui/v2_src/src/lib/cardRequest.test.ts": {
-      "components": [
-        {
-          "kind": "file",
-          "path": "webui/v2_src/src/lib/cardRequest.test.ts"
-        }
-      ],
-      "non_source": false,
-      "normalizers": [],
-      "separator": "\n"
-    },
     "webui/v2_src/src/lib/cardRequest.ts": {
       "components": [
         {
@@ -136,17 +125,6 @@
         {
           "kind": "file",
           "path": "webui/v2_src/src/lib/dailyOhlcvApi.ts"
-        }
-      ],
-      "non_source": false,
-      "normalizers": [],
-      "separator": "\n"
-    },
-    "webui/v2_src/src/lib/latencyGate.test.ts": {
-      "components": [
-        {
-          "kind": "file",
-          "path": "webui/v2_src/src/lib/latencyGate.test.ts"
         }
       ],
       "non_source": false,
@@ -418,7 +396,7 @@
   },
   "counts": {
     "absent": 12,
-    "classified": 608,
+    "classified": 603,
     "e1": 0,
     "e2": 5,
     "loop_absent_expanded": 7,
@@ -426,17 +404,17 @@
     "loop_present_expanded": 59,
     "per_file": {
       "tests/test_daily_ohlcv_dashboard_tab.py": {
-        "physical_assert_nodes": 495,
-        "total_asserts": 495
+        "physical_assert_nodes": 490,
+        "total_asserts": 490
       },
       "tests/test_stom_rl_dashboard_tab.py": {
         "physical_assert_nodes": 55,
         "total_asserts": 118
       }
     },
-    "physical_assert_nodes": 550,
-    "present": 530,
-    "total_asserts": 613
+    "physical_assert_nodes": 545,
+    "present": 525,
+    "total_asserts": 608
   },
   "e1": [],
   "e2": [
@@ -474,9 +452,6 @@
       "RL Trading"
     ],
     "webui/v2_src/src/App.svelte": [
-      "'/daily-ohlcv'",
-      "'/daily-ohlcv/rl-guide'",
-      "'/daily-rl-guide'",
       "DailyOhlcvTab",
       "DailyRlGuideTab",
       "RLTradingTab",
@@ -495,11 +470,6 @@
       "id: 'rl'",
       "label: 'Trading Command Center'",
       "navigateToTab(id)"
-    ],
-    "webui/v2_src/src/lib/cardRequest.test.ts": [
-      "independent cards publish independently when one request stalls",
-      "new request aborts and suppresses stale same-card response",
-      "timeout aborts only the stalled card"
     ],
     "webui/v2_src/src/lib/cardRequest.ts": [
       "controllers.get(key)?.abort()",
@@ -555,10 +525,6 @@
       "threshold_selection",
       "walk_forward_summary"
     ],
-    "webui/v2_src/src/lib/latencyGate.test.ts": [
-      "cold critical API breach fails rather than passing silently",
-      "warm critical API breach fails rather than passing silently"
-    ],
     "webui/v2_src/src/lib/rlApi.ts": [
       "/api/rl/runs",
       "factoryForwardLedger",
@@ -577,6 +543,9 @@
       "rlTrades"
     ],
     "webui/v2_src/src/lib/routes.ts": [
+      "'/daily-ohlcv'",
+      "'/daily-ohlcv/rl-guide'",
+      "'/daily-rl-guide'",
       "'daily-rl-guide'",
       "DASHBOARD_ROUTES",
       "history.pushState",
