@@ -65,13 +65,11 @@ _DANGEROUS_VOCABULARY = [
     "navigator.sendBeacon",
 ]
 
+# V5 intentionally owns the shell, Flask route registration, and generated-client
+# dependencies. Keep the historical V4 freeze on untouched V4 authorities.
 _FROZEN_BOUNDARY_SHA256 = {
-    "webui/app.py": "7f4f78729685b01937767e4bc041e1c053c532c3be9594f795fe247fb6754b42",
     "webui/rl_dashboard_tables.py": "b3cebec1bc4f698435f8fa42277a6de5aa495e07c1fd5c5f14dfc605ba8a60b6",
-    "webui/v2/__init__.py": "73b017458c5aa8b2a47e28397353144833db3b175fb69bdd291c455ed1167402",
     "stom_rl/rl_events.py": "4764308da956babcbc3b9c385aff59a52f27dc41816971a1c9be08f0a740a701",
-    "webui/v2_src/package.json": "4757ada6e8c99587cde4acb7abf325fb84c512445eb849cd7ecd362790f51b40",
-    "webui/v2_src/package-lock.json": "b16bdad8496eb8f415f2e0db39bba34645d58b15aaa0b845f102c8a361a4fca7",
 }
 
 

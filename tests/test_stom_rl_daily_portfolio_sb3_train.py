@@ -162,8 +162,8 @@ def test_daily_portfolio_sb3_fold_local_dqn_controls_do_not_retrain(tmp_path, mo
         assert fold["training_device_used"] == "training-cuda"
         assert fold["eval_device"] == "eval-cpu"
         assert fold["controls_retrained"] is False
-        assert [m["cost_label"] for m in fold["control_metrics"]] == ["control_0bp", "control_46bp"]
-        assert [m["cost_label"] for m in fold["untouched_test_oos_control_metrics"]] == ["control_0bp", "control_46bp"]
+        assert [m["cost_label"] for m in fold["control_metrics"]] == ["zero_control_0bp", "stress_46bp"]
+        assert [m["cost_label"] for m in fold["untouched_test_oos_control_metrics"]] == ["zero_control_0bp", "stress_46bp"]
         assert fold["untouched_test_oos_primary_metrics"]["cost_label"] == "base_23bp"
         assert fold["maskable_ppo_trigger"]["recommendation_only"] is True
         assert fold["false_locks"]["live_broker_order_allowed"] is False

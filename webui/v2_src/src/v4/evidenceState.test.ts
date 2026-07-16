@@ -22,6 +22,19 @@ test('normalizeEvidenceState fails closed to missing for unknown input', () => {
   }
 });
 
+test('normalizeEvidenceState accepts conservative lifecycle primitive and object variants', () => {
+  assert.equal(normalizeEvidenceState('COMPLETED'), 'completed');
+  assert.equal(normalizeEvidenceState({ status: 'COMPLETED' }), 'completed');
+  assert.equal(normalizeEvidenceState({ lifecycle: { status: 'replayed' } }), 'replay');
+  assert.equal(normalizeEvidenceState({ state: { value: 'CONFLICT_BLOCKED' } }), 'no-go');
+  assert.equal(normalizeEvidenceState({ freshness_status: 'NOT_RUN' }), 'missing');
+});
+
+test('normalizeEvidenceState fails closed for malformed objects without object-string artifacts', () => {
+  assert.equal(normalizeEvidenceState({ status: { unexpected: 'completed' } }), 'missing');
+  assert.equal(normalizeEvidenceState({ toString: () => 'completed' }), 'missing');
+});
+
 test('evidenceStateMeta returns deterministic Korean-first metadata for every state', () => {
   const expected = {
     loading: { label: '로딩', tone: 'neutral', blocking: true, showContent: false },

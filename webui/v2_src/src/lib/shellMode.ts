@@ -1,6 +1,7 @@
 import { writable, type Writable } from 'svelte/store';
+import { isV5DefaultGateAllowed, readLocalV5DefaultGateReceipt } from './v5DefaultGate';
 
-export type DashboardShell = 'v3' | 'v4';
+export type DashboardShell = 'v3' | 'v4' | 'v5';
 
 export const SHELL_STORAGE_KEY = 'kronos-dashboard-shell';
 
@@ -13,7 +14,7 @@ export interface ShellResolution {
 const DEFAULT_SHELL: DashboardShell = 'v3';
 
 function isDashboardShell(value: string | null): value is DashboardShell {
-  return value === 'v3' || value === 'v4';
+  return value === 'v3' || value === 'v4' || value === 'v5';
 }
 
 function parseSearch(search: string): URLSearchParams {
@@ -41,9 +42,14 @@ function splitUrlSearch(url: string): { pathname: string; search: string } {
 }
 
 
-export function resolveDashboardShell(search: string, storedValue: string | null): ShellResolution {
+export function resolveDashboardShell(
+  search: string,
+  storedValue: string | null,
+  v5DefaultGateReceipt: unknown = null,
+): ShellResolution {
   const params = parseSearch(search);
   const queryShell = params.get('ui');
+  const v5DefaultAllowed = isV5DefaultGateAllowed(v5DefaultGateReceipt);
 
   if (isDashboardShell(queryShell)) {
     return {
@@ -54,7 +60,13 @@ export function resolveDashboardShell(search: string, storedValue: string | null
   }
 
   if (isDashboardShell(storedValue)) {
-    return { shell: storedValue, source: 'storage', shouldPersist: false };
+    if (storedValue !== 'v5' || v5DefaultAllowed) {
+      return { shell: storedValue, source: 'storage', shouldPersist: false };
+    }
+  }
+
+  if (v5DefaultAllowed) {
+    return { shell: 'v5', source: 'default', shouldPersist: false };
   }
 
   return { shell: DEFAULT_SHELL, source: 'default', shouldPersist: false };
@@ -84,25 +96,38 @@ export function preserveShellQuery(targetUrl: string, currentSearch: string): st
 
 export const dashboardShell: Writable<DashboardShell> = writable<DashboardShell>(DEFAULT_SHELL);
 
+function getSafeLocalStorage(): Storage | null {
+  try {
+    if (typeof globalThis === 'undefined') {
+      return null;
+    }
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function readStoredShell(): string | null {
-  if (typeof localStorage === 'undefined') {
+  const storage = getSafeLocalStorage();
+  if (!storage) {
     return null;
   }
 
   try {
-    return localStorage.getItem(SHELL_STORAGE_KEY);
+    return storage.getItem(SHELL_STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
 function persistShell(shell: DashboardShell): void {
-  if (typeof localStorage === 'undefined') {
+  const storage = getSafeLocalStorage();
+  if (!storage) {
     return;
   }
 
   try {
-    localStorage.setItem(SHELL_STORAGE_KEY, shell);
+    storage.setItem(SHELL_STORAGE_KEY, shell);
   } catch {
     // Dashboard shell selection is UI-only state; storage failures must not break load.
   }
@@ -122,7 +147,7 @@ function applyShellMarker(shell: DashboardShell): void {
 
 export function initializeDashboardShell(): DashboardShell {
   const search = typeof location === 'undefined' ? '' : location.search;
-  const resolution = resolveDashboardShell(search, readStoredShell());
+  const resolution = resolveDashboardShell(search, readStoredShell(), readLocalV5DefaultGateReceipt());
 
   dashboardShell.set(resolution.shell);
   applyShellMarker(resolution.shell);

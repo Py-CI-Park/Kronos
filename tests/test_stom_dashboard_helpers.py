@@ -40,6 +40,8 @@ def test_dashboard_prediction_helpers_load_metrics_and_chart(tmp_path, monkeypat
     assert metrics["rows"] == 2
     assert metrics["windows"] == 1
     assert chart["data"][0]["name"] == "실제 close"
+    assert chart["data"][0]["x"] == ["2026-01-02T09:00:04", "2026-01-02T09:00:05"]
+    assert chart["data"][1]["x"] == chart["data"][0]["x"]
     assert topk[0]["symbol"] == "000001"
     assert recommendations[0]["symbol"] == "000001"
     assert 0 <= recommendations[0]["kronos_score"] <= 100

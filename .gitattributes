@@ -1,0 +1,3 @@
+docs/schemas/*.json text eol=lf
+scripts/generate_kronos_v5_api_types.mjs text eol=lf
+webui/v2_src/src/lib/generated/*.ts text eol=lf

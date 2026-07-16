@@ -1,6 +1,8 @@
 import json
 import os
 import sys
+import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -10,9 +12,41 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from webui import rl_dashboard  # noqa: E402
+from webui import rl_dashboard, rl_dashboard_runs  # noqa: E402
 from webui.app import app as flask_app  # noqa: E402
 
+
+IDENTITY_FIELDS = ("run_uid", "revision", "source_sha256", "source_protocol")
+
+
+def _identity_fields(record: dict) -> dict:
+    return {key: record[key] for key in IDENTITY_FIELDS}
+
+
+def _assert_identity_contract(record: dict) -> None:
+    run_uid = record["run_uid"]
+    assert isinstance(run_uid, str)
+    assert str(uuid.UUID(run_uid)) == run_uid
+
+    revision = record["revision"]
+    assert isinstance(revision, int) and not isinstance(revision, bool)
+    assert revision > 0
+
+    source_sha256 = record["source_sha256"]
+    assert isinstance(source_sha256, str)
+    assert len(source_sha256) == 64
+    assert source_sha256 == source_sha256.lower()
+    int(source_sha256, 16)
+
+    assert record["source_protocol"] == rl_dashboard_runs.RUN_IDENTITY_PROTOCOL
+
+
+def _write_minimal_baseline_run(run_dir: Path) -> None:
+    run_dir.mkdir(parents=True)
+    (run_dir / "baseline_summary.json").write_text(
+        json.dumps({"mode": "stom_rl_baseline_run", "summary": {"policy_count": 1}}),
+        encoding="utf-8-sig",
+    )
 
 def _write_csv(path: Path, header: str, rows: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -425,6 +459,67 @@ def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     assert readiness_detail["strategy_context"]["is_live_ready"] is False
     assert readiness_detail["strategy_context"]["is_profit_model"] is False
     assert readiness_rows["rows"][0]["quote_coverage"] == 0.98
+
+
+def test_rl_dashboard_identity_fields_match_list_detail_and_api(tmp_path, monkeypatch):
+    _write_rl_fixture(tmp_path)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    list_record = next(run for run in rl_dashboard.list_rl_runs(limit=10) if run["name"] == "bandit_run")
+    detail = rl_dashboard.load_rl_run("bandit_run")
+    _assert_identity_contract(list_record)
+    _assert_identity_contract(detail)
+    assert _identity_fields(detail) == _identity_fields(list_record)
+
+    client = flask_app.test_client()
+    api_runs = client.get("/api/rl/runs")
+    assert api_runs.status_code == 200
+    api_list_record = next(run for run in api_runs.get_json()["runs"] if run["name"] == "bandit_run")
+    api_detail = client.get("/api/rl/runs/bandit_run")
+    assert api_detail.status_code == 200
+    api_detail_payload = api_detail.get_json()
+    _assert_identity_contract(api_list_record)
+    _assert_identity_contract(api_detail_payload)
+    assert _identity_fields(api_list_record) == _identity_fields(api_detail_payload) == _identity_fields(list_record)
+
+
+def test_rl_dashboard_identity_changes_when_artifact_file_mutates(tmp_path, monkeypatch):
+    _write_rl_fixture(tmp_path)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+    run_dir = tmp_path / "bandit_run"
+
+    before = rl_dashboard.load_rl_run("bandit_run")
+    summary_path = run_dir / "eval_summary.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8-sig"))
+    payload["eval_summary"]["trade_count"] = 2
+    summary_path.write_text(json.dumps(payload), encoding="utf-8-sig")
+    latest_mtime = max(path.stat().st_mtime for path in run_dir.rglob("*") if path.is_file())
+    future_mtime = max(time.time(), latest_mtime) + 2.0
+    os.utime(summary_path, (future_mtime, future_mtime))
+
+    after = rl_dashboard.load_rl_run("bandit_run")
+    after_list = next(run for run in rl_dashboard.list_rl_runs(limit=10) if run["name"] == "bandit_run")
+    assert after["run_uid"] == before["run_uid"]
+    assert after["revision"] > before["revision"]
+    assert after["source_sha256"] != before["source_sha256"]
+    assert _identity_fields(after_list) == _identity_fields(after)
+
+
+def test_rl_dashboard_run_uid_disambiguates_same_named_runs_under_different_roots(tmp_path, monkeypatch):
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+    run_name = "same_run"
+    _write_minimal_baseline_run(left_root / run_name)
+    _write_minimal_baseline_run(right_root / run_name)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [left_root, right_root])
+
+    records = [run for run in rl_dashboard.list_rl_runs(limit=10) if run["name"] == run_name]
+
+    assert len(records) == 2
+    for record in records:
+        _assert_identity_contract(record)
+    assert len({record["run_uid"] for record in records}) == 2
+    assert len({record["source_sha256"] for record in records}) == 1
 
 
 def _write_portfolio_fixture(root: Path) -> None:

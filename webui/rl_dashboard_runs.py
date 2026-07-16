@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping
 
@@ -17,6 +20,78 @@ except ImportError:  # pragma: no cover - supports direct script-style imports
     import rl_dashboard_files as _files
     from rl_dashboard_opening import load_opening_workflow_detail, opening_workflow_summary
     from rl_dashboard_files import ARTIFACT_SIGNATURES, LIVE_SUMMARY_FILE_NAMES, RlDashboardPathError, _int_or_zero, _is_relative_to_root, _is_run_file, _read_run_json, _safe_direct_child_name, _utc_mtime
+
+RUN_IDENTITY_PROTOCOL = "stom_rl_dashboard_run_identity.v1"
+_RUN_UID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, RUN_IDENTITY_PROTOCOL)
+_SOURCE_HASH_CHUNK_BYTES = 1024 * 1024
+_REVISION_CONTENT_BUCKETS = 1_048_576
+
+
+def _canonical_path_id(path: Path) -> str:
+    value = path.resolve().as_posix()
+    return value.lower() if os.name == "nt" else value
+
+
+def _canonical_run_locator(run_dir: Path) -> Dict[str, str]:
+    run_resolved = run_dir.resolve()
+    for root in _files.RL_RUN_ROOTS:
+        root_path = Path(root)
+        root_resolved = root_path.resolve()
+        if run_resolved == root_resolved or root_resolved in run_resolved.parents:
+            relative_path = run_resolved.relative_to(root_resolved).as_posix()
+            return {
+                "root": _canonical_path_id(root_path),
+                "path": _canonical_path_id(run_dir),
+                "relative_path": relative_path or ".",
+            }
+    raise RlDashboardPathError(f"Invalid run: resolved path escapes RL root: {run_dir.name!r}")
+
+
+def _hash_file_content(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    byte_length = 0
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(_SOURCE_HASH_CHUNK_BYTES), b""):
+            digest.update(chunk)
+            byte_length += len(chunk)
+    return digest.hexdigest(), byte_length
+
+
+def _artifact_snapshot(run_dir: Path) -> tuple[List[Dict[str, Any]], int]:
+    files: List[Dict[str, Any]] = []
+    revision_ns = run_dir.stat().st_mtime_ns
+    candidates = sorted(run_dir.rglob("*"), key=lambda path: path.relative_to(run_dir).as_posix())
+    for path in candidates:
+        if not _is_run_file(run_dir, path):
+            continue
+        rel_path = path.relative_to(run_dir).as_posix()
+        content_sha256, size_bytes = _hash_file_content(path)
+        stat = path.stat()
+        revision_ns = max(revision_ns, stat.st_mtime_ns)
+        files.append({"path": rel_path, "size_bytes": size_bytes, "sha256": content_sha256})
+    return files, revision_ns
+
+
+def _revision_from_snapshot(max_mtime_ns: int, source_sha256: str) -> int:
+    mtime_seconds = max(0, max_mtime_ns // 1_000_000_000)
+    content_component = int(source_sha256[:5], 16)
+    return max(1, (mtime_seconds * _REVISION_CONTENT_BUCKETS) + content_component + 1)
+
+
+def _run_identity_fields(run_dir: Path) -> Dict[str, Any]:
+    locator = _canonical_run_locator(run_dir)
+    files, revision_ns = _artifact_snapshot(run_dir)
+    source_manifest = {"schema": RUN_IDENTITY_PROTOCOL, "files": files}
+    source_bytes = json.dumps(source_manifest, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+    locator_text = json.dumps(locator, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return {
+        "run_uid": str(uuid.uuid5(_RUN_UID_NAMESPACE, locator_text)),
+        "revision": _revision_from_snapshot(revision_ns, source_sha256),
+        "source_sha256": source_sha256,
+        "source_protocol": RUN_IDENTITY_PROTOCOL,
+    }
+
 
 def _detect_artifact_type(run_dir: Path) -> str:
     for artifact_type, file_name in ARTIFACT_SIGNATURES:
@@ -203,8 +278,10 @@ def _run_lifecycle(run_dir: Path) -> Dict[str, Any]:
 def _run_record(run_dir: Path) -> Dict[str, Any]:
     artifact_type = _detect_artifact_type(run_dir)
     summary = _find_json_summary(run_dir, artifact_type)
+    identity = _run_identity_fields(run_dir)
     return {
         "name": run_dir.name,
+        **identity,
         "artifact_type": artifact_type,
         "modified_at": _utc_mtime(run_dir),
         "summary": summary,
@@ -221,9 +298,13 @@ def iter_run_dirs() -> Iterable[Path]:
         if not root.is_dir():
             continue
         for child in _candidate_run_dirs(root):
-            if child.name not in seen and _is_relative_to_root(child, root):
-                seen.add(child.name)
-                yield child
+            if not _is_relative_to_root(child, root):
+                continue
+            key = _canonical_path_id(child)
+            if key in seen:
+                continue
+            seen.add(key)
+            yield child
 
 
 def _candidate_run_dirs(root: Path) -> Iterable[Path]:

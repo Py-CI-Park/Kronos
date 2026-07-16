@@ -1,0 +1,63 @@
+{
+  "schema": "kronos_v5_api_fixture.v1",
+  "source": {
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "generated_at": "2026-07-15T00:00:00Z"
+  },
+  "cursor_key_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+  "run_uid": "018f0000-0000-7000-8000-000000000001",
+  "second_run_uid": "018f0000-0000-7000-8000-000000000002",
+  "revision": 7,
+  "artifact_bytes": "{\"ok\":true}\n",
+  "artifact_sha256": "e5f1eb4d806641698a35efe20e098efd20d7d57a9b90ee69079d5bb650920726",
+  "matrix_state_cycle": ["PASS", "FAIL", "BLOCKED", "PENDING"],
+  "snapshot": {
+    "schema": "kronos_rl_run_state.v2",
+    "run_uid": "018f0000-0000-7000-8000-000000000001",
+    "revision": 7,
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "created_at": "2026-07-15T00:00:00Z",
+    "updated_at": "2026-07-15T00:00:30Z",
+    "started_at": "2026-07-15T00:00:00Z",
+    "finished_at": null,
+    "status": "RUNNING",
+    "progress": {"step": 1, "total_steps": 3, "percent": 33.333333},
+    "ledger_entries": [
+      {"entry_id": "entry-1", "occurred_at": "2026-07-15T00:00:10Z", "kind": "DEBIT", "amount": 1.25}
+    ],
+    "artifacts": [
+      {
+        "artifact_id": "artifact-1",
+        "filename": "report.json",
+        "media_type": "application/json",
+        "byte_length": 12,
+        "sha256": "e5f1eb4d806641698a35efe20e098efd20d7d57a9b90ee69079d5bb650920726",
+        "created_at": "2026-07-15T00:00:20Z",
+        "path": "report.json",
+        "run_uid": "018f0000-0000-7000-8000-000000000001",
+        "revision": 7
+      }
+    ]
+  },
+  "events": [
+    {"event_type": "PROGRESS", "event_id": "event-1", "occurred_at": "2026-07-15T00:00:05Z", "progress": {"step": 1, "total_steps": 3, "percent": 33.333333}},
+    {"event_type": "MESSAGE", "event_id": "event-2", "occurred_at": "2026-07-15T00:00:06Z", "level": "INFO", "message": "Learning Now started"}
+  ],
+  "fixture": {
+    "fixture_id": "fixture-1",
+    "run": {
+      "run_id": "018f0000-0000-7000-8000-000000000001",
+      "state": {
+        "status": "RUNNING",
+        "progress": {"step": 1, "total_steps": 3, "percent": 33.333333},
+        "updated_at": "2026-07-15T00:00:30Z",
+        "started_at": "2026-07-15T00:00:00Z",
+        "finished_at": null
+      },
+      "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": "2026-07-15T00:00:00Z"
+    },
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "created_at": "2026-07-15T00:00:00Z"
+  }
+}

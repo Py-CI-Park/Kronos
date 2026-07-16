@@ -193,10 +193,18 @@ def _read_run_csv_rows(run_dir: Path, path: Path, *, limit: int) -> Tuple[List[D
 
 
 def _repo_path(path: str | Path) -> Path:
-    candidate = Path(path)
+    raw = str(path or "").strip()
+    if not raw:
+        raise RlDashboardPathError("repo path is required")
+    repo_resolved = REPO_ROOT.resolve()
+    candidate = Path(raw)
     if candidate.is_absolute():
-        return candidate
-    return REPO_ROOT / candidate
+        resolved = candidate.resolve()
+    else:
+        resolved = (repo_resolved / candidate).resolve()
+    if resolved != repo_resolved and repo_resolved not in resolved.parents:
+        raise RlDashboardPathError("repo path resolves outside repository")
+    return resolved
 
 
 def _coerce_scalar(value: str) -> Any:

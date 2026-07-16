@@ -1,4 +1,5 @@
 ﻿"""Verify official dashboard cutover preserves legacy archive and API routes."""
+from contextlib import closing
 from urllib.parse import urlparse
 
 from webui.app import app
@@ -25,61 +26,55 @@ def _assert_official_shell(body: str) -> None:
 
 
 def test_root_serves_official_dashboard_after_cutover():
-    client = app.test_client()
-
-    resp = client.get("/")
-
-    assert resp.status_code == 200, "/ broke after cutover"
-    _assert_official_shell(resp.data.decode("utf-8"))
+    with app.test_client() as client:
+        with closing(client.get("/")) as resp:
+            assert resp.status_code == 200, "/ broke after cutover"
+            _assert_official_shell(resp.data.decode("utf-8"))
 
 
 def test_training_bookmarks_serve_official_dashboard_shell():
-    client = app.test_client()
-
-    for path in ("/training", "/dashboard"):
-        resp = client.get(path)
-        assert resp.status_code == 200, f"{path} broke"
-        _assert_official_shell(resp.data.decode("utf-8"))
+    with app.test_client() as client:
+        for path in ("/training", "/dashboard"):
+            with closing(client.get(path)) as resp:
+                assert resp.status_code == 200, f"{path} broke"
+                _assert_official_shell(resp.data.decode("utf-8"))
 
 
 def test_v1_legacy_routes_still_available():
-    client = app.test_client()
-
-    for path in ("/v1/", "/v1/training", "/v1/stom"):
-        resp = client.get(path)
-        assert resp.status_code == 200, f"{path} broke"
+    with app.test_client() as client:
+        for path in ("/v1/", "/v1/training", "/v1/stom"):
+            with closing(client.get(path)) as resp:
+                assert resp.status_code == 200, f"{path} broke"
 
 
 def test_versioned_dashboard_urls_redirect_to_canonical_routes():
-    client = app.test_client()
+    with app.test_client() as client:
+        for path in ("/v2", "/v2/"):
+            with closing(client.get(path, follow_redirects=False)) as resp:
+                assert resp.status_code == 301
+                assert _location_path(resp.headers.get("Location")) == "/"
 
-    for path in ("/v2", "/v2/"):
-        resp = client.get(path, follow_redirects=False)
-        assert resp.status_code == 301
-        assert _location_path(resp.headers.get("Location")) == "/"
-
-    # Consolidation A: legacy RL bookmarks canonicalize to the Svelte RL tab.
-    for path in ("/rl-lab", "/v2/rl-trading", "/v2/rl-lab"):
-        resp = client.get(path, follow_redirects=False)
-        assert resp.status_code == 301
-        parsed = urlparse(resp.headers.get("Location"))
-        assert f"{parsed.path or '/'}?{parsed.query}" == "/?tab=rl"
+        # Consolidation A: legacy RL bookmarks canonicalize to the Svelte RL tab.
+        for path in ("/rl-lab", "/v2/rl-trading", "/v2/rl-lab"):
+            with closing(client.get(path, follow_redirects=False)) as resp:
+                assert resp.status_code == 301
+                parsed = urlparse(resp.headers.get("Location"))
+                assert f"{parsed.path or '/'}?{parsed.query}" == "/?tab=rl"
 
 
 def test_api_routes_unchanged():
-    client = app.test_client()
-
-    for path in (
-        "/api/training/status",
-        "/api/training/history",
-        "/api/training/artifacts",
-        "/api/training/gpu",
-        "/api/training/system",
-        "/api/training/runs",
-        "/api/rl/runs",
-    ):
-        resp = client.get(path)
-        assert resp.status_code == 200, f"{path} broke"
+    with app.test_client() as client:
+        for path in (
+            "/api/training/status",
+            "/api/training/history",
+            "/api/training/artifacts",
+            "/api/training/gpu",
+            "/api/training/system",
+            "/api/training/runs",
+            "/api/rl/runs",
+        ):
+            with closing(client.get(path)) as resp:
+                assert resp.status_code == 200, f"{path} broke"
 
 
 def test_no_global_catchall():

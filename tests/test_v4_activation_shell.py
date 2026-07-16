@@ -146,8 +146,14 @@ def test_shell_mode_keeps_v3_default_query_storage_persist_and_fail_closed_guard
     assert "source: 'storage'" in mode
     assert "source: 'default'" in mode
     assert "return value === 'v3' || value === 'v4'" in mode
-    assert "localStorage.getItem(SHELL_STORAGE_KEY)" in mode
-    assert "localStorage.setItem(SHELL_STORAGE_KEY, shell)" in mode
+    assert "function getSafeLocalStorage(): Storage | null" in mode
+    assert "globalThis.localStorage" in mode
+    assert "const storage = getSafeLocalStorage()" in mode
+    assert "storage.getItem(SHELL_STORAGE_KEY)" in mode
+    assert "storage.setItem(SHELL_STORAGE_KEY, shell)" in mode
+    assert "typeof localStorage" not in mode
+    assert "localStorage.getItem" not in mode
+    assert "localStorage.setItem" not in mode
     assert "history.pushState" in mode and "history.replaceState" in mode
     assert "params.set('ui', shell)" in mode
     assert "export function preserveShellQuery(targetUrl: string, currentSearch: string)" in mode

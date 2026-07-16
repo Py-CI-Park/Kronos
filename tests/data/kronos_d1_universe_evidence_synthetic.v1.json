@@ -1,0 +1,77 @@
+{
+  "schema": "kronos_d1_universe_evidence.v1",
+  "statement": {
+    "schema": "kronos_d1_universe_evidence_statement.v1",
+    "evidence_uid": "10000000-0000-4000-8000-000000000002",
+    "evidence_kind": "SYNTHETIC_PARSER_ONLY",
+    "universe": {
+      "universe_id": "synthetic-d1-parser-only",
+      "official_source_path": "_database/evidence/universe/synthetic/official-source.json",
+      "official_source_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "source_date_range": {
+        "start": "2026-01-02",
+        "end": "2026-01-03"
+      }
+    },
+    "csv": {
+      "artifact_path": "_database/evidence/universe/synthetic/universe.csv",
+      "sha256": "661cc233e18f5662027f709a5807e8300e67a4932ab601bd3ae8a524451e46d5",
+      "byte_length": 253,
+      "columns": [
+        "code",
+        "market",
+        "issuer_name",
+        "security_type",
+        "listing_status",
+        "disposition",
+        "reason",
+        "review_decision"
+      ]
+    },
+    "equations": {
+      "row_count": "row_count == included_count + excluded_count + quarantine_count + unmatched_count",
+      "verified_zero_blockers": "unmatched_count == 0 and quarantine_count == 0 and conflict_count == 0"
+    },
+    "counts": {
+      "row_count": 2,
+      "included_count": 1,
+      "excluded_count": 1,
+      "quarantine_count": 0,
+      "unmatched_count": 0,
+      "conflict_count": 0
+    },
+    "review": {
+      "decision": "APPROVE",
+      "reviewed_at": "2026-07-15T00:00:00Z",
+      "reason": "synthetic parser fixture only"
+    },
+    "conflicts": [],
+    "issued_at": "2026-07-15T00:00:00Z"
+  },
+  "attestations": {
+    "issuer": {
+      "principal_uri": "agent://synthetic-d1-issuer",
+      "role": "D1_ISSUER",
+      "key_id": "10000000-0000-4000-8000-000000000201",
+      "payload_sha256": "8a9ac8d6eadf970b7a0e10a722213021233e41cb1da732b87120b90a1b16db97",
+      "algorithm": "Ed25519",
+      "signature_encoding": "base64url-no-pad",
+      "signature": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw",
+      "signed_at": "2026-07-15T00:00:00Z"
+    },
+    "reviewer": {
+      "principal_uri": "agent://synthetic-d1-reviewer",
+      "role": "D1_REVIEWER",
+      "key_id": "10000000-0000-4000-8000-000000000202",
+      "payload_sha256": "8a9ac8d6eadf970b7a0e10a722213021233e41cb1da732b87120b90a1b16db97",
+      "algorithm": "Ed25519",
+      "signature_encoding": "base64url-no-pad",
+      "signature": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA",
+      "signed_at": "2026-07-15T00:00:00Z"
+    }
+  },
+  "status": "BLOCKED",
+  "blocking_codes": [
+    "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED"
+  ]
+}

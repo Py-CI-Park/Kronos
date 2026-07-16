@@ -1,4 +1,12 @@
+import type { ErrorRoot, V5DeepReadonly, V5RouteId } from './generated/kronosRlApiV2';
+import {
+  validateErrorRoot,
+  v5RouteDescriptors,
+  type V5RouteRootMap,
+} from './generated/kronosRlApiV2.validators';
+import { validateV5Semantic, V5SemanticError } from './generated/kronosRlApiV2.semantic';
 import type { RunLifecycle } from './runLifecycle';
+import { sanitizeV5SchemaDiagnostics, V5SchemaValidationError } from './v5SchemaValidationError';
 import { fetchJson } from './http';
 
 export type RlArtifactType =
@@ -467,6 +475,224 @@ export interface RlRliableStatsResponse {
   readonly error?: string;
 }
 
+const v5RunIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+const v5CursorPattern = /^[A-Za-z0-9_-]{16,2048}$/u;
+const v5RevisionForbiddenPattern = /[\u0000-\u001F\u007F]/u;
+const v5LearningRunUidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const v5LearningRevisionPattern = /^[1-9][0-9]{0,15}$/u;
+const v5LearningMaxSafeRevision = Number.MAX_SAFE_INTEGER;
+const v5LearningTopLevelPaths = {
+  MATRIX: '/api/v5/rl/matrix',
+  LEDGER: '/api/v5/rl/ledger',
+  ARTIFACTS: '/api/v5/rl/artifacts',
+} as const satisfies Pick<Record<V5RouteId, string>, 'MATRIX' | 'LEDGER' | 'ARTIFACTS'>;
+
+export type DeepReadonly<T> = V5DeepReadonly<T>;
+
+export type V5ReadonlyRouteRootMap = {
+  readonly [RouteId in V5RouteId]: DeepReadonly<V5RouteRootMap[RouteId]>;
+};
+type V5FetchOptions = {
+  readonly cursor?: string;
+  readonly revision?: string;
+};
+type V5LearningFetchOptions = {
+  readonly cursor?: string;
+  readonly runId?: string;
+  readonly revision?: number;
+};
+
+export type V5LearningBoundedStatus = 409 | 410 | 422 | 503;
+
+const v5LearningBoundedStatuses = new Set<number>([409, 410, 422, 503]);
+
+function toV5LearningBoundedStatus(status: number): V5LearningBoundedStatus | null {
+  return v5LearningBoundedStatuses.has(status) ? status as V5LearningBoundedStatus : null;
+}
+
+export class V5LearningFetchError extends Error {
+  readonly name = 'V5LearningFetchError' as const;
+  readonly routeId: V5RouteId;
+  readonly status: number;
+  readonly boundedStatus: V5LearningBoundedStatus | null;
+  readonly payload: DeepReadonly<ErrorRoot>;
+  readonly code: ErrorRoot['error']['code'];
+
+  constructor(routeId: V5RouteId, status: number, payload: ErrorRoot) {
+    super(payload.error.message);
+    this.routeId = routeId;
+    this.status = status;
+    this.boundedStatus = toV5LearningBoundedStatus(status);
+    this.payload = freezeV5Payload(payload) as DeepReadonly<ErrorRoot>;
+    this.code = payload.error.code;
+    Object.freeze(this);
+  }
+}
+
+
+function v5Search(options: V5FetchOptions = {}): string {
+  const params = new URLSearchParams();
+  if (options.cursor !== undefined) {
+    if (typeof options.cursor !== 'string' || !v5CursorPattern.test(options.cursor)) {
+      throw new V5SemanticError('invalid cursor');
+    }
+    params.set('cursor', options.cursor);
+  }
+  if (options.revision !== undefined) {
+    if (
+      typeof options.revision !== 'string'
+      || options.revision.length < 1
+      || options.revision.length > 2048
+      || v5RevisionForbiddenPattern.test(options.revision)
+    ) {
+      throw new V5SemanticError('invalid revision');
+    }
+    params.set('revision', options.revision);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+function validateV5LearningRunUid(value: string): string {
+  if (typeof value !== 'string' || !v5LearningRunUidPattern.test(value)) {
+    throw new V5SemanticError('invalid run_uid');
+  }
+  return value;
+}
+
+function validateV5LearningRevision(value: number): string {
+  if (
+    typeof value !== 'number'
+    || !Number.isSafeInteger(value)
+    || value < 1
+    || value > v5LearningMaxSafeRevision
+    || !v5LearningRevisionPattern.test(String(value))
+  ) {
+    throw new V5SemanticError('invalid run_revision');
+  }
+  return String(value);
+}
+
+function v5LearningSearch(options: V5LearningFetchOptions = {}): string {
+  const params = new URLSearchParams();
+  if (options.runId !== undefined) {
+    params.set('run_id', validateV5LearningRunUid(options.runId));
+  }
+  if (options.revision !== undefined) {
+    params.set('revision', validateV5LearningRevision(options.revision));
+  }
+  if (options.cursor !== undefined) {
+    if (typeof options.cursor !== 'string' || !v5CursorPattern.test(options.cursor)) {
+      throw new V5SemanticError('invalid cursor');
+    }
+    params.set('cursor', options.cursor);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+function isV5ErrorRootForRoute(routeId: V5RouteId, value: unknown): value is ErrorRoot {
+  return validateErrorRoot(value) && (value as ErrorRoot).route_id === routeId;
+}
+
+async function readV5LearningPayload(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+function isV5RouteRoot<K extends V5RouteId>(routeId: K, value: unknown): value is V5RouteRootMap[K] {
+  return v5RouteDescriptors[routeId].validator(value);
+}
+
+function v5Path(routeId: V5RouteId, pathParams: Readonly<Record<string, string>>): string {
+  const descriptor = v5RouteDescriptors[routeId];
+  return descriptor.pathBindings.reduce((path, name) => {
+    const value = pathParams[name];
+    if (!value || (name === 'run_id' && !v5RunIdPattern.test(value))) {
+      throw new V5SemanticError(`invalid path binding ${name}`);
+    }
+    return path.replace(`{${name}}`, encodeURIComponent(value));
+  }, descriptor.path);
+}
+
+function freezeV5Payload<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      freezeV5Payload(child);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
+function v5Url(path: string, search: string): string {
+  if (!search) return path;
+  return path.includes('?') ? `${path}&${search.slice(1)}` : `${path}${search}`;
+}
+
+function v5QueryParams(url: string): Readonly<Record<string, string>> {
+  const parsed = new URL(url, 'https://kronos.local');
+  const params: Record<string, string> = {};
+  for (const [name, value] of parsed.searchParams) {
+    params[name] = value;
+  }
+  return params;
+}
+
+function v5RequestContext(
+  method: string,
+  url: string,
+  pathParams: Readonly<Record<string, string>>,
+): { method: string; path: string; pathParams: Readonly<Record<string, string>>; queryParams: Readonly<Record<string, string>> } {
+  const parsed = new URL(url, 'https://kronos.local');
+  return { method, path: parsed.pathname, pathParams, queryParams: v5QueryParams(url) };
+}
+
+async function fetchV5Json<K extends V5RouteId>(
+  routeId: K,
+  pathParams: Readonly<Record<string, string>> = {},
+  options: V5FetchOptions = {},
+): Promise<V5ReadonlyRouteRootMap[K] | null> {
+  const descriptor = v5RouteDescriptors[routeId];
+  const path = v5Path(routeId, pathParams);
+  const url = v5Url(path, v5Search(options));
+  const init: RequestInit = { method: descriptor.method };
+  const context = { method: descriptor.method, path, pathParams };
+  const payload = await fetchJson<unknown>(url, init);
+  if (payload === null) return null;
+  if (!isV5RouteRoot(routeId, payload)) {
+    throw new V5SchemaValidationError(routeId, sanitizeV5SchemaDiagnostics(descriptor.validator.errors));
+  }
+  await validateV5Semantic(routeId, payload, context);
+  return freezeV5Payload(payload) as V5ReadonlyRouteRootMap[K];
+}
+async function fetchV5LearningJson<K extends V5RouteId>(
+  routeId: K,
+  path: string,
+  pathParams: Readonly<Record<string, string>> = {},
+  options: V5LearningFetchOptions = {},
+): Promise<V5ReadonlyRouteRootMap[K]> {
+  const descriptor = v5RouteDescriptors[routeId];
+  const url = v5Url(path, v5LearningSearch(options));
+  const context = v5RequestContext(descriptor.method, url, pathParams);
+  const response = await fetch(url);
+  const payload = await readV5LearningPayload(response);
+
+  if (!response.ok) {
+    if (!isV5ErrorRootForRoute(routeId, payload)) {
+      throw new V5SchemaValidationError(routeId, sanitizeV5SchemaDiagnostics(undefined));
+    }
+    await validateV5Semantic(routeId, payload, context);
+    throw new V5LearningFetchError(routeId, response.status, payload);
+  }
+
+  if (!isV5RouteRoot(routeId, payload)) {
+    throw new V5SchemaValidationError(routeId, sanitizeV5SchemaDiagnostics(descriptor.validator.errors));
+  }
+  await validateV5Semantic(routeId, payload, context);
+  return freezeV5Payload(payload) as V5ReadonlyRouteRootMap[K];
+}
 export const rlApi = {
   rlRuns: (limit: number = 20) => fetchJson<RlRunsResponse>(`/api/rl/runs?limit=${limit}`),
   rlProgress: () => fetchJson<RlProgressResponse>('/api/rl/progress'),
@@ -510,5 +736,32 @@ export const rlApi = {
     fetchJson<RlFactoryForwardLedgerResponse>(
       `/api/rl/factory/forward-ledger/${encodeURIComponent(run)}?limit=${limit}${status ? `&status=${status}` : ''}`
     ),
+  v5Runs: (cursor?: string) => fetchV5Json('RUNS', {}, { cursor }),
+  v5RunDetail: (run: string, revision?: string) => fetchV5Json('RUN_DETAIL', { run_id: run }, { revision }),
+  v5Events: (run: string, cursor?: string, revision?: string) => fetchV5Json('EVENTS', { run_id: run }, { cursor, revision }),
+  v5Matrix: () => fetchV5Json('MATRIX'),
+  v5Ledger: (cursor?: string) => fetchV5Json('LEDGER', {}, { cursor }),
+  v5Artifacts: (cursor?: string, revision?: string) => fetchV5Json('ARTIFACTS', {}, { cursor, revision }),
+  v5D0: () => fetchV5Json('D0'),
+  v5D1: () => fetchV5Json('D1'),
+  v5Fixture: () => fetchV5Json('FIXTURE'),
+  v5LearningRuns: (cursor?: string) => fetchV5LearningJson('RUNS', v5Path('RUNS', {}), {}, { cursor }),
+  v5LearningRunDetail: (runUid: string, revision: number) => {
+    const uid = validateV5LearningRunUid(runUid);
+    return fetchV5LearningJson('RUN_DETAIL', v5Path('RUN_DETAIL', { run_id: uid }), { run_id: uid }, { revision });
+  },
+  v5LearningEvents: (runUid: string, revision: number, cursor?: string) => {
+    const uid = validateV5LearningRunUid(runUid);
+    return fetchV5LearningJson('EVENTS', v5Path('EVENTS', { run_id: uid }), { run_id: uid }, { cursor, revision });
+  },
+  v5LearningMatrix: (runUid: string, revision: number) =>
+    fetchV5LearningJson('MATRIX', v5LearningTopLevelPaths.MATRIX, {}, { runId: runUid, revision }),
+  v5LearningLedger: (runUid: string, revision: number, cursor?: string) =>
+    fetchV5LearningJson('LEDGER', v5LearningTopLevelPaths.LEDGER, {}, { cursor, runId: runUid, revision }),
+  v5LearningArtifacts: (runUid: string, revision: number, cursor?: string) =>
+    fetchV5LearningJson('ARTIFACTS', v5LearningTopLevelPaths.ARTIFACTS, {}, { cursor, runId: runUid, revision }),
+  v5LearningD0: () => fetchV5LearningJson('D0', v5Path('D0', {})),
+  v5LearningD1: () => fetchV5LearningJson('D1', v5Path('D1', {})),
+  v5LearningFixture: () => fetchV5LearningJson('FIXTURE', v5Path('FIXTURE', {})),
   rliableStats: () => fetchJson<RlRliableStatsResponse>('/api/rl/rliable-stats'),
 };

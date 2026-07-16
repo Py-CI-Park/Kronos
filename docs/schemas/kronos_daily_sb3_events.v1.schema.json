@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_daily_sb3_events.v1.schema.json",
+  "title": "Kronos daily Portfolio SB3 append-only event stream v1",
+  "description": "Canonical synthetic-verification-only runner event stream. Semantic validation recomputes event hashes, previous-hash chain continuity, protocol/source/cell identity, monotonic chronology, liveness, and full 50-cell replay state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "protocol_uid", "protocol_sha256", "source_ref", "created_at", "event_count", "final_event_sha256", "events"],
+  "properties": {
+    "schema": {"const": "kronos_daily_sb3_event_stream.v1"},
+    "protocol_uid": {"$ref": "#/$defs/protocolUid"},
+    "protocol_sha256": {"$ref": "#/$defs/sha256"},
+    "source_ref": {"$ref": "#/$defs/sourceRef"},
+    "created_at": {"$ref": "#/$defs/utc"},
+    "event_count": {"type": "integer", "minimum": 0},
+    "final_event_sha256": {"$ref": "#/$defs/sha256"},
+    "events": {"type": "array", "items": {"$ref": "#/$defs/eventRecord"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "utc": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "protocolUid": {"type": "string", "pattern": "^kdp1-[0-9a-f]{32}$"},
+    "runUid": {"type": "string", "pattern": "^kdp1-run-[0-9a-f]{32}$"},
+    "cellUid": {"type": "string", "pattern": "^kdp1-cell-[0-9a-f]{32}$"},
+    "attemptUid": {"type": "string", "pattern": "^kdp1-attempt-[0-9a-f]{32}$"},
+    "attemptNumber": {"type": "integer", "minimum": 1},
+    "uri": {"type": "string", "pattern": "^(?:agent://[^\\s\\\\]+|kronos-run://[A-Za-z0-9_-]{43}/[^\\s\\\\]+)$"},
+    "sourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "sha256", "byte_length", "schema"],
+      "properties": {
+        "uri": {"$ref": "#/$defs/uri"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 1},
+        "schema": {"const": "kronos_source_identity.v1"}
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "sha256", "byte_length", "schema", "artifact_kind"],
+      "properties": {
+        "uri": {"$ref": "#/$defs/uri"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 0, "maximum": 8192},
+        "schema": {"type": "string", "minLength": 1},
+        "artifact_kind": {"enum": ["synthetic_runner_log", "synthetic_progress_summary", "synthetic_checkpoint", "synthetic_stop_report"]}
+      }
+    },
+    "locks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promotion_allowed", "model_build_allowed", "paper_forward_allowed", "live_broker_order_allowed", "profitability_claim_allowed", "go_summary_allowed"],
+      "properties": {
+        "promotion_allowed": {"const": false},
+        "model_build_allowed": {"const": false},
+        "paper_forward_allowed": {"const": false},
+        "live_broker_order_allowed": {"const": false},
+        "profitability_claim_allowed": {"const": false},
+        "go_summary_allowed": {"const": false}
+      }
+    },
+    "cellIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cell_uid", "attempt_uid", "attempt_number", "cell_ordinal", "seed_id", "fold_id", "variant_id"],
+      "properties": {
+        "cell_uid": {"$ref": "#/$defs/cellUid"},
+        "attempt_uid": {"$ref": "#/$defs/attemptUid"},
+        "attempt_number": {"$ref": "#/$defs/attemptNumber"},
+        "cell_ordinal": {"type": "integer", "minimum": 1, "maximum": 50},
+        "seed_id": {"enum": ["seed-01", "seed-02", "seed-03", "seed-04", "seed-05"]},
+        "fold_id": {"enum": ["fold-01", "fold-02"]},
+        "variant_id": {"enum": ["baseline", "cost-00bp", "cost-23bp", "cost-46bp", "no-trade"]}
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "total_steps", "percent_complete"],
+      "properties": {
+        "step": {"type": "integer", "minimum": 0},
+        "total_steps": {"type": "integer", "minimum": 0},
+        "percent_complete": {"type": "string", "pattern": "^\\d+\\.\\d{6}$"}
+      }
+    },
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed", "heartbeat_sequence"],
+      "properties": {
+        "observed": {"type": "boolean"},
+        "heartbeat_sequence": {"type": "integer", "minimum": 0}
+      }
+    },
+    "liveness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["live", "basis"],
+      "properties": {
+        "live": {"type": "boolean"},
+        "basis": {"enum": ["NO_PROGRESS", "STEP_INCREASED", "HEARTBEAT_ONLY", "CHECKPOINT_ONLY", "RESUME_ONLY", "TERMINAL"]}
+      }
+    },
+    "resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "from_checkpoint_ref", "exact"],
+      "properties": {
+        "requested": {"type": "boolean"},
+        "from_checkpoint_ref": {"anyOf": [{"$ref": "#/$defs/artifactRef"}, {"type": "null"}]},
+        "exact": {"type": "boolean"}
+      }
+    },
+    "stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "terminal", "reason_code"],
+      "properties": {
+        "requested": {"type": "boolean"},
+        "terminal": {"type": "boolean"},
+        "reason_code": {"anyOf": [{"enum": ["USER_REQUESTED_STOP", "SYNTHETIC_COMPLETE", "SYNTHETIC_FAILURE", "CONFLICT_BLOCKED"]}, {"type": "null"}]}
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "global_sequence", "run_sequence", "cell_sequence", "previous_event_sha256", "occurred_at", "run_uid", "attempt_uid", "attempt_number", "event_kind", "phase", "lifecycle_state", "protocol_uid", "protocol_sha256", "source_ref", "cell", "progress", "heartbeat", "liveness", "artifact_refs", "checkpoint_ref", "resume", "stop", "locks"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_event.v1"},
+        "global_sequence": {"type": "integer", "minimum": 1},
+        "run_sequence": {"type": "integer", "minimum": 1},
+        "cell_sequence": {"type": "integer", "minimum": 1},
+        "previous_event_sha256": {"$ref": "#/$defs/sha256"},
+        "occurred_at": {"$ref": "#/$defs/utc"},
+        "run_uid": {"$ref": "#/$defs/runUid"},
+        "attempt_uid": {"$ref": "#/$defs/attemptUid"},
+        "attempt_number": {"$ref": "#/$defs/attemptNumber"},
+        "event_kind": {"enum": ["RUN_CREATED", "PROGRESS", "HEARTBEAT", "CHECKPOINT", "RESUME", "STOP"]},
+        "phase": {"enum": ["NOT_RUN", "PREREGISTERED", "QUEUED", "PREPARING", "SYNTHETIC_TRAIN", "SYNTHETIC_EVAL", "CHECKPOINT", "RESUME", "STOP", "TERMINAL"]},
+        "lifecycle_state": {"enum": ["ADVANCING", "STALLED", "RESUMED", "RESTARTED_NON_EXACT", "STOPPED", "FAILED", "COMPLETED", "CONFLICT_BLOCKED", "NOT_RUN"]},
+        "protocol_uid": {"$ref": "#/$defs/protocolUid"},
+        "protocol_sha256": {"$ref": "#/$defs/sha256"},
+        "source_ref": {"$ref": "#/$defs/sourceRef"},
+        "cell": {"$ref": "#/$defs/cellIdentity"},
+        "progress": {"$ref": "#/$defs/progress"},
+        "heartbeat": {"$ref": "#/$defs/heartbeat"},
+        "liveness": {"$ref": "#/$defs/liveness"},
+        "artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/artifactRef"}},
+        "checkpoint_ref": {"anyOf": [{"$ref": "#/$defs/artifactRef"}, {"type": "null"}]},
+        "resume": {"$ref": "#/$defs/resume"},
+        "stop": {"$ref": "#/$defs/stop"},
+        "locks": {"$ref": "#/$defs/locks"}
+      }
+    },
+    "eventRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "event_sha256", "event"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_event_record.v1"},
+        "event_sha256": {"$ref": "#/$defs/sha256"},
+        "event": {"$ref": "#/$defs/event"}
+      }
+    }
+  }
+}

@@ -4,28 +4,30 @@ import path from 'node:path';
 
 // [B-2/REV-2] Vite base 는 Flask static_url_path='/static' 와 매핑된다.
 // 빌드 산출물은 webui/static/v2/dist/ 에 위치하며, asset URL 은 /static/v2/dist/assets/...
+const configuredOutDir = process.env.KRONOS_VITE_OUT_DIR;
+const outDir = configuredOutDir
+  ? path.resolve(configuredOutDir)
+  : path.resolve(__dirname, '../static/v2/dist');
+
 export default defineConfig({
   base: '/static/v2/dist/',
-  plugins: [
-    svelte({
-      onwarn: (warning, handler) => {
-        if (
-          warning.code === 'a11y_no_redundant_roles' ||
-          warning.code === 'a11y_click_events_have_key_events' ||
-          warning.code === 'a11y_no_noninteractive_element_interactions'
-        ) {
-          return;
-        }
-        handler(warning);
-      },
-    }),
-  ],
+  plugins: [svelte()],
   build: {
-    outDir: path.resolve(__dirname, '../static/v2/dist'),
+    outDir,
     emptyOutDir: true,
     sourcemap: true,
     target: 'es2020',
     chunkSizeWarningLimit: 1400,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/echarts/') || id.includes('/node_modules/zrender/')) return 'vendor-echarts';
+          if (id.includes('/node_modules/marked/') || id.includes('/node_modules/dompurify/')) return 'vendor-content';
+          if (id.includes('/node_modules/svelte/')) return 'vendor-svelte';
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     port: 5173,

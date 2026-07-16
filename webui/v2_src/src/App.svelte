@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, type Component } from 'svelte';
   import Sidebar from '$layout/Sidebar.svelte';
   import Header from '$layout/Header.svelte';
   import OpsStrip from '$layout/OpsStrip.svelte';
@@ -32,13 +32,68 @@
   import { resolveRoute, syncTabFromLocation } from '$lib/routes';
   import { dashboardShell, initializeDashboardShell, type DashboardShell } from '$lib/shellMode';
 
+  function normalizeLearningNowPath(pathname: string): string {
+    const normalized = pathname.replace(/\/+$/, '');
+    return normalized || '/';
+  }
+
+  function isLearningNowLocation(locationLike: Pick<Location, 'pathname' | 'search'> | null): boolean {
+    if (!locationLike) return false;
+    const requestedTab = new URLSearchParams(locationLike.search).get('tab');
+    return requestedTab === 'learning-now'
+      || normalizeLearningNowPath(locationLike.pathname) === '/learning-now'
+      || normalizeLearningNowPath(locationLike.pathname) === '/v5/learning-now';
+  }
+
+  function shouldRenderLearningNowRoute(
+    activeShell: DashboardShell,
+    locationLike: Pick<Location, 'pathname' | 'search'> | null,
+  ): boolean {
+    return activeShell === 'v5' || isLearningNowLocation(locationLike);
+  }
+
+  function activateLearningNowRoute(): void {
+    learningNowRouteActive = true;
+    activeTab.set('learning-now');
+    void ensureLearningNowTab();
+  }
+
   let removePopstate: (() => void) | undefined;
+  let LearningNowTab = $state<Component | null>(null);
+  let learningNowLoading = $state(false);
+  let learningNowLoadError = $state<string | null>(null);
+
+  async function ensureLearningNowTab(): Promise<void> {
+    if (LearningNowTab || learningNowLoading) return;
+    learningNowLoading = true;
+    learningNowLoadError = null;
+    try {
+      const module = await import('./v5/LearningNowTab.svelte');
+      LearningNowTab = module.default;
+    } catch {
+      learningNowLoadError = 'Learning Now route component unavailable.';
+    } finally {
+      learningNowLoading = false;
+    }
+  }
+
 
   onMount(() => {
-    syncTabFromLocation({ replaceAlias: true });
+    const mountedShell = initializeDashboardShell();
+    if (shouldRenderLearningNowRoute(mountedShell, window.location)) {
+      activateLearningNowRoute();
+    } else {
+      learningNowRouteActive = false;
+      syncTabFromLocation({ replaceAlias: true });
+    }
     const handlePopstate = () => {
-      initializeDashboardShell();
-      syncTabFromLocation();
+      const nextShell = initializeDashboardShell();
+      if (shouldRenderLearningNowRoute(nextShell, window.location)) {
+        activateLearningNowRoute();
+      } else {
+        learningNowRouteActive = false;
+        syncTabFromLocation();
+      }
     };
     window.addEventListener('popstate', handlePopstate);
     removePopstate = () => window.removeEventListener('popstate', handlePopstate);
@@ -49,17 +104,28 @@
     };
   });
 
-  const initialTab = typeof window === 'undefined'
-    ? 'mission-control'
-    : (resolveRoute(window.location)?.id ?? 'mission-control');
+  const currentLocation = typeof window === 'undefined' ? null : window.location;
+  const initialShell: DashboardShell = typeof window === 'undefined' ? 'v3' : initializeDashboardShell();
+  const initialLearningNowRoute = shouldRenderLearningNowRoute(initialShell, currentLocation);
+  const resolvedInitialTab = initialLearningNowRoute ? null : currentLocation ? resolveRoute(currentLocation)?.id : null;
+  const initialTab = initialLearningNowRoute ? 'learning-now' : (resolvedInitialTab ?? 'mission-control');
   activeTab.set(initialTab);
   let tab = $state(initialTab);
+  let learningNowRouteActive = $state(initialLearningNowRoute);
   const unsubscribeActiveTab = activeTab.subscribe((v) => (tab = v));
-  const initialShell: DashboardShell = typeof window === 'undefined' ? 'v3' : initializeDashboardShell();
   let shell = $state<DashboardShell>(initialShell);
   const unsubscribeDashboardShell = dashboardShell.subscribe((v) => (shell = v));
   let collapsed = $state(false);
   const unsubscribeSidebarCollapsed = sidebarCollapsed.subscribe((v) => (collapsed = v));
+  $effect(() => {
+    if (tab !== 'learning-now' && learningNowRouteActive) {
+      learningNowRouteActive = false;
+    }
+  });
+  $effect(() => {
+    if (learningNowRouteActive || shell === 'v5') void ensureLearningNowTab();
+  });
+
 
   onDestroy(() => {
     unsubscribeActiveTab();
@@ -173,6 +239,24 @@
   </div>
 {/snippet}
 
+{#if shell === 'v5' || learningNowRouteActive}
+  <div class="app-shell" data-kronos-shell={shell} data-sidebar={collapsed ? 'collapsed' : 'expanded'}>
+    <Sidebar />
+    <div class="main">
+      <Header />
+      <OpsStrip />
+      <div class="page" data-v5-learning-host>
+        {#if LearningNowTab}
+          <LearningNowTab />
+        {:else}
+          <section class="lazy-loading" role="status" aria-live="polite">
+            {learningNowLoadError ?? 'Loading Learning Now route…'}
+          </section>
+        {/if}
+      </div>
+    </div>
+  </div>
+{:else}
 {#if shell === 'v4'}
   <V4Shell>
     {@render tabHost()}
@@ -187,6 +271,7 @@
     </div>
   </div>
 {/if}
+{/if}
 
 <style>
   .page {
@@ -197,7 +282,15 @@
     flex-direction: column;
     gap: 24px;
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
+  }
+  .lazy-loading {
+    border: 1px dashed var(--border);
+    border-radius: 18px;
+    padding: 24px;
+    color: var(--muted);
+    background: var(--surface-sunken);
   }
   @media (max-width: 900px) {
     .page {

@@ -1,0 +1,92 @@
+{
+  "schema": "kronos_d0_price_basis_evidence.v1",
+  "statement": {
+    "schema": "kronos_d0_price_basis_evidence_statement.v1",
+    "evidence_uid": "10000000-0000-4000-8000-000000000001",
+    "evidence_kind": "SYNTHETIC_PARSER_ONLY",
+    "dataset": {
+      "artifact_path": "_database/evidence/price_basis/synthetic/dataset-manifest.json",
+      "dataset_id": "synthetic-d0-parser-only",
+      "source_database_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_database_byte_length": 1,
+      "date_range": {
+        "start": "2026-01-02",
+        "end": "2026-01-03"
+      },
+      "code_count": 2,
+      "row_count": 4
+    },
+    "price_basis": {
+      "basis": "RAW",
+      "ohlc_semantics": {
+        "open": "RAW_OPEN",
+        "high": "RAW_HIGH",
+        "low": "RAW_LOW",
+        "close": "RAW_CLOSE"
+      }
+    },
+    "equations": {
+      "record_count": "record_count == matched_count + missing_count + conflict_count",
+      "verified_collapse": "missing_count == 0 and conflict_count == 0 implies matched_count == record_count"
+    },
+    "corporate_actions": {
+      "splits": {
+        "source_path": "_database/evidence/price_basis/synthetic/splits.json",
+        "source_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "date_range": {
+          "start": "2026-01-02",
+          "end": "2026-01-03"
+        },
+        "record_count": 0,
+        "matched_count": 0,
+        "missing_count": 0,
+        "conflict_count": 0
+      },
+      "dividends": {
+        "source_path": "_database/evidence/price_basis/synthetic/dividends.json",
+        "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "date_range": {
+          "start": "2026-01-02",
+          "end": "2026-01-03"
+        },
+        "record_count": 0,
+        "matched_count": 0,
+        "missing_count": 0,
+        "conflict_count": 0
+      }
+    },
+    "review": {
+      "decision": "APPROVE",
+      "reviewed_at": "2026-07-15T00:00:00Z",
+      "reason": "synthetic parser fixture only"
+    },
+    "conflicts": [],
+    "issued_at": "2026-07-15T00:00:00Z"
+  },
+  "attestations": {
+    "issuer": {
+      "principal_uri": "agent://synthetic-d0-issuer",
+      "role": "D0_ISSUER",
+      "key_id": "10000000-0000-4000-8000-000000000101",
+      "payload_sha256": "b2a7c4ee59561b6cef9ecbd5210b019f3b4754861f426198713c8fc027667ef3",
+      "algorithm": "Ed25519",
+      "signature_encoding": "base64url-no-pad",
+      "signature": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ",
+      "signed_at": "2026-07-15T00:00:00Z"
+    },
+    "reviewer": {
+      "principal_uri": "agent://synthetic-d0-reviewer",
+      "role": "D0_REVIEWER",
+      "key_id": "10000000-0000-4000-8000-000000000102",
+      "payload_sha256": "b2a7c4ee59561b6cef9ecbd5210b019f3b4754861f426198713c8fc027667ef3",
+      "algorithm": "Ed25519",
+      "signature_encoding": "base64url-no-pad",
+      "signature": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg",
+      "signed_at": "2026-07-15T00:00:00Z"
+    }
+  },
+  "status": "BLOCKED",
+  "blocking_codes": [
+    "D0_PRICE_BASIS_NOT_VERIFIED"
+  ]
+}

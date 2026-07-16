@@ -107,9 +107,19 @@ def test_integration_base_is_ancestor_of_head():
     assert vb.is_ancestor(_REPO_ROOT, vb.INTEGRATION_BASE_SHA, "HEAD") is True
 
 
+def test_dashboard_v4_ancestor_is_ancestor_of_head():
+    assert vb.DASHBOARD_V4_ANCESTOR_SHA.startswith("dd5393bd")
+    assert vb.is_ancestor(_REPO_ROOT, vb.DASHBOARD_V4_ANCESTOR_SHA, "HEAD") is True
+
+
 def test_empty_tree_is_not_an_ancestor():
     # The empty tree is a valid object but never an ancestor commit of HEAD.
     assert vb.is_ancestor(_REPO_ROOT, _EMPTY_TREE, "HEAD") is False
+
+
+def test_empty_tree_fails_v4_ancestor_gate():
+    report = vb.verify_boundaries(_REPO_ROOT, dashboard_v4_ancestor_sha=_EMPTY_TREE)
+    assert report["gates"]["dashboard_v4_ancestor_is_ancestor"] is False
 
 
 # --------------------------------------------------------------------------- #
@@ -135,6 +145,13 @@ def test_app_py_is_gate_a_only():
     assert "GATE_A_ONLY" in vb.FROZEN_FILES["webui/app.py"]
 
 
+def test_approved_v5_branch_uses_exact_v4_app_py_guard_base():
+    assert vb.APPROVED_V5_BRANCH == "feature/dashboard-v5-learning-evidence"
+    assert vb.APPROVED_V5_BRANCH in vb.PERMITTED_PURPOSE_BRANCHES
+    assert vb.app_py_guard_base_ref(vb.APPROVED_V5_BRANCH) == vb.DASHBOARD_V4_ANCESTOR_SHA
+    assert vb.app_py_guard_base_ref(vb.EXPECTED_BRANCH) == vb.INTEGRATION_BASE_SHA
+
+
 def test_route_snapshot_is_deterministic_and_sorted():
     a = vb.app_py_route_snapshot(_REPO_ROOT)
     b = vb.app_py_route_snapshot(_REPO_ROOT)
@@ -148,10 +165,17 @@ def test_verify_boundaries_reports_expected_branch_and_base_ancestor():
     report = vb.verify_boundaries(_REPO_ROOT)
     assert report["gates"]["on_expected_branch"] is True
     assert report["gates"]["integration_base_is_ancestor"] is True
+    assert report["gates"]["dashboard_v4_ancestor_is_ancestor"] is True
     assert report["gates"]["all_archival_are_ancestors"] is True
     assert report["diverged_branches"] == []
-    # app.py must be unchanged from base during a non-Gate-A goal.
-    assert report["app_py_allowlist_report"]["ok"] is True
+    if report["branch"] == vb.APPROVED_V5_BRANCH:
+        assert report["app_py_gate_base_ref"] == vb.DASHBOARD_V4_ANCESTOR_SHA
+    else:
+        # app.py must be unchanged from the V3 integration base during a non-Gate-A V3/V4 goal.
+        assert report["app_py_allowlist_report"]["ok"] is True
+    assert report["gates"]["app_py_within_gate_a_allowlist"] is report["app_py_allowlist_report"]["ok"]
+    if report["app_py_allowlist_report"]["violations"]:
+        assert report["gates"]["app_py_within_gate_a_allowlist"] is False
 
 
 # --------------------------------------------------------------------------- #

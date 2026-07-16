@@ -1,0 +1,1452 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_rl_api_v2.schema.json",
+  "title": "Kronos RL API V2 canonical wire contract",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/runsRoot"
+    },
+    {
+      "$ref": "#/$defs/runDetailRoot"
+    },
+    {
+      "$ref": "#/$defs/eventsRoot"
+    },
+    {
+      "$ref": "#/$defs/matrixRoot"
+    },
+    {
+      "$ref": "#/$defs/ledgerRoot"
+    },
+    {
+      "$ref": "#/$defs/artifactsRoot"
+    },
+    {
+      "$ref": "#/$defs/d0Root"
+    },
+    {
+      "$ref": "#/$defs/d1Root"
+    },
+    {
+      "$ref": "#/$defs/fixtureRoot"
+    },
+    {
+      "$ref": "#/$defs/errorRoot"
+    }
+  ],
+  "$defs": {
+    "routeDescriptors": {
+      "const": {
+        "RUNS": {
+          "method": "GET",
+          "path": "/api/v5/rl/runs",
+          "root": "runsRoot",
+          "path_bindings": [],
+          "allowed_errors": [
+            "BAD_REQUEST",
+            "INVALID_CURSOR",
+            "INTERNAL_ERROR"
+          ],
+          "cursor": {
+            "scope": "route+source",
+            "order": [
+              "created_at:desc",
+              "run_id:asc"
+            ],
+            "tie_breaker": "run_id",
+            "page_limit": 100,
+            "tamper": "INVALID_CURSOR",
+            "stale": "INVALID_CURSOR",
+            "cross_route": "INVALID_CURSOR"
+          }
+        },
+        "RUN_DETAIL": {
+          "method": "GET",
+          "path": "/api/v5/rl/runs/{run_id}",
+          "root": "runDetailRoot",
+          "path_bindings": [
+            "run_id"
+          ],
+          "allowed_errors": [
+            "NOT_FOUND",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "EVENTS": {
+          "method": "GET",
+          "path": "/api/v5/rl/runs/{run_id}/events",
+          "root": "eventsRoot",
+          "path_bindings": [
+            "run_id"
+          ],
+          "allowed_errors": [
+            "NOT_FOUND",
+            "INVALID_CURSOR",
+            "INTERNAL_ERROR"
+          ],
+          "cursor": {
+            "scope": "route+run_id+source",
+            "order": [
+              "occurred_at:asc",
+              "event_id:asc"
+            ],
+            "tie_breaker": "event_id",
+            "page_limit": 100,
+            "tamper": "INVALID_CURSOR",
+            "stale": "INVALID_CURSOR",
+            "cross_route": "INVALID_CURSOR"
+          }
+        },
+        "MATRIX": {
+          "method": "GET",
+          "path": "/api/v5/rl/matrix",
+          "root": "matrixRoot",
+          "path_bindings": [],
+          "query_bindings": [
+            "run_id",
+            "revision"
+          ],
+          "allowed_errors": [
+            "INTERNAL_ERROR"
+          ]
+        },
+        "LEDGER": {
+          "method": "GET",
+          "path": "/api/v5/rl/ledger",
+          "root": "ledgerRoot",
+          "path_bindings": [],
+          "query_bindings": [
+            "run_id",
+            "revision"
+          ],
+          "allowed_errors": [
+            "INVALID_CURSOR",
+            "INTERNAL_ERROR"
+          ],
+          "cursor": {
+            "scope": "route+source",
+            "order": [
+              "occurred_at:asc",
+              "entry_id:asc"
+            ],
+            "tie_breaker": "entry_id",
+            "page_limit": 100,
+            "tamper": "INVALID_CURSOR",
+            "stale": "INVALID_CURSOR",
+            "cross_route": "INVALID_CURSOR"
+          }
+        },
+        "ARTIFACTS": {
+          "method": "GET",
+          "path": "/api/v5/rl/artifacts",
+          "root": "artifactsRoot",
+          "path_bindings": [],
+          "query_bindings": [
+            "run_id",
+            "revision"
+          ],
+          "allowed_errors": [
+            "INVALID_CURSOR",
+            "INTERNAL_ERROR"
+          ],
+          "cursor": {
+            "scope": "route+source",
+            "order": [
+              "created_at:asc",
+              "artifact_id:asc"
+            ],
+            "tie_breaker": "artifact_id",
+            "page_limit": 100,
+            "tamper": "INVALID_CURSOR",
+            "stale": "INVALID_CURSOR",
+            "cross_route": "INVALID_CURSOR"
+          }
+        },
+        "D0": {
+          "method": "GET",
+          "path": "/api/v5/rl/d0",
+          "root": "d0Root",
+          "path_bindings": [],
+          "allowed_errors": [
+            "INTERNAL_ERROR"
+          ]
+        },
+        "D1": {
+          "method": "GET",
+          "path": "/api/v5/rl/d1",
+          "root": "d1Root",
+          "path_bindings": [],
+          "allowed_errors": [
+            "INTERNAL_ERROR"
+          ]
+        },
+        "FIXTURE": {
+          "method": "GET",
+          "path": "/api/v5/rl/fixture",
+          "root": "fixtureRoot",
+          "path_bindings": [],
+          "allowed_errors": [
+            "INTERNAL_ERROR"
+          ]
+        }
+      }
+    },
+    "semantic_rules": {
+      "const": {
+        "progress": "0 <= step <= total_steps <= 9007199254740991; percent is Decimal(step*100/total_steps) rounded HALF_UP to 6 places",
+        "timestamps": "UTC RFC3339 calendar timestamps compare chronologically after parsing and normalizing optional fractional seconds; QUEUED has null started_at/finished_at and zero step; RUNNING has started_at only; terminal has both; SUCCEEDED is complete; started_at <= finished_at <= updated_at",
+        "source": "all nested source_sha256 values equal source.source_sha256",
+        "matrix": "MatrixCell[] has exactly 50 cells; Python/TS apply seed-major exact Cartesian order and conserving summary",
+        "cursor": "opaque base64url HMAC-SHA256 envelope, authenticated only with an injected server secret, binds route_id, source_sha256, run_id, order, tie_breaker, page_limit and final emitted last_key; following pages begin strictly after their request cursor; invalid/tampered/stale/cross-route is INVALID_CURSOR",
+        "event_payload": "payload_sha256 is SHA-256 of pinned RFC 8785/JCS bytes for the closed event payload projection: event_type plus exactly the selected variant payload",
+        "download": "artifact id, URL, run_id, run_revision, portable filename, extension and MIME bind exactly; filename rejects Windows reserved device basenames case-insensitively",
+        "locks": "every success root carries the exact six false locks",
+        "d0_d1_governance": "D0 PASS requires price_basis RAW or ADJUSTED; D1 PASS requires universe OFFICIAL or MANUAL_REVIEWED; UNKNOWN may only appear with BLOCKED or PENDING"
+      }
+    },
+    "routeId": {
+      "enum": [
+        "RUNS",
+        "RUN_DETAIL",
+        "EVENTS",
+        "MATRIX",
+        "LEDGER",
+        "ARTIFACTS",
+        "D0",
+        "D1",
+        "FIXTURE"
+      ]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,6})?Z$",
+      "format": "date-time"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "runRevision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "cursor": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "minLength": 16,
+      "maxLength": 2048
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_sha256",
+        "generated_at"
+      ],
+      "properties": {
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "generated_at": {
+          "$ref": "#/$defs/utc"
+        }
+      }
+    },
+    "locks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "promotion_allowed",
+        "model_build_allowed",
+        "paper_forward_allowed",
+        "live_broker_order_allowed",
+        "profitability_claim_allowed",
+        "go_summary_allowed"
+      ],
+      "properties": {
+        "promotion_allowed": {
+          "const": false
+        },
+        "model_build_allowed": {
+          "const": false
+        },
+        "paper_forward_allowed": {
+          "const": false
+        },
+        "live_broker_order_allowed": {
+          "const": false
+        },
+        "profitability_claim_allowed": {
+          "const": false
+        },
+        "go_summary_allowed": {
+          "const": false
+        }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "step",
+        "total_steps",
+        "percent"
+      ],
+      "properties": {
+        "step": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "total_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "runState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "progress",
+        "updated_at",
+        "started_at",
+        "finished_at"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "progress": {
+          "$ref": "#/$defs/progress"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/utc"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/utc"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/utc"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "state",
+        "source_sha256",
+        "created_at"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/runId"
+        },
+        "run_uid": {
+          "$ref": "#/$defs/runId"
+        },
+        "run_revision": {
+          "$ref": "#/$defs/runRevision"
+        },
+        "state": {
+          "$ref": "#/$defs/runState"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "created_at": {
+          "$ref": "#/$defs/utc"
+        }
+      }
+    },
+    "event": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event_type",
+            "event_id",
+            "occurred_at",
+            "payload_sha256",
+            "progress"
+          ],
+          "properties": {
+            "event_type": {
+              "const": "PROGRESS"
+            },
+            "event_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "occurred_at": {
+              "$ref": "#/$defs/utc"
+            },
+            "payload_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "progress": {
+              "$ref": "#/$defs/progress"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event_type",
+            "event_id",
+            "occurred_at",
+            "payload_sha256",
+            "level",
+            "message"
+          ],
+          "properties": {
+            "event_type": {
+              "const": "MESSAGE"
+            },
+            "event_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "occurred_at": {
+              "$ref": "#/$defs/utc"
+            },
+            "payload_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "level": {
+              "enum": [
+                "DEBUG",
+                "INFO",
+                "WARNING",
+                "ERROR"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event_type",
+            "event_id",
+            "occurred_at",
+            "payload_sha256",
+            "artifact_id"
+          ],
+          "properties": {
+            "event_type": {
+              "const": "ARTIFACT"
+            },
+            "event_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "occurred_at": {
+              "$ref": "#/$defs/utc"
+            },
+            "payload_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "artifact_id": {
+              "$ref": "#/$defs/artifactId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event_type",
+            "event_id",
+            "occurred_at",
+            "payload_sha256",
+            "state"
+          ],
+          "properties": {
+            "event_type": {
+              "const": "STATE"
+            },
+            "event_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "occurred_at": {
+              "$ref": "#/$defs/utc"
+            },
+            "payload_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "state": {
+              "$ref": "#/$defs/runState"
+            }
+          }
+        }
+      ]
+    },
+    "artifactId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+    },
+    "ledgerEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_id",
+        "occurred_at",
+        "kind",
+        "amount",
+        "currency",
+        "source_sha256"
+      ],
+      "properties": {
+        "entry_id": {
+          "$ref": "#/$defs/artifactId"
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/utc"
+        },
+        "kind": {
+          "enum": [
+            "DEBIT",
+            "CREDIT",
+            "ADJUSTMENT"
+          ]
+        },
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "const": "KRONOS_CREDIT"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-kronos-extension-media-map": {
+        "json": "application/json",
+        "csv": "text/csv",
+        "jsonl": "application/jsonl",
+        "md": "text/markdown",
+        "png": "image/png"
+      },
+      "required": [
+        "artifact_id",
+        "filename",
+        "media_type",
+        "byte_length",
+        "sha256",
+        "created_at"
+      ],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/artifactId"
+        },
+        "filename": {
+          "type": "string",
+          "pattern": "^(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])\\.)[A-Za-z0-9][A-Za-z0-9_-]{0,126}\\.(?:json|csv|jsonl|md|png)$"
+        },
+        "media_type": {
+          "enum": [
+            "application/json",
+            "text/csv",
+            "application/jsonl",
+            "text/markdown",
+            "image/png"
+          ]
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 26214400
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "created_at": {
+          "$ref": "#/$defs/utc"
+        }
+      }
+    },
+    "download": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact",
+        "download_url",
+        "portable_filename"
+      ],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/artifact"
+        },
+        "download_url": {
+          "type": "string",
+          "pattern": "^/api/v5/rl/artifacts/[A-Za-z0-9][A-Za-z0-9_-]{0,127}/download(?:\\?run_id=[A-Za-z0-9][A-Za-z0-9._%~-]{0,383}&(?:revision|run_revision)=[1-9][0-9]{0,15})?$"
+        },
+        "portable_filename": {
+          "type": "string",
+          "pattern": "^(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])\\.)[A-Za-z0-9][A-Za-z0-9_-]{0,126}\\.(?:json|csv|jsonl|md|png)$"
+        },
+        "run_id": {
+          "$ref": "#/$defs/runId"
+        },
+        "run_revision": {
+          "$ref": "#/$defs/runRevision"
+        }
+      }
+    },
+    "matrixCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "row_id",
+        "column_id",
+        "state"
+      ],
+      "properties": {
+        "row_id": {
+          "enum": [
+            "seed-01",
+            "seed-02",
+            "seed-03",
+            "seed-04",
+            "seed-05"
+          ]
+        },
+        "column_id": {
+          "enum": [
+            "fold-01:baseline",
+            "fold-01:cost-00bp",
+            "fold-01:cost-23bp",
+            "fold-01:cost-46bp",
+            "fold-01:no-trade",
+            "fold-02:baseline",
+            "fold-02:cost-00bp",
+            "fold-02:cost-23bp",
+            "fold-02:cost-46bp",
+            "fold-02:no-trade"
+          ]
+        },
+        "state": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "BLOCKED",
+            "PENDING"
+          ]
+        }
+      }
+    },
+    "matrixSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_cells",
+        "pass_count",
+        "fail_count",
+        "blocked_count",
+        "pending_count"
+      ],
+      "properties": {
+        "total_cells": {
+          "const": 50
+        },
+        "pass_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fail_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blocked_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "d0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "price_basis",
+        "source_sha256",
+        "updated_at"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "BLOCKED",
+            "PENDING"
+          ]
+        },
+        "price_basis": {
+          "enum": [
+            "ADJUSTED",
+            "RAW",
+            "UNKNOWN"
+          ]
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/utc"
+        }
+      },
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "PASS"}}}, "then": {"properties": {"price_basis": {"enum": ["RAW", "ADJUSTED"]}}}},
+        {"if": {"properties": {"price_basis": {"const": "UNKNOWN"}}}, "then": {"properties": {"status": {"enum": ["BLOCKED", "PENDING"]}}}}
+      ]
+    },
+    "d1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "universe",
+        "source_sha256",
+        "updated_at"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "BLOCKED",
+            "PENDING"
+          ]
+        },
+        "universe": {
+          "enum": [
+            "OFFICIAL",
+            "MANUAL_REVIEWED",
+            "UNKNOWN"
+          ]
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/utc"
+        }
+      },
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "PASS"}}}, "then": {"properties": {"universe": {"enum": ["OFFICIAL", "MANUAL_REVIEWED"]}}}},
+        {"if": {"properties": {"universe": {"const": "UNKNOWN"}}}, "then": {"properties": {"status": {"enum": ["BLOCKED", "PENDING"]}}}}
+      ]
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_id",
+        "run",
+        "source_sha256",
+        "created_at"
+      ],
+      "properties": {
+        "fixture_id": {
+          "$ref": "#/$defs/artifactId"
+        },
+        "run": {
+          "$ref": "#/$defs/run"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "created_at": {
+          "$ref": "#/$defs/utc"
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "BAD_REQUEST",
+            "NOT_FOUND",
+            "INVALID_CURSOR",
+            "VALIDATION_ERROR",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "runsRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "list",
+        "locks"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "RUNS"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        },
+        "list": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items",
+            "next_cursor"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "$ref": "#/$defs/run"
+              }
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/cursor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "runDetailRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "run",
+        "locks"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "RUN_DETAIL"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "run": {
+          "$ref": "#/$defs/run"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        }
+      }
+    },
+    "eventsRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "list",
+        "locks",
+        "run_id"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "EVENTS"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        },
+        "list": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items",
+            "next_cursor"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "$ref": "#/$defs/event"
+              }
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/cursor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "run_id": {
+          "$ref": "#/$defs/runId"
+        }
+      }
+    },
+    "matrixRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "cells",
+        "summary",
+        "locks"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "MATRIX"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        },
+        "cells": {
+          "$ref": "#/$defs/matrixCells"
+        },
+        "summary": {
+          "$ref": "#/$defs/matrixSummary"
+        }
+      }
+    },
+    "ledgerRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "list",
+        "locks"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "LEDGER"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        },
+        "list": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items",
+            "next_cursor"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "$ref": "#/$defs/ledgerEntry"
+              }
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/cursor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "artifactsRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "list",
+        "locks"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "ARTIFACTS"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        },
+        "list": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items",
+            "next_cursor"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "$ref": "#/$defs/download"
+              }
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/cursor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "d0Root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "d0",
+        "locks"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "D0"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "d0": {
+          "$ref": "#/$defs/d0"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        }
+      }
+    },
+    "d1Root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "d1",
+        "locks"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "D1"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "d1": {
+          "$ref": "#/$defs/d1"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        }
+      }
+    },
+    "fixtureRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "source",
+        "fixture",
+        "locks"
+      ],
+      "properties": {
+        "route_id": {
+          "const": "FIXTURE"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "fixture": {
+          "$ref": "#/$defs/fixture"
+        },
+        "locks": {
+          "$ref": "#/$defs/locks"
+        }
+      }
+    },
+    "errorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "error"
+      ],
+      "properties": {
+        "route_id": {
+          "$ref": "#/$defs/routeId"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "RUNS"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "BAD_REQUEST",
+                      "INVALID_CURSOR",
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "RUN_DETAIL"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "NOT_FOUND",
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "EVENTS"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "NOT_FOUND",
+                      "INVALID_CURSOR",
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "MATRIX"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "LEDGER"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "INVALID_CURSOR",
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "ARTIFACTS"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "INVALID_CURSOR",
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "D0"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "D1"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route_id": {
+                "const": "FIXTURE"
+              }
+            },
+            "required": [
+              "route_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "matrixCells": {
+      "type": "array",
+      "minItems": 50,
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/matrixCell"
+      }
+    }
+  }
+}

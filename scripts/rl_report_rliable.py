@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import importlib.metadata
 import json
 import math
@@ -90,29 +91,57 @@ def _rliable_statistics(
         raise RliableReportError("bootstrap_reps_must_be_positive")
     try:
         import numpy as np
+        from arch.bootstrap import IIDBootstrap
         from rliable import library as rly
         from rliable import metrics
     except ImportError as exc:
         raise RliableReportError("rliable_dependency_unavailable") from exc
 
+    class _GeneratorStratifiedBootstrap(rly.StratifiedBootstrap):
+        def update_indices(self) -> tuple[Any, ...]:
+            indices = self._generator.choice(self._num_items, self._args_shape, replace=True)
+            if self._task_bootstrap:
+                task_indices = self._generator.choice(
+                    self._num_tasks,
+                    self._strata_indices[0].shape,
+                    replace=True,
+                )
+                return (indices, task_indices, *self._strata_indices[1:])
+            return (indices, *self._strata_indices)
+
+    def _generator_kwargs(seed_value: int) -> dict[str, Any]:
+        generator = np.random.RandomState(int(seed_value))
+        parameters = inspect.signature(IIDBootstrap.__init__).parameters
+        if "generator" in parameters:
+            return {"generator": generator}
+        return {"seed": generator}
+
+    def _interval_estimates(func: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        point_estimates: dict[str, Any] = {}
+        interval_estimates: dict[str, Any] = {}
+        for key, scores in score_dict.items():
+            stratified_bootstrap = _GeneratorStratifiedBootstrap(
+                scores,
+                task_bootstrap=False,
+                **_generator_kwargs(int(seed)),
+            )
+            point_estimates[key] = func(scores)
+            interval_estimates[key] = stratified_bootstrap.conf_int(
+                func,
+                reps=int(reps),
+                size=0.95,
+                method="percentile",
+            )
+        return point_estimates, interval_estimates
+
     score_dict = {"D4": np.asarray([float(value) for value in values], dtype=float)[:, None]}
-    random_state = np.random.get_state()
-    try:
-        np.random.seed(int(seed))
-        aggregate_scores, aggregate_cis = rly.get_interval_estimates(
-            score_dict,
-            lambda scores: np.asarray([metrics.aggregate_iqm(scores)], dtype=float),
-            reps=int(reps),
-            random_state=np.random.RandomState(int(seed)),
-        )
-        np.random.seed(int(seed))
-        profile_scores, profile_cis = rly.create_performance_profile(
-            score_dict,
-            np.asarray([float(value) for value in thresholds], dtype=float),
-            reps=int(reps),
-        )
-    finally:
-        np.random.set_state(random_state)
+    threshold_values = np.asarray([float(value) for value in thresholds], dtype=float)
+    aggregate_scores, aggregate_cis = _interval_estimates(
+        lambda scores: np.asarray([metrics.aggregate_iqm(scores)], dtype=float),
+    )
+    profile_scores, profile_cis = _interval_estimates(
+        lambda scores: rly.score_distributions(scores, threshold_values),
+    )
 
     profile = [
         {
