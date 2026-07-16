@@ -478,7 +478,8 @@ def _progress(raw: Any, *, status: str, fallback_step: Any = None, fallback_tota
 
 def _state(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     state = snapshot.get("state") if isinstance(snapshot.get("state"), Mapping) else snapshot
-    raw_status = str(state.get("status") or snapshot.get("phase") or snapshot.get("lifecycle_state") or "RUNNING").upper()
+    terminal_status = snapshot.get("terminal") if isinstance(snapshot.get("terminal"), str) else None
+    raw_status = str(terminal_status or state.get("status") or snapshot.get("phase") or snapshot.get("lifecycle_state") or "RUNNING").upper()
     status = STATUS_MAP.get(raw_status, STATUS_MAP.get(str(snapshot.get("status") or "").upper(), "RUNNING"))
     updated_at = _utc(state.get("updated_at") or state.get("updated_utc") or snapshot.get("updated_at") or snapshot.get("updated_utc") or snapshot.get("occurred_at"), fallback=_utc_now())
     created_at = _utc(snapshot.get("created_at") or snapshot.get("created_utc") or updated_at, fallback=updated_at)
@@ -904,7 +905,7 @@ def create_v5_rl_api_blueprint(
         identity = _identity(active)
         cursor, cursor_page_key = _cursor_arg("RUNS", identity["source_sha256"], key)
         limit = _limit_arg()
-        page = _call_registry(active.list_runs, limit=limit + 1, cursor=cursor, filters=None, sort="latest_desc")
+        page = _call_registry(active.list_runs, limit=limit, cursor=cursor, filters=None, sort="latest_desc")
         snapshots, registry_has_more = _page_parts(page)
         items = [_run(_snapshot_from_read(snapshot), identity) for snapshot in snapshots]
         page_items, next_cursor = _paginate("RUNS", items, source_sha256=identity["source_sha256"], cursor_key=key, request_cursor_key=cursor_page_key, limit=limit, registry_has_more=registry_has_more)

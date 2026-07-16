@@ -159,11 +159,13 @@ class FakeRegistry:
         self.mode = mode
         self.events = events if events is not None else _fixture_events()
         self.event_calls: list[dict[str, Any]] = []
+        self.run_limits: list[int] = []
 
     def identity(self) -> dict[str, Any]:
         return {"schema_version": "kronos_rl_run_state.v2", "registry_epoch": 1, "genesis_hash": SOURCE_SHA, "cursor_key_id": "test", "created_utc": FIXTURE["source"]["generated_at"], "read_only": True, "status": "READY"}
 
     def list_runs(self, *, limit: int = 50, cursor: str | None = None, filters: Any = None, sort: str = "latest_desc") -> Page:
+        self.run_limits.append(limit)
         if self.mode == "boom":
             raise RuntimeError("secret filesystem path D:/private/kronos/registry.sqlite")
         if self.mode == "corrupt":
@@ -351,11 +353,27 @@ def test_uuid_and_revision_conflicts_return_409(tmp_path: Path) -> None:
     download = _client(tmp_path, FakeRegistry(mode="artifact-revision-conflict")).get(f"/api/v5/rl/artifacts/artifact-1/download?run_id={quote(RUN_UID, safe='')}&revision={REVISION}")
     _assert_error(download, 409, "INTERNAL_ERROR")
 
+def test_registry_terminal_snapshot_maps_to_succeeded(tmp_path: Path) -> None:
+    snapshot = _snapshot()
+    snapshot["terminal"] = "COMPLETED"
+    snapshot["phase"] = "RUN_TERMINAL"
+    snapshot["progress"] = {"step": 100, "total_steps": 100}
+
+    response = _client(tmp_path, FakeRegistry(snapshot=snapshot)).get(SUCCESS_PATHS["RUN_DETAIL"])
+
+    assert response.status_code == 200
+    state = _json(response)["run"]["state"]
+    assert state["status"] == "SUCCEEDED"
+    assert state["progress"]["percent"] == 100.0
+    assert state["finished_at"] is not None
+
 
 def test_pagination_cursor_status_and_limits(tmp_path: Path) -> None:
-    client = _client(tmp_path)
+    registry = FakeRegistry()
+    client = _client(tmp_path, registry)
 
     first = client.get("/api/v5/rl/runs?limit=1")
+    assert registry.run_limits == [1]
     assert first.status_code == 200
     first_payload = _json(first)
     token = first_payload["list"]["next_cursor"]
@@ -365,6 +383,7 @@ def test_pagination_cursor_status_and_limits(tmp_path: Path) -> None:
     second = client.get(f"/api/v5/rl/runs?cursor={token}")
     assert second.status_code == 200
     assert _json(second)["list"]["items"][0]["run_id"] == SECOND_RUN_UID
+    assert registry.run_limits == [1, 100]
 
     tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
     invalid = client.get(f"/api/v5/rl/runs?cursor={tampered}")

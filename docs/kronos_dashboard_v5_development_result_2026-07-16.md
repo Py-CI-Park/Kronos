@@ -23,7 +23,7 @@
 ### 2.1 사용자 화면 및 라우팅
 
 - `/learning-now`와 `/v5/learning-now` 직접 경로를 추가했다.
-- 정적 배포 경로 `/static/v2/dist/learning-now?ui=v5`를 지원한다.
+- 공식 Flask 사용자 경로는 `/learning-now`와 `/v5/learning-now`이며, `/static/v2/dist/`는 JS/CSS 정적 자산 base로만 사용한다.
 - Vite public base URL과 Flask shell route를 정렬해 잘못된 루트 접근 시 안내되는 정적 base URL 문제를 해소했다.
 - 모바일 375px, 태블릿 768px, 데스크톱 1280px 레이아웃을 검증했다.
 - Learning Now 화면에 불변 run UID/revision, phase/liveness/progress, 경제 NAV, 23bp 비용 구성, 평가 매트릭스, ledger reconciliation, governance 및 false-lock 상태를 표시한다.
@@ -245,14 +245,23 @@ git status --short
 
 ### 7.2 V3 기본 및 V5 직접 경로
 
-대시보드를 시작한 뒤 다음을 각각 확인한다.
+대시보드 실행 포트는 `start_dashboard.bat` 기준 `8122`다. 실행 후 다음을 각각 확인한다.
 
 ```text
-http://127.0.0.1:<포트>/
-http://127.0.0.1:<포트>/?ui=v3
-http://127.0.0.1:<포트>/learning-now?ui=v5
-http://127.0.0.1:<포트>/v5/learning-now?ui=v5
+http://127.0.0.1:8122/
+http://127.0.0.1:8122/?ui=v3
+http://127.0.0.1:8122/learning-now?ui=v5
+http://127.0.0.1:8122/v5/learning-now?ui=v5
 ```
+
+`http://127.0.0.1:8122/static/v2/dist/learning-now?ui=v5`는 Flask 사용자 경로가 아니므로 사용하지 않는다. 해당 경로의 `404`는 정상이며, `/static/v2/dist/`는 빌드 자산 제공에만 사용한다.
+
+Chrome 실기동 확인에서 실제 SQLite registry 연결 시 발견한 두 경계를 추가 수정했다.
+
+- `/api/v5/rl/runs` 기본 page limit가 registry 최대값 100을 넘겨 101로 전달되던 문제를 100으로 수정했다.
+- terminal registry snapshot의 `COMPLETED`가 API에서 `RUNNING`으로 변환되던 문제를 `SUCCEEDED`로 수정했다.
+- 실제 Chrome 1280×900에서 V3/V5 shell, 4개 run selector, revision 선택, `SUCCEEDED`, 100/100 progress 및 문서 overflow 없음까지 확인했다.
+- Chrome 375×812 모바일 에뮬레이션에서 카드 잘림은 없었고 브라우저 sub-pixel 반올림으로 document width가 1px 차이 나는 것을 관찰했다.
 
 확인 기준:
 
