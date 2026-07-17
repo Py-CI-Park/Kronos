@@ -25,6 +25,12 @@ read-only `/api/docs/*` endpoints.
 - [09-api-reference](09-api-reference) - read-only API catalog
 - [10-dashboard-guide](10-dashboard-guide) - official dashboard usage guide
 
+### Research governance
+- [11-reinforcement-learning](11-reinforcement-learning) - reinforcement-learning study guide
+- [12-portfolio-rl-roadmap](12-portfolio-rl-roadmap) - portfolio RL roadmap
+- [13-research-ledger](13-research-ledger) - current research status and evidence index
+- [14-document-standard](14-document-standard) - document taxonomy and report templates
+
 ## Quick start
 
 ```powershell
@@ -47,3 +53,5 @@ Legacy `/v2*` and `/rl-lab` URLs are compatibility redirects only.
 - Prefer Korean operator-facing copy, with English terms where they are already
   dashboard labels.
 - Do not claim live-trading readiness or profitability from dashboard evidence.
+- Keep prior evidence documents immutable; add new dated results and connect them through the research ledger.
+- Show user-facing transaction costs as percentages while preserving legacy API/artifact identifiers when compatibility requires them.
