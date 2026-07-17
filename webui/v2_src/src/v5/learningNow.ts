@@ -17,6 +17,16 @@ import type {
 import { V5LearningFetchError } from '../lib/rlApi';
 
 export const LEARNING_NOW_ROUTE_PATHS = ['/learning-now', '/v5/learning-now'] as const;
+
+export function isLearningNowRouteLocation(
+  locationLike: Pick<Location, 'pathname' | 'search'> | null,
+): boolean {
+  if (!locationLike) return false;
+  const normalizedPath = locationLike.pathname.replace(/\/+$/, '') || '/';
+  const requestedTab = new URLSearchParams(locationLike.search).get('tab');
+  return requestedTab === 'learning-now'
+    || LEARNING_NOW_ROUTE_PATHS.includes(normalizedPath as (typeof LEARNING_NOW_ROUTE_PATHS)[number]);
+}
 export const LEARNING_NOW_UX_REVISION = 'kronos_dashboard_v5_usability_instrument.v1@2026-07-15';
 export const LEARNING_NOW_STALE_AFTER_SECONDS = 120;
 export const LEARNING_NOW_FOCUS_SEED = 'seed-01';

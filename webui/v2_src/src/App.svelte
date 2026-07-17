@@ -31,25 +31,14 @@
   import { installPollingWatcher, startPolling } from '$lib/polling';
   import { resolveRoute, syncTabFromLocation } from '$lib/routes';
   import { dashboardShell, initializeDashboardShell, type DashboardShell } from '$lib/shellMode';
+  import { isLearningNowRouteLocation } from './v5/learningNow';
 
-  function normalizeLearningNowPath(pathname: string): string {
-    const normalized = pathname.replace(/\/+$/, '');
-    return normalized || '/';
-  }
-
-  function isLearningNowLocation(locationLike: Pick<Location, 'pathname' | 'search'> | null): boolean {
-    if (!locationLike) return false;
-    const requestedTab = new URLSearchParams(locationLike.search).get('tab');
-    return requestedTab === 'learning-now'
-      || normalizeLearningNowPath(locationLike.pathname) === '/learning-now'
-      || normalizeLearningNowPath(locationLike.pathname) === '/v5/learning-now';
-  }
 
   function shouldRenderLearningNowRoute(
     activeShell: DashboardShell,
     locationLike: Pick<Location, 'pathname' | 'search'> | null,
   ): boolean {
-    return activeShell === 'v5' || isLearningNowLocation(locationLike);
+    return isLearningNowRouteLocation(locationLike);
   }
 
   function activateLearningNowRoute(): void {
@@ -123,7 +112,7 @@
     }
   });
   $effect(() => {
-    if (learningNowRouteActive || shell === 'v5') void ensureLearningNowTab();
+    if (learningNowRouteActive) void ensureLearningNowTab();
   });
 
 
@@ -239,7 +228,7 @@
   </div>
 {/snippet}
 
-{#if shell === 'v5' || learningNowRouteActive}
+{#if learningNowRouteActive}
   <div class="app-shell" data-kronos-shell={shell} data-sidebar={collapsed ? 'collapsed' : 'expanded'}>
     <Sidebar />
     <div class="main">

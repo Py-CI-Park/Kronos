@@ -106,7 +106,20 @@
 - 내부 score replay의 `point_score_a_eq_b`, `engineering_90_pass`, category floor 및 six-lock 조건은 통과했다.
 - 위 점수는 `NO-GO` 모델 판정을 숨기거나 수익성을 의미하지 않는다.
 
-### 3.4 릴리스 gate 별도 평가
+### 3.4 Chrome 실사용 재평가
+
+사용자 Chrome 확인에서 `?tab=rl&ui=v5`가 Learning Now로 강제되고 sidebar 탭이 바뀌지 않는 결함이 확인됐다. 이 결함이 있던 V5 초기 커밋 상태의 점수는 B 항목을 25점에서 16점으로 낮춰 **89/100**으로 재평가한다. 결함 수정 후 12개 탭과 Learning Now 직접 경로를 다시 실행했으며 현재 점수는 **98/100**이다.
+
+| 비교 시점 | 총점 | 판단 |
+|---|---:|---|
+| V4 업데이트 전 | 68/100 | 기존 12탭·72 browser matrix는 있으나 V5 권위/registry/runner/release 체계 부재 |
+| V5 초기 커밋, 탭 결함 발견 전 | 89/100 | `ui=v5`가 모든 탭을 Learning Now로 덮어 핵심 navigation floor 미달 |
+| V5 현재 수정본 | 98/100 | 12개 탭 정상, Learning Now는 명시 경로에서만 렌더, 운영·릴리스 2점 보류 |
+
+현재 100점을 주지 않는 이유는 기능 결함이 아니라 release/default 경계다. 현재 dist에 결합된 새 112-scenario signed browser receipt와 clean non-dry-run `TERMINAL_CLOSED`가 없으므로 E 항목 2점을 계속 보류한다.
+
+
+### 3.5 릴리스 gate 별도 평가
 
 최종 dry-run terminal report의 18개 equation term 중 14개가 참이었고 4개가 거짓이었다.
 
@@ -150,7 +163,7 @@ py -3.11 -m pytest \
 
 ```text
 npm test
-328 passed, 0 failed
+329 passed, 0 failed
 
 npm run check
 400 files, 0 errors, 0 warnings
@@ -250,6 +263,8 @@ git status --short
 ```text
 http://127.0.0.1:8122/
 http://127.0.0.1:8122/?ui=v3
+http://127.0.0.1:8122/?tab=rl&ui=v5
+http://127.0.0.1:8122/?tab=stom&ui=v5
 http://127.0.0.1:8122/learning-now?ui=v5
 http://127.0.0.1:8122/v5/learning-now?ui=v5
 ```
@@ -262,6 +277,10 @@ Chrome 실기동 확인에서 실제 SQLite registry 연결 시 발견한 두 �
 - terminal registry snapshot의 `COMPLETED`가 API에서 `RUNNING`으로 변환되던 문제를 `SUCCEEDED`로 수정했다.
 - 실제 Chrome 1280×900에서 V3/V5 shell, 4개 run selector, revision 선택, `SUCCEEDED`, 100/100 progress 및 문서 overflow 없음까지 확인했다.
 - Chrome 375×812 모바일 에뮬레이션에서 카드 잘림은 없었고 브라우저 sub-pixel 반올림으로 document width가 1px 차이 나는 것을 관찰했다.
+- `ui=v5`가 모든 화면을 Learning Now로 덮던 결함을 수정해 12개 sidebar 탭이 각각 고유 화면을 렌더하도록 했다.
+- Chrome에서 `mission-control`, `forecast`, `stom`, `daily-ohlcv`, `daily-rl-guide`, `rl`, `live-training`, `system-health`, `artifacts`, `history`, `settings`, `docs` 12개를 직접 순회했고 모두 `shell=v5`, 고유 제목, Learning Now 미렌더, 문서 overflow 없음으로 확인했다.
+- Learning Now는 `/learning-now?ui=v5`, `/v5/learning-now?ui=v5` 또는 `tab=learning-now`에서만 렌더한다.
+- 이전 화면의 `00000000-...` 값은 Chrome 검증용 임시 synthetic registry UUID였으며 최신 공식 재시작에서는 주입하지 않는다.
 
 확인 기준:
 

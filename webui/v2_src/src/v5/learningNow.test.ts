@@ -9,6 +9,7 @@ const {
   V5_MATRIX_COLUMNS,
   V5_MATRIX_ROWS,
   LEARNING_NOW_COST_COMPONENTS,
+  isLearningNowRouteLocation,
   assessRunLiveness,
   auditProgress,
   buildDownloadPolicy,
@@ -26,6 +27,13 @@ const {
   summarizeMatrix,
 }: typeof LearningNow = await import(learningNowPath);
 
+test('Learning Now renders only for its explicit routes, not every V5 tab', () => {
+  assert.equal(isLearningNowRouteLocation({ pathname: '/', search: '?tab=rl&ui=v5' }), false);
+  assert.equal(isLearningNowRouteLocation({ pathname: '/', search: '?tab=stom&ui=v5' }), false);
+  assert.equal(isLearningNowRouteLocation({ pathname: '/learning-now', search: '?ui=v5' }), true);
+  assert.equal(isLearningNowRouteLocation({ pathname: '/v5/learning-now/', search: '?ui=v5' }), true);
+  assert.equal(isLearningNowRouteLocation({ pathname: '/', search: '?tab=learning-now&ui=v5' }), true);
+});
 const sha256 = 'a'.repeat(64);
 const utc = '2026-07-15T00:00:00Z';
 const source = { source_sha256: sha256, generated_at: utc };
