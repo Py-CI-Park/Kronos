@@ -113,6 +113,24 @@ KOSPI·KOSDAQ 전체 종목의 point-in-time 소속 정보가 필요하다. 초�
 
 당일 최종 OHLCV만 있고 15:20 봉이 없으면 당일 완성 일봉을 15:20 값으로 위장하지 않는다.
 
+### 3.4 로컬 DB 직접 점검 결과 (2026-07-17)
+
+15:20 source 후보는 실제로 확인됐다.
+
+| 항목 | 확인 결과 |
+|---|---|
+| DB | `_database/Stock_Database_ohlcv_5min.db` |
+| 테이블 형식 | 종목별 `A######` |
+| 컬럼 | `date`, `open`, `high`, `low`, `close`, `volume` |
+| timestamp 형식 | `YYYYMMDDHHMM` 정수 |
+| 표본 테이블 | `A000250` |
+| 표본 15:20 행 수 | 1,739 |
+| 표본 15:20 최초·최종 | `2019-05-09 15:20` ~ `2026-06-12 15:20` |
+
+`A000250` 표본에서 15:20 행이 실제로 존재함을 확인했다. 다만 종목별 상장일·결측이 다르므로 전체 universe 기간은 별도 coverage audit으로 계산해야 한다. 5분봉 DB에는 거래대금 컬럼이 없으므로 `amount_to_1520`은 가격×거래량의 근사값으로 조용히 대체하지 않는다. 필요한 경우 검증된 별도 source를 연결하거나 필드를 `NOT_AVAILABLE`로 유지한다.
+
+`_database/Stock_Database_ohlcv_1day.db`에는 `A` 및 `Q` 종목별 테이블만 확인됐고 KOSPI/KOSDAQ 공식 지수명 테이블은 발견되지 않았다. `_database/stock_tick_back.db`의 `stockinfo`는 종목의 KOSPI/KOSDAQ 구분에는 사용할 수 있지만 공식 지수 시계열을 제공한다는 증거는 아니다. 따라서 지수 overlay는 공식 지수 source 경로가 확인될 때까지 `BLOCKED_INDEX_SERIES_SOURCE`다. 임의의 종목 평균을 KOSPI/KOSDAQ으로 표시하지 않는다.
+
 ## 4. 강화학습 환경 권장 계약
 
 ### 4.1 observation
@@ -415,8 +433,8 @@ KNOWLEDGE
 | U2 | “우측 탭 접힘”의 대상 | 우측 상세 rail, 좌측 sidebar는 기존 접힘 유지 |
 | U3 | 최초 공식 보유기간 | H1, H3/H5는 validation variant |
 | U4 | ETF·ETN·스팩·우선주 포함 여부 | 모두 제외 후 보통주부터 시작 |
-| U5 | 15:20 봉 DB/table/column | 실제 source 확인 필요 |
-| U6 | KOSPI/KOSDAQ 지수 source | 실제 DB/table 확인 필요 |
+| U5 | 15:20 봉 source | `_database/Stock_Database_ohlcv_5min.db`; 전체 종목 coverage audit 필요 |
+| U6 | KOSPI/KOSDAQ 공식 지수 source | 현재 로컬 DB에서 미발견; 경로 또는 공급 source 확인 필요 |
 | U7 | 동시 보유 종목 중복 slot | 종목당 1 slot 고정 |
 | U8 | 울트라와이드 기준 해상도 | 3,440×1,440 또는 실제 모니터 해상도 확인 |
 

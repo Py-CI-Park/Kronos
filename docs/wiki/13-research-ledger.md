@@ -54,6 +54,9 @@
 - primary 왕복 비용 표시: 0.23%
 - controls: 0.00%, 0.46%
 - 공매도·레버리지: 초기 금지
+- 15:20 source 후보: `_database/Stock_Database_ohlcv_5min.db`
+- `A000250` 표본 15:20 범위: 2019-05-09~2026-06-12, 1,739행
+- KOSPI/KOSDAQ 공식 지수 시계열: 로컬 DB에서 미확인, overlay `BLOCKED_INDEX_SERIES_SOURCE`
 
 상세 계약은 `docs/kronos_daily_close_rl_v5_1_requirements_2026-07-17.md`를 참조합니다.
 
