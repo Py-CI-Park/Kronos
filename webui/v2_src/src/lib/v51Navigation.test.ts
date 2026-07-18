@@ -47,7 +47,7 @@ test('V5.1 brand and version history preserve default, commit, and no-release wo
       releaseTag: entry.releaseTag,
     })),
     [
-      { version: 'V5.1', date: '2026-07-17', commitSha: 'not assigned', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'not released' },
+      { version: 'V5.1', date: '2026-07-17', commitSha: 'ec134dd', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'not released' },
       { version: 'V5', date: '2026-07-16', commitSha: '59fb74c', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'fork-v1.3.0-dashboard-v5-research-preview' },
     ],
   );
