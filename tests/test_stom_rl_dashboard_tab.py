@@ -46,7 +46,7 @@ def test_official_dashboard_sources_register_stom_rl_trading_tab():
     assert "id: 'rl'" in sidebar
     assert "label: 'Trading Command Center'" in sidebar
     assert "id: 'daily-ohlcv'" in sidebar  # B1: daily is a registered Svelte tab
-    assert "routeLabel(tab)" in header
+    assert "routeLabelForShell(tab, shell)" in header
     assert "data-rl-trading-tab" in source
     assert "data-rl-orderbook-readiness-card" in source
     assert "orderbook_rl_readiness" in source

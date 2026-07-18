@@ -72,8 +72,8 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "history.pushState" in routes
     assert "history.replaceState" in routes
     assert "popstate" in app
-    assert "navigateToTab(id)" in sidebar
-    assert "routeLabel(tab)" in header
+    assert "navigateToTab(routeId)" in sidebar
+    assert "routeLabelForShell(tab, shell)" in header
     assert "id: 'rl'" in routes  # A consolidation: rl is a query-tab route (path '/'), no longer '/rl'
     assert "'daily-rl-guide'" in routes
     assert "ResearchStatusShell" in tab

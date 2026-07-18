@@ -165,7 +165,7 @@ def test_shell_mode_keeps_v3_default_query_storage_persist_and_fail_closed_guard
 def test_routes_preserve_shell_query_during_canonicalization_and_navigation() -> None:
     routes = _source("lib/routes.ts")
 
-    assert "import { preserveShellQuery } from './shellMode'" in routes
+    assert "import { preserveShellQuery, type DashboardShell } from './shellMode'" in routes
     assert "routeUrl(route.id, { currentSearch: locationLike.search })" in routes
     assert "return preserveShellQuery(`/rl?section=${encodeURIComponent(section)}`, locationLike.search)" in routes
     assert "export function routeUrl(tabId: string, options: { currentSearch?: string } = {})" in routes
@@ -192,7 +192,7 @@ def test_sidebar_v4_groups_contain_all_twelve_tab_ids_once_and_v3_markers_remain
     assert "data-v4-shell={shell === 'v4' ? 'sidebar' : undefined}" in sidebar
     assert "data-v4-command-trigger" in sidebar
     assert "onclick={requestCommandPalette}" in sidebar
-    assert "let navGroups = $derived(shell === 'v4' ? v4Groups : v3Groups)" in sidebar
+    assert "shell === 'v5' ? V51_NAV_GROUPS : shell === 'v4' ? v4Groups : v3Groups" in sidebar
 
     for marker in [
         "커맨드",
