@@ -16,6 +16,8 @@ import {
 const sha = 'a'.repeat(64);
 const sourceDbSha = 'b'.repeat(64);
 const protocolSha = 'c'.repeat(64);
+const zeroSha = '0'.repeat(64);
+const epochUtc = '1970-01-01T00:00:00Z';
 const utc = '2026-07-18T00:00:00Z';
 
 type FetchCall = Readonly<{ url: string; init: RequestInit | undefined }>;
@@ -574,6 +576,72 @@ test('V5.1 client rejects schema max boundary overflows for panel previews and r
   }), async () => {
     await assert.rejects(v51Api.readReport('report-2026-07-17'), (caught) => caught instanceof V51ApiError && caught.code === 'SCHEMA_INVALID');
   });
+});
+
+test('V5.1 client keeps BLOCKED identity sentinels but rejects READY zero and epoch identities', () => {
+  const blocked = researchPayload('EVALUATOR', evaluator());
+  assert.equal(isV51RouteRoot('EVALUATOR', {
+    ...blocked,
+    source: {
+      ...source(stableArtifactIds.evaluator),
+      source_sha256: zeroSha,
+      source_db_sha256: zeroSha,
+      generated_at: epochUtc,
+    },
+    run: {
+      ...run(),
+      source_sha256: zeroSha,
+      protocol_sha256: zeroSha,
+    },
+    artifact: {
+      ...artifact('evaluator', stableArtifactIds.evaluator),
+      sha256: zeroSha,
+    },
+  }), true);
+
+  const ready = researchPayload('SOURCE_COVERAGE', sourceCoverage());
+  const readySentinelCases: readonly { readonly name: string; readonly payload: unknown }[] = [
+    {
+      name: 'source/run source_sha256',
+      payload: {
+        ...ready,
+        source: { ...source(stableArtifactIds.source_coverage), source_sha256: zeroSha },
+        run: { ...run(), source_sha256: zeroSha },
+      },
+    },
+    {
+      name: 'source_db_sha256',
+      payload: {
+        ...ready,
+        source: { ...source(stableArtifactIds.source_coverage), source_db_sha256: zeroSha },
+      },
+    },
+    {
+      name: 'protocol_sha256',
+      payload: {
+        ...ready,
+        run: { ...run(), protocol_sha256: zeroSha },
+      },
+    },
+    {
+      name: 'artifact.sha256',
+      payload: {
+        ...ready,
+        artifact: { ...artifact('source_coverage', stableArtifactIds.source_coverage), sha256: zeroSha },
+      },
+    },
+    {
+      name: 'generated_at',
+      payload: {
+        ...ready,
+        source: { ...source(stableArtifactIds.source_coverage), generated_at: epochUtc },
+      },
+    },
+  ];
+
+  for (const { name, payload } of readySentinelCases) {
+    assert.equal(isV51RouteRoot('SOURCE_COVERAGE', payload), false, name);
+  }
 });
 
 test('V5.1 client fails closed for malformed schema, identity/status/cost/report guards, JSON, status, and size', async () => {

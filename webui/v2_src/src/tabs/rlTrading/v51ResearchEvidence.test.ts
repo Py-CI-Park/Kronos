@@ -80,6 +80,30 @@ test('daily guide source markers use 15:20 H1/H3/H5 labels and fail-closed tones
   assert.doesNotMatch(dailyRlGuideTabSource, new RegExp("display_capital_krw'\\) \\?\\? " + '100000' + '00'));
 });
 
+test('daily guide missing replay/performance evidence does not render optimistic placeholders', () => {
+  assertContainsAll(dailyRlGuideTabSource, [
+    "const MISSING_ACTION_EVIDENCE = 'MISSING_ACTION_EVIDENCE';",
+    "if (typeof value === 'number') return Number.isFinite(value) ? value : null;",
+    "if (typeof value !== 'string') return null;",
+    "if (trimmed === '') return null;",
+    "return action === '' ? MISSING_ACTION_EVIDENCE : action;",
+    "action<br />{frameActionExecuted()}",
+    '<h3>{frameActionExecuted()}</h3>',
+    'const signedMetricTone = (value: unknown): string => {',
+    'const numeric = numberValue(value);',
+    "if (numeric === null) return 'warn';",
+    "return numeric < 0 ? 'danger' : 'pass';",
+    "const performanceCardTone = (card: Record<string, unknown>): string => signedMetricTone(field(card, 'total_return_pct'));",
+    "data-tone={signedMetricTone(field(row, 'total_reward'))}",
+    'data-card-tone={performanceCardTone(card)}',
+    ".performance-card[data-card-tone='warn']",
+  ]);
+  assert.doesNotMatch(dailyRlGuideTabSource, /\?\? 'hold'/);
+  assert.doesNotMatch(dailyRlGuideTabSource, /frameActionExecuted\(\) === '—'/);
+  assert.doesNotMatch(dailyRlGuideTabSource, /data-card-tone=\{numberValue\(field\(card, 'total_return_pct'\)\) !== null && Number\(field\(card, 'total_return_pct'\)\) < 0 \? 'danger' : 'pass'\}/);
+  assert.doesNotMatch(dailyRlGuideTabSource, /data-tone=\{numberValue\(field\(row, 'total_reward'\)\) !== null/);
+});
+
 test('dashboard cost wording is percent-first with bp only secondary or internal', () => {
   assertContainsAll(rlTradingTabSource, [
     '0.23% (23 bp) cost gate',

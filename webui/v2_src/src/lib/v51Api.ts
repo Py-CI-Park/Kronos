@@ -524,6 +524,8 @@ const reportListTopKeys = ['route_id', 'status', 'status_reason', 'protocol', 's
 const reportReadTopKeys = ['route_id', 'status', 'status_reason', 'protocol', 'source', 'locks', 'claims', 'report', 'content'] as const;
 const errorTopKeys = ['route_id', 'status', 'protocol', 'source', 'locks', 'claims', 'error'] as const;
 const sha256Pattern = /^[0-9a-f]{64}$/u;
+const zeroSha256 = '0'.repeat(64);
+const epochGeneratedAt = '1970-01-01T00:00:00Z';
 const artifactIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const runIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const reportPathPattern = /^(?![a-z]:)(?!\/)(?!.*[\\])(?!.*(?:^|\/)\.\.(?:\/|$))[a-z0-9._/-]+\.(?:md|html)$/u;
@@ -657,6 +659,14 @@ function isRunId(value: unknown): value is string {
 
 function isRfc3339Utc(value: unknown): value is string {
   return typeof value === 'string' && rfc3339UtcPattern.test(value);
+}
+
+function isNonZeroSha256(value: unknown): value is string {
+  return isSha256(value) && value !== zeroSha256;
+}
+
+function isNonEpochRfc3339Utc(value: unknown): value is string {
+  return isRfc3339Utc(value) && value !== epochGeneratedAt;
 }
 
 function isDateOrNull(value: unknown): value is string | null {
@@ -1027,7 +1037,17 @@ function isResearchIdentityCoherent(routeId: V51ResearchRouteId, value: Record<s
   if (!isRecord(stableArtifactIds)) {
     return false;
   }
-  return source.source_sha256 === run.source_sha256
+  const hasReadyIdentityValues = value.status === 'BLOCKED'
+    || (value.status === 'READY'
+      && isNonZeroSha256(source.source_sha256)
+      && isNonZeroSha256(source.source_db_sha256)
+      && isNonZeroSha256(run.source_sha256)
+      && isNonZeroSha256(run.protocol_sha256)
+      && isNonZeroSha256(artifact.sha256)
+      && isNonEpochRfc3339Utc(source.generated_at));
+
+  return hasReadyIdentityValues
+    && source.source_sha256 === run.source_sha256
     && source.source_artifact_id === artifact.artifact_id
     && artifact.artifact_id === stableArtifactIds[stableKey];
 }

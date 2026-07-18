@@ -33,6 +33,7 @@
   const H1520_PROXY_LABEL = 'H1: D 15:20 → D+1 exact 15:20 · future_return_h1_1520_proxy / H3: D 15:20 → D+3 exact 15:20 · future_return_h3_1520_proxy / H5: D 15:20 → D+5 exact 15:20 · future_return_h5_1520_proxy';
   const H1520_PROXY_DETAIL = 'exact 15:20 proxy labels; H1 primary · H3/H5 validation · price_basis=15:20_bar_close_proxy';
   const V51_CONTRACT_INITIAL_CAPITAL_KRW = 60000000;
+  const MISSING_ACTION_EVIDENCE = 'MISSING_ACTION_EVIDENCE';
   const LEGACY_FUTURE_RETURN_LABEL = 'future_return_' + '1d';
   const publicGuideText = (value: unknown): string => String(value ?? '—')
     .replace(new RegExp(LEGACY_FUTURE_RETURN_LABEL, 'g'), `${H1520_PROXY_LABEL} (${H1520_PROXY_DETAIL})`)
@@ -48,7 +49,11 @@
   const field = (value: unknown, key: string): unknown => asRecord(value)[key];
   const nestedRecord = (value: unknown, key: string): Record<string, unknown> => asRecord(field(value, key));
   const numberValue = (value: unknown): number | null => {
-    const numeric = Number(value);
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (trimmed === '') return null;
+    const numeric = Number(trimmed);
     return Number.isFinite(numeric) ? numeric : null;
   };
   const formatPercent = (value: unknown, digits = 2): string => {
@@ -112,8 +117,15 @@
   const frameNav = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'nav');
   const frameActionExecuted = (): string => {
     const executed = field(frameAction(), 'executed');
-    return executed === undefined || executed === null || executed === '' ? '—' : String(executed);
+    const action = String(executed ?? '').trim();
+    return action === '' ? MISSING_ACTION_EVIDENCE : action;
   };
+  const signedMetricTone = (value: unknown): string => {
+    const numeric = numberValue(value);
+    if (numeric === null) return 'warn';
+    return numeric < 0 ? 'danger' : 'pass';
+  };
+  const performanceCardTone = (card: Record<string, unknown>): string => signedMetricTone(field(card, 'total_return_pct'));
   const frameRewardPenaltiesTotal = (): number | null => {
     const penaltyKeys = ['drawdown_penalty', 'concentration_penalty', 'invalid_action_penalty', 'churn_penalty'];
     const parts = penaltyKeys.map((key) => numberValue(field(frameReward(), key)));
@@ -464,7 +476,7 @@
       <article class="today-cycle-card" data-cycle-role="action">
         <div class="step-badge">A</div>
         <h3>{frameActionExecuted()}</h3>
-        <p>{frameActionExecuted() === '—' ? '—' : frameActionExecuted() === 'hold' ? '포지션 유지 (hold)' : `선택 종목 ${String(field(frameState(), 'top_candidate_code') ?? '—')}`}</p>
+        <p>{frameActionExecuted() === MISSING_ACTION_EVIDENCE ? MISSING_ACTION_EVIDENCE : frameActionExecuted() === 'hold' ? '포지션 유지 (hold)' : `선택 종목 ${String(field(frameState(), 'top_candidate_code') ?? '—')}`}</p>
       </article>
       <div class="process-connector" aria-hidden="true">→</div>
       <article class="today-cycle-card" data-cycle-role="reward">
@@ -1128,7 +1140,7 @@
           <div class="q-arrow">→</div>
           <div class="q-cell">Q-table<br />artifact telemetry</div>
           <div class="q-arrow">→</div>
-          <div class="q-cell active">action<br />{String(field(frameAction(), 'executed') ?? 'hold')}</div>
+          <div class="q-cell active">action<br />{frameActionExecuted()}</div>
         </div>
       </div>
       <div class="action-probabilities" data-daily-rl-action-probability-bars>
@@ -1149,7 +1161,7 @@
 
     <article class="live-reward-card">
       <div class="text-eyebrow">Action · reward feedback</div>
-      <h3>{String(field(frameAction(), 'executed') ?? 'hold')}</h3>
+      <h3>{frameActionExecuted()}</h3>
       <div class="selected-action-pill">requested: {String(field(frameAction(), 'requested') ?? '—')}</div>
       <dl>
         <div><dt>Action Mask</dt><dd>{String(field(frameAction(), 'mask') ?? '—')}</dd></div>
@@ -1185,7 +1197,7 @@
       nestedRecord(guide?.learning_performance, 'best_d3_baseline'),
       nestedRecord(guide?.learning_performance, 'delta_vs_best_d3'),
     ] as card}
-      <article class="performance-card" data-card-tone={numberValue(field(card, 'total_return_pct')) !== null && Number(field(card, 'total_return_pct')) < 0 ? 'danger' : 'pass'}>
+      <article class="performance-card" data-card-tone={performanceCardTone(card)}>
         <div class="text-eyebrow">{String(field(card, 'split') ?? '—')}</div>
         <h3>{String(field(card, 'label') ?? '—')}</h3>
         <div class="performance-main">
@@ -1210,7 +1222,7 @@
       <div class="text-eyebrow">Training curve preview</div>
       <h3>episode별 reward / final equity</h3>
       {#each rows(field(guide?.learning_performance, 'learning_curve_preview')) as row}
-        <div class="mini-bar-row" data-tone={numberValue(field(row, 'total_reward')) !== null && Number(field(row, 'total_reward')) < 0 ? 'danger' : 'pass'}>
+        <div class="mini-bar-row" data-tone={signedMetricTone(field(row, 'total_reward'))}>
           <span>EP {String(field(row, 'episode') ?? '—')}</span>
           <div class="mini-bar-track"><div class="mini-bar-fill" style={barWidthStyle(field(row, 'final_equity'), 100)}></div></div>
           <b>{formatNumber(field(row, 'total_reward'), 3)}</b>
@@ -1443,6 +1455,7 @@
   .performance-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:12px; }
   .performance-card { border:1px solid var(--border-faint); border-radius:18px; padding:16px; background:var(--surface); box-shadow:var(--shadow-sm); }
   .performance-card[data-card-tone='pass'] { border-color:rgba(34,197,94,0.40); }
+  .performance-card[data-card-tone='warn'] { border-color:rgba(245,158,11,0.42); background:linear-gradient(180deg, rgba(245,158,11,0.07), var(--surface)); }
   .performance-card[data-card-tone='danger'] { border-color:rgba(239,68,68,0.45); background:linear-gradient(180deg, rgba(239,68,68,0.07), var(--surface)); }
   .performance-card h3 { margin:4px 0 12px; font-size:16px; }
   .performance-main { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
