@@ -33,7 +33,7 @@ read-only `/api/docs/*` endpoints.
 
 ## 최신 구현 결과
 
-- `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` — Kronos Dashboard V5.1 구현·릴리스 결과. `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live 결과는 `NOT_RUN / NO-GO` 유지; branch `feature/dashboard-v5-learning-evidence`; commits `9d8e2ad` through `6a8fd02`; 다음 연구 단계는 coverage/custody 확인 후 새 사전등록 기반 15:20 H1 smoke와 H3/H5 validation variant다.
+- `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` — Kronos Dashboard V5.1 구현·릴리스 결과. `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live 결과는 `NOT_RUN / NO-GO` 유지; branch `feature/dashboard-v5-learning-evidence`; commits `9d8e2ad` through `92c983c`; 다음 연구 단계는 coverage/custody 확인 후 새 사전등록 기반 15:20 H1 smoke와 H3/H5 validation variant다.
 
 ## Quick start
 

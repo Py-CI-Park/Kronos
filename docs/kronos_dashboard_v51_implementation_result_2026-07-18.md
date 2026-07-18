@@ -8,7 +8,7 @@
 > 범위: V5.1 연구 기반, 대시보드 정보구조, 15:20 인과 source/panel, 6,000만원 10-slot 회계, H1/H3/H5 freeze, PyKRX-only offline custody, read-only API/report viewer  
 > 브랜치: `feature/dashboard-v5-learning-evidence`  
 > 기준 commit: `4c8ba1f`  
-> 최종 브라우저 검증 대상 HEAD: `6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3`
+> 최종 브라우저 검증 대상 HEAD: `92c983c`
 > 기본 UI: `V3 유지`  
 > tag/push/merge/release-default: 수행하지 않음  
 > 대체 문서: 없음. 이전 `docs/kronos_dashboard_v5_development_result_2026-07-16.md`는 보존하고 본 문서는 V5.1 증분 결과만 기록한다.
@@ -234,7 +234,7 @@ V5.1이 100점이 아닌 이유는 기능 결함보다 검증 형식의 한계�
 
 ## 5. 검증 명령과 결과
 
-본 문서는 최초 문서 commit `1ec28bd` 이후 최종 blocker 보강 commit `bf6fce9`–`6a8fd02`와 현재 HEAD 기준 검증을 함께 기록한다.
+본 문서는 최초 문서 commit `1ec28bd` 이후 blocker 보강과 최종 경계 hardening commit `bf6fce9`–`92c983c`를 현재 증거 기준으로 기록한다.
 
 ### 5.1 집중 Python 검증
 
@@ -249,17 +249,17 @@ py -3.11 -m pytest tests/test_kronos_v51_index_source.py tests/test_kronos_v51_i
 # G003 focused: 23 passed
 
 py -3.11 -m pytest tests/test_kronos_v51_research_api.py tests/test_kronos_v51_research_api_schema.py tests/test_kronos_v51_app_integration.py tests/test_kronos_v5_app_integration.py -q -W error
-# final API/schema focused: 71 passed
+# final API/schema focused: 79 passed
 ```
 
 최종 V5.1 누적 배치는 다음 결과를 남겼다.
 
 ```text
 py -3.11 -m pytest tests/test_kronos_v51_1520_source.py tests/test_kronos_v51_causal_panel.py tests/test_kronos_v51_contract_schema.py tests/test_kronos_v51_horizon_variants.py tests/test_kronos_v5_close_slot_accounting.py tests/test_kronos_v51_index_source.py tests/test_kronos_v51_index_overlay.py tests/test_kronos_v51_report_catalog.py tests/test_kronos_v51_research_api.py tests/test_kronos_v51_research_api_schema.py tests/test_kronos_v51_app_integration.py tests/test_kronos_v5_app_integration.py -q -W error
-# 250 passed
+# 281 passed
 
 py -3.11 -m pytest tests/test_kronos_v51_horizon_variants.py tests/test_kronos_v5_close_slot_accounting.py tests/test_kronos_v51_index_overlay.py tests/test_kronos_v51_index_source.py -q -W error
-# runtime integration focused: 88 passed
+# runtime integration focused: 111 passed
 ```
 
 ### 5.2 Frontend, Svelte, build, audit
@@ -287,8 +287,8 @@ py -3.11 -m pytest tests/test_daily_ohlcv_dashboard_tab.py tests/test_stom_rl_da
 
 ```text
 live Chromium: http://127.0.0.1:8122/?tab=rl&ui=v5
-loaded bundle: index-jILoBmyy.js / index-wHVaqgPL.css
-source revision: 6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3
+loaded bundle: index-B34vCfGn.js / index-wHVaqgPL.css
+source revision: 92c983c
 viewports: 3440x1440 and 2160x3840
 # horizontal overflow: false
 # independent left/right rail collapse: passed
@@ -417,9 +417,9 @@ Rollback의 기본값은 “V5.1을 기본으로 쓰지 않는 것”이다.
 |---|---|
 | Branch | `feature/dashboard-v5-learning-evidence` |
 | Baseline | `4c8ba1f` |
-| V5.1 구현 범위 | `9d8e2ad` through `6a8fd02` |
+| V5.1 구현 범위 | `9d8e2ad` through `92c983c` |
 | 최초 결과 문서 commit | `1ec28bd708fd19d61396af8cb3e7c0d8887c68a0` |
-| 최종 브라우저 검증 대상 HEAD | `6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3` |
+| 최종 브라우저 검증 대상 HEAD | `92c983c` |
 | tag/push/merge | 수행하지 않음 |
 
 ### 10.2 V5.1 commit 목록
@@ -442,9 +442,15 @@ Rollback의 기본값은 “V5.1을 기본으로 쓰지 않는 것”이다.
 | 14 | `18bc153` | `fix(api): fail closed V5.1 evidence contracts` | ERROR schema, identity, overlay, zero-cost ID closure |
 | 15 | `2cf2371` | `fix(ui): make V5.1 research evidence fail closed` | label/cost/placeholder/IA truth closure |
 | 16 | `6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3` | `build(dashboard): refresh V5.1 official assets` | 최종 browser 검증 bundle |
+| 17 | `65800d1` | `docs(v5.1): bind final evidence and verification` | blocker 보강 전 문서 증거 동기화 |
+| 18 | `ab81b20` | `test(v5.1): reconcile fail-closed V3 snapshot` | fail-closed marker snapshot |
+| 19 | `1b7059f` | `fix(rl): harden V5.1 persisted boundaries` | accounting/provenance persisted boundary closure |
+| 20 | `13d55b1` | `fix(api): close method and overlay provenance schemas` | 405 ERROR와 overlay provider schema closure |
+| 21 | `8daee50` | `fix(ui): close V5.1 guide evidence drift` | exact D+N, 60M, read-only guide truth |
+| 22 | `92c983c` | `build(dashboard): publish final V5.1 evidence bundle` | 최종 Chromium 검증 bundle |
 
 ## 11. 변경 히스토리
 
 | 날짜 | 변경 | 작성자 | commit |
 |---|---|---|---|
-| 2026-07-18 | 최초 결과 문서·Wiki commit `1ec28bd` 후 blocker를 보강하고, 최종 구현 HEAD `6a8fd02`의 bundle을 Chromium 3440×1440/2160×3840에서 재검증 | GJC | `1ec28bd`, `bf6fce9`, `18bc153`, `2cf2371`, `6a8fd02` |
+| 2026-07-18 | 최초 결과 문서·Wiki 후 cleaner blocker와 persisted 경계를 닫고, 최종 구현 HEAD `92c983c` bundle을 Chromium 3440×1440/2160×3840에서 재검증 | GJC | `1ec28bd` through `92c983c` |
