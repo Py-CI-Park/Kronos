@@ -10,7 +10,7 @@ export type V51StatusReason =
   | 'BLOCKED_INDEX_SERIES_SOURCE'
   | 'BLOCKED_PYKRX_ARTIFACT_MISSING'
   | 'BLOCKED_REPORT_NOT_FOUND';
-export type V51ErrorCode = 'BAD_REQUEST' | 'CONFLICT' | 'VALIDATION_ERROR' | 'INTERNAL_ERROR';
+export type V51ErrorCode = 'BAD_REQUEST' | 'CONFLICT' | 'VALIDATION_ERROR' | 'METHOD_NOT_ALLOWED' | 'INTERNAL_ERROR';
 export type V51ApiErrorCode =
   | V51ErrorCode
   | 'HTTP_STATUS'
@@ -18,7 +18,7 @@ export type V51ApiErrorCode =
   | 'INVALID_JSON'
   | 'SCHEMA_INVALID'
   | 'INVALID_REQUEST';
-export type V51ErrorStatusCode = 400 | 409 | 413 | 503;
+export type V51ErrorStatusCode = 400 | 409 | 413 | 405 | 503;
 export type V51ExactCostPercent = '0.00%' | '0.23%' | '0.46%';
 export type V51DisplayPercent = `${number}%`;
 
@@ -295,15 +295,49 @@ export interface V51EvaluatorSummary {
   readonly metrics: readonly V51EvaluationMetric[];
 }
 
-export interface V51OverlaySeries {
-  readonly series_id: 'KOSPI' | 'KOSDAQ' | 'RL_PORTFOLIO';
-  readonly status: V51Status;
-  readonly source_state: 'READY' | 'BLOCKED_INDEX_SERIES_SOURCE' | 'BLOCKED_PYKRX_ARTIFACT_MISSING';
-  readonly provider: 'PYKRX' | null;
+export type V51OverlaySourceState = 'READY' | 'BLOCKED_INDEX_SERIES_SOURCE' | 'BLOCKED_PYKRX_ARTIFACT_MISSING';
+export type V51BlockedOverlaySourceState = Exclude<V51OverlaySourceState, 'READY'>;
+
+interface V51OverlaySeriesValues {
   readonly naver_used: false;
   readonly index_100: number | null;
   readonly cumulative_return_display_percent: V51DisplayPercent | null;
 }
+
+export type V51IndexOverlaySeries<SeriesId extends 'KOSPI' | 'KOSDAQ'> = V51OverlaySeriesValues & (
+  | {
+      readonly series_id: SeriesId;
+      readonly status: 'READY';
+      readonly source_state: 'READY';
+      readonly provider: 'PYKRX';
+    }
+  | {
+      readonly series_id: SeriesId;
+      readonly status: 'BLOCKED';
+      readonly source_state: V51BlockedOverlaySourceState;
+      readonly provider: null;
+    }
+);
+
+export type V51PortfolioOverlaySeries = V51OverlaySeriesValues & (
+  | {
+      readonly series_id: 'RL_PORTFOLIO';
+      readonly status: 'READY';
+      readonly source_state: 'READY';
+      readonly provider: null;
+    }
+  | {
+      readonly series_id: 'RL_PORTFOLIO';
+      readonly status: 'BLOCKED';
+      readonly source_state: V51BlockedOverlaySourceState;
+      readonly provider: null;
+    }
+);
+
+export type V51OverlaySeries =
+  | V51IndexOverlaySeries<'KOSPI'>
+  | V51IndexOverlaySeries<'KOSDAQ'>
+  | V51PortfolioOverlaySeries;
 
 export interface V51BenchmarkOverlay {
   readonly overlay_status: V51Status;
@@ -561,17 +595,19 @@ function isErrorCode(value: unknown): value is V51ErrorCode {
   return value === 'BAD_REQUEST'
     || value === 'CONFLICT'
     || value === 'VALIDATION_ERROR'
+    || value === 'METHOD_NOT_ALLOWED'
     || value === 'INTERNAL_ERROR';
 }
 
 function isErrorStatusCode(value: unknown): value is V51ErrorStatusCode {
-  return value === 400 || value === 409 || value === 413 || value === 503;
+  return value === 400 || value === 409 || value === 413 || value === 405 || value === 503;
 }
 
 function hasErrorCodeStatusCoherence(code: unknown, statusCode: unknown): boolean {
   return (code === 'BAD_REQUEST' && statusCode === 400)
     || (code === 'CONFLICT' && statusCode === 409)
     || (code === 'VALIDATION_ERROR' && statusCode === 413)
+    || (code === 'METHOD_NOT_ALLOWED' && statusCode === 405)
     || (code === 'INTERNAL_ERROR' && statusCode === 503);
 }
 
@@ -898,6 +934,14 @@ function isEvaluatorSummary(value: unknown): value is V51EvaluatorSummary {
     && value.metrics.every(isEvaluationMetric);
 }
 
+
+function hasOverlayProviderCoherence(seriesId: unknown, status: unknown, provider: unknown): boolean {
+  if (seriesId === 'RL_PORTFOLIO') return provider === null;
+  if (seriesId === 'KOSPI' || seriesId === 'KOSDAQ') {
+    return (status === 'READY' && provider === 'PYKRX') || (status === 'BLOCKED' && provider === null);
+  }
+  return false;
+}
 function isOverlaySeries(value: unknown): value is V51OverlaySeries {
   return isRecord(value)
     && hasExactKeys(value, ['series_id', 'status', 'source_state', 'provider', 'naver_used', 'index_100', 'cumulative_return_display_percent'])
@@ -905,7 +949,7 @@ function isOverlaySeries(value: unknown): value is V51OverlaySeries {
     && isStatus(value.status)
     && (value.source_state === 'READY' || value.source_state === 'BLOCKED_INDEX_SERIES_SOURCE' || value.source_state === 'BLOCKED_PYKRX_ARTIFACT_MISSING')
     && hasStatusSourceStateCoherence(value.status, value.source_state)
-    && (value.provider === 'PYKRX' || value.provider === null)
+    && hasOverlayProviderCoherence(value.series_id, value.status, value.provider)
     && value.naver_used === false
     && (value.index_100 === null || isNonNegativeNumber(value.index_100))
     && (value.cumulative_return_display_percent === null || (typeof value.cumulative_return_display_percent === 'string' && displayPercentPattern.test(value.cumulative_return_display_percent)));

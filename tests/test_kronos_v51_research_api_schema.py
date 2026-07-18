@@ -15,6 +15,7 @@ VALIDATOR = Draft202012Validator(SCHEMA)
 SHA = "a" * 64
 SOURCE_DB_SHA = "b" * 64
 PROTOCOL_SHA = "c" * 64
+ZERO_SHA = "0" * 64
 UTC = "2026-07-18T00:00:00Z"
 
 ROUTES = {
@@ -124,6 +125,7 @@ ERROR_STATUS_BY_CODE = {
     "BAD_REQUEST": 400,
     "CONFLICT": 409,
     "VALIDATION_ERROR": 413,
+    "METHOD_NOT_ALLOWED": 405,
     "INTERNAL_ERROR": 503,
 }
 
@@ -297,16 +299,37 @@ def benchmark_overlay() -> dict[str, Any]:
             },
             {
                 "series_id": "RL_PORTFOLIO",
-                "status": "READY",
-                "source_state": "READY",
-                "provider": "PYKRX",
+                "status": "BLOCKED",
+                "source_state": "BLOCKED_INDEX_SERIES_SOURCE",
+                "provider": None,
                 "naver_used": False,
-                "index_100": 100.0,
-                "cumulative_return_display_percent": "0.00%",
+                "index_100": None,
+                "cumulative_return_display_percent": None,
             },
         ],
     }
 
+
+def ready_benchmark_overlay_payload() -> dict[str, Any]:
+    body = benchmark_overlay()
+    body["overlay_status"] = "READY"
+    providers = ["PYKRX", "PYKRX", None]
+    index_values = [101.0, 102.5, 105.0]
+    display_values = ["1.00%", "2.50%", "5.00%"]
+    for index, series in enumerate(body["series"]):
+        series["status"] = "READY"
+        series["source_state"] = "READY"
+        series["provider"] = providers[index]
+        series["index_100"] = index_values[index]
+        series["cumulative_return_display_percent"] = display_values[index]
+    return body
+
+
+def ready_benchmark_overlay_root() -> dict[str, Any]:
+    payload = research_payload("BENCHMARK_OVERLAY", ready_benchmark_overlay_payload())
+    payload["status"] = "READY"
+    payload["status_reason"] = "READY"
+    return payload
 
 def research_payload(route_id: str, body: dict[str, Any]) -> dict[str, Any]:
     status = "BLOCKED" if route_id in {"BENCHMARK_OVERLAY", "EVALUATOR"} else "READY"
@@ -540,6 +563,24 @@ def test_schema_rejects_open_payloads_identity_mismatch_locks_and_claims() -> No
     reject_contract_mutation(payload, ("artifact", "artifact_id"), "other-source-coverage")
     reject_mutation(payload, ("artifact", "byte_length"), 9_007_199_254_740_992)
 
+
+def test_ready_research_payloads_reject_sentinel_identity_values() -> None:
+    payload = payload_for("SOURCE_COVERAGE")
+    reject_mutation(payload, ("source", "source_sha256"), ZERO_SHA)
+    reject_mutation(payload, ("source", "source_db_sha256"), ZERO_SHA)
+    reject_mutation(payload, ("source", "generated_at"), "1970-01-01T00:00:00Z")
+    reject_mutation(payload, ("run", "source_sha256"), ZERO_SHA)
+    reject_mutation(payload, ("run", "protocol_sha256"), ZERO_SHA)
+    reject_mutation(payload, ("artifact", "sha256"), ZERO_SHA)
+
+    blocked_payload = payload_for("EVALUATOR")
+    blocked_payload["source"]["source_sha256"] = ZERO_SHA
+    blocked_payload["source"]["source_db_sha256"] = ZERO_SHA
+    blocked_payload["source"]["generated_at"] = "1970-01-01T00:00:00Z"
+    blocked_payload["run"]["source_sha256"] = ZERO_SHA
+    blocked_payload["artifact"]["sha256"] = ZERO_SHA
+    validate_contract(blocked_payload)
+
 def test_status_reason_and_body_status_coherence_are_required() -> None:
     source_payload = payload_for("SOURCE_COVERAGE")
     reject_mutation(source_payload, ("status_reason",), "BLOCKED_SCHEMA_INVALID")
@@ -557,7 +598,7 @@ def test_status_reason_and_body_status_coherence_are_required() -> None:
     reject_mutation(overlay_payload, ("status_reason",), "READY")
     reject_mutation(overlay_payload, ("benchmark_overlay", "overlay_status"), "READY")
     reject_mutation(overlay_payload, ("benchmark_overlay", "series", 0, "status"), "READY")
-    reject_mutation(overlay_payload, ("benchmark_overlay", "series", 2, "status"), "BLOCKED")
+    reject_mutation(overlay_payload, ("benchmark_overlay", "series", 2, "source_state"), "READY")
 
     report_payload = payload_for("REPORTS")
     reject_mutation(report_payload, ("status_reason",), "BLOCKED_REPORT_NOT_FOUND")
@@ -609,10 +650,17 @@ def test_benchmark_overlay_is_pykrx_only_and_naver_never_ready_fallback() -> Non
     validate_contract(payload)
     assert payload["benchmark_overlay"]["overlay_status"] == "BLOCKED"
     assert [series["series_id"] for series in payload["benchmark_overlay"]["series"]] == ["KOSPI", "KOSDAQ", "RL_PORTFOLIO"]
+    ready_payload = ready_benchmark_overlay_root()
+    validate_contract(ready_payload)
+    assert [series["provider"] for series in ready_payload["benchmark_overlay"]["series"]] == ["PYKRX", "PYKRX", None]
+    reject_mutation(ready_payload, ("benchmark_overlay", "series", 0, "provider"), None)
+    reject_mutation(ready_payload, ("benchmark_overlay", "series", 1, "provider"), None)
+    reject_mutation(ready_payload, ("benchmark_overlay", "series", 2, "provider"), "PYKRX")
     reject_mutation(payload, ("protocol", "overlay_policy", "allowed_index_provider"), "NAVER")
     reject_mutation(payload, ("protocol", "overlay_policy", "naver_fallback_allowed"), True)
     reject_mutation(payload, ("benchmark_overlay", "provider_policy", "forbidden_provider"), "NONE")
     reject_mutation(payload, ("benchmark_overlay", "series", 0, "provider"), "NAVER")
+    reject_mutation(payload, ("benchmark_overlay", "series", 0, "provider"), "PYKRX")
     reject_mutation(payload, ("benchmark_overlay", "series", 0, "naver_used"), True)
     reject_mutation(payload, ("benchmark_overlay", "series", 1, "source_state"), "READY_FROM_NAVER")
     reject_mutation(payload, ("benchmark_overlay", "series"), [payload["benchmark_overlay"]["series"][2], payload["benchmark_overlay"]["series"][0], payload["benchmark_overlay"]["series"][1]])

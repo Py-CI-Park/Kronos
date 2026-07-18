@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import hashlib
 from pathlib import Path
 from typing import Any
 
 from flask import Flask
+from jsonschema import Draft202012Validator
 import webui.v51_research_api as v51_api_module
 
 from webui.v51_research_api import (
@@ -14,6 +16,10 @@ from webui.v51_research_api import (
     V51_RESEARCH_ARTIFACT_IDS,
     create_v51_research_api_blueprint,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
+V51_SCHEMA_PATH = ROOT / "docs" / "schemas" / "kronos_v51_research_api.v1.schema.json"
+V51_SCHEMA_VALIDATOR = Draft202012Validator(json.loads(V51_SCHEMA_PATH.read_text(encoding="utf-8")))
 
 
 class FakeReportCatalog:
@@ -270,6 +276,10 @@ def _json(response) -> dict[str, Any]:
     return payload
 
 
+def _assert_v51_schema(payload: dict[str, Any]) -> None:
+    V51_SCHEMA_VALIDATOR.validate(payload)
+
+
 def _attach_evaluator_digest(payload: dict[str, object], *, digest_field: str = "manifest_sha256") -> dict[str, object]:
     from stom_rl.daily_v51_evaluator import canonical_manifest_sha256
 
@@ -424,89 +434,63 @@ def _ready_evaluator_payload() -> dict[str, object]:
 
 def _ready_overlay_payload() -> dict[str, object]:
     from stom_rl import korean_index_overlay as overlay
+    from stom_rl.korean_index_source import build_normalized_index_artifact, build_raw_index_artifact
 
     common_dates = ["2026-07-17", "2026-07-18"]
-    source_db_sha256 = "b" * 64
-    series = [
-        {
-            "id": "KOSPI",
-            "market": "KOSPI",
-            "kind": "pykrx_index",
-            "normalization_base": "100",
-            "normalization_start_date": common_dates[0],
-            "normalization_start_close": "2500",
-            "series": [
-                {"date": common_dates[0], "close": "100.000000000000"},
-                {"date": common_dates[1], "close": "101.000000000000"},
+
+    def index_artifact(market: str, closes: list[object]) -> dict[str, object]:
+        raw = build_raw_index_artifact(
+            market=market,
+            start_date=common_dates[0],
+            end_date=common_dates[-1],
+            raw_rows=[
+                {"date": date, "종가": close}
+                for date, close in zip(common_dates, closes, strict=True)
             ],
-            "source": {"provider": "PYKRX", "price_basis": "15:20_bar_close_proxy", "official_close": False},
-        },
-        {
-            "id": "KOSDAQ",
-            "market": "KOSDAQ",
-            "kind": "pykrx_index",
-            "normalization_base": "100",
-            "normalization_start_date": common_dates[0],
-            "normalization_start_close": "800",
-            "series": [
-                {"date": common_dates[0], "close": "100.000000000000"},
-                {"date": common_dates[1], "close": "102.500000000000"},
-            ],
-            "source": {"provider": "PYKRX", "price_basis": "15:20_bar_close_proxy", "official_close": False},
-        },
-        {
-            "id": "RL",
-            "market": "RL",
-            "kind": "rl_economic_nav",
-            "normalization_base": "100",
-            "normalization_start_date": common_dates[0],
-            "normalization_start_close": "60000000",
-            "series": [
-                {"date": common_dates[0], "close": "100.000000000000"},
-                {"date": common_dates[1], "close": "105.000000000000"},
-            ],
-            "source": {"source_sha256": "c" * 64, "source_label": "run-1", "price_basis": "15:20_bar_close_proxy", "official_close": False},
-        },
-    ]
-    payload: dict[str, object] = {
-        "schema_version": overlay.SCHEMA_VERSION,
-        "generated_at": "2026-07-18T00:00:00Z",
-        "run_id": "run-1",
-        "run_revision": 7,
-        "run_artifact_id": "run-artifact-1",
-        "source_db_sha256": source_db_sha256,
-        "status": "PASS",
-        "reason_codes": [],
-        "read_only": True,
-        "network_used": False,
-        "market": "KOREA",
+            collected_at="2026-07-18T00:00:00Z",
+        )
+        return build_normalized_index_artifact(raw)
+
+    rl_nav = {
+        "source_id": "run-1",
         "price_basis": "15:20_bar_close_proxy",
-        "causal_cutoff_kst": "15:20:00",
         "official_close": False,
-        "normalization": {
-            "base": "100",
-            "first_common_date": common_dates[0],
-            "arithmetic": overlay.NORMALIZED_ARITHMETIC,
-            "no_fill": True,
-            "no_interpolation": True,
-            "no_nearest_date": True,
+        "source_metadata": {
+            "source_kind": "v51_accounting",
+            "price_basis": "15:20_bar_close_proxy",
+            "official_close": False,
         },
-        "source_policy": {
-            "pykrx_only": True,
-            "naver_disallowed": True,
-            "offline_artifacts_only": True,
-            "no_live_fetch": True,
-        },
-        "point_in_time_constituents": False,
-        "point_in_time_limitation": "No point-in-time constituent membership is claimed.",
-        "false_locks": dict(overlay._FALSE_LOCKS),
-        "claims": dict(overlay._CLAIMS),
-        "coverage": {"common_dates": common_dates, "common_date_count": len(common_dates), "min_common_dates": 2},
-        "series": series,
-        "source_artifacts": {},
-        "source_artifact_hashes": {},
-        "hash_algorithm": "SHA256_CANONICAL_JSON_SORT_KEYS_NO_SELF_FIELD",
+        "series": [
+            {
+                "date": common_dates[0],
+                "account_nav_krw": 60_000_000,
+                "price_basis": "15:20_bar_close_proxy",
+                "official_close": False,
+            },
+            {
+                "date": common_dates[1],
+                "account_nav_krw": 63_000_000,
+                "price_basis": "15:20_bar_close_proxy",
+                "official_close": False,
+            },
+        ],
     }
+    payload = overlay.build_korean_index_overlay(
+        index_artifact("KOSPI", [2500, 2525]),
+        index_artifact("KOSDAQ", [800, 820]),
+        rl_nav,
+        min_common_dates=2,
+    )
+    payload.pop("overlay_sha256")
+    payload.update(
+        {
+            "generated_at": "2026-07-18T00:00:00Z",
+            "run_id": "run-1",
+            "run_revision": 7,
+            "run_artifact_id": "run-artifact-1",
+            "source_db_sha256": "b" * 64,
+        }
+    )
     payload["overlay_sha256"] = overlay.sha256_hex(payload)
     return payload
 
@@ -744,6 +728,9 @@ def test_research_query_bindings_reject_unknown_duplicate_unsafe_and_mismatched_
         assert payload["route_id"] == route_id
         assert payload["status"] == "ERROR"
         assert payload["error"]["status_code"] == status_code
+        _assert_v51_schema(payload)
+        if route_id in V51_RESEARCH_ARTIFACT_IDS:
+            assert payload["source"]["source_artifact_id"] == V51_RESEARCH_ARTIFACT_IDS[route_id]
 
     assert provider.calls == []
 
@@ -776,6 +763,8 @@ def test_research_query_run_and_revision_mismatch_are_conflicts() -> None:
         assert payload["route_id"] == "SOURCE_COVERAGE"
         assert payload["status"] == "ERROR"
         assert payload["error"]["status_code"] == 409
+        _assert_v51_schema(payload)
+        assert payload["source"]["source_artifact_id"] == source_artifact_id
 
 
 def test_ready_evaluator_uses_gates_and_horizon_metrics_without_evaluation_status() -> None:
@@ -815,6 +804,7 @@ def test_ready_benchmark_overlay_series_order_and_latest_index_value() -> None:
 
     assert response.status_code == 200
     assert payload["status"] == "READY"
+    _assert_v51_schema(payload)
     series = payload["benchmark_overlay"]["series"]
     assert [item["series_id"] for item in series] == ["KOSPI", "KOSDAQ", "RL_PORTFOLIO"]
     assert [item["index_100"] for item in series] == [101, 102.5, 105]
@@ -891,10 +881,14 @@ def test_non_get_methods_are_405_without_reading_artifacts_or_reports() -> None:
             assert response.headers["Allow"] == "GET"
             if method != "HEAD":
                 payload = _json(response)
-                assert payload["error"]["code"] == "BAD_REQUEST"
+                assert payload["error"]["code"] == "METHOD_NOT_ALLOWED"
+                assert payload["error"]["status_code"] == 405
+                _assert_v51_schema(payload)
                 assert payload["route_id"] == expected_route
                 assert payload["protocol"]["route_id"] == expected_route
                 assert payload["locks"] == V51_API_FALSE_LOCKS
+                if expected_route in V51_RESEARCH_ARTIFACT_IDS:
+                    assert payload["source"]["source_artifact_id"] == V51_RESEARCH_ARTIFACT_IDS[expected_route]
                 if expected_route in {"REPORTS", "REPORT_READ"}:
                     assert payload["source"]["source_protocol"] == "kronos_v51_report_catalog.v1"
 

@@ -1354,14 +1354,17 @@ def _blocked_payload(spec: V51RouteSpec, *, reason_code: str, message: str, max_
 
 
 def _error_payload(spec: V51RouteSpec, status_code: int, message: str, *, code: str = "INTERNAL_ERROR", max_bytes: int) -> dict[str, Any]:
-    return {
+    payload = {
         "route_id": spec.route_id,
         "status": "ERROR",
         "protocol": _protocol_identity(spec),
+        "source": _source_identity(None, spec),
         "locks": dict(V51_API_FALSE_LOCKS),
         "claims": dict(V51_RESEARCH_CLAIMS),
         "error": {"code": code, "message": _safe_message(message), "status_code": status_code},
     }
+    _validate_envelope(payload)
+    return payload
 
 
 def _validate_envelope(payload: Mapping[str, Any]) -> None:
@@ -1747,7 +1750,7 @@ def create_v51_research_api_blueprint(
         def handler() -> Response:
             if request.method != "GET":
                 return _method_not_allowed_response(
-                    _error_payload(spec, 405, "method not allowed", code="BAD_REQUEST", max_bytes=max_bytes),
+                    _error_payload(spec, 405, "method not allowed", code="METHOD_NOT_ALLOWED", max_bytes=max_bytes),
                     max_bytes=max_bytes,
                 )
             try:
@@ -1786,7 +1789,7 @@ def create_v51_research_api_blueprint(
     def report_list_handler() -> Response:
         if request.method != "GET":
             return _method_not_allowed_response(
-                _report_error_payload("REPORTS", 405, "method not allowed", code="BAD_REQUEST"),
+                _report_error_payload("REPORTS", 405, "method not allowed", code="METHOD_NOT_ALLOWED"),
                 max_bytes=max_bytes,
             )
         try:
@@ -1808,7 +1811,7 @@ def create_v51_research_api_blueprint(
     def report_read_handler(report_id: str) -> Response:
         if request.method != "GET":
             return _method_not_allowed_response(
-                _report_error_payload("REPORT_READ", 405, "method not allowed", code="BAD_REQUEST"),
+                _report_error_payload("REPORT_READ", 405, "method not allowed", code="METHOD_NOT_ALLOWED"),
                 max_bytes=max_bytes,
             )
         try:

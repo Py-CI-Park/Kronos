@@ -260,8 +260,32 @@ function benchmarkOverlay() {
     series: [
       { series_id: 'KOSPI', status: 'BLOCKED', source_state: 'BLOCKED_INDEX_SERIES_SOURCE', provider: null, naver_used: false, index_100: null, cumulative_return_display_percent: null },
       { series_id: 'KOSDAQ', status: 'BLOCKED', source_state: 'BLOCKED_INDEX_SERIES_SOURCE', provider: null, naver_used: false, index_100: null, cumulative_return_display_percent: null },
-      { series_id: 'RL_PORTFOLIO', status: 'READY', source_state: 'READY', provider: 'PYKRX', naver_used: false, index_100: 100, cumulative_return_display_percent: '0.00%' },
+      { series_id: 'RL_PORTFOLIO', status: 'BLOCKED', source_state: 'BLOCKED_INDEX_SERIES_SOURCE', provider: null, naver_used: false, index_100: null, cumulative_return_display_percent: null },
     ],
+  };
+}
+
+
+function readyBenchmarkOverlay() {
+  return {
+    ...benchmarkOverlay(),
+    overlay_status: 'READY',
+    series: [
+      { series_id: 'KOSPI', status: 'READY', source_state: 'READY', provider: 'PYKRX', naver_used: false, index_100: 101, cumulative_return_display_percent: '1.00%' },
+      { series_id: 'KOSDAQ', status: 'READY', source_state: 'READY', provider: 'PYKRX', naver_used: false, index_100: 102.5, cumulative_return_display_percent: '2.50%' },
+      { series_id: 'RL_PORTFOLIO', status: 'READY', source_state: 'READY', provider: null, naver_used: false, index_100: 105, cumulative_return_display_percent: '5.00%' },
+    ],
+  };
+}
+
+
+function readyBenchmarkOverlayRoot() {
+  const benchmark_overlay = readyBenchmarkOverlay();
+  return {
+    ...researchPayload('BENCHMARK_OVERLAY', benchmark_overlay),
+    status: 'READY',
+    status_reason: 'READY',
+    benchmark_overlay,
   };
 }
 
@@ -338,8 +362,9 @@ const errorStatusByCode = {
   BAD_REQUEST: 400,
   CONFLICT: 409,
   VALIDATION_ERROR: 413,
+  METHOD_NOT_ALLOWED: 405,
   INTERNAL_ERROR: 503,
-} as const satisfies Record<V51ErrorCode, 400 | 409 | 413 | 503>;
+} as const satisfies Record<V51ErrorCode, 400 | 409 | 413 | 405 | 503>;
 
 function errorSource(routeId: V51RouteId) {
   if (routeId === 'REPORTS' || routeId === 'REPORT_READ') return reportSource();
@@ -477,6 +502,7 @@ test('V5.1 client guards route-aware backend ERROR envelopes for bounded status 
     { routeId: 'ACCOUNTING', code: 'CONFLICT', request: () => v51Api.accounting() },
     { routeId: 'REPORT_READ', code: 'VALIDATION_ERROR', request: () => v51Api.readReport('report-2026-07-17') },
     { routeId: 'REPORTS', code: 'INTERNAL_ERROR', request: () => v51Api.listReports() },
+    { routeId: 'SOURCE_COVERAGE', code: 'METHOD_NOT_ALLOWED', request: () => v51Api.sourceCoverage() },
   ];
 
   for (const { routeId, code, request } of cases) {
@@ -566,6 +592,10 @@ test('V5.1 client fails closed for malformed schema, identity/status/cost/report
       overlayCoercion.series[2],
     ],
   })), false);
+
+  const readyOverlay = readyBenchmarkOverlayRoot();
+  assert.equal(isV51RouteRoot('BENCHMARK_OVERLAY', readyOverlay), true);
+  assert.deepEqual(readyOverlay.benchmark_overlay.series.map((series) => series.provider), ['PYKRX', 'PYKRX', null]);
 
   const invalidCases: readonly { readonly request: () => Promise<unknown>; readonly payload: unknown }[] = [
     { request: () => v51Api.sourceCoverage(), payload: { ...researchPayload('SOURCE_COVERAGE', sourceCoverage()), unexpected: true } },
@@ -681,6 +711,34 @@ test('V5.1 client fails closed for malformed schema, identity/status/cost/report
             { ...benchmarkOverlay().series[0], provider: 'NAVER', naver_used: true },
             benchmarkOverlay().series[1],
             benchmarkOverlay().series[2],
+          ],
+        },
+      },
+    },
+    {
+      request: () => v51Api.benchmarkOverlay(),
+      payload: {
+        ...researchPayload('BENCHMARK_OVERLAY', benchmarkOverlay()),
+        benchmark_overlay: {
+          ...benchmarkOverlay(),
+          series: [
+            { ...benchmarkOverlay().series[0], provider: 'PYKRX' },
+            benchmarkOverlay().series[1],
+            benchmarkOverlay().series[2],
+          ],
+        },
+      },
+    },
+    {
+      request: () => v51Api.benchmarkOverlay(),
+      payload: {
+        ...readyBenchmarkOverlayRoot(),
+        benchmark_overlay: {
+          ...readyBenchmarkOverlay(),
+          series: [
+            readyBenchmarkOverlay().series[0],
+            readyBenchmarkOverlay().series[1],
+            { ...readyBenchmarkOverlay().series[2], provider: 'PYKRX' },
           ],
         },
       },

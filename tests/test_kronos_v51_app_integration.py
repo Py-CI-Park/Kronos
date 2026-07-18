@@ -146,7 +146,7 @@ def test_v51_routes_are_read_only_in_official_app(monkeypatch: pytest.MonkeyPatc
             assert response.headers["Allow"] == "GET"
             if method != "HEAD":
                 payload = _json(response)
-                assert payload["error"]["code"] == "BAD_REQUEST"
+                assert payload["error"]["code"] == "METHOD_NOT_ALLOWED"
                 _assert_false_locks_and_no_claims(payload)
 
 
