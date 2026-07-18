@@ -41,10 +41,10 @@
 | 실거래·수익 준비도 | `0/100`; live/broker/order/paper/profit claim 없음 |
 | 브랜치 | `feature/dashboard-v5-learning-evidence` |
 | 기준 commit | `4c8ba1f` |
-| 구현 commit 범위 | `9d8e2ad` through `92c983c` |
+| 구현 commit 범위 | `9d8e2ad` through `c43ee9b` |
 | 최초 결과 문서 commit | `1ec28bd` |
-| 최종 브라우저 검증 대상 HEAD | `92c983c` |
-| 핵심 증거 | V5.1 cumulative 281 passed, runtime integration 111 passed, API/schema 79 passed, frontend 351 passed, dashboard regression 33 passed, V3 snapshot 5 passed, Svelte 408 files 0 errors/warnings, build passed, npm audit 0 vulnerabilities, Chromium 3440×1440/2160×3840 horizontal overflow 없음 |
+| 최종 브라우저 검증 대상 HEAD | `c43ee9b` |
+| 핵심 증거 | V5.1 cumulative 281 passed, runtime integration 111 passed, API/schema 79 passed, frontend 353 passed, dashboard regression 33 passed, V3 snapshot 5 passed, Svelte 408 files 0 errors/warnings, build passed, npm audit 0 vulnerabilities, Chromium 3440×1440/2160×3840 horizontal overflow 없음 |
 | full-suite 한계 | monolithic 2,298-test command는 한 프로세스로 완료되지 않음; 900초 timeout 81%, 재시도 84% 무 assertion output; tail partition 342 passed + 승인 snapshot 5 passed |
 | 다음 연구 step | 새 사전등록으로 15:20 H1 smoke를 실행하고 H3/H5 validation variant, full-universe coverage/custody audit, RULE·supervised·shuffle controls를 순서대로 닫는다. |
 
