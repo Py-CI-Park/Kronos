@@ -112,6 +112,7 @@ def test_v51_source_artifact_and_causal_panel_validate_executable_schemas(tmp_pa
     panel = build_causal_panel(
         [observation],
         source_artifact["rows"],
+        source_calendar=source_artifact["source_calendar"],
         source_identity={
             "schema_version": source_artifact["schema_version"],
             "source_db_path": source_artifact["source_db_path"],
@@ -158,6 +159,17 @@ def test_v51_source_artifact_and_causal_panel_validate_executable_schemas(tmp_pa
     bad_panel["rows"][0]["max_observation_timestamp"] = "2024-01-02T15:20:01+09:00"
     with pytest.raises(ValidationError):
         causal_validator.validate(bad_panel)
+    _assert_schema_rejects(causal_validator, panel, ("unexpected_top_level",), True)
+    _assert_schema_rejects(causal_validator, panel, ("fallback_policy",), "nearest_fallback_allowed")
+    _assert_schema_rejects(causal_validator, panel, ("amount_policy",), "price_times_volume_allowed")
+    _assert_schema_rejects(causal_validator, panel, ("forbidden_daily_fields",), ["future_return_1d"])
+    _assert_schema_rejects(causal_validator, panel, ("forbidden_observation_source_suffix",), "_database/Stock_Database_ohlcv_5min.db")
+    _assert_schema_rejects(causal_validator, panel, ("cutoff",), "15:19:00")
+    _assert_schema_rejects(causal_validator, panel, ("audit", "observation_field_policy", "legacy_future_return_1d_allowed"), True)
+    _assert_schema_rejects(causal_validator, panel, ("audit", "observation_field_policy", "unexpected"), False)
+    _assert_schema_rejects(causal_validator, panel, ("rows", 0, "cutoff"), "15:19:00")
+    _assert_schema_rejects(causal_validator, panel, ("rows", 0, "cutoff_timestamp"), "2024-01-02T15:19:00+09:00")
+    _assert_schema_rejects(causal_validator, panel, ("rows", 0, "unexpected"), True)
     _assert_schema_rejects(causal_validator, panel, ("rows", 0, "label_statuses", "future_return_h1_1520_proxy", "status"), "ok")
     _assert_schema_rejects(causal_validator, panel, ("locks", "profit_claim"), True)
     _assert_schema_rejects(causal_validator, panel, ("promotion_claims", "profit"), True)

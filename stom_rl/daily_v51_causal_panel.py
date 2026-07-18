@@ -26,6 +26,193 @@ _FORBIDDEN_DAILY_SOURCE_SUFFIX = "_database/Stock_Database_ohlcv_1day.db"
 _SOURCE_SCHEMA_VERSION = "kronos_daily_1520_source.v1"
 _APPROVED_5MIN_SOURCE_SUFFIX = "_database/Stock_Database_ohlcv_5min.db"
 _APPROVED_SOURCE_COLUMNS = ("date", "open", "high", "low", "close", "volume")
+_CONTRACT_HORIZONS = (1, 3, 5)
+_FALLBACK_POLICY = "none_exact_1520_only_nearest_forbidden"
+_AMOUNT_POLICY = "no_price_times_volume_approximation_only_verified_source_fields"
+_PROMOTION_CLAIM_NAMES = ("live_trading", "profit", "paper_trading", "broker_integration")
+_CONTRACT_TRUE_NAMES = (
+    "proxy_1520_not_official_close",
+    "no_nearest_fallback",
+    "no_full_day_daily_ohlcv",
+    "no_legacy_future_return_1d",
+    "no_price_volume_amount_approximation",
+    "trading_session_order_labels",
+)
+_CONTRACT_KEYS = frozenset((*_CONTRACT_TRUE_NAMES, "official_close"))
+_PANEL_TOP_LEVEL_KEYS = frozenset(
+    {
+        "schema_version",
+        "official_close",
+        "price_basis",
+        "causal_cutoff_kst",
+        "cutoff",
+        "horizon_days",
+        "label_columns",
+        "fallback_policy",
+        "amount_policy",
+        "source_identity",
+        "forbidden_daily_fields",
+        "forbidden_observation_source_suffix",
+        "locks",
+        "promotion_claims",
+        "contract",
+        "audit",
+        "coverage",
+        "rows",
+        "panel_sha256",
+    }
+)
+_AUDIT_KEYS = frozenset(
+    {
+        "observation_sources",
+        "observation_field_policy",
+        "exact_1520_source",
+        "source_audit",
+        "source_identity_present",
+    }
+)
+_OBSERVATION_SOURCES_AUDIT_KEYS = frozenset({"allowed", "forbidden", "rejected"})
+_OBSERVATION_FIELD_POLICY_KEYS = frozenset({"forbidden_daily_fields", "legacy_future_return_1d_allowed"})
+_EXACT_SOURCE_AUDIT_KEYS = frozenset(
+    {
+        "row_count",
+        "source_db_paths",
+        "source_tables",
+        "schema_versions",
+        "source_columns",
+        "price_basis",
+        "official_close",
+    }
+)
+_SOURCE_AUDIT_KEYS = frozenset(
+    {
+        "approved_source_db_paths",
+        "approved_source_tables",
+        "approved_schema_versions",
+        "approved_source_columns",
+        "rejected_source_db_paths",
+        "rejected_source_tables",
+        "forbidden_sources",
+    }
+)
+_COVERAGE_KEYS = frozenset(
+    {
+        "observation_row_count",
+        "panel_row_count",
+        "exact_1520_row_count",
+        "symbol_count",
+        "session_count",
+        "trading_sessions",
+        "labels",
+    }
+)
+_LABEL_COVERAGE_KEYS = frozenset({"available", "missing_entry", "missing_exit"})
+_PANEL_ROW_BASE_KEYS = frozenset(
+    {
+        "symbol",
+        "session",
+        "causal_cutoff_kst",
+        "cutoff",
+        "cutoff_timestamp",
+        "max_observation_timestamp",
+        "official_close",
+        "observation_count",
+        "observations",
+        "entry_1520_status",
+        "entry_1520",
+        "exit_1520_by_label",
+        "labels",
+        "label_statuses",
+    }
+)
+_LABEL_STATUS_PAYLOAD_KEYS = frozenset(
+    {
+        "status",
+        "horizon_trading_sessions",
+        "entry_session",
+        "exit_session",
+        "entry_timestamp",
+        "exit_timestamp",
+        "official_close",
+        "fallback_used",
+    }
+)
+_BAR_VOLUME_STATUS = "SINGLE_5MIN_BAR_VOLUME_AT_15_20_ONLY"
+_UNAVAILABLE_CUMULATIVE_VOLUME_STATUS = "NOT_AVAILABLE_SOURCE_HAS_SINGLE_5MIN_BAR_VOLUME_ONLY"
+_UNAVAILABLE_AMOUNT_STATUS = "NOT_AVAILABLE_5MIN_DB_HAS_NO_AMOUNT_COLUMN_DO_NOT_APPROXIMATE_PRICE_X_VOLUME"
+_SOURCE_ROW_REQUIRED_FIELDS = frozenset(
+    {
+        "schema_version",
+        "session_date",
+        "date",
+        "timestamp_kst",
+        "timestamp_yyyymmddhhmm",
+        "symbol",
+        "table",
+        "open",
+        "high",
+        "low",
+        "close",
+        "price_1520_close_proxy",
+        "bar_volume_1520",
+        "bar_volume_status",
+        "volume_to_1520",
+        "volume_to_1520_status",
+        "cumulative_volume_to_1520",
+        "cumulative_volume_to_1520_status",
+        "amount_to_1520",
+        "amount_to_1520_status",
+        "tradable",
+        "exclusion_reason",
+        "official_close",
+        "price_basis",
+        "causal_cutoff_kst",
+        "source_db_path",
+        "source_table",
+        "source_columns",
+        "source_timestamp_column",
+        "source_price_column",
+        "source_volume_column",
+    }
+)
+_PANEL_EXACT_MARK_FIELDS = frozenset(
+    {
+        "symbol",
+        "session",
+        "timestamp",
+        "close",
+        "price",
+        "open",
+        "high",
+        "low",
+        "price_1520_close_proxy",
+        "bar_volume_1520",
+        "bar_volume_status",
+        "volume_to_1520",
+        "volume_to_1520_status",
+        "cumulative_volume_to_1520",
+        "cumulative_volume_to_1520_status",
+        "amount_to_1520",
+        "amount_to_1520_status",
+        "tradable",
+        "exclusion_reason",
+        "price_basis",
+        "official_close",
+        "source_db_path",
+        "source_table",
+        "schema_version",
+        "causal_cutoff_kst",
+        "source_columns",
+        "date",
+        "session_date",
+        "timestamp_kst",
+        "timestamp_yyyymmddhhmm",
+        "table",
+        "source_timestamp_column",
+        "source_price_column",
+        "source_volume_column",
+    }
+)
 _COMPACT_1520_RE = re.compile(r"^\d{8}1520$")
 _BARE_DAILY_OHLCV_FIELDS = frozenset({"open", "high", "low", "close", "volume", "amount"})
 
@@ -153,14 +340,16 @@ def build_causal_panel(
     observation_rows: Sequence[Any],
     exact_1520_rows: Sequence[Any],
     *,
-    horizon_days: Sequence[int] = (1, 3, 5),
+    source_calendar: Sequence[str],
+    horizon_days: Sequence[int] = _CONTRACT_HORIZONS,
     source_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic research-only causal panel.
 
     Observations must be same-session intraday rows whose source timestamps are
-    at or before 15:20 KST.  Labels are derived only from exact 15:20 proxy rows:
-    D and D+H must both have exact 15:20 marks in trading-session order.
+    at or before 15:20 KST.  Label values are derived only from exact 15:20
+    proxy rows; horizon offsets advance over the explicit source trading-session
+    calendar, so missing exact marks never compress H offsets.
 
     ``source_identity`` must be an explicit source-artifact identity with a
     non-null lowercase SHA-256 of the source DB; the builder does not derive or
@@ -168,8 +357,20 @@ def build_causal_panel(
     """
 
     horizons = _normalize_horizons(horizon_days)
+    trading_sessions = _normalize_source_calendar(source_calendar, label="source_calendar")
+    trading_session_set = set(trading_sessions)
     observations, observation_source_paths = _normalize_observations(observation_rows)
     exact_index = _normalize_exact_rows(exact_1520_rows)
+    _require_sessions_in_source_calendar(
+        (observation.session for observation in observations),
+        source_calendar=trading_session_set,
+        label="observation_rows",
+    )
+    _require_sessions_in_source_calendar(
+        exact_index.trading_sessions,
+        source_calendar=trading_session_set,
+        label="exact_1520_rows",
+    )
     source_identity_payload = _normalize_source_identity(source_identity, exact_index)
     source_audit = _source_audit(exact_index)
     groups: dict[tuple[str, str], list[_Observation]] = defaultdict(list)
@@ -182,7 +383,7 @@ def build_causal_panel(
         name: {"available": 0, "missing_entry": 0, "missing_exit": 0}
         for name in label_names
     }
-    session_index = {session: index for index, session in enumerate(exact_index.trading_sessions)}
+    session_index = {session: index for index, session in enumerate(trading_sessions)}
 
     for symbol, session in sorted(groups, key=lambda item: (item[0][1], item[0][0])):
         group = sorted(groups[(symbol, session)], key=lambda item: (item.timestamp, _canonical_json(item.row)))
@@ -200,10 +401,10 @@ def build_causal_panel(
             exit_mark: _ExactMark | None = None
             if entry is not None:
                 start_index = session_index.get(session)
-                if start_index is None or start_index + horizon >= len(exact_index.trading_sessions):
+                if start_index is None or start_index + horizon >= len(trading_sessions):
                     status = "missing_exit"
                 else:
-                    exit_session = exact_index.trading_sessions[start_index + horizon]
+                    exit_session = trading_sessions[start_index + horizon]
                     exit_mark = exact_index.marks.get((symbol, exit_session))
                     if exit_mark is None:
                         status = "missing_exit"
@@ -252,18 +453,13 @@ def build_causal_panel(
         "cutoff": CAUSAL_CUTOFF_KST,
         "horizon_days": list(horizons),
         "label_columns": label_names,
-        "fallback_policy": "none_exact_1520_only_nearest_forbidden",
-        "amount_policy": "no_price_times_volume_approximation_only_verified_source_fields",
+        "fallback_policy": _FALLBACK_POLICY,
+        "amount_policy": _AMOUNT_POLICY,
         "source_identity": source_identity_payload,
         "forbidden_daily_fields": sorted(FORBIDDEN_DAILY_FIELDS),
         "forbidden_observation_source_suffix": _FORBIDDEN_DAILY_SOURCE_SUFFIX,
         "locks": {name: False for name in _FALSE_LOCK_NAMES},
-        "promotion_claims": {
-            "live_trading": False,
-            "profit": False,
-            "paper_trading": False,
-            "broker_integration": False,
-        },
+        "promotion_claims": {name: False for name in _PROMOTION_CLAIM_NAMES},
         "contract": {
             "proxy_1520_not_official_close": True,
             "official_close": False,
@@ -300,8 +496,8 @@ def build_causal_panel(
             "panel_row_count": len(rows),
             "exact_1520_row_count": exact_index.row_count,
             "symbol_count": len({row[0] for row in groups}),
-            "session_count": len(exact_index.trading_sessions),
-            "trading_sessions": list(exact_index.trading_sessions),
+            "session_count": len(trading_sessions),
+            "trading_sessions": list(trading_sessions),
             "labels": label_coverage,
         },
         "rows": rows,
@@ -320,40 +516,51 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
 
     if not isinstance(panel, Mapping):
         raise CausalPanelContractError("causal panel must be a mapping")
+    _require_exact_string_keys(panel, _PANEL_TOP_LEVEL_KEYS, "causal panel top-level")
     if panel.get("schema_version") != SCHEMA_VERSION:
         raise CausalPanelContractError("causal panel schema_version mismatch")
     if panel.get("official_close") is not False:
         raise CausalPanelContractError("causal panel must declare official_close=false")
     if panel.get("price_basis") != PRICE_BASIS:
         raise CausalPanelContractError("causal panel price_basis must be 15:20 proxy")
-    if panel.get("causal_cutoff_kst") != CAUSAL_CUTOFF_KST:
+    if panel.get("causal_cutoff_kst") != CAUSAL_CUTOFF_KST or panel.get("cutoff") != CAUSAL_CUTOFF_KST:
         raise CausalPanelContractError("causal panel cutoff must be 15:20 KST")
+    if panel.get("fallback_policy") != _FALLBACK_POLICY:
+        raise CausalPanelContractError("causal panel fallback_policy must forbid fallback sources")
+    if panel.get("amount_policy") != _AMOUNT_POLICY:
+        raise CausalPanelContractError("causal panel amount_policy must forbid price*volume approximation")
+    if panel.get("forbidden_daily_fields") != sorted(FORBIDDEN_DAILY_FIELDS):
+        raise CausalPanelContractError("causal panel forbidden_daily_fields mismatch")
+    if panel.get("forbidden_observation_source_suffix") != _FORBIDDEN_DAILY_SOURCE_SUFFIX:
+        raise CausalPanelContractError("causal panel forbidden observation source suffix mismatch")
 
-    horizons = _normalize_horizons(panel.get("horizon_days", ()))
+    horizon_payload = panel.get("horizon_days", ())
+    horizons = _normalize_horizons(horizon_payload)
+    if horizon_payload != list(_CONTRACT_HORIZONS):
+        raise CausalPanelContractError("causal panel horizon_days must be exactly [1, 3, 5]")
     expected_labels = [_label_name(horizon) for horizon in horizons]
     if panel.get("label_columns") != expected_labels:
         raise CausalPanelContractError("causal panel label_columns are not deterministic horizon labels")
 
     locks = panel.get("locks")
-    if not isinstance(locks, Mapping) or set(locks) != set(_FALSE_LOCK_NAMES):
-        raise CausalPanelContractError("causal panel must expose exactly six false locks")
+    if not isinstance(locks, Mapping):
+        raise CausalPanelContractError("causal panel locks must be present")
+    _require_exact_string_keys(locks, frozenset(_FALSE_LOCK_NAMES), "causal panel locks")
     if any(value is not False for value in locks.values()):
         raise CausalPanelContractError("causal panel locks must all be false")
     claims = panel.get("promotion_claims")
-    if not isinstance(claims, Mapping) or any(value is not False for value in claims.values()):
+    if not isinstance(claims, Mapping):
+        raise CausalPanelContractError("causal panel promotion_claims must be present")
+    _require_exact_string_keys(claims, frozenset(_PROMOTION_CLAIM_NAMES), "causal panel promotion_claims")
+    if any(value is not False for value in claims.values()):
         raise CausalPanelContractError("causal panel must not make live/profit/paper/broker claims")
     contract = panel.get("contract")
-    required_true_contracts = (
-        "proxy_1520_not_official_close",
-        "no_nearest_fallback",
-        "no_full_day_daily_ohlcv",
-        "no_legacy_future_return_1d",
-        "no_price_volume_amount_approximation",
-        "trading_session_order_labels",
-    )
-    if not isinstance(contract, Mapping) or contract.get("official_close") is not False:
+    if not isinstance(contract, Mapping):
+        raise CausalPanelContractError("causal panel contract must be present")
+    _require_exact_string_keys(contract, _CONTRACT_KEYS, "causal panel contract")
+    if contract.get("official_close") is not False:
         raise CausalPanelContractError("causal panel contract must declare official_close=false")
-    if any(contract.get(name) is not True for name in required_true_contracts):
+    if any(contract.get(name) is not True for name in _CONTRACT_TRUE_NAMES):
         raise CausalPanelContractError("causal panel contract guardrail flags must all be true")
 
     source_identity_payload = panel.get("source_identity")
@@ -401,19 +608,34 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
     audit = panel.get("audit")
     if not isinstance(audit, Mapping):
         raise CausalPanelContractError("causal panel audit must be present")
+    _require_exact_string_keys(audit, _AUDIT_KEYS, "causal panel audit")
     observation_audit = audit.get("observation_sources")
     if not isinstance(observation_audit, Mapping):
         raise CausalPanelContractError("causal panel observation source audit must be present")
+    _require_exact_string_keys(observation_audit, _OBSERVATION_SOURCES_AUDIT_KEYS, "causal panel observation source audit")
     if observation_audit.get("forbidden") != [] or observation_audit.get("rejected") != []:
         raise CausalPanelContractError("causal panel contains forbidden or rejected observation sources")
     allowed_sources = observation_audit.get("allowed")
-    if not isinstance(allowed_sources, list) or allowed_sources != sorted(allowed_sources):
-        raise CausalPanelContractError("allowed observation sources must be sorted deterministically")
+    if not isinstance(allowed_sources, list) or not allowed_sources or allowed_sources != sorted(allowed_sources):
+        raise CausalPanelContractError("allowed observation sources must be a non-empty sorted list")
     for source in allowed_sources:
         _require_approved_causal_source_identifier(source, "allowed observation source")
+    observation_field_policy = audit.get("observation_field_policy")
+    if not isinstance(observation_field_policy, Mapping):
+        raise CausalPanelContractError("causal panel observation_field_policy audit must be present")
+    _require_exact_string_keys(
+        observation_field_policy,
+        _OBSERVATION_FIELD_POLICY_KEYS,
+        "causal panel observation_field_policy audit",
+    )
+    if observation_field_policy.get("forbidden_daily_fields") != sorted(FORBIDDEN_DAILY_FIELDS):
+        raise CausalPanelContractError("observation_field_policy forbidden_daily_fields mismatch")
+    if observation_field_policy.get("legacy_future_return_1d_allowed") is not False:
+        raise CausalPanelContractError("observation_field_policy must forbid legacy future_return_1d")
     exact_source_audit = audit.get("exact_1520_source")
     if not isinstance(exact_source_audit, Mapping):
         raise CausalPanelContractError("causal panel exact source audit must be present")
+    _require_exact_string_keys(exact_source_audit, _EXACT_SOURCE_AUDIT_KEYS, "causal panel exact source audit")
     if exact_source_audit.get("row_count") != source_identity_payload.get("exact_1520_row_count"):
         raise CausalPanelContractError("exact source audit row_count must match source_identity")
     if exact_source_audit.get("source_db_paths") != source_identity_payload.get("source_db_paths"):
@@ -429,6 +651,7 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
     declared_source_audit = audit.get("source_audit")
     if not isinstance(declared_source_audit, Mapping):
         raise CausalPanelContractError("causal panel source_audit must be present")
+    _require_exact_string_keys(declared_source_audit, _SOURCE_AUDIT_KEYS, "causal panel source_audit")
     if declared_source_audit.get("approved_source_db_paths") != exact_source_audit.get("source_db_paths"):
         raise CausalPanelContractError("source_audit approved paths mismatch")
     if declared_source_audit.get("approved_source_tables") != exact_source_audit.get("source_tables"):
@@ -445,10 +668,30 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
         raise CausalPanelContractError("source_audit rejected and forbidden encounters must be empty")
     if audit.get("source_identity_present") is not True:
         raise CausalPanelContractError("source_identity_present must be true")
+    coverage = panel.get("coverage")
+    if not isinstance(coverage, Mapping):
+        raise CausalPanelContractError("causal panel coverage must be present")
+    _require_exact_string_keys(coverage, _COVERAGE_KEYS, "causal panel coverage")
+    trading_sessions = _normalize_source_calendar(coverage.get("trading_sessions"), label="coverage trading_sessions")
+    session_index = {session: index for index, session in enumerate(trading_sessions)}
+    if coverage.get("session_count") != len(trading_sessions):
+        raise CausalPanelContractError("causal panel source calendar coverage mismatch")
+    coverage_labels = coverage.get("labels")
+    if not isinstance(coverage_labels, Mapping):
+        raise CausalPanelContractError("causal panel coverage labels must be present")
+    _require_exact_string_keys(coverage_labels, frozenset(expected_labels), "causal panel coverage labels")
+    for name in expected_labels:
+        label_coverage = coverage_labels.get(name)
+        if not isinstance(label_coverage, Mapping):
+            raise CausalPanelContractError(f"causal panel coverage label {name} must be present")
+        _require_exact_string_keys(label_coverage, _LABEL_COVERAGE_KEYS, f"causal panel coverage label {name}")
 
     rows = panel.get("rows")
     if not isinstance(rows, list):
         raise CausalPanelContractError("causal panel rows must be a list")
+    for index, row in enumerate(rows):
+        if not isinstance(row, Mapping):
+            raise CausalPanelContractError(f"causal panel row {index} must be a mapping")
     expected_order = sorted(
         ((_require_panel_symbol(row), _require_panel_session(row)) for row in rows),
         key=lambda item: (item[1], item[0]),
@@ -462,22 +705,37 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
         for name in expected_labels
     }
     observation_count = 0
+    panel_symbols: set[str] = set()
+    observed_observation_sources: set[str] = set()
+    expected_row_keys = _PANEL_ROW_BASE_KEYS | frozenset(expected_labels)
     for index, row in enumerate(rows):
-        if not isinstance(row, Mapping):
-            raise CausalPanelContractError(f"causal panel row {index} must be a mapping")
+        _require_exact_panel_row_keys(row, expected_row_keys, f"causal panel row {index}")
         if row.get("official_close") is not False:
             raise CausalPanelContractError(f"causal panel row {index} must declare official_close=false")
         symbol = _require_panel_symbol(row)
         session = _require_panel_session(row)
+        panel_symbols.add(symbol)
+        if session not in session_index:
+            raise CausalPanelContractError(f"row {index} session must belong to coverage trading_sessions")
+        row_session_index = session_index[session]
         cutoff = _session_cutoff(session)
+        if row.get("causal_cutoff_kst") != CAUSAL_CUTOFF_KST or row.get("cutoff") != CAUSAL_CUTOFF_KST:
+            raise CausalPanelContractError(f"row {index} cutoff must be 15:20 KST")
+        if row.get("cutoff_timestamp") != _iso_kst(cutoff):
+            raise CausalPanelContractError(f"row {index} cutoff_timestamp must match the 15:20 KST session cutoff")
         max_timestamp = _parse_timestamp(row.get("max_observation_timestamp"), f"row {index} max_observation_timestamp")
         if max_timestamp.date() != cutoff.date() or max_timestamp > cutoff:
             raise CausalPanelContractError(f"row {index} max observation timestamp violates 15:20 cutoff")
-        if row.get("causal_cutoff_kst") != CAUSAL_CUTOFF_KST:
-            raise CausalPanelContractError(f"row {index} cutoff must be 15:20 KST")
         observations = row.get("observations")
         if not isinstance(observations, list) or not observations:
             raise CausalPanelContractError(f"row {index} observations must be a non-empty list")
+        declared_observation_count = row.get("observation_count")
+        if (
+            isinstance(declared_observation_count, bool)
+            or not isinstance(declared_observation_count, int)
+            or declared_observation_count != len(observations)
+        ):
+            raise CausalPanelContractError(f"row {index} observation_count must match observations length")
         observation_count += len(observations)
         observed_max_timestamp: datetime | None = None
         for observation in observations:
@@ -490,6 +748,7 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
                 raise CausalPanelContractError(f"row {index} observation must declare approved exact 15:20 source")
             for source in observation_sources:
                 _require_approved_causal_source_identifier(source, f"row {index} observation source")
+            observed_observation_sources.update(observation_sources)
             if _require_symbol(_first_present(observation, _SYMBOL_FIELDS), f"row {index} observation symbol") != symbol:
                 raise CausalPanelContractError(f"row {index} observation symbol mismatch")
             if _normalize_session(
@@ -520,8 +779,8 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
         statuses = row.get("label_statuses")
         if not isinstance(labels, Mapping) or not isinstance(statuses, Mapping):
             raise CausalPanelContractError(f"row {index} labels and statuses must be mappings")
-        if set(labels) != set(expected_labels) or set(statuses) != set(expected_labels):
-            raise CausalPanelContractError(f"row {index} label keys mismatch")
+        _require_exact_string_keys(labels, frozenset(expected_labels), f"row {index} labels")
+        _require_exact_string_keys(statuses, frozenset(expected_labels), f"row {index} label_statuses")
 
         entry_status = row.get("entry_1520_status")
         entry_payload = row.get("entry_1520")
@@ -551,10 +810,11 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
             raise CausalPanelContractError(f"row {index} missing entry status cannot carry entry_1520 payload")
 
         exits = row.get("exit_1520_by_label")
-        if not isinstance(exits, Mapping) or set(exits) != set(expected_labels):
-            raise CausalPanelContractError(f"row {index} exit_1520_by_label keys mismatch")
+        if not isinstance(exits, Mapping):
+            raise CausalPanelContractError(f"row {index} exit_1520_by_label must be a mapping")
+        _require_exact_string_keys(exits, frozenset(expected_labels), f"row {index} exit_1520_by_label")
 
-        for name in expected_labels:
+        for name, horizon in zip(expected_labels, horizons):
             if name not in row:
                 raise CausalPanelContractError(f"row {index} missing top-level {name}")
             if row[name] != labels[name]:
@@ -562,6 +822,7 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
             status_payload = statuses[name]
             if not isinstance(status_payload, Mapping):
                 raise CausalPanelContractError(f"row {index} label status for {name} must be a mapping")
+            _require_exact_string_keys(status_payload, _LABEL_STATUS_PAYLOAD_KEYS, f"row {index} label status {name}")
             status = status_payload.get("status")
             if status not in coverage_counts[name]:
                 raise CausalPanelContractError(f"row {index} label {name} has invalid status")
@@ -573,6 +834,13 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
                 raise CausalPanelContractError(f"row {index} label {name} must be proxy-only with no fallback")
             if status_payload.get("entry_session") != session:
                 raise CausalPanelContractError(f"row {index} label {name} entry_session mismatch")
+            if status_payload.get("horizon_trading_sessions") != horizon:
+                raise CausalPanelContractError(f"row {index} label {name} horizon_trading_sessions mismatch")
+            expected_exit_session = (
+                trading_sessions[row_session_index + horizon]
+                if row_session_index + horizon < len(trading_sessions)
+                else None
+            )
 
             exit_payload = exits[name]
             if status == "available":
@@ -592,6 +860,10 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
                     fallback_timestamp=None,
                     label=f"row {index} exit {name} session",
                 )
+                if expected_exit_session is None or exit_session != expected_exit_session:
+                    raise CausalPanelContractError(
+                        f"row {index} label {name} exit_session does not match source calendar horizon"
+                    )
                 if status_payload.get("exit_session") != exit_session:
                     raise CausalPanelContractError(f"row {index} label {name} exit_session mismatch")
                 exit_timestamp = _parse_timestamp(exit_payload.get("timestamp"), f"row {index} exit {name} timestamp")
@@ -618,20 +890,27 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
                         raise CausalPanelContractError(f"row {index} label {name} missing_exit requires entry_1520 payload")
                     if status_payload.get("entry_timestamp") != _iso_kst(entry_timestamp):
                         raise CausalPanelContractError(f"row {index} label {name} entry_timestamp mismatch")
+                    if status_payload.get("exit_session") != expected_exit_session:
+                        raise CausalPanelContractError(
+                            f"row {index} label {name} missing_exit exit_session does not match source calendar horizon"
+                        )
                     if status_payload.get("exit_timestamp") is not None:
                         raise CausalPanelContractError(f"row {index} label {name} missing_exit exit_timestamp must be null")
             coverage_counts[name][status] += 1
-        if "future_return_1d" in row:
-            raise CausalPanelContractError("legacy future_return_1d is forbidden in causal panel rows")
 
-    coverage = panel.get("coverage")
-    if not isinstance(coverage, Mapping):
-        raise CausalPanelContractError("causal panel coverage must be present")
+    if allowed_sources != sorted(observed_observation_sources):
+        raise CausalPanelContractError("observation source audit allowed list must match observed sources")
     if coverage.get("observation_row_count") != observation_count:
         raise CausalPanelContractError("causal panel observation coverage mismatch")
     if coverage.get("panel_row_count") != len(rows):
         raise CausalPanelContractError("causal panel row coverage mismatch")
-    if coverage.get("labels") != coverage_counts:
+    if coverage.get("exact_1520_row_count") != source_identity_payload.get("exact_1520_row_count"):
+        raise CausalPanelContractError("causal panel exact source row coverage mismatch")
+    if coverage.get("symbol_count") != len(panel_symbols):
+        raise CausalPanelContractError("causal panel symbol coverage mismatch")
+    if coverage.get("trading_sessions") != list(trading_sessions):
+        raise CausalPanelContractError("causal panel trading_sessions must match the source calendar")
+    if coverage_labels != coverage_counts:
         raise CausalPanelContractError("causal panel label coverage mismatch")
 
     expected_sha = _panel_digest(panel)
@@ -640,25 +919,90 @@ def validate_causal_panel(panel: Mapping[str, Any]) -> Mapping[str, Any]:
     return panel
 
 
+def _require_exact_string_keys(mapping: Mapping[str, Any], expected_keys: frozenset[str], label: str) -> None:
+    non_string = sorted(repr(key) for key in mapping if not isinstance(key, str))
+    if non_string:
+        raise CausalPanelContractError(f"{label} contains non-string key: {non_string[0]}")
+    actual_keys = set(mapping)
+    missing = sorted(expected_keys - actual_keys)
+    if missing:
+        raise CausalPanelContractError(f"{label} missing required key: {missing[0]}")
+    unexpected = sorted(actual_keys - expected_keys)
+    if unexpected:
+        raise CausalPanelContractError(f"{label} contains unexpected key: {unexpected[0]}")
+
+
+def _require_exact_panel_row_keys(row: Mapping[str, Any], expected_keys: frozenset[str], label: str) -> None:
+    non_string = sorted(repr(key) for key in row if not isinstance(key, str))
+    if non_string:
+        raise CausalPanelContractError(f"{label} contains non-string key: {non_string[0]}")
+    actual_keys = set(row)
+    missing = sorted(expected_keys - actual_keys)
+    if missing:
+        raise CausalPanelContractError(f"{label} missing required row key: {missing[0]}")
+    unexpected = sorted(actual_keys - expected_keys)
+    if not unexpected:
+        return
+    forbidden = sorted(key for key in unexpected if _is_forbidden_field_name(key, allow_exact_ohlcv=False))
+    if "future_return_1d" in forbidden:
+        raise CausalPanelContractError("legacy future_return_1d is forbidden in causal panel rows")
+    daily_forbidden = [key for key in forbidden if not key.startswith("future_return_")]
+    if daily_forbidden:
+        raise CausalPanelContractError(f"{label} includes forbidden daily OHLCV field: {daily_forbidden[0]}")
+    raise CausalPanelContractError(f"{label} contains unexpected row key: {unexpected[0]}")
+
 def _normalize_horizons(horizon_days: Sequence[int] | Any) -> tuple[int, ...]:
     if isinstance(horizon_days, (str, bytes)) or not isinstance(horizon_days, Iterable):
-        raise CausalPanelContractError("horizon_days must be a sequence of positive integers")
+        raise CausalPanelContractError(f"horizon_days must be exactly {_CONTRACT_HORIZONS}")
     result: list[int] = []
     for value in horizon_days:
-        if isinstance(value, bool):
-            raise CausalPanelContractError("horizon_days values must be positive integers")
-        try:
-            horizon = int(value)
-        except (TypeError, ValueError) as exc:
-            raise CausalPanelContractError("horizon_days values must be positive integers") from exc
-        if horizon <= 0 or horizon != value and not (isinstance(value, str) and value.isdigit()):
-            raise CausalPanelContractError("horizon_days values must be positive integers")
-        if horizon in result:
-            raise CausalPanelContractError("horizon_days values must be unique")
-        result.append(horizon)
-    if not result:
-        raise CausalPanelContractError("horizon_days must not be empty")
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise CausalPanelContractError(f"horizon_days must be exactly {_CONTRACT_HORIZONS}")
+        result.append(value)
+    if tuple(result) != _CONTRACT_HORIZONS:
+        raise CausalPanelContractError(f"horizon_days must be exactly {_CONTRACT_HORIZONS}")
     return tuple(result)
+
+
+def _normalize_source_calendar(source_calendar: Sequence[str] | Any, *, label: str) -> tuple[str, ...]:
+    if isinstance(source_calendar, (str, bytes, Mapping)) or not isinstance(source_calendar, Sequence):
+        raise CausalPanelContractError(f"{label} must be a sequence of canonical YYYY-MM-DD strings")
+    sessions: list[str] = []
+    seen: set[str] = set()
+    previous: str | None = None
+    for index, value in enumerate(source_calendar):
+        session = _require_canonical_date_string(value, f"{label}[{index}]")
+        if session in seen:
+            raise CausalPanelContractError(f"{label} must contain unique trading sessions")
+        if previous is not None and session <= previous:
+            raise CausalPanelContractError(f"{label} must be strictly increasing")
+        seen.add(session)
+        sessions.append(session)
+        previous = session
+    if not sessions:
+        raise CausalPanelContractError(f"{label} must not be empty")
+    return tuple(sessions)
+
+
+def _require_canonical_date_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or _DATE_RE.fullmatch(value) is None:
+        raise CausalPanelContractError(f"{label} must be a canonical YYYY-MM-DD string")
+    try:
+        date.fromisoformat(value)
+    except ValueError as exc:
+        raise CausalPanelContractError(f"{label} must be a valid calendar date") from exc
+    return value
+
+
+def _require_sessions_in_source_calendar(
+    sessions: Iterable[str],
+    *,
+    source_calendar: set[str],
+    label: str,
+) -> None:
+    for session in sessions:
+        if session not in source_calendar:
+            raise CausalPanelContractError(f"{label} session {session} is not present in source_calendar")
 
 
 def _normalize_observations(rows: Sequence[Any]) -> tuple[list[_Observation], set[str]]:
@@ -740,6 +1084,7 @@ def _normalize_exact_rows(rows: Sequence[Any]) -> _ExactIndex:
         close = _finite_float(_first_present(row, _CLOSE_FIELDS), f"{label} close")
         if close <= 0:
             raise CausalPanelContractError(f"{label} close must be positive")
+        _require_source_row_contract(row, label, symbol=symbol, session=session, timestamp=timestamp, close=close)
         paths = _source_paths(row)
         if not paths:
             raise CausalPanelContractError(f"{label} must declare approved exact 15:20 source_db_path")
@@ -766,8 +1111,6 @@ def _normalize_exact_rows(rows: Sequence[Any]) -> _ExactIndex:
             raise CausalPanelContractError(f"duplicate exact 15:20 mark for {symbol} {session}")
         seen_keys.add(key)
         trading_sessions_seen.add(session)
-        if not _exact_mark_available(row):
-            continue
         cleaned = _sanitize_exact_mark(row, symbol=symbol, session=session, timestamp=timestamp, close=close)
         marks[key] = _ExactMark(
             symbol=symbol,
@@ -789,6 +1132,85 @@ def _normalize_exact_rows(rows: Sequence[Any]) -> _ExactIndex:
         schema_versions=tuple(sorted(schema_versions)),
         source_columns=tuple(sorted(source_columns)),
     )
+
+
+def _require_source_row_contract(
+    row: Mapping[str, Any],
+    label: str,
+    *,
+    symbol: str,
+    session: str,
+    timestamp: datetime,
+    close: float,
+) -> None:
+    missing = sorted(field for field in _SOURCE_ROW_REQUIRED_FIELDS if field not in row)
+    if missing:
+        raise CausalPanelContractError(f"{label} missing source-row contract field: {missing[0]}")
+    unexpected = sorted(str(field) for field in row if str(field) not in _SOURCE_ROW_REQUIRED_FIELDS)
+    if unexpected:
+        raise CausalPanelContractError(f"{label} contains unexpected source-row field: {unexpected[0]}")
+
+    if _require_symbol(row["symbol"], f"{label} symbol") != symbol:
+        raise CausalPanelContractError(f"{label} symbol mismatch")
+    if _require_canonical_date_string(row["date"], f"{label} date") != session:
+        raise CausalPanelContractError(f"{label} date must match session")
+    if _require_canonical_date_string(row["session_date"], f"{label} session_date") != session:
+        raise CausalPanelContractError(f"{label} session_date must match session")
+    if _parse_timestamp(row["timestamp_kst"], f"{label} timestamp_kst") != timestamp:
+        raise CausalPanelContractError(f"{label} timestamp_kst must match exact 15:20 timestamp")
+    if not isinstance(row["timestamp_yyyymmddhhmm"], str):
+        raise CausalPanelContractError(f"{label} compact timestamp must be a JSON string")
+    if _compact_1520_timestamp_string(row["timestamp_yyyymmddhhmm"]) != timestamp.strftime("%Y%m%d%H%M"):
+        raise CausalPanelContractError(f"{label} compact timestamp must match exact 15:20 timestamp")
+
+    expected_table = f"A{symbol}"
+    table = _require_approved_source_table(row["table"], f"{label} table")
+    source_table = _require_approved_source_table(row["source_table"], f"{label} source_table")
+    if table != expected_table or source_table != expected_table:
+        raise CausalPanelContractError(f"{label} source_table must match symbol {expected_table}")
+
+    row_close = _finite_float(row["close"], f"{label} close")
+    if row_close != close:
+        raise CausalPanelContractError(f"{label} close must match exact 15:20 close")
+    for name in ("open", "high", "low"):
+        _finite_float(row[name], f"{label} {name}")
+    if _finite_float(row["price_1520_close_proxy"], f"{label} price_1520_close_proxy") != close:
+        raise CausalPanelContractError(f"{label} price_1520_close_proxy must match close")
+    if _finite_float(row["bar_volume_1520"], f"{label} bar_volume_1520") < 0:
+        raise CausalPanelContractError(f"{label} bar_volume_1520 must be non-negative")
+
+    if row["bar_volume_status"] != _BAR_VOLUME_STATUS:
+        raise CausalPanelContractError(f"{label} bar_volume_status mismatch")
+    if row["volume_to_1520"] is not None or row["cumulative_volume_to_1520"] is not None:
+        raise CausalPanelContractError(f"{label} cumulative volume fields must be null")
+    if row["volume_to_1520_status"] != _UNAVAILABLE_CUMULATIVE_VOLUME_STATUS:
+        raise CausalPanelContractError(f"{label} volume_to_1520_status mismatch")
+    if row["cumulative_volume_to_1520_status"] != _UNAVAILABLE_CUMULATIVE_VOLUME_STATUS:
+        raise CausalPanelContractError(f"{label} cumulative_volume_to_1520_status mismatch")
+    if row["amount_to_1520"] is not None:
+        raise CausalPanelContractError(f"{label} amount_to_1520 must be null")
+    if row["amount_to_1520_status"] != _UNAVAILABLE_AMOUNT_STATUS:
+        raise CausalPanelContractError(f"{label} amount_to_1520_status mismatch")
+
+    if row["tradable"] is not True:
+        raise CausalPanelContractError(f"{label} must declare tradable=true")
+    if row["exclusion_reason"] is not None:
+        raise CausalPanelContractError(f"{label} exclusion_reason must be null")
+    if row["official_close"] is not False:
+        raise CausalPanelContractError(f"{label} must explicitly declare official_close=false")
+    if row["price_basis"] != PRICE_BASIS:
+        raise CausalPanelContractError(f"{label} price_basis must be {PRICE_BASIS}")
+    if row["causal_cutoff_kst"] != CAUSAL_CUTOFF_KST:
+        raise CausalPanelContractError(f"{label} causal_cutoff_kst must be 15:20:00")
+    _require_approved_source_path(row["source_db_path"], f"{label} source_db_path")
+    if tuple(_coerce_string_sequence(row["source_columns"])) != _APPROVED_SOURCE_COLUMNS:
+        raise CausalPanelContractError(f"{label} source_columns must be {list(_APPROVED_SOURCE_COLUMNS)}")
+    if row["source_timestamp_column"] != "date":
+        raise CausalPanelContractError(f"{label} source_timestamp_column must be date")
+    if row["source_price_column"] != "close":
+        raise CausalPanelContractError(f"{label} source_price_column must be close")
+    if row["source_volume_column"] != "volume":
+        raise CausalPanelContractError(f"{label} source_volume_column must be volume")
 
 
 def _source_audit(exact_index: _ExactIndex) -> dict[str, Any]:
@@ -866,14 +1288,6 @@ def _normalize_source_identity(source_identity: Mapping[str, Any] | None, exact_
     return payload
 
 
-def _exact_mark_available(row: Mapping[str, Any]) -> bool:
-    return row.get("tradable") is True and not _has_exclusion_reason(row.get("exclusion_reason"))
-
-
-def _has_exclusion_reason(value: Any) -> bool:
-    return _present(value) and str(value).strip() != ""
-
-
 def _sanitize_exact_mark(
     row: Mapping[str, Any],
     *,
@@ -909,10 +1323,8 @@ def _sanitize_exact_mark(
         "bar_volume_status",
         "volume_to_1520",
         "volume_to_1520_status",
-        "cumulative_volume_status",
         "cumulative_volume_to_1520",
         "cumulative_volume_to_1520_status",
-        "amount_status",
         "amount_to_1520",
         "amount_to_1520_status",
         "tradable",
@@ -935,15 +1347,6 @@ def _sanitize_exact_mark(
         cleaned["source_table"] = cleaned["table"]
     cleaned["timestamp_yyyymmddhhmm"] = _compact_1520_timestamp_string(row.get("timestamp_yyyymmddhhmm", timestamp))
 
-    cumulative_status = str(row.get("cumulative_volume_status") or "").lower()
-    if cumulative_status == "verified" and _present(row.get("cumulative_volume_1520")):
-        cleaned["cumulative_volume_1520"] = _finite_float(
-            row.get("cumulative_volume_1520"), f"exact 1520 {symbol} {session} cumulative_volume_1520"
-        )
-    amount_status = str(row.get("amount_status") or "").lower()
-    for amount_field in ("amount_1520", "cumulative_amount_1520"):
-        if amount_status == "verified" and _present(row.get(amount_field)):
-            cleaned[amount_field] = _finite_float(row.get(amount_field), f"exact 1520 {symbol} {session} {amount_field}")
     return cleaned
 
 
@@ -1287,12 +1690,24 @@ def _validate_exact_payload(
     if not isinstance(payload, Mapping):
         raise CausalPanelContractError(f"{label} must be a mapping")
     _reject_forbidden_fields(payload, label, allow_exact_ohlcv=True)
+    missing = sorted(field for field in _PANEL_EXACT_MARK_FIELDS if field not in payload)
+    if missing:
+        raise CausalPanelContractError(f"{label} missing exact payload field: {missing[0]}")
+    unexpected = sorted(str(field) for field in payload if str(field) not in _PANEL_EXACT_MARK_FIELDS)
+    if unexpected:
+        raise CausalPanelContractError(f"{label} contains unexpected exact payload field: {unexpected[0]}")
     symbol = _require_symbol(payload.get("symbol"), f"{label} symbol")
     if expected_symbol is not None and symbol != expected_symbol:
         raise CausalPanelContractError(f"{label} symbol mismatch")
     session = _normalize_session(payload.get("session"), fallback_timestamp=None, label=f"{label} session")
     timestamp = _parse_timestamp(payload.get("timestamp"), f"{label} timestamp")
     _enforce_exact_1520(timestamp, session, label=label)
+    if _parse_timestamp(payload.get("timestamp_kst"), f"{label} timestamp_kst") != timestamp:
+        raise CausalPanelContractError(f"{label} timestamp_kst must match exact 15:20 timestamp")
+    if _require_canonical_date_string(payload.get("date"), f"{label} date") != session:
+        raise CausalPanelContractError(f"{label} date must match session")
+    if _require_canonical_date_string(payload.get("session_date"), f"{label} session_date") != session:
+        raise CausalPanelContractError(f"{label} session_date must match session")
     if not _present(payload.get("timestamp_yyyymmddhhmm")):
         raise CausalPanelContractError(f"{label} compact timestamp is required")
     if not isinstance(payload.get("timestamp_yyyymmddhhmm"), str):
@@ -1321,16 +1736,35 @@ def _validate_exact_payload(
         raise CausalPanelContractError(f"{label} must keep 15:20 proxy price_basis")
     if payload.get("tradable") is not True:
         raise CausalPanelContractError(f"{label} must declare tradable=true")
-    if _has_exclusion_reason(payload.get("exclusion_reason")):
-        raise CausalPanelContractError(f"{label} must not carry an exclusion_reason")
+    if payload.get("exclusion_reason") is not None:
+        raise CausalPanelContractError(f"{label} exclusion_reason must be null")
     close = _finite_float(payload.get("close"), f"{label} close")
     if close <= 0:
         raise CausalPanelContractError(f"{label} close must be positive")
-    if _present(payload.get("price")) and _finite_float(payload.get("price"), f"{label} price") != close:
+    if _finite_float(payload.get("price"), f"{label} price") != close:
         raise CausalPanelContractError(f"{label} price must match close")
-    if _present(payload.get("price_1520_close_proxy")) and _finite_float(
-        payload.get("price_1520_close_proxy"),
-        f"{label} price_1520_close_proxy",
-    ) != close:
+    for name in ("open", "high", "low"):
+        _finite_float(payload.get(name), f"{label} {name}")
+    if _finite_float(payload.get("price_1520_close_proxy"), f"{label} price_1520_close_proxy") != close:
         raise CausalPanelContractError(f"{label} price_1520_close_proxy must match close")
+    if _finite_float(payload.get("bar_volume_1520"), f"{label} bar_volume_1520") < 0:
+        raise CausalPanelContractError(f"{label} bar_volume_1520 must be non-negative")
+    if payload.get("bar_volume_status") != _BAR_VOLUME_STATUS:
+        raise CausalPanelContractError(f"{label} bar_volume_status mismatch")
+    if payload.get("volume_to_1520") is not None or payload.get("cumulative_volume_to_1520") is not None:
+        raise CausalPanelContractError(f"{label} cumulative volume fields must be null")
+    if payload.get("volume_to_1520_status") != _UNAVAILABLE_CUMULATIVE_VOLUME_STATUS:
+        raise CausalPanelContractError(f"{label} volume_to_1520_status mismatch")
+    if payload.get("cumulative_volume_to_1520_status") != _UNAVAILABLE_CUMULATIVE_VOLUME_STATUS:
+        raise CausalPanelContractError(f"{label} cumulative_volume_to_1520_status mismatch")
+    if payload.get("amount_to_1520") is not None:
+        raise CausalPanelContractError(f"{label} amount_to_1520 must be null")
+    if payload.get("amount_to_1520_status") != _UNAVAILABLE_AMOUNT_STATUS:
+        raise CausalPanelContractError(f"{label} amount_to_1520_status mismatch")
+    if payload.get("source_timestamp_column") != "date":
+        raise CausalPanelContractError(f"{label} source_timestamp_column must be date")
+    if payload.get("source_price_column") != "close":
+        raise CausalPanelContractError(f"{label} source_price_column must be close")
+    if payload.get("source_volume_column") != "volume":
+        raise CausalPanelContractError(f"{label} source_volume_column must be volume")
     return close
