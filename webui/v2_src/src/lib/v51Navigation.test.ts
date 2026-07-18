@@ -51,8 +51,8 @@ test('V5.1 brand and version history preserve default, current receipt, and no-r
       { version: 'V5', date: '2026-07-16', commitSha: '59fb74c', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'fork-v1.3.0-dashboard-v5-research-preview' },
     ],
   );
-  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /Current verified browser bundle revision c43ee9b/);
-  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /current frontend tests: 353/);
+  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /Verification snapshot c43ee9b recorded 353 frontend tests/);
+  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /metadata-only bundles do not claim new research validation/);
   assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /no release-default, live-readiness/);
 });
 

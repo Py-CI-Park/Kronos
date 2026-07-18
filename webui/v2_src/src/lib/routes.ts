@@ -81,7 +81,7 @@ export const V51_VERSION_HISTORY = [
     commitSha: 'c43ee9b',
     releaseTag: 'not released',
     changes: 'Brand, V5.1 information architecture, evidence views, and report access orientation.',
-    validation: 'Current verified browser bundle revision c43ee9b; current frontend tests: 353. Read-only evidence only; no release-default, live-readiness, GO, profit, broker, or order claim.',
+    validation: 'Verification snapshot c43ee9b recorded 353 frontend tests and live browser evidence; later metadata-only bundles do not claim new research validation. Read-only evidence only; no release-default, live-readiness, GO, profit, broker, or order claim.',
     defaultUi: V51_DEFAULT_POLICY,
     rollbackTarget: 'V3 shell and existing V3 route bookmarks',
   },
