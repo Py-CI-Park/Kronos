@@ -8,7 +8,7 @@
 > 범위: V5.1 연구 기반, 대시보드 정보구조, 15:20 인과 source/panel, 6,000만원 10-slot 회계, H1/H3/H5 freeze, PyKRX-only offline custody, read-only API/report viewer  
 > 브랜치: `feature/dashboard-v5-learning-evidence`  
 > 기준 commit: `4c8ba1f`  
-> 최종 브라우저 검증 대상 HEAD: `c43ee9b`
+> 최종 브라우저 검증 대상 HEAD: `c1e4b37` (`c43ee9b` verification snapshot 포함)
 > 기본 UI: `V3 유지`  
 > tag/push/merge/release-default: 수행하지 않음  
 > 대체 문서: 없음. 이전 `docs/kronos_dashboard_v5_development_result_2026-07-16.md`는 보존하고 본 문서는 V5.1 증분 결과만 기록한다.
@@ -234,7 +234,7 @@ V5.1이 100점이 아닌 이유는 기능 결함보다 검증 형식의 한계�
 
 ## 5. 검증 명령과 결과
 
-본 문서는 최초 문서 commit `1ec28bd` 이후 blocker 보강과 최종 client fail-closed bundle `c43ee9b`까지 현재 증거 기준으로 기록한다.
+본 문서는 최초 문서 commit `1ec28bd` 이후 blocker 보강, verification snapshot `c43ee9b`, 최종 immutable-metadata bundle `c1e4b37`까지 현재 증거 기준으로 기록한다.
 
 ### 5.1 집중 Python 검증
 
@@ -287,8 +287,9 @@ py -3.11 -m pytest tests/test_daily_ohlcv_dashboard_tab.py tests/test_stom_rl_da
 
 ```text
 live Chromium: http://127.0.0.1:8122/?tab=rl&ui=v5
-loaded bundle: index-D0myY3NK.js / index-CV07xgHn.css
-source revision: c43ee9b
+loaded bundle: index-CQWF-AAq.js / index-CV07xgHn.css
+source revision: c1e4b37
+verification snapshot: c43ee9b
 viewports: 3440x1440 and 2160x3840
 # horizontal overflow: false
 # independent left/right rail collapse: passed
@@ -417,9 +418,9 @@ Rollback의 기본값은 “V5.1을 기본으로 쓰지 않는 것”이다.
 |---|---|
 | Branch | `feature/dashboard-v5-learning-evidence` |
 | Baseline | `4c8ba1f` |
-| V5.1 구현 범위 | `9d8e2ad` through `c43ee9b` |
+| V5.1 구현 범위 | `9d8e2ad` through `c1e4b37` |
 | 최초 결과 문서 commit | `1ec28bd708fd19d61396af8cb3e7c0d8887c68a0` |
-| 최종 브라우저 검증 대상 HEAD | `c43ee9b` |
+| 최종 브라우저 검증 대상 HEAD | `c1e4b37` (`c43ee9b` verification snapshot) |
 | tag/push/merge | 수행하지 않음 |
 
 ### 10.2 V5.1 commit 목록
@@ -451,9 +452,13 @@ Rollback의 기본값은 “V5.1을 기본으로 쓰지 않는 것”이다.
 | 23 | `c042333` | `docs(v5.1): finalize hardened evidence record` | hardened evidence 문서 동기화 |
 | 24 | `ca09be9` | `fix(ui): reject missing V5.1 evidence states` | READY sentinel/action/performance missing evidence closure |
 | 25 | `c43ee9b` | `build(dashboard): refresh closed V5.1 client bundle` | 최종 Chromium 검증 bundle |
+| 26 | `b50341d` | `fix(ui): align V5.1 current verification metadata` | version evidence 정렬 중간 commit |
+| 27 | `05689ea` | `build(dashboard): publish aligned V5.1 version bundle` | version evidence 중간 bundle |
+| 28 | `3628995` | `fix(ui): make V5.1 verification metadata immutable` | self-reference 없는 verification snapshot |
+| 29 | `c1e4b37` | `build(dashboard): publish immutable verification metadata` | 최종 Chromium 검증 bundle |
 
 ## 11. 변경 히스토리
 
 | 날짜 | 변경 | 작성자 | commit |
 |---|---|---|---|
-| 2026-07-18 | cleaner 재검토에서 발견한 READY sentinel과 optimistic fallback을 닫고 최종 bundle `c43ee9b`를 Chromium 3440×1440/2160×3840에서 재검증 | GJC | `1ec28bd` through `c43ee9b` |
+| 2026-07-18 | cleaner 재검토 blocker를 닫고 `c43ee9b`를 immutable verification snapshot으로 고정한 최종 bundle `c1e4b37`을 Chromium 3440×1440/2160×3840에서 재검증 | GJC | `1ec28bd` through `c1e4b37` |
