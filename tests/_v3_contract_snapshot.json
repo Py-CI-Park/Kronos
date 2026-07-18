@@ -460,7 +460,7 @@
     ],
     "webui/v2_src/src/layout/Header.svelte": [
       "Daily OHLCV",
-      "routeLabel(tab)",
+      "routeLabelForShell(tab, shell)",
       "일봉 RL 설명서"
     ],
     "webui/v2_src/src/layout/Sidebar.svelte": [
@@ -469,7 +469,7 @@
       "id: 'daily-ohlcv'",
       "id: 'rl'",
       "label: 'Trading Command Center'",
-      "navigateToTab(id)"
+      "navigateToTab(routeId)"
     ],
     "webui/v2_src/src/lib/cardRequest.ts": [
       "controllers.get(key)?.abort()",
