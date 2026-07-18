@@ -604,21 +604,24 @@ def _accounting_rows_for_horizon(
         accounting_rows.append(
             {
                 "symbol": symbol,
-                "side": "long",
+                "side": "buy",
                 "quantity": quantity,
-                "entry_mark": entry,
-                "exit_mark": exit_mark,
-                "entry_price": entry_price,
-                "exit_price": exit_price,
+                "entry_1520": entry,
+                "exit_1520_by_label": {label_column: exit_mark},
                 "horizon_id": variant["horizon_id"],
                 "horizon_days": variant["horizon_days"],
                 "label_column": label_column,
                 "session": session,
                 "entry_session": session,
                 "exit_session": status["exit_session"],
+                "label_statuses": {label_column: status},
+                "source_db_path": horizon_manifest["source_hashes"]["source_db_path"],
                 "source_db_sha256": horizon_manifest["source_hashes"]["source_db_sha256"],
                 "source_identity_sha256": horizon_manifest["source_hashes"]["source_identity_sha256"],
                 "panel_sha256": horizon_manifest["panel_sha256"],
+                "source_table": entry["source_table"],
+                "entry_source_table": entry["source_table"],
+                "exit_source_table": exit_mark["source_table"],
             }
         )
         selected_exact_marks.append(

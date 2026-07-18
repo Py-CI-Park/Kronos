@@ -106,12 +106,17 @@ _FORBIDDEN_RL_SOURCE_TOKENS: Final = (
     "official-close",
     "15:30",
     "full_day",
+    "full day",
     "full-day",
-    "daily",
     "daily_ohlcv",
+    "daily ohlcv",
+    "daily-ohlcv",
     "stock_database_ohlcv_1day.db",
     "ohlcv_1day",
+    "ohlcv 1day",
+    "ohlcv-1day",
     "1day",
+    "naver",
 )
 _RL_SOURCE_IDENTIFIER_KEYS: Final = (
     "source",
@@ -414,7 +419,7 @@ def _validate_rl_nav_series(source: Any) -> dict[str, Any]:
         if _has_forbidden_rl_source(source, metadata):
             raise _ReasonError(
                 RL_NAV_DAILY_OR_OFFICIAL_CLOSE_SOURCE,
-                "RL NAV top-level source/run identifiers must not reference daily, 1day, or official-close provenance",
+                "RL NAV top-level source/run identifiers must not reference full-day, daily-OHLCV, 1day, Naver, or official-close provenance",
             )
     rows = _parse_rl_rows(rows_value, top_price_basis=top_price_basis, top_official_close=top_official_close, metadata=metadata)
     if not rows:

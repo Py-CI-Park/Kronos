@@ -192,6 +192,28 @@ def test_overlay_accepts_validated_mapping_sources_without_raw_mapping_bypass() 
     assert overlay["source_artifact_hashes"]["KOSDAQ"]["artifact_sha256"] == artifacts["KOSDAQ"]["artifact_sha256"]
 
 
+def test_overlay_allows_honest_daily_close_v51_accounting_source_name() -> None:
+    artifacts = _good_artifacts()
+    rows = [("2024-01-03", 60_000_000), ("2024-01-04", 61_000_000), ("2024-01-05", 62_000_000)]
+
+    overlay = kio.build_korean_index_overlay(
+        artifacts["KOSPI"],
+        artifacts["KOSDAQ"],
+        _rl(
+            rows,
+            source_id="daily-close-v51-accounting",
+            source_metadata={
+                "source_kind": "daily-close-v51-accounting",
+                "price_basis": kio.PRICE_BASIS,
+                "official_close": False,
+            },
+        ),
+    )
+
+    assert overlay["status"] == "PASS"
+    assert overlay["series"][2]["source"]["source_label"] == "daily-close-v51-accounting"
+
+
 def test_tampered_source_artifact_hash_fails_closed_and_strict_api_raises() -> None:
     artifacts = _good_artifacts()
     tampered = copy.deepcopy(artifacts["KOSPI"])
@@ -261,7 +283,7 @@ def test_nonpositive_values_fail_closed_for_index_and_rl_series() -> None:
     )
 
 
-def test_rl_daily_or_official_close_sources_fail_closed() -> None:
+def test_rl_full_day_daily_ohlcv_or_official_close_sources_fail_closed() -> None:
     artifacts = _good_artifacts()
     rows = [("2024-01-03", 60_000_000), ("2024-01-04", 61_000_000)]
 
@@ -272,9 +294,12 @@ def test_rl_daily_or_official_close_sources_fail_closed() -> None:
         artifacts["KOSPI"], artifacts["KOSDAQ"], _rl(rows, official_close=True)
     )
     for payload in (
-        _rl(rows, source_id="daily-policy-run"),
+        _rl(rows, source_id="full-day-policy-run"),
+        _rl(rows, source_id="daily_ohlcv-policy-run"),
+        _rl(rows, source_id="daily-ohlcv-policy-run"),
         _rl(rows, run_id="experiment-1day-source"),
         _rl(rows, source_id="official-close-ablation"),
+        _rl(rows, source_path="D:/cache/naver/rl_nav.json"),
     ):
         assert kio.RL_NAV_DAILY_OR_OFFICIAL_CLOSE_SOURCE in _blocked_reasons(
             artifacts["KOSPI"], artifacts["KOSDAQ"], payload

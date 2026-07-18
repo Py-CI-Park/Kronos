@@ -185,6 +185,8 @@ class FakeV51Accounting:
         scenario_id: str,
     ) -> dict[str, Any]:
         filled = row is not None
+        entry_mark = row["entry_1520"] if row is not None else None
+        exit_mark = row["exit_1520_by_label"][horizon["label_column"]] if row is not None else None
         return {
             "slot": slot,
             "symbol": row["symbol"] if row is not None else None,
@@ -201,8 +203,8 @@ class FakeV51Accounting:
             "official_close": False,
             "cost_scenario_id": scenario_id,
             "cost_application_count": 1,
-            "entry_mark_krw_decimal": str(row["entry_price"]) if row is not None else None,
-            "exit_mark_krw_decimal": str(row["exit_price"]) if row is not None else None,
+            "entry_mark_krw_decimal": str(entry_mark["price_1520_close_proxy"]) if filled else None,
+            "exit_mark_krw_decimal": str(exit_mark["price_1520_close_proxy"]) if filled else None,
             "deployed_principal_krw_decimal": "5000000.000000" if filled else "0.000000",
         }
 
@@ -344,8 +346,17 @@ def test_evaluator_produces_primary_h1_and_validation_h3_h5_results_from_account
     assert result["primary_variant_id"] == PRIMARY_VARIANT_ID
     assert tuple(result["variant_order"]) == VARIANT_ORDER
     assert [call["horizon_id"] for call in accounting.calls] == ["H1", "H3", "H5"]
-    assert [call["selected_rows"][0]["exit_price"] for call in accounting.calls] == ["110.0", "160.0", "260.0"]
-    assert all(isinstance(call["selected_rows"][0]["quantity"], int) and call["selected_rows"][0]["quantity"] > 0 for call in accounting.calls)
+    assert [
+        call["selected_rows"][0]["exit_1520_by_label"][call["selected_rows"][0]["label_column"]][
+            "price_1520_close_proxy"
+        ]
+        for call in accounting.calls
+    ] == [110.0, 160.0, 260.0]
+    for call in accounting.calls:
+        selected_row = call["selected_rows"][0]
+        assert set(selected_row["exit_1520_by_label"]) == {selected_row["label_column"]}
+        assert {"entry_mark", "exit_mark", "entry_price", "exit_price"}.isdisjoint(selected_row)
+        assert isinstance(selected_row["quantity"], int) and selected_row["quantity"] > 0
     assert result["horizon_results"][0]["role"] == "primary"
     assert [item["role"] for item in result["horizon_results"][1:]] == ["validation", "validation"]
     assert result["metrics_by_variant"][PRIMARY_VARIANT_ID]["account_nav"] == "60000000.000000"
@@ -356,6 +367,31 @@ def test_evaluator_produces_primary_h1_and_validation_h3_h5_results_from_account
     assert primary_accounting["round_trip_cost_bp"] == 23
     assert primary_accounting["slots"][0]["cost_scenario_id"] == "base_23bp"
     assert result["gates_by_variant"][PRIMARY_VARIANT_ID]["status"] == "PASS"
+
+
+def test_evaluator_calls_default_v5_accounting_helper_for_h1_h3_h5() -> None:
+    panel = _panel()
+    freeze = _freeze(panel)
+
+    result = evaluate_v51_horizon_variants(panel, freeze, cost_scenario_bp=23)
+
+    assert [item["horizon_id"] for item in result["horizon_results"]] == ["H1", "H3", "H5"]
+    for horizon_result in result["horizon_results"]:
+        accounting_row = horizon_result["accounting_input_rows"][0]
+        label_column = horizon_result["label_column"]
+        assert accounting_row["side"] == "buy"
+        assert accounting_row["entry_1520"]["price_basis"] == "15:20_bar_close_proxy"
+        assert accounting_row["entry_1520"]["official_close"] is False
+        assert set(accounting_row["exit_1520_by_label"]) == {label_column}
+        assert accounting_row["exit_1520_by_label"][label_column]["price_basis"] == "15:20_bar_close_proxy"
+        assert accounting_row["exit_1520_by_label"][label_column]["official_close"] is False
+        assert {"entry_mark", "exit_mark", "entry_price", "exit_price"}.isdisjoint(accounting_row)
+        assert accounting_row["horizon_id"] == horizon_result["horizon_id"]
+        assert accounting_row["horizon_days"] == horizon_result["horizon_days"]
+        assert accounting_row["source_db_sha256"] == _SOURCE_DB_SHA256
+        assert horizon_result["accounting"]["slots"][0]["status"] == "filled"
+        assert horizon_result["accounting"]["slots"][0]["horizon_id"] == horizon_result["horizon_id"]
+        assert horizon_result["gate"]["status"] == "PASS"
 
 
 @pytest.mark.parametrize(
