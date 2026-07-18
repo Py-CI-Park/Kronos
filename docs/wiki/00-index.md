@@ -31,6 +31,10 @@ read-only `/api/docs/*` endpoints.
 - [13-research-ledger](13-research-ledger) - current research status and evidence index
 - [14-document-standard](14-document-standard) - document taxonomy and report templates
 
+## 최신 구현 결과
+
+- [Kronos Dashboard V5.1 구현·릴리스 결과](../kronos_dashboard_v51_implementation_result_2026-07-18.md) - `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live 결과는 `NOT_RUN / NO-GO` 유지; branch `feature/dashboard-v5-learning-evidence`; commits `9d8e2ad` through `6cb5efd`; 다음 연구 단계는 coverage/custody 확인 후 새 사전등록 기반 15:20 H1 smoke와 H3/H5 validation variant다.
+
 ## Quick start
 
 ```powershell

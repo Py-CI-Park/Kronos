@@ -1,7 +1,7 @@
 # 연구 원장 · Research Ledger
 
 > 상태: `ACTIVE_RESEARCH_INDEX`  
-> 최종 갱신: 2026-07-17  
+> 최종 갱신: 2026-07-18  
 > 범위: Kronos 예측, 일봉 종가매매, 포트폴리오 RL, 대시보드·연구 인프라
 
 ## 목적
@@ -12,6 +12,7 @@
 
 - 기본 UI: V3 유지
 - V5: 연구 프리뷰 및 직접 경로 검증용
+- V5.1: `IMPLEMENTED_RESEARCH_FOUNDATION`, 직접 `?ui=v5` 확인용, 기본 전환 아님
 - 일봉 종가매매 선형 정책: `NO-GO / WATCH_RESEARCH_ONLY`
 - 일봉 PPO 5k: `INCONCLUSIVE_SMOKE_ONLY / NOT_PROMOTED`
 - 일봉 PPO full: `INCONCLUSIVE — NOT RUN`
@@ -22,12 +23,29 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-18 | `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` | IMPLEMENTATION/RELEASE_RESULT | `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live `NOT_RUN / NO-GO`; V3 기본 유지 |
 | 2026-07-17 | `docs/kronos_daily_close_rl_v5_1_requirements_2026-07-17.md` | REQUIREMENTS | 구현 전 기준값 기록 |
 | 2026-07-16~17 | `docs/kronos_dashboard_v5_development_result_2026-07-16.md` | RELEASE/RESULT | 기능 98/100, V3 기본 유지 |
 | 2026-07-14 | `docs/stom_daily_sb3_ppo_v5_prereg_2026-07-14.json` | PREREGISTRATION | 50-cell, compute/fresh-OOS 잠금 |
 | 2026-07-12 | `docs/stom_daily_sb3_ppo_result_2026-07-12.md` | RESULT | full `NOT_RUN`, protocol gap stop |
 | 2026-07-12 | `docs/stom_daily_sb3_ppo_smoke_result_2026-07-12.md` | RESULT | 5k plumbing PASS, model 미승격 |
 | 2026-07-12 | `docs/stom_daily_close_slot_truthful_result_2026-07-12.md` | RESULT | test OOS 무거래, `NO-GO` |
+
+## V5.1 구현 결과 기준점
+
+| 항목 | 값 |
+|---|---|
+| 문서 | [`docs/kronos_dashboard_v51_implementation_result_2026-07-18.md`](../kronos_dashboard_v51_implementation_result_2026-07-18.md) |
+| 상태 | `IMPLEMENTED_RESEARCH_FOUNDATION` |
+| RL 결과 | `NOT_RUN`; prior `NO-GO`/`INCONCLUSIVE` 보존 |
+| 실거래·수익 준비도 | `0/100`; live/broker/order/paper/profit claim 없음 |
+| 브랜치 | `feature/dashboard-v5-learning-evidence` |
+| 기준 commit | `4c8ba1f` |
+| 구현 commit 범위 | `9d8e2ad` through `6cb5efd` |
+| 문서 전 HEAD | `6cb5efd` |
+| 핵심 증거 | G001-G004 focused 340 passed, frontend 346 passed, dashboard regression 33 passed, final G004 54 passed, Svelte 408 files 0 errors/warnings, build passed, npm audit 0 vulnerabilities, browser no horizontal overflow |
+| full-suite 한계 | monolithic 2,298-test command는 한 프로세스로 완료되지 않음; 900초 timeout 81%, 재시도 84% 무 assertion output; tail partition 342 passed + 승인 snapshot 5 passed |
+| 다음 연구 step | 새 사전등록으로 15:20 H1 smoke를 실행하고 H3/H5 validation variant, full-universe coverage/custody audit, RULE·supervised·shuffle controls를 순서대로 닫는다. |
 
 ## 연구 흐름
 
