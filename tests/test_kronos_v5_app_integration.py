@@ -182,6 +182,7 @@ def test_v5_mutating_methods_are_405(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     for method in ("POST", "PATCH", "DELETE"):
         response = client.open("/api/v5/rl/runs", method=method)
         assert response.status_code == 405, method
+        assert response.headers["Allow"] == "GET"
         assert _json(response)["error"]["code"] == "BAD_REQUEST"
 
 

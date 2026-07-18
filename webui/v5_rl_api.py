@@ -249,7 +249,9 @@ def _call_registry(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
 def _require_get(route_id: str) -> Response | None:
     if request.method == "GET":
         return None
-    return _json_response(_error_payload(route_id, 405, "method not allowed", "BAD_REQUEST"), 405, enforce_cap=False)
+    response = _json_response(_error_payload(route_id, 405, "method not allowed", "BAD_REQUEST"), 405, enforce_cap=False)
+    response.headers["Allow"] = "GET"
+    return response
 
 
 def _validate_scoped_cursor_success(payload: Mapping[str, Any], *, cursor_key: bytes, cursor: str | None, cursor_scope: str) -> None:

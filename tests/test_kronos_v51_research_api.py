@@ -192,6 +192,25 @@ def _source_artifact_payload() -> dict[str, object]:
     }
 
 
+def _artifact_envelope(
+    artifact_id: str,
+    payload: dict[str, object],
+    *,
+    run_id: str = "run-1",
+    revision: int = 7,
+    run_artifact_id: str = "run-artifact-1",
+    generated_at: str = "2026-07-18T00:00:00Z",
+) -> dict[str, object]:
+    return {
+        "artifact_id": artifact_id,
+        "run_id": run_id,
+        "run_revision": revision,
+        "run_artifact_id": run_artifact_id,
+        "generated_at": generated_at,
+        "payload": payload,
+    }
+
+
 class SourceArtifactProvider:
     def __init__(self, *, run_id: str = "run-1", revision: int = 7) -> None:
         self.run_id = run_id
@@ -200,12 +219,12 @@ class SourceArtifactProvider:
 
     def read_json(self, artifact_id: str) -> dict[str, object]:
         self.calls.append(artifact_id)
-        return {
-            "artifact_id": artifact_id,
-            "run_id": self.run_id,
-            "run_revision": self.revision,
-            "payload": _source_artifact_payload(),
-        }
+        return _artifact_envelope(
+            artifact_id,
+            _source_artifact_payload(),
+            run_id=self.run_id,
+            revision=self.revision,
+        )
 
 
 class CountingArtifactProvider:
@@ -215,6 +234,15 @@ class CountingArtifactProvider:
     def read_json(self, artifact_id: str) -> dict[str, object]:
         self.calls.append(artifact_id)
         raise KeyError(artifact_id)
+
+class StaticArtifactProvider:
+    def __init__(self, payloads: dict[str, dict[str, object]]) -> None:
+        self.payloads = payloads
+        self.calls: list[str] = []
+
+    def read_json(self, artifact_id: str) -> dict[str, object]:
+        self.calls.append(artifact_id)
+        return self.payloads[artifact_id]
 
 
 def _client(
@@ -239,6 +267,247 @@ def _client(
 def _json(response) -> dict[str, Any]:
     payload = response.get_json()
     assert isinstance(payload, dict)
+    return payload
+
+
+def _attach_evaluator_digest(payload: dict[str, object], *, digest_field: str = "manifest_sha256") -> dict[str, object]:
+    from stom_rl.daily_v51_evaluator import canonical_manifest_sha256
+
+    payload[digest_field] = canonical_manifest_sha256(payload, digest_field=digest_field)
+    return payload
+
+
+def _ready_evaluator_payload() -> dict[str, object]:
+    from stom_rl.daily_v51_evaluator import (
+        EVALUATOR_SCHEMA_VERSION,
+        HORIZON_GATE_SCHEMA_VERSION,
+        HORIZON_RESULT_SCHEMA_VERSION,
+        HORIZON_VARIANTS,
+        PRIMARY_VARIANT_ID,
+        VALIDATION_VARIANT_IDS,
+        VARIANT_ORDER,
+    )
+
+    source_db_sha256 = "b" * 64
+    false_locks = {
+        "official_close": False,
+        "full_day_daily_ohlcv": False,
+        "live_trading": False,
+        "profit_claim": False,
+        "paper_trading": False,
+        "broker_integration": False,
+    }
+    promotion_claims = {
+        "live_trading": False,
+        "profit": False,
+        "paper_trading": False,
+        "broker_integration": False,
+    }
+    horizon_results: list[dict[str, object]] = []
+    for index, variant in enumerate(HORIZON_VARIANTS):
+        metrics = {
+            "schema_version": "kronos_daily_v51_horizon_metrics.v1",
+            "variant_id": variant["variant_id"],
+            "horizon_id": variant["horizon_id"],
+            "horizon_days": variant["horizon_days"],
+            "cost_scenario_id": "base_23bp",
+            "round_trip_cost_bp": 23,
+            "selected_count": 5 + index,
+            "slot_count": 10,
+            "account_nav": 60_300_000 + (index * 100_000),
+            "reserve_krw": 10_000_000,
+            "deployed_principal_krw": 25_000_000,
+            "accounting_blocker_count": 0,
+            "accounting_manifest_sha256": "c" * 64,
+            "accounting_input_sha256": "d" * 64,
+        }
+        gate = {
+            "schema_version": HORIZON_GATE_SCHEMA_VERSION,
+            "variant_id": variant["variant_id"],
+            "horizon_id": variant["horizon_id"],
+            "role": variant["role"],
+            "primary": variant["variant_id"] == PRIMARY_VARIANT_ID,
+            "status": "PASS",
+            "reason_codes": [],
+            "blockers": [],
+            "requires_exact_1520_entry_exit": True,
+            "requires_pre_test_oos_freeze": True,
+            "economic_nav_from_accounting": True,
+            "live_trading_claim": False,
+            "paper_trading_claim": False,
+            "broker_integration_claim": False,
+            "profit_claim": False,
+        }
+        horizon_results.append(
+            _attach_evaluator_digest(
+                {
+                    "schema_version": HORIZON_RESULT_SCHEMA_VERSION,
+                    "variant_id": variant["variant_id"],
+                    "role": variant["role"],
+                    "horizon_id": variant["horizon_id"],
+                    "horizon_days": variant["horizon_days"],
+                    "label_column": variant["label_column"],
+                    "price_basis": "15:20_bar_close_proxy",
+                    "panel_sha256": "e" * 64,
+                    "source_hashes": {
+                        "source_db_path": "D:/Kronos/_database/Stock_Database_ohlcv_5min.db",
+                        "source_db_sha256": source_db_sha256,
+                        "source_identity_sha256": "f" * 64,
+                        "panel_sha256": "e" * 64,
+                    },
+                    "freeze_manifest_sha256": "a" * 64,
+                    "horizon_manifest_sha256": "9" * 64,
+                    "split_identity_sha256": "8" * 64,
+                    "selection_fixed_at": "2026-07-18T00:00:00Z",
+                    "selection_sequence": index + 1,
+                    "selected_exact_marks": [],
+                    "accounting_input_rows": [],
+                    "accounting_input_sha256": "d" * 64,
+                    "accounting": "validated-by-upstream-accounting",
+                    "metrics": metrics,
+                    "gate": gate,
+                    "false_locks": false_locks,
+                    "promotion_claims": promotion_claims,
+                    "no_claims": [
+                        "NO_LIVE_TRADING",
+                        "NO_BROKER_INTEGRATION",
+                        "NO_PAPER_TRADING",
+                        "NO_PROFIT_CLAIM",
+                    ],
+                },
+                digest_field="result_sha256",
+            )
+        )
+    payload: dict[str, object] = {
+        "schema_version": EVALUATOR_SCHEMA_VERSION,
+        "generated_at": "2026-07-18T00:00:00Z",
+        "run_id": "run-1",
+        "run_revision": 7,
+        "run_artifact_id": "run-artifact-1",
+        "panel_schema_version": "kronos_daily_v51_causal_panel.v1",
+        "price_basis": "15:20_bar_close_proxy",
+        "source_db_sha256": source_db_sha256,
+        "panel_sha256": "e" * 64,
+        "source_hashes": {
+            "source_db_path": "D:/Kronos/_database/Stock_Database_ohlcv_5min.db",
+            "source_db_sha256": source_db_sha256,
+            "source_identity_sha256": "f" * 64,
+            "source_tables": ["A000250"],
+            "panel_sha256": "e" * 64,
+        },
+        "freeze_manifest_sha256": "a" * 64,
+        "split_identity_sha256": "8" * 64,
+        "primary_variant_id": PRIMARY_VARIANT_ID,
+        "validation_variant_ids": list(VALIDATION_VARIANT_IDS),
+        "variant_order": list(VARIANT_ORDER),
+        "cost_scenario_bp": 23,
+        "horizons_fixed_before_untouched_test": True,
+        "test_oos_driven_horizon_choice_rejected": True,
+        "post_hoc_retuning_rejected": True,
+        "false_locks": false_locks,
+        "promotion_claims": promotion_claims,
+        "no_claims": [
+            "NO_LIVE_TRADING",
+            "NO_BROKER_INTEGRATION",
+            "NO_PAPER_TRADING",
+            "NO_PROFIT_CLAIM",
+        ],
+        "horizon_result_sha256_by_variant": {
+            str(item["variant_id"]): str(item["result_sha256"]) for item in horizon_results
+        },
+        "metrics_by_variant": {str(item["variant_id"]): item["metrics"] for item in horizon_results},
+        "gates_by_variant": {str(item["variant_id"]): item["gate"] for item in horizon_results},
+        "horizon_results": horizon_results,
+    }
+    return _attach_evaluator_digest(payload)
+
+
+def _ready_overlay_payload() -> dict[str, object]:
+    from stom_rl import korean_index_overlay as overlay
+
+    common_dates = ["2026-07-17", "2026-07-18"]
+    source_db_sha256 = "b" * 64
+    series = [
+        {
+            "id": "KOSPI",
+            "market": "KOSPI",
+            "kind": "pykrx_index",
+            "normalization_base": "100",
+            "normalization_start_date": common_dates[0],
+            "normalization_start_close": "2500",
+            "series": [
+                {"date": common_dates[0], "close": "100.000000000000"},
+                {"date": common_dates[1], "close": "101.000000000000"},
+            ],
+            "source": {"provider": "PYKRX", "price_basis": "15:20_bar_close_proxy", "official_close": False},
+        },
+        {
+            "id": "KOSDAQ",
+            "market": "KOSDAQ",
+            "kind": "pykrx_index",
+            "normalization_base": "100",
+            "normalization_start_date": common_dates[0],
+            "normalization_start_close": "800",
+            "series": [
+                {"date": common_dates[0], "close": "100.000000000000"},
+                {"date": common_dates[1], "close": "102.500000000000"},
+            ],
+            "source": {"provider": "PYKRX", "price_basis": "15:20_bar_close_proxy", "official_close": False},
+        },
+        {
+            "id": "RL",
+            "market": "RL",
+            "kind": "rl_economic_nav",
+            "normalization_base": "100",
+            "normalization_start_date": common_dates[0],
+            "normalization_start_close": "60000000",
+            "series": [
+                {"date": common_dates[0], "close": "100.000000000000"},
+                {"date": common_dates[1], "close": "105.000000000000"},
+            ],
+            "source": {"source_sha256": "c" * 64, "source_label": "run-1", "price_basis": "15:20_bar_close_proxy", "official_close": False},
+        },
+    ]
+    payload: dict[str, object] = {
+        "schema_version": overlay.SCHEMA_VERSION,
+        "generated_at": "2026-07-18T00:00:00Z",
+        "run_id": "run-1",
+        "run_revision": 7,
+        "run_artifact_id": "run-artifact-1",
+        "source_db_sha256": source_db_sha256,
+        "status": "PASS",
+        "reason_codes": [],
+        "read_only": True,
+        "network_used": False,
+        "market": "KOREA",
+        "price_basis": "15:20_bar_close_proxy",
+        "causal_cutoff_kst": "15:20:00",
+        "official_close": False,
+        "normalization": {
+            "base": "100",
+            "first_common_date": common_dates[0],
+            "arithmetic": overlay.NORMALIZED_ARITHMETIC,
+            "no_fill": True,
+            "no_interpolation": True,
+            "no_nearest_date": True,
+        },
+        "source_policy": {
+            "pykrx_only": True,
+            "naver_disallowed": True,
+            "offline_artifacts_only": True,
+            "no_live_fetch": True,
+        },
+        "point_in_time_constituents": False,
+        "point_in_time_limitation": "No point-in-time constituent membership is claimed.",
+        "false_locks": dict(overlay._FALSE_LOCKS),
+        "claims": dict(overlay._CLAIMS),
+        "coverage": {"common_dates": common_dates, "common_date_count": len(common_dates), "min_common_dates": 2},
+        "series": series,
+        "source_artifacts": {},
+        "source_artifact_hashes": {},
+        "hash_algorithm": "SHA256_CANONICAL_JSON_SORT_KEYS_NO_SELF_FIELD",
+    }
+    payload["overlay_sha256"] = overlay.sha256_hex(payload)
     return payload
 
 
@@ -494,6 +763,7 @@ def test_research_query_run_and_revision_mismatch_are_conflicts() -> None:
     assert matched["artifact"]["artifact_id"] == source_artifact_id
     assert matched["run"]["run_id"] == "run-1"
     assert matched["run"]["run_revision"] == 7
+    assert matched["run"]["run_artifact_id"] == "run-artifact-1"
 
     for path in (
         f"/api/daily-close-v51/source-coverage?artifact_id={source_artifact_id}&run_id=run-2",
@@ -506,6 +776,79 @@ def test_research_query_run_and_revision_mismatch_are_conflicts() -> None:
         assert payload["route_id"] == "SOURCE_COVERAGE"
         assert payload["status"] == "ERROR"
         assert payload["error"]["status_code"] == 409
+
+
+def test_ready_evaluator_uses_gates_and_horizon_metrics_without_evaluation_status() -> None:
+    artifact_id = V51_RESEARCH_ARTIFACT_IDS["EVALUATOR"]
+    artifact_payload = _ready_evaluator_payload()
+    assert "evaluation_status" not in artifact_payload
+    provider = StaticArtifactProvider({artifact_id: _artifact_envelope(artifact_id, artifact_payload)})
+    client = _client(artifact_provider=provider, report_catalog=FakeReportCatalog())
+
+    response = client.get("/api/daily-close-v51/evaluator")
+    payload = _json(response)
+
+    assert response.status_code == 200
+    assert payload["status"] == "READY"
+    assert payload["status_reason"] == "READY"
+    assert payload["run"]["run_id"] == "run-1"
+    assert payload["run"]["run_revision"] == 7
+    assert payload["run"]["run_artifact_id"] == "run-artifact-1"
+    assert payload["source"]["source_db_sha256"] == "b" * 64
+    assert payload["source"]["generated_at"] == "2026-07-18T00:00:00Z"
+    evaluator = payload["evaluator"]
+    assert evaluator["evaluation_status"] == "READY"
+    assert evaluator["split_statuses"] == {"train": "READY", "validation": "READY", "test": "BLOCKED"}
+    assert [metric["horizon"] for metric in evaluator["metrics"]] == ["H1", "H3", "H5"]
+    assert evaluator["metrics"][0]["metric_id"] == "cumulative_return"
+    assert evaluator["metrics"][0]["display_percent"] == "0.50%"
+    assert provider.calls == [artifact_id]
+
+
+def test_ready_benchmark_overlay_series_order_and_latest_index_value() -> None:
+    artifact_id = V51_RESEARCH_ARTIFACT_IDS["BENCHMARK_OVERLAY"]
+    provider = StaticArtifactProvider({artifact_id: _artifact_envelope(artifact_id, _ready_overlay_payload())})
+    client = _client(artifact_provider=provider, report_catalog=FakeReportCatalog())
+
+    response = client.get("/api/daily-close-v51/benchmark-overlay")
+    payload = _json(response)
+
+    assert response.status_code == 200
+    assert payload["status"] == "READY"
+    series = payload["benchmark_overlay"]["series"]
+    assert [item["series_id"] for item in series] == ["KOSPI", "KOSDAQ", "RL_PORTFOLIO"]
+    assert [item["index_100"] for item in series] == [101, 102.5, 105]
+    assert [item["provider"] for item in series] == ["PYKRX", "PYKRX", None]
+    assert provider.calls == [artifact_id]
+
+
+def test_ready_research_artifacts_missing_identity_block_schema_invalid() -> None:
+    artifact_id = V51_RESEARCH_ARTIFACT_IDS["SOURCE_COVERAGE"]
+    cases: list[tuple[str, dict[str, object]]] = []
+    for missing_key in ("run_id", "run_revision", "run_artifact_id", "generated_at"):
+        envelope = _artifact_envelope(artifact_id, _source_artifact_payload())
+        envelope.pop(missing_key)
+        cases.append((missing_key, envelope))
+
+    uppercase_source_payload = _source_artifact_payload()
+    uppercase_source_payload["source_db_sha256"] = "B" * 64
+    source_snapshot = uppercase_source_payload["source_snapshot"]
+    assert isinstance(source_snapshot, dict)
+    source_snapshot["sha256"] = "B" * 64
+    cases.append(("source_db_sha256", _artifact_envelope(artifact_id, uppercase_source_payload)))
+
+    for case_id, envelope in cases:
+        provider = StaticArtifactProvider({artifact_id: envelope})
+        client = _client(artifact_provider=provider, report_catalog=FakeReportCatalog())
+
+        response = client.get("/api/daily-close-v51/source-coverage")
+        payload = _json(response)
+
+        assert response.status_code == 200, case_id
+        assert payload["status"] == "BLOCKED", case_id
+        assert payload["status_reason"] == "BLOCKED_SCHEMA_INVALID", case_id
+        assert payload["source_coverage"]["coverage_status"] == "BLOCKED", case_id
+        assert provider.calls == [artifact_id]
 
 def test_missing_artifact_store_returns_exact_blocked_roots_and_creates_nothing(tmp_path: Path) -> None:
     missing_dir = tmp_path / "missing-v51-artifacts"

@@ -5,8 +5,10 @@ import {
   V51ApiError,
   V51_MAX_RESPONSE_BYTES,
   isV51RouteRoot,
+  isV51ErrorRoot,
   v51Api,
   v51RouteDescriptors,
+  type V51ErrorCode,
   type V51RouteId,
   type V51ResearchRouteId,
 } from './v51Api';
@@ -57,7 +59,7 @@ const accounting = {
 
 const costSchedule = {
   primary: { internal_id: 'base_23bp', round_trip_cost_bp: 23, display_percent: '0.23%' },
-  zero_cost_control: { internal_id: 'cost_00bp', round_trip_cost_bp: 0, display_percent: '0.00%' },
+  zero_cost_control: { internal_id: 'zero_control_0bp', round_trip_cost_bp: 0, display_percent: '0.00%' },
   stress_control: { internal_id: 'stress_46bp', round_trip_cost_bp: 46, display_percent: '0.46%' },
 } as const;
 
@@ -227,15 +229,26 @@ function evaluator() {
     validation_horizons: ['H3', 'H5'],
     cost_schedule: costSchedule,
     split_statuses: { train: 'READY', validation: 'BLOCKED', test: 'BLOCKED' },
-    metrics: [{
-      metric_id: 'cumulative_return',
-      split: 'validation',
-      horizon: 'H1',
-      internal_cost_id: 'base_23bp',
-      display_cost_percent: '0.23%',
-      value: 0,
-      display_percent: '0.00%',
-    }],
+    metrics: [
+      {
+        metric_id: 'cumulative_return',
+        split: 'validation',
+        horizon: 'H1',
+        internal_cost_id: 'base_23bp',
+        display_cost_percent: '0.23%',
+        value: 0,
+        display_percent: '0.00%',
+      },
+      {
+        metric_id: 'turnover',
+        split: 'validation',
+        horizon: 'H1',
+        internal_cost_id: 'zero_control_0bp',
+        display_cost_percent: '0.00%',
+        value: 0,
+        display_percent: '0.00%',
+      },
+    ],
   };
 }
 
@@ -318,6 +331,30 @@ function reportReadPayload() {
     claims,
     report: reportSummary(),
     content: { raw_text: '# V5.1\n', safe_html: '<article data-kronos-report-html="escaped-pre"><pre># V5.1\n</pre></article>' },
+  };
+}
+
+const errorStatusByCode = {
+  BAD_REQUEST: 400,
+  CONFLICT: 409,
+  VALIDATION_ERROR: 413,
+  INTERNAL_ERROR: 503,
+} as const satisfies Record<V51ErrorCode, 400 | 409 | 413 | 503>;
+
+function errorSource(routeId: V51RouteId) {
+  if (routeId === 'REPORTS' || routeId === 'REPORT_READ') return reportSource();
+  return source(stableArtifactIds[payloadNameByRoute[routeId]]);
+}
+
+function errorPayload(routeId: V51RouteId, code: V51ErrorCode, message = 'request failed') {
+  return {
+    route_id: routeId,
+    status: 'ERROR',
+    protocol: protocol(routeId),
+    source: errorSource(routeId),
+    locks,
+    claims,
+    error: { code, message, status_code: errorStatusByCode[code] },
   };
 }
 
@@ -430,6 +467,57 @@ test('V5.1 client functions use GET, route/query/path strings, and frozen guarde
   }
 });
 
+test('V5.1 client guards route-aware backend ERROR envelopes for bounded status roots', async () => {
+  const cases: readonly {
+    readonly routeId: V51RouteId;
+    readonly code: V51ErrorCode;
+    readonly request: () => Promise<unknown>;
+  }[] = [
+    { routeId: 'SOURCE_COVERAGE', code: 'BAD_REQUEST', request: () => v51Api.sourceCoverage() },
+    { routeId: 'ACCOUNTING', code: 'CONFLICT', request: () => v51Api.accounting() },
+    { routeId: 'REPORT_READ', code: 'VALIDATION_ERROR', request: () => v51Api.readReport('report-2026-07-17') },
+    { routeId: 'REPORTS', code: 'INTERNAL_ERROR', request: () => v51Api.listReports() },
+  ];
+
+  for (const { routeId, code, request } of cases) {
+    const message = `${code} envelope`;
+    const payload = errorPayload(routeId, code, message);
+    assert.equal(isV51ErrorRoot(routeId, payload), true, routeId);
+    await withFetch(response(payload, payload.error.status_code), async () => {
+      await assert.rejects(
+        request(),
+        (caught) => caught instanceof V51ApiError
+          && caught.routeId === routeId
+          && caught.code === code
+          && caught.status === payload.error.status_code
+          && caught.message === message,
+      );
+    });
+  }
+});
+
+test('V5.1 client rejects malformed backend ERROR envelopes before surfacing backend codes', async () => {
+  const payload = errorPayload('SOURCE_COVERAGE', 'BAD_REQUEST');
+  assert.equal(isV51ErrorRoot('SOURCE_COVERAGE', { ...payload, unexpected: true }), false);
+  assert.equal(isV51ErrorRoot('CAUSAL_PANEL', payload), false);
+  assert.equal(isV51ErrorRoot('SOURCE_COVERAGE', { ...payload, status: 'BLOCKED' }), false);
+  assert.equal(isV51ErrorRoot('SOURCE_COVERAGE', { ...payload, claims: { ...claims, profitability_claim: true } }), false);
+  assert.equal(isV51ErrorRoot('SOURCE_COVERAGE', { ...payload, source: source(stableArtifactIds.causal_panel) }), false);
+  assert.equal(isV51ErrorRoot('SOURCE_COVERAGE', { ...payload, error: { ...payload.error, status_code: 409 } }), false);
+
+  await withFetch(response({ ...payload, error: { ...payload.error, status_code: 409 } }, 400), async () => {
+    await assert.rejects(v51Api.sourceCoverage(), (caught) => caught instanceof V51ApiError && caught.code === 'HTTP_STATUS' && caught.status === 400);
+  });
+
+  await withFetch(response(payload, 503), async () => {
+    await assert.rejects(v51Api.sourceCoverage(), (caught) => caught instanceof V51ApiError && caught.code === 'HTTP_STATUS' && caught.status === 503);
+  });
+
+  await withFetch(response({ ...payload, claims: { ...claims, live_trading_claim: true } }, 400), async () => {
+    await assert.rejects(v51Api.sourceCoverage(), (caught) => caught instanceof V51ApiError && caught.code === 'HTTP_STATUS' && caught.status === 400);
+  });
+});
+
 test('V5.1 client validates query and report path identifiers before fetch', async () => {
   await withFetch(response({}), async (calls) => {
     await assert.rejects(v51Api.sourceCoverage({ runId: '../run' }), V51ApiError);
@@ -529,6 +617,19 @@ test('V5.1 client fails closed for malformed schema, identity/status/cost/report
           cost_schedule: {
             ...costSchedule,
             primary: { ...costSchedule.primary, round_trip_cost_bp: 46 },
+          },
+        },
+      },
+    },
+    {
+      request: () => v51Api.accounting(),
+      payload: {
+        ...researchPayload('ACCOUNTING', accountingSummary()),
+        accounting: {
+          ...accountingSummary(),
+          cost_schedule: {
+            ...costSchedule,
+            zero_cost_control: { ...costSchedule.zero_cost_control, internal_id: 'cost_00bp' },
           },
         },
       },

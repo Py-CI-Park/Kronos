@@ -85,7 +85,7 @@
   ] as const satisfies readonly (keyof V51NoClaimFlags)[];
 
   export const V51_COST_TRUTH_LABELS = [
-    'cost_00bp → 0.00%',
+    'zero_control_0bp → 0.00%',
     'base_23bp → 0.23%',
     'stress_46bp → 0.46%',
   ] as const;
@@ -264,7 +264,7 @@
 
   export function costRows(contract: V51Protocol['cost_schedule'] | null): readonly V51TruthRow[] {
     return [
-      { key: 'cost_00bp', label: 'cost_00bp internal ID', value: contract?.zero_cost_control.display_percent ?? 'NOT_RUN' },
+      { key: 'zero_control_0bp', label: 'zero_control_0bp internal ID', value: contract?.zero_cost_control.display_percent ?? 'NOT_RUN' },
       { key: 'base_23bp', label: 'base_23bp internal ID', value: contract?.primary.display_percent ?? 'NOT_RUN' },
       { key: 'stress_46bp', label: 'stress_46bp internal ID', value: contract?.stress_control.display_percent ?? 'NOT_RUN' },
     ];

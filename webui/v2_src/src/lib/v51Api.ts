@@ -10,6 +10,15 @@ export type V51StatusReason =
   | 'BLOCKED_INDEX_SERIES_SOURCE'
   | 'BLOCKED_PYKRX_ARTIFACT_MISSING'
   | 'BLOCKED_REPORT_NOT_FOUND';
+export type V51ErrorCode = 'BAD_REQUEST' | 'CONFLICT' | 'VALIDATION_ERROR' | 'INTERNAL_ERROR';
+export type V51ApiErrorCode =
+  | V51ErrorCode
+  | 'HTTP_STATUS'
+  | 'RESPONSE_TOO_LARGE'
+  | 'INVALID_JSON'
+  | 'SCHEMA_INVALID'
+  | 'INVALID_REQUEST';
+export type V51ErrorStatusCode = 400 | 409 | 413 | 503;
 export type V51ExactCostPercent = '0.00%' | '0.23%' | '0.46%';
 export type V51DisplayPercent = `${number}%`;
 
@@ -107,14 +116,14 @@ export interface V51AccountingContract {
 }
 
 export interface V51CostEntry {
-  readonly internal_id: 'base_23bp' | 'cost_00bp' | 'stress_46bp';
+  readonly internal_id: 'base_23bp' | 'zero_control_0bp' | 'stress_46bp';
   readonly round_trip_cost_bp: 0 | 23 | 46;
   readonly display_percent: V51ExactCostPercent;
 }
 
 export interface V51CostSchedule {
   readonly primary: V51CostEntry & { readonly internal_id: 'base_23bp'; readonly round_trip_cost_bp: 23; readonly display_percent: '0.23%' };
-  readonly zero_cost_control: V51CostEntry & { readonly internal_id: 'cost_00bp'; readonly round_trip_cost_bp: 0; readonly display_percent: '0.00%' };
+  readonly zero_cost_control: V51CostEntry & { readonly internal_id: 'zero_control_0bp'; readonly round_trip_cost_bp: 0; readonly display_percent: '0.00%' };
   readonly stress_control: V51CostEntry & { readonly internal_id: 'stress_46bp'; readonly round_trip_cost_bp: 46; readonly display_percent: '0.46%' };
 }
 
@@ -271,7 +280,7 @@ export interface V51EvaluationMetric {
   readonly metric_id: 'cumulative_return' | 'max_drawdown' | 'turnover' | 'trade_count';
   readonly split: 'train' | 'validation' | 'test';
   readonly horizon: 'H1' | 'H3' | 'H5';
-  readonly internal_cost_id: 'base_23bp' | 'cost_00bp' | 'stress_46bp';
+  readonly internal_cost_id: 'base_23bp' | 'zero_control_0bp' | 'stress_46bp';
   readonly display_cost_percent: V51ExactCostPercent;
   readonly value: number;
   readonly display_percent: V51DisplayPercent;
@@ -360,6 +369,22 @@ export interface V51ReportReadRoot {
   readonly content: V51ReportContent;
 }
 
+export interface V51ErrorBody {
+  readonly code: V51ErrorCode;
+  readonly message: string;
+  readonly status_code: V51ErrorStatusCode;
+}
+
+export type V51ErrorRoot<RouteId extends V51RouteId = V51RouteId> = {
+  readonly route_id: RouteId;
+  readonly status: 'ERROR';
+  readonly protocol: V51Protocol<RouteId>;
+  readonly source: RouteId extends V51ReportRouteId ? V51ReportSource : V51SourceIdentity;
+  readonly locks: V51FalseResearchLocks;
+  readonly claims: V51NoClaimFlags;
+  readonly error: V51ErrorBody;
+};
+
 export interface V51RouteRootMap {
   readonly SOURCE_COVERAGE: V51SourceCoverageRoot;
   readonly CAUSAL_PANEL: V51CausalPanelRoot;
@@ -385,7 +410,7 @@ export interface V51FetchOptions {
 export class V51ApiError extends Error {
   readonly name = 'V51ApiError' as const;
   readonly routeId: V51RouteId;
-  readonly code: 'HTTP_STATUS' | 'RESPONSE_TOO_LARGE' | 'INVALID_JSON' | 'SCHEMA_INVALID' | 'INVALID_REQUEST';
+  readonly code: V51ApiErrorCode;
   readonly status: number | null;
 
   constructor(
@@ -453,8 +478,17 @@ const artifactKindByRoute = {
   BENCHMARK_OVERLAY: 'benchmark_overlay',
 } as const satisfies Record<V51ResearchRouteId, V51ArtifactIdentity['artifact_kind']>;
 
+const artifactIdByResearchRoute = {
+  SOURCE_COVERAGE: 'daily-close-v51-source-coverage',
+  CAUSAL_PANEL: 'daily-close-v51-causal-panel',
+  ACCOUNTING: 'daily-close-v51-accounting',
+  EVALUATOR: 'daily-close-v51-evaluator',
+  BENCHMARK_OVERLAY: 'daily-close-v51-benchmark-overlay',
+} as const satisfies Record<V51ResearchRouteId, string>;
+
 const reportListTopKeys = ['route_id', 'status', 'status_reason', 'protocol', 'source', 'locks', 'claims', 'reports'] as const;
 const reportReadTopKeys = ['route_id', 'status', 'status_reason', 'protocol', 'source', 'locks', 'claims', 'report', 'content'] as const;
+const errorTopKeys = ['route_id', 'status', 'protocol', 'source', 'locks', 'claims', 'error'] as const;
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 const artifactIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const runIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
@@ -470,7 +504,7 @@ const displayPercentPattern = /^-?(?:0|[1-9]\d*)(?:\.\d{2,6})?%$/u;
 const contentLengthPattern = /^(?:0|[1-9]\d*)$/u;
 const exactCostPercentByInternalId = {
   base_23bp: '0.23%',
-  cost_00bp: '0.00%',
+  zero_control_0bp: '0.00%',
   stress_46bp: '0.46%',
 } as const;
 const benchmarkSeriesOrder = ['KOSPI', 'KOSDAQ', 'RL_PORTFOLIO'] as const;
@@ -521,6 +555,35 @@ function isBlockedStatusReason(value: unknown): value is Exclude<V51StatusReason
 
 function hasStatusReasonCoherence(status: unknown, reason: unknown): boolean {
   return (status === 'READY' && reason === 'READY') || (status === 'BLOCKED' && isBlockedStatusReason(reason));
+}
+
+function isErrorCode(value: unknown): value is V51ErrorCode {
+  return value === 'BAD_REQUEST'
+    || value === 'CONFLICT'
+    || value === 'VALIDATION_ERROR'
+    || value === 'INTERNAL_ERROR';
+}
+
+function isErrorStatusCode(value: unknown): value is V51ErrorStatusCode {
+  return value === 400 || value === 409 || value === 413 || value === 503;
+}
+
+function hasErrorCodeStatusCoherence(code: unknown, statusCode: unknown): boolean {
+  return (code === 'BAD_REQUEST' && statusCode === 400)
+    || (code === 'CONFLICT' && statusCode === 409)
+    || (code === 'VALIDATION_ERROR' && statusCode === 413)
+    || (code === 'INTERNAL_ERROR' && statusCode === 503);
+}
+
+function isErrorBody(value: unknown): value is V51ErrorBody {
+  return isRecord(value)
+    && hasExactKeys(value, ['code', 'message', 'status_code'])
+    && isErrorCode(value.code)
+    && typeof value.message === 'string'
+    && value.message.length >= 1
+    && value.message.length <= 240
+    && isErrorStatusCode(value.status_code)
+    && hasErrorCodeStatusCoherence(value.code, value.status_code);
 }
 
 function isExactCostInternalId(value: unknown): value is keyof typeof exactCostPercentByInternalId {
@@ -610,7 +673,7 @@ function isCostSchedule(value: unknown): value is V51CostSchedule {
   return isRecord(value)
     && hasExactKeys(value, ['primary', 'zero_cost_control', 'stress_control'])
     && isCostEntry(value.primary, 'base_23bp', 23, '0.23%')
-    && isCostEntry(value.zero_cost_control, 'cost_00bp', 0, '0.00%')
+    && isCostEntry(value.zero_cost_control, 'zero_control_0bp', 0, '0.00%')
     && isCostEntry(value.stress_control, 'stress_46bp', 46, '0.46%');
 }
 
@@ -985,6 +1048,26 @@ export function isV51RouteRoot<K extends V51RouteId>(routeId: K, value: unknown)
   return validateResearchRoot(routeId, value);
 }
 
+function isV51ErrorSource<RouteId extends V51RouteId>(routeId: RouteId, value: unknown): value is V51ErrorRoot<RouteId>['source'] {
+  if (routeId === 'REPORTS' || routeId === 'REPORT_READ') {
+    return isReportSource(value);
+  }
+  return isSourceIdentity(value)
+    && value.source_artifact_id === artifactIdByResearchRoute[routeId as V51ResearchRouteId];
+}
+
+export function isV51ErrorRoot<K extends V51RouteId>(routeId: K, value: unknown): value is V51ErrorRoot<K> {
+  return isRecord(value)
+    && hasExactKeys(value, errorTopKeys)
+    && value.route_id === routeId
+    && value.status === 'ERROR'
+    && isProtocol(routeId, value.protocol)
+    && isV51ErrorSource(routeId, value.source)
+    && isFalseFlags(value.locks, falseLockKeys)
+    && isFalseFlags(value.claims, noClaimKeys)
+    && isErrorBody(value.error);
+}
+
 function freezeV51Payload<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) {
@@ -1054,9 +1137,6 @@ async function readV51Json<K extends V51RouteId>(
   response: Response,
   maxBytes: number,
 ): Promise<V51RouteRootMap[K]> {
-  if (!response.ok) {
-    throw new V51ApiError(routeId, 'HTTP_STATUS', 'V5.1 request failed', response.status);
-  }
   enforceV51ContentLength(routeId, response, maxBytes);
   const body = await response.text();
   if (responseTextEncoder.encode(body).byteLength > maxBytes) {
@@ -1066,7 +1146,16 @@ async function readV51Json<K extends V51RouteId>(
   try {
     payload = JSON.parse(body);
   } catch {
+    if (!response.ok) {
+      throw new V51ApiError(routeId, 'HTTP_STATUS', 'V5.1 request failed', response.status);
+    }
     throw new V51ApiError(routeId, 'INVALID_JSON', 'V5.1 response was not valid JSON', response.status);
+  }
+  if (!response.ok) {
+    if (isV51ErrorRoot(routeId, payload) && payload.error.status_code === response.status) {
+      throw new V51ApiError(routeId, payload.error.code, payload.error.message, payload.error.status_code);
+    }
+    throw new V51ApiError(routeId, 'HTTP_STATUS', 'V5.1 request failed', response.status);
   }
   if (!isV51RouteRoot(routeId, payload)) {
     throw new V51ApiError(routeId, 'SCHEMA_INVALID', 'V5.1 response failed schema guard', response.status);

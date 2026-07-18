@@ -37,7 +37,7 @@
     },
     cost_schedule: {
       primary: { internal_id: 'base_23bp', round_trip_cost_bp: 23, display_percent: '0.23%' },
-      zero_cost_control: { internal_id: 'cost_00bp', round_trip_cost_bp: 0, display_percent: '0.00%' },
+      zero_cost_control: { internal_id: 'zero_control_0bp', round_trip_cost_bp: 0, display_percent: '0.00%' },
       stress_control: { internal_id: 'stress_46bp', round_trip_cost_bp: 46, display_percent: '0.46%' },
     },
     horizon: {

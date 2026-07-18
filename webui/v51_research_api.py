@@ -104,7 +104,7 @@ ACCOUNTING_CONTRACT: Final[dict[str, Any]] = {
 }
 COST_SCHEDULE: Final[dict[str, Any]] = {
     "primary": {"internal_id": "base_23bp", "round_trip_cost_bp": 23, "display_percent": "0.23%"},
-    "zero_cost_control": {"internal_id": "cost_00bp", "round_trip_cost_bp": 0, "display_percent": "0.00%"},
+    "zero_cost_control": {"internal_id": "zero_control_0bp", "round_trip_cost_bp": 0, "display_percent": "0.00%"},
     "stress_control": {"internal_id": "stress_46bp", "round_trip_cost_bp": 46, "display_percent": "0.46%"},
 }
 HORIZON_CONTRACT: Final[dict[str, Any]] = {
@@ -370,7 +370,20 @@ def _coerce_provider_result(result: Any, *, artifact_id: str, max_bytes: int) ->
             raise V51ArtifactUnavailable("ARTIFACT_ID_MISMATCH", "provider returned a different artifact id")
         metadata = {
             key: getattr(result, key)
-            for key in ("artifact_id", "source_sha256", "sha256", "artifact_sha256", "run_id", "run_revision", "revision")
+            for key in (
+                "artifact_id",
+                "source_sha256",
+                "sha256",
+                "artifact_sha256",
+                "source_db_sha256",
+                "generated_at",
+                "created_at",
+                "updated_at",
+                "run_id",
+                "run_revision",
+                "revision",
+                "run_artifact_id",
+            )
             if hasattr(result, key)
         }
         value = getattr(result, "payload")
@@ -537,6 +550,12 @@ def _validate_evaluator_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]
         raise V51ArtifactValidationError("SCHEMA_MISMATCH", "evaluator variant order drifted")
     _require_false_mapping(payload.get("false_locks"), "evaluator false_locks")
     _require_false_mapping(payload.get("promotion_claims"), "evaluator promotion_claims")
+    gates_by_variant = payload.get("gates_by_variant")
+    metrics_by_variant = payload.get("metrics_by_variant")
+    if not isinstance(gates_by_variant, Mapping):
+        raise V51ArtifactValidationError("ARTIFACT_INVALID", "evaluator gates_by_variant must be a variant mapping")
+    if not isinstance(metrics_by_variant, Mapping):
+        raise V51ArtifactValidationError("ARTIFACT_INVALID", "evaluator metrics_by_variant must be a variant mapping")
     horizon_results = payload.get("horizon_results")
     if (
         not isinstance(horizon_results, Sequence)
@@ -553,6 +572,14 @@ def _validate_evaluator_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]
         result_hash = result.get("result_sha256")
         if not _is_sha256(result_hash) or result_hash != canonical_manifest_sha256(result, digest_field="result_sha256"):
             raise V51ArtifactValidationError("SOURCE_HASH_MISMATCH", f"evaluator horizon_result {index} hash mismatch")
+        gate = gates_by_variant.get(expected_variant_id)
+        if not isinstance(gate, Mapping) or result.get("gate") != gate:
+            raise V51ArtifactValidationError("SCHEMA_MISMATCH", "evaluator gates_by_variant must match horizon_results")
+        if str(gate.get("status") or "").upper() not in {"PASS", "FAIL"}:
+            raise V51ArtifactValidationError("ARTIFACT_INVALID", "evaluator gate status must be PASS or FAIL")
+        metrics = metrics_by_variant.get(expected_variant_id)
+        if not isinstance(metrics, Mapping) or result.get("metrics") != metrics:
+            raise V51ArtifactValidationError("SCHEMA_MISMATCH", "evaluator metrics_by_variant must match horizon_results")
         accounting = result.get("accounting")
         if isinstance(accounting, Mapping):
             accounting_manifest = accounting.get("manifest") if isinstance(accounting.get("manifest"), Mapping) else accounting
@@ -668,10 +695,8 @@ def _extract_source_db_sha256(payload: Mapping[str, Any]) -> str:
     if isinstance(source_identity, Mapping) and _is_sha256(source_identity.get("source_db_sha256")):
         return str(source_identity["source_db_sha256"])
     source_hashes = payload.get("source_hashes")
-    if isinstance(source_hashes, Mapping):
-        for value in source_hashes.values():
-            if _is_sha256(value):
-                return str(value)
+    if isinstance(source_hashes, Mapping) and _is_sha256(source_hashes.get("source_db_sha256")):
+        return str(source_hashes["source_db_sha256"])
     return UNAVAILABLE
 
 
@@ -724,6 +749,38 @@ def _safe_int(value: Any, default: int = 0) -> int:
 def _positive_int(value: Any, default: int = 1) -> int:
     parsed = _safe_int(value, default)
     return parsed if parsed >= 1 else default
+
+def _require_public_identity(value: Any, label: str) -> str:
+    if not isinstance(value, str) or PUBLIC_ID_RE.fullmatch(value) is None:
+        raise V51ArtifactValidationError("IDENTITY_SCHEMA_INVALID", f"{label} must be an explicit portable id")
+    return value
+
+
+def _require_positive_safe_int(value: Any, label: str) -> int:
+    if isinstance(value, bool) or value in (None, ""):
+        raise V51ArtifactValidationError("IDENTITY_SCHEMA_INVALID", f"{label} must be an explicit positive safe integer")
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str) and REVISION_QUERY_RE.fullmatch(value) is not None:
+        parsed = int(value)
+    else:
+        raise V51ArtifactValidationError("IDENTITY_SCHEMA_INVALID", f"{label} must be an explicit positive safe integer")
+    if not 1 <= parsed <= 9_007_199_254_740_991:
+        raise V51ArtifactValidationError("IDENTITY_SCHEMA_INVALID", f"{label} must be an explicit positive safe integer")
+    return parsed
+
+
+def _require_sha256_identity(value: Any, label: str) -> str:
+    if not _is_sha256(value) or str(value) == ZERO_SHA256:
+        raise V51ArtifactValidationError("IDENTITY_SCHEMA_INVALID", f"{label} must be an explicit lowercase sha256")
+    return str(value)
+
+
+def _require_utc_identity(value: Any, label: str) -> str:
+    if not isinstance(value, str) or value == EPOCH_UTC or RFC3339_UTC_RE.fullmatch(value) is None:
+        raise V51ArtifactValidationError("IDENTITY_SCHEMA_INVALID", f"{label} must be an explicit UTC generated_at")
+    return value
+
 
 
 def _non_negative_number(value: Any, default: float | int = 0) -> float | int:
@@ -817,6 +874,21 @@ def _run_identity(
     source_sha256: str = ZERO_SHA256,
     protocol_sha256: str = ZERO_SHA256,
 ) -> dict[str, Any]:
+    if payload is None and not metadata:
+        return {
+            "run_id": "unavailable-run",
+            "run_revision": 1,
+            "run_artifact_id": "unavailable-run-artifact",
+            "source_sha256": _sha_or_zero(source_sha256),
+            "protocol_sha256": _sha_or_zero(protocol_sha256),
+            "stable_artifact_ids": {
+                "source_coverage": SOURCE_COVERAGE_ARTIFACT_ID,
+                "causal_panel": CAUSAL_PANEL_ARTIFACT_ID,
+                "accounting": ACCOUNTING_ARTIFACT_ID,
+                "evaluator": EVALUATOR_ARTIFACT_ID,
+                "benchmark_overlay": BENCHMARK_OVERLAY_ARTIFACT_ID,
+            },
+        }
     payload = payload or {}
     metadata = metadata or {}
     nested_run = payload.get("run") if isinstance(payload.get("run"), Mapping) else {}
@@ -824,11 +896,8 @@ def _run_identity(
     run_id = _first_present(
         metadata.get("run_id"),
         payload.get("run_id"),
-        payload.get("run_uid"),
         nested_identity.get("run_id"),
-        nested_identity.get("run_uid"),
         nested_run.get("run_id"),
-        nested_run.get("run_uid"),
     )
     revision = _first_present(
         metadata.get("run_revision"),
@@ -845,14 +914,13 @@ def _run_identity(
         payload.get("run_artifact_id"),
         nested_identity.get("run_artifact_id"),
         nested_run.get("run_artifact_id"),
-        metadata.get("artifact_id"),
     )
     return {
-        "run_id": _public_id(run_id, "unavailable-run"),
-        "run_revision": _positive_int(revision, 1),
-        "run_artifact_id": _public_id(run_artifact_id, "unavailable-run-artifact"),
-        "source_sha256": _sha_or_zero(source_sha256),
-        "protocol_sha256": _sha_or_zero(protocol_sha256),
+        "run_id": _require_public_identity(run_id, "run.run_id"),
+        "run_revision": _require_positive_safe_int(revision, "run.run_revision"),
+        "run_artifact_id": _require_public_identity(run_artifact_id, "run.run_artifact_id"),
+        "source_sha256": _require_sha256_identity(source_sha256, "run.source_sha256"),
+        "protocol_sha256": _require_sha256_identity(protocol_sha256, "run.protocol_sha256"),
         "stable_artifact_ids": {
             "source_coverage": SOURCE_COVERAGE_ARTIFACT_ID,
             "causal_panel": CAUSAL_PANEL_ARTIFACT_ID,
@@ -865,18 +933,34 @@ def _run_identity(
 
 def _source_identity(read: ArtifactRead | None, spec: V51RouteSpec, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
     payload = payload or (read.payload if read is not None else {})
+    if read is None:
+        return {
+            "source_protocol": "kronos_daily_1520_source.v1",
+            "source_artifact_id": spec.artifact_id,
+            "source_sha256": ZERO_SHA256,
+            "source_db_sha256": ZERO_SHA256,
+            "generated_at": EPOCH_UTC,
+            "causal_cutoff_kst": "15:20:00",
+            "price_basis": "15:20_bar_close_proxy",
+            "official_close": False,
+        }
+    metadata = read.metadata
     generated = _first_present(
+        metadata.get("generated_at"),
+        metadata.get("created_at"),
+        metadata.get("updated_at"),
         payload.get("generated_at"),
         payload.get("created_at"),
         payload.get("updated_at"),
         (payload.get("source_identity") or {}).get("generated_at") if isinstance(payload.get("source_identity"), Mapping) else None,
     )
+    source_db_sha256 = _first_present(metadata.get("source_db_sha256"), _extract_source_db_sha256(payload))
     return {
         "source_protocol": "kronos_daily_1520_source.v1",
         "source_artifact_id": spec.artifact_id,
-        "source_sha256": read.source_sha256 if read is not None else ZERO_SHA256,
-        "source_db_sha256": _sha_or_zero(_extract_source_db_sha256(payload)),
-        "generated_at": _utc_or_epoch(generated),
+        "source_sha256": _require_sha256_identity(read.source_sha256, "source.source_sha256"),
+        "source_db_sha256": _require_sha256_identity(source_db_sha256, "source.source_db_sha256"),
+        "generated_at": _require_utc_identity(generated, "source.generated_at"),
         "causal_cutoff_kst": "15:20:00",
         "price_basis": "15:20_bar_close_proxy",
         "official_close": False,
@@ -983,21 +1067,89 @@ def _accounting_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _evaluator_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
-    horizon_results = payload.get("horizon_results")
-    has_results = isinstance(horizon_results, Sequence) and not isinstance(horizon_results, (str, bytes, bytearray)) and len(horizon_results) > 0
-    explicit_status = _status(payload.get("evaluation_status") or payload.get("status"), "BLOCKED")
+def _cost_pair_from_metrics(metrics: Mapping[str, Any]) -> tuple[str, str]:
+    scenario_id = str(metrics.get("cost_scenario_id") or "")
+    cost_bp = _safe_int(metrics.get("round_trip_cost_bp"), -1)
+    for item in _cost_schedule().values():
+        if item["internal_id"] == scenario_id or item["round_trip_cost_bp"] == cost_bp:
+            return str(item["internal_id"]), str(item["display_percent"])
+    return "base_23bp", "0.23%"
+
+
+def _return_ratio_from_nav(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        nav = float(value)
+    except (TypeError, ValueError):
+        return None
+    if nav < 0 or nav != nav or nav in (float("inf"), float("-inf")):
+        return None
+    return (nav / float(ACCOUNTING_CONTRACT["initial_capital_krw"])) - 1.0
+
+
+def _display_ratio_percent(value: float) -> str:
+    return f"{value * 100.0:.2f}%"
+
+
+def _evaluator_metric_from_result(result: Mapping[str, Any]) -> dict[str, Any] | None:
+    metrics = result.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return None
+    horizon = str(result.get("horizon_id") or "")
+    if horizon not in {"H1", "H3", "H5"}:
+        return None
+    ratio = _return_ratio_from_nav(metrics.get("account_nav"))
+    if ratio is None:
+        return None
+    internal_cost_id, display_cost_percent = _cost_pair_from_metrics(metrics)
+    split = "train" if result.get("role") == "primary" else "validation"
     return {
-        "evaluation_status": explicit_status if explicit_status == "READY" else "BLOCKED",
+        "metric_id": "cumulative_return",
+        "split": split,
+        "horizon": horizon,
+        "internal_cost_id": internal_cost_id,
+        "display_cost_percent": display_cost_percent,
+        "value": ratio,
+        "display_percent": _display_ratio_percent(ratio),
+    }
+
+
+def _gate_passed(gates_by_variant: Mapping[str, Any], result: Mapping[str, Any]) -> bool:
+    variant_id = str(result.get("variant_id") or "")
+    gate = gates_by_variant.get(variant_id)
+    if not isinstance(gate, Mapping):
+        gate = result.get("gate") if isinstance(result.get("gate"), Mapping) else {}
+    return str(gate.get("status") or "").upper() == "PASS"
+
+
+def _evaluator_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
+    raw_results = payload.get("horizon_results")
+    horizon_results = (
+        [item for item in raw_results if isinstance(item, Mapping)]
+        if isinstance(raw_results, Sequence) and not isinstance(raw_results, (str, bytes, bytearray))
+        else []
+    )
+    gates_by_variant = payload.get("gates_by_variant") if isinstance(payload.get("gates_by_variant"), Mapping) else {}
+    ready_by_variant = {str(result.get("variant_id") or ""): _gate_passed(gates_by_variant, result) for result in horizon_results}
+    primary_ready = ready_by_variant.get("v51-h1-primary") is True
+    validation_ready = all(
+        ready_by_variant.get(variant_id) is True
+        for variant_id in ("v51-h3-validation", "v51-h5-validation")
+    )
+    evaluation_ready = len(horizon_results) == 3 and primary_ready and validation_ready
+    metrics = [metric for result in horizon_results if (metric := _evaluator_metric_from_result(result)) is not None]
+    return {
+        "evaluation_status": "READY" if evaluation_ready else "BLOCKED",
         "primary_horizon": "H1",
         "validation_horizons": ["H3", "H5"],
         "cost_schedule": _cost_schedule(),
         "split_statuses": {
-            "train": "READY" if has_results else "BLOCKED",
-            "validation": "BLOCKED",
+            "train": "READY" if primary_ready else "BLOCKED",
+            "validation": "READY" if validation_ready else "BLOCKED",
             "test": "BLOCKED",
         },
-        "metrics": [],
+        "metrics": metrics,
     }
 
 
@@ -1024,7 +1176,7 @@ def _benchmark_overlay_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
     by_id = {str(_first_present(item.get("id"), item.get("market"), item.get("series_id"))).upper(): item for item in raw_series}
     source_state = "READY" if str(payload.get("status")).upper() == "PASS" else _overlay_source_state(payload)
     series: list[dict[str, Any]] = []
-    for public_id, raw_id in (("RL_PORTFOLIO", "RL"), ("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")):
+    for public_id, raw_id in (("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ"), ("RL_PORTFOLIO", "RL")):
         item = by_id.get(raw_id)
         rows = [row for row in (item or {}).get("series", []) if isinstance(row, Mapping)] if isinstance(item, Mapping) else []
         first = rows[0].get("close") if rows else None
@@ -1037,7 +1189,7 @@ def _benchmark_overlay_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
                 "source_state": "READY" if ready else source_state,
                 "provider": "PYKRX" if public_id in {"KOSPI", "KOSDAQ"} and ready else None,
                 "naver_used": False,
-                "index_100": _non_negative_number(first, 100) if ready else None,
+                "index_100": _non_negative_number(last, 100) if ready else None,
                 "cumulative_return_display_percent": _display_percent(first, last) if ready else None,
             }
         )
@@ -1088,7 +1240,7 @@ def _status_reason_for_body(spec: V51RouteSpec, body: Mapping[str, Any]) -> tupl
     ):
         return "READY", "READY"
     if spec.route_id == "EVALUATOR":
-        return "BLOCKED", "BLOCKED_ARTIFACT_UNAVAILABLE"
+        return "BLOCKED", "BLOCKED_SOURCE_CONTRACT"
     return "BLOCKED", "BLOCKED_SOURCE_CONTRACT"
 
 
@@ -1098,7 +1250,7 @@ def _blocked_status_reason(reason_code: str) -> str:
         return "BLOCKED_REPORT_NOT_FOUND"
     if "INDEX" in code or "PYKRX" in code:
         return "BLOCKED_INDEX_SERIES_SOURCE"
-    if "SCHEMA" in code or "VALID" in code or "LOCK" in code or "CLAIM" in code or "SYMBOL" in code:
+    if "SCHEMA" in code or "VALID" in code or "LOCK" in code or "CLAIM" in code or "SYMBOL" in code or "HASH" in code:
         return "BLOCKED_SCHEMA_INVALID"
     return "BLOCKED_ARTIFACT_UNAVAILABLE"
 

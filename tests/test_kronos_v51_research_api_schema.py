@@ -60,7 +60,7 @@ ACCOUNTING_CONTRACT = {
 
 COST_SCHEDULE = {
     "primary": {"internal_id": "base_23bp", "round_trip_cost_bp": 23, "display_percent": "0.23%"},
-    "zero_cost_control": {"internal_id": "cost_00bp", "round_trip_cost_bp": 0, "display_percent": "0.00%"},
+    "zero_cost_control": {"internal_id": "zero_control_0bp", "round_trip_cost_bp": 0, "display_percent": "0.00%"},
     "stress_control": {"internal_id": "stress_46bp", "round_trip_cost_bp": 46, "display_percent": "0.46%"},
 }
 
@@ -118,6 +118,13 @@ PAYLOAD_NAME_BY_ROUTE = {
     "ACCOUNTING": "accounting",
     "EVALUATOR": "evaluator",
     "BENCHMARK_OVERLAY": "benchmark_overlay",
+}
+
+ERROR_STATUS_BY_CODE = {
+    "BAD_REQUEST": 400,
+    "CONFLICT": 409,
+    "VALIDATION_ERROR": 413,
+    "INTERNAL_ERROR": 503,
 }
 
 
@@ -250,7 +257,16 @@ def evaluator() -> dict[str, Any]:
                 "display_cost_percent": "0.23%",
                 "value": 0.0,
                 "display_percent": "0.00%",
-            }
+            },
+            {
+                "metric_id": "turnover",
+                "split": "validation",
+                "horizon": "H1",
+                "internal_cost_id": "zero_control_0bp",
+                "display_cost_percent": "0.00%",
+                "value": 0.0,
+                "display_percent": "0.00%",
+            },
         ],
     }
 
@@ -363,6 +379,24 @@ def report_read_payload() -> dict[str, Any]:
         "content": {"raw_text": "# 연구 보고서\n", "safe_html": '<article data-kronos-report-html="escaped-pre"><pre># 연구 보고서\n</pre></article>'},
     }
 
+def error_source(route_id: str) -> dict[str, Any]:
+    if route_id in {"REPORTS", "REPORT_READ"}:
+        return report_source()
+    payload_name = PAYLOAD_NAME_BY_ROUTE[route_id]
+    return source(STABLE_ARTIFACT_IDS[payload_name])
+
+
+def error_payload(route_id: str, code: str) -> dict[str, Any]:
+    return {
+        "route_id": route_id,
+        "status": "ERROR",
+        "protocol": protocol(route_id),
+        "source": error_source(route_id),
+        "locks": copy.deepcopy(LOCKS),
+        "claims": copy.deepcopy(CLAIMS),
+        "error": {"code": code, "message": f"{code} envelope", "status_code": ERROR_STATUS_BY_CODE[code]},
+    }
+
 
 def payload_for(route_id: str) -> dict[str, Any]:
     return {
@@ -391,6 +425,13 @@ def reject_mutation(payload: dict[str, Any], path: tuple[Any, ...], value: Any =
 def validate_contract(payload: dict[str, Any]) -> None:
     VALIDATOR.validate(payload)
     route_id = payload.get("route_id")
+    if payload.get("status") == "ERROR":
+        assert payload["protocol"]["route_id"] == route_id
+        assert payload["protocol"]["route_path"] == ROUTES[route_id]
+        assert payload["locks"] == LOCKS
+        assert payload["claims"] == CLAIMS
+        assert payload["error"]["status_code"] == ERROR_STATUS_BY_CODE[payload["error"]["code"]]
+        return
     if route_id not in PAYLOAD_NAME_BY_ROUTE:
         return
     payload_name = PAYLOAD_NAME_BY_ROUTE[str(route_id)]
@@ -427,6 +468,8 @@ def test_schema_is_closed_and_exports_exact_route_descriptors() -> None:
     }
     assert SCHEMA["$defs"]["falseResearchLocks"]["required"] == list(LOCKS)
     assert SCHEMA["$defs"]["noClaimFlags"]["required"] == list(CLAIMS)
+    assert {"$ref": "#/$defs/errorRoot"} in SCHEMA["oneOf"]
+    assert SCHEMA["$defs"]["errorBody"]["properties"]["message"]["maxLength"] == 240
     for route_id, descriptor in descriptors.items():
         assert descriptor["method"] == "GET"
         assert descriptor["path"].startswith("/api/daily-close-v51/")
@@ -438,6 +481,32 @@ def test_all_research_and_report_payloads_accept_closed_goldens(route_id: str) -
     payload = payload_for(route_id)
     validate_contract(payload)
     assert json.loads(json.dumps(payload, ensure_ascii=False))["route_id"] == route_id
+
+@pytest.mark.parametrize("route_id", list(ROUTES))
+@pytest.mark.parametrize("code,status_code", list(ERROR_STATUS_BY_CODE.items()))
+def test_error_envelopes_accept_route_aware_backend_roots(route_id: str, code: str, status_code: int) -> None:
+    payload = error_payload(route_id, code)
+    validate_contract(payload)
+    assert payload["status"] == "ERROR"
+    assert payload["error"]["status_code"] == status_code
+
+
+def test_error_envelopes_reject_open_mismatched_or_unbounded_roots() -> None:
+    payload = error_payload("SOURCE_COVERAGE", "BAD_REQUEST")
+    reject_mutation(payload, ("unexpected",), True)
+    reject_mutation(payload, ("status",), "BLOCKED")
+    reject_mutation(payload, ("status_reason",), "READY")
+    reject_mutation(payload, ("protocol", "route_path"), ROUTES["CAUSAL_PANEL"])
+    reject_mutation(payload, ("source", "source_artifact_id"), STABLE_ARTIFACT_IDS["causal_panel"])
+    reject_mutation(payload, ("locks", "promotion_allowed"), True)
+    reject_mutation(payload, ("claims", "profitability_claim"), True)
+    reject_mutation(payload, ("error", "message"), "x" * 241)
+    reject_mutation(payload, ("error", "status_code"), 405)
+    reject_mutation(payload, ("error", "status_code"), 409)
+    reject_mutation(payload, ("error", "code"), "CONFLICT")
+
+    report_payload = error_payload("REPORTS", "INTERNAL_ERROR")
+    reject_mutation(report_payload, ("source", "source_protocol"), "kronos_daily_1520_source.v1")
 
 def test_schema_rejects_preview_and_report_path_upper_boundary_overflows() -> None:
     panel_payload = payload_for("CAUSAL_PANEL")
@@ -521,10 +590,14 @@ def test_exact_1520_symbols_horizons_accounting_and_percent_display_are_required
     reject_mutation(accounting_payload, ("accounting", "display_cost_percent"), "23bp")
     reject_mutation(accounting_payload, ("accounting", "cost_schedule", "primary", "round_trip_cost_bp"), 46)
     reject_mutation(accounting_payload, ("accounting", "cost_schedule", "primary", "display_percent"), "0.46%")
+    reject_mutation(accounting_payload, ("accounting", "cost_schedule", "zero_cost_control", "internal_id"), "cost_00bp")
     reject_mutation(accounting_payload, ("accounting", "economic_nav_krw"), 9_007_199_254_740_992)
     reject_mutation(accounting_payload, ("accounting", "cash_reserve_krw"), 9_007_199_254_740_992)
 
     evaluator_payload = payload_for("EVALUATOR")
+    validate_contract(evaluator_payload)
+    assert evaluator_payload["evaluator"]["metrics"][1]["internal_cost_id"] == "zero_control_0bp"
+    assert evaluator_payload["evaluator"]["metrics"][1]["display_cost_percent"] == "0.00%"
     reject_mutation(evaluator_payload, ("evaluator", "metrics", 0, "display_cost_percent"), "0.20%")
     reject_mutation(evaluator_payload, ("evaluator", "metrics", 0, "display_cost_percent"), "0.00%")
     reject_mutation(evaluator_payload, ("evaluator", "metrics", 0, "internal_cost_id"), "cost_00bp")
