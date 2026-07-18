@@ -249,6 +249,7 @@ def validate_korean_index_overlay(payload: Mapping[str, Any]) -> Mapping[str, An
     try:
         _require_exact_false_map(payload.get("false_locks"), _FALSE_LOCKS, "overlay false_locks", INDEX_ARTIFACT_INVALID)
         _require_exact_false_map(payload.get("claims"), _CLAIMS, "overlay claims", INDEX_ARTIFACT_INVALID)
+        _require_persisted_overlay_provenance(payload)
     except _ReasonError as exc:
         raise KoreanIndexOverlayError([exc.reason_code], str(exc)) from exc
     if payload.get("official_close") is not False or payload.get("price_basis") != PRICE_BASIS:
@@ -272,6 +273,115 @@ def validate_korean_index_overlay(payload: Mapping[str, Any]) -> Mapping[str, An
         if rows[0].get("close") != "100.000000000000":
             raise KoreanIndexOverlayError([INDEX_ARTIFACT_INVALID], "each overlay series must start at normalized 100")
     return payload
+
+
+def _require_persisted_overlay_provenance(payload: Mapping[str, Any]) -> None:
+    if payload.get("read_only") is not True:
+        raise _ReasonError(INDEX_ARTIFACT_FORBIDDEN_SOURCE, "overlay read_only must remain true")
+    if payload.get("network_used") is not False:
+        raise _ReasonError(INDEX_ARTIFACT_FORBIDDEN_SOURCE, "overlay network_used must remain false")
+    if payload.get("point_in_time_constituents") is not False:
+        raise _ReasonError(
+            POINT_IN_TIME_CONSTITUENT_CLAIM,
+            "overlay must not claim point-in-time constituents",
+        )
+    if payload.get("source_policy") != _source_policy():
+        raise _ReasonError(
+            INDEX_ARTIFACT_FORBIDDEN_SOURCE,
+            "overlay source_policy must remain pykrx-only offline/Naver-disabled/no-network",
+        )
+    if payload.get("status") == "PASS":
+        _require_pass_source_artifacts(payload.get("source_artifacts"))
+
+
+def _require_pass_source_artifacts(value: Any) -> None:
+    if not isinstance(value, Mapping) or {str(key) for key in value} != {KOSPI, KOSDAQ, RL_MARKET}:
+        raise _ReasonError(
+            INDEX_ARTIFACT_INVALID,
+            "PASS overlay source_artifacts must exactly enumerate KOSPI, KOSDAQ, and RL",
+        )
+    for market in (KOSPI, KOSDAQ):
+        artifact = value.get(market)
+        if not isinstance(artifact, Mapping) or artifact.get("market") != market:
+            raise _ReasonError(
+                INDEX_ARTIFACT_INVALID,
+                f"{market} source_artifact must be a mapping for that market",
+            )
+        _require_index_source_artifact_provenance(artifact, market)
+    rl_artifact = value.get(RL_MARKET)
+    if not isinstance(rl_artifact, Mapping) or rl_artifact.get("market") != RL_MARKET:
+        raise _ReasonError(INDEX_ARTIFACT_INVALID, "RL source_artifact must be a mapping")
+    if rl_artifact.get("price_basis") != PRICE_BASIS or rl_artifact.get("official_close") is not False:
+        raise _ReasonError(
+            RL_NAV_DAILY_OR_OFFICIAL_CLOSE_SOURCE,
+            "RL source_artifact must remain exact 15:20 and official_close=false",
+        )
+
+
+def _require_index_source_artifact_provenance(artifact: Mapping[str, Any], market: str) -> None:
+    metadata = artifact.get("source_metadata")
+    if not isinstance(metadata, Mapping):
+        raise _ReasonError(
+            INDEX_ARTIFACT_FORBIDDEN_SOURCE,
+            f"{market} source_artifact.source_metadata must be a mapping",
+        )
+    provider_package = artifact.get("provider_package")
+    source_package = metadata.get("source_package")
+    if (
+        str(metadata.get("provider") or "").lower() != "pykrx"
+        or not isinstance(provider_package, Mapping)
+        or provider_package.get("name") != "pykrx"
+        or not isinstance(source_package, Mapping)
+        or source_package.get("name") != "pykrx"
+    ):
+        raise _ReasonError(
+            INDEX_ARTIFACT_FORBIDDEN_SOURCE,
+            f"{market} source_artifact provider must remain pykrx",
+        )
+    required_flags = {
+        "runtime_read_only": True,
+        "naver_disabled": True,
+        "naver_source_used": False,
+        "no_live_fetch": True,
+        "no_fallback": True,
+        "fallback_enabled": False,
+        "no_interpolation": True,
+        "no_fill": True,
+        "official_close": False,
+        "point_in_time_constituents": False,
+        "index_levels_only": True,
+    }
+    for key, expected in required_flags.items():
+        if metadata.get(key) is not expected:
+            reason = (
+                POINT_IN_TIME_CONSTITUENT_CLAIM
+                if key == "point_in_time_constituents"
+                else INDEX_ARTIFACT_FORBIDDEN_SOURCE
+            )
+            raise _ReasonError(
+                reason,
+                f"{market} source_artifact.source_metadata.{key} must be {expected}",
+            )
+    if metadata.get("fallback_sources") != []:
+        raise _ReasonError(
+            INDEX_ARTIFACT_FORBIDDEN_SOURCE,
+            f"{market} source_artifact fallback_sources must be empty",
+        )
+    if metadata.get("point_in_time_limitation") != "index_levels_only_not_constituents":
+        raise _ReasonError(
+            POINT_IN_TIME_CONSTITUENT_CLAIM,
+            f"{market} source_artifact point-in-time limitation drifted",
+        )
+    point_in_time = artifact.get("point_in_time")
+    if (
+        not isinstance(point_in_time, Mapping)
+        or point_in_time.get("constituents") is not False
+        or point_in_time.get("index_levels_only") is not True
+    ):
+        raise _ReasonError(
+            POINT_IN_TIME_CONSTITUENT_CLAIM,
+            f"{market} source_artifact point-in-time custody drifted",
+        )
 
 
 def _safe_load_index_artifact(source: Any, expected_market: str, errors: list[dict[str, str]]) -> dict[str, Any] | None:

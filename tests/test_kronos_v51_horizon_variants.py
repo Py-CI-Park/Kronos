@@ -120,7 +120,15 @@ class FakeV51Accounting:
             "price_basis": "15:20_bar_close_proxy",
             "official_close": False,
             "causal_cutoff_kst": "15:20:00",
+            "total_capital_krw": 60000000.0,
+            "total_capital_krw_decimal": "60000000.000000",
             "slot_count": 10,
+            "slot_buy_budget_krw": 5000000.0,
+            "slot_buy_budget_krw_decimal": "5000000.000000",
+            "max_deployed_principal_krw": 50000000.0,
+            "max_deployed_principal_krw_decimal": "50000000.000000",
+            "reserve_cash_krw": 10000000.0,
+            "reserve_cash_krw_decimal": "10000000.000000",
             "selected_count": len(selected),
             "symbols": [row["symbol"] for row in selected],
             "cost_scenario_ids": list(_FAKE_COST_SCENARIO_BP),
@@ -133,7 +141,6 @@ class FakeV51Accounting:
             "primary_accounting": primary,
             "account_nav_krw_decimal": primary["account_nav_krw_decimal"],
             "deployed_principal_krw_decimal": primary["deployed_principal_krw_decimal"],
-            "reserve_cash_krw_decimal": primary["reserve_cash_krw_decimal"],
             "blockers": [],
             "false_locks": {
                 "broker_integration": False,
@@ -233,7 +240,14 @@ class FakeV51Accounting:
             "cost_scenario": {"scenario_id": scenario_id, "total_bp": round_trip_bp},
             "round_trip_cost_bp": round_trip_bp,
             "cost_application_count": 1,
+            "total_capital_krw": 60000000.0,
+            "total_capital_krw_decimal": "60000000.000000",
             "slot_count": 10,
+            "slot_buy_budget_krw": 5000000.0,
+            "slot_buy_budget_krw_decimal": "5000000.000000",
+            "max_deployed_principal_krw": 50000000.0,
+            "max_deployed_principal_krw_decimal": "50000000.000000",
+            "reserve_cash_krw": 10000000.0,
             "filled_slots": len(selected),
             "unfilled_slots": 10 - len(selected),
             "hold_cash_slots": 10 - len(selected),
@@ -456,6 +470,101 @@ def test_accounting_true_promotion_claim_is_rejected() -> None:
             panel,
             freeze,
             accounting_helper=FakeV51Accounting(mutate_before_digest=promote_profit),
+        )
+
+
+def test_accounting_missing_false_lock_key_is_rejected() -> None:
+    def remove_lock(manifest: dict[str, Any]) -> None:
+        manifest["false_locks"].pop("official_close")
+
+    panel = _panel()
+    freeze = _freeze(panel)
+
+    with pytest.raises(V51EvaluationError, match="false_locks"):
+        evaluate_v51_horizon_variants(
+            panel,
+            freeze,
+            accounting_helper=FakeV51Accounting(mutate_before_digest=remove_lock),
+        )
+
+
+def test_accounting_extra_false_lock_key_is_rejected() -> None:
+    def add_lock(manifest: dict[str, Any]) -> None:
+        manifest["false_locks"]["unexpected_false_lock"] = False
+
+    panel = _panel()
+    freeze = _freeze(panel)
+
+    with pytest.raises(V51EvaluationError, match="false_locks"):
+        evaluate_v51_horizon_variants(
+            panel,
+            freeze,
+            accounting_helper=FakeV51Accounting(mutate_before_digest=add_lock),
+        )
+
+
+def test_accounting_true_false_lock_value_is_rejected() -> None:
+    def unlock_profit(manifest: dict[str, Any]) -> None:
+        manifest["false_locks"]["profit_claim"] = True
+
+    panel = _panel()
+    freeze = _freeze(panel)
+
+    with pytest.raises(V51EvaluationError, match="false_locks"):
+        evaluate_v51_horizon_variants(
+            panel,
+            freeze,
+            accounting_helper=FakeV51Accounting(mutate_before_digest=unlock_profit),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("total_capital_krw", 59000000.0),
+        ("slot_count", 9),
+        ("slot_buy_budget_krw", 4000000.0),
+        ("max_deployed_principal_krw", 49000000.0),
+        ("reserve_cash_krw", 9000000.0),
+    ],
+)
+def test_accounting_manifest_capital_envelope_drift_is_rejected(field: str, bad_value: object) -> None:
+    def drift_capital(manifest: dict[str, Any]) -> None:
+        manifest[field] = bad_value
+
+    panel = _panel()
+    freeze = _freeze(panel)
+
+    with pytest.raises(V51EvaluationError, match=field):
+        evaluate_v51_horizon_variants(
+            panel,
+            freeze,
+            accounting_helper=FakeV51Accounting(mutate_before_digest=drift_capital),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("total_capital_krw", 59000000.0),
+        ("slot_count", 9),
+        ("slot_buy_budget_krw", 4000000.0),
+        ("max_deployed_principal_krw", 49000000.0),
+        ("reserve_cash_krw", 9000000.0),
+    ],
+)
+def test_accounting_scenario_capital_envelope_drift_is_rejected(field: str, bad_value: object) -> None:
+    def drift_capital(manifest: dict[str, Any]) -> None:
+        manifest["scenario_manifests"]["base_23bp"][field] = bad_value
+
+    panel = _panel()
+    freeze = _freeze(panel)
+
+    with pytest.raises(V51EvaluationError, match=field):
+        evaluate_v51_horizon_variants(
+            panel,
+            freeze,
+            accounting_helper=FakeV51Accounting(mutate_before_digest=drift_capital),
         )
 
 

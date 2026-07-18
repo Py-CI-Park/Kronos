@@ -60,6 +60,14 @@ HORIZON_VARIANTS: Final = (
     },
 )
 
+_V51_ACCOUNTING_FALSE_LOCKS: Final = {
+    "official_close": False,
+    "full_day_daily_ohlcv": False,
+    "live_trading": False,
+    "profit_claim": False,
+    "paper_trading": False,
+    "broker_integration": False,
+}
 FALSE_PROMOTION_CLAIMS: Final = {
     "broker_integration": False,
     "live_trading": False,
@@ -83,7 +91,18 @@ _V51_ROUND_TRIP_BP_BY_SCENARIO_ID: Final = {
 }
 _ACCOUNTING_SCHEMA_VERSION: Final = "kronos_v51_slot_accounting.v1"
 _ACCOUNTING_DIGEST_FIELD: Final = "accounting_manifest_sha256"
+_V51_TOTAL_CAPITAL_KRW: Final = Decimal("60000000")
+_V51_SLOT_COUNT: Final = 10
 _V51_SLOT_BUY_BUDGET_KRW: Final = Decimal("5000000")
+_V51_MAX_DEPLOYED_PRINCIPAL_KRW: Final = Decimal("50000000")
+_V51_RESERVE_KRW: Final = Decimal("10000000")
+_V51_CAPITAL_ENVELOPE: Final = {
+    "total_capital_krw": _V51_TOTAL_CAPITAL_KRW,
+    "slot_count": _V51_SLOT_COUNT,
+    "slot_buy_budget_krw": _V51_SLOT_BUY_BUDGET_KRW,
+    "max_deployed_principal_krw": _V51_MAX_DEPLOYED_PRINCIPAL_KRW,
+    "reserve_cash_krw": _V51_RESERVE_KRW,
+}
 _V51_STRESS_BUY_SIDE_COST_BP: Final = Decimal("13")
 _BP_DENOMINATOR: Final = Decimal("10000")
 
@@ -680,14 +699,16 @@ def _validate_accounting_result(
         raise V51EvaluationError("accounting_manifest_sha256 does not match deterministic accounting manifest")
 
     _require_accounting_manifest_header(manifest, variant=variant)
+    _require_v51_capital_envelope(manifest, "accounting manifest")
     if "cost_scenario_bp" in manifest and _cost_scenario_bp(
         manifest["cost_scenario_bp"],
         "accounting cost_scenario_bp",
     ) != cost_scenario_bp:
         raise V51EvaluationError("accounting manifest cost_scenario_bp does not match frozen cost")
 
-    false_locks = _false_map(
+    false_locks = _exact_false_map(
         _require_mapping(manifest.get("false_locks"), "accounting false_locks"),
+        _V51_ACCOUNTING_FALSE_LOCKS,
         "accounting false_locks",
     )
     promotion_claims = _exact_false_map(
@@ -811,6 +832,7 @@ def _validate_accounting_scenario_manifest(
         raise V51EvaluationError(f"accounting scenario {scenario_id} total_bp mismatch")
     if _positive_int(scenario.get("cost_application_count"), f"accounting scenario {scenario_id} cost_application_count") != 1:
         raise V51EvaluationError(f"accounting scenario {scenario_id} cost_application_count mismatch")
+    _require_v51_capital_envelope(scenario, f"accounting scenario {scenario_id}")
     slots = scenario.get("ledger")
     if not isinstance(slots, list):
         raise V51EvaluationError(f"accounting scenario {scenario_id} ledger must be a list")
@@ -847,6 +869,39 @@ def _require_accounting_price_contract(payload: Mapping[str, Any], label: str) -
         raise V51EvaluationError(f"{label} price_basis must be exact 15:20 proxy")
     if payload.get("official_close") is not False:
         raise V51EvaluationError(f"{label} official_close must be false")
+
+
+def _require_v51_capital_envelope(payload: Mapping[str, Any], label: str) -> None:
+    for key, expected in _V51_CAPITAL_ENVELOPE.items():
+        value = payload.get(key)
+        if key == "slot_count":
+            if isinstance(value, bool) or not isinstance(value, int) or value != expected:
+                raise V51EvaluationError(
+                    f"{label} {key} must be canonical V5.1 capital envelope value {expected}"
+                )
+            continue
+        _require_exact_decimal(value, expected, f"{label} {key}")
+        decimal_key = f"{key}_decimal"
+        if decimal_key in payload:
+            _require_exact_decimal(payload.get(decimal_key), expected, f"{label} {decimal_key}")
+
+
+def _require_exact_decimal(value: Any, expected: Decimal, label: str) -> None:
+    expected_text = format(expected, "f")
+    if isinstance(value, bool) or value is None:
+        raise V51EvaluationError(
+            f"{label} must be canonical V5.1 capital envelope value {expected_text}"
+        )
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise V51EvaluationError(
+            f"{label} must be canonical V5.1 capital envelope value {expected_text}"
+        ) from None
+    if not parsed.is_finite() or parsed != expected:
+        raise V51EvaluationError(
+            f"{label} must be canonical V5.1 capital envelope value {expected_text}"
+        )
 
 
 def _accounting_required_value(payload: Mapping[str, Any], keys: Sequence[str], label: str) -> Any:

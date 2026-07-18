@@ -113,6 +113,13 @@ def _blocked_reasons(
     return result["reason_codes"]
 
 
+def _resign_overlay(payload: dict[str, Any]) -> dict[str, Any]:
+    payload["overlay_sha256"] = kio.sha256_hex(
+        {key: value for key, value in payload.items() if key != "overlay_sha256"}
+    )
+    return payload
+
+
 def test_overlay_uses_source_validator_for_path_and_mapping_with_exact_intersection(tmp_path: Path) -> None:
     artifacts = _good_artifacts()
     kospi_path = write_normalized_index_artifact(tmp_path, artifacts["KOSPI"])
@@ -331,9 +338,41 @@ def test_source_and_overlay_lock_claim_sets_must_be_exact() -> None:
     overlay = kio.build_korean_index_overlay(artifacts["KOSPI"], artifacts["KOSDAQ"], _good_rl())
     tampered_overlay = copy.deepcopy(overlay)
     tampered_overlay["false_locks"]["extra"] = False
-    tampered_overlay["overlay_sha256"] = kio.sha256_hex(
-        {key: value for key, value in tampered_overlay.items() if key != "overlay_sha256"}
-    )
+    _resign_overlay(tampered_overlay)
     with pytest.raises(kio.KoreanIndexOverlayError) as excinfo:
         kio.validate_korean_index_overlay(tampered_overlay)
     assert excinfo.value.reason_codes == (kio.INDEX_ARTIFACT_INVALID,)
+
+
+@pytest.mark.parametrize(
+    ("path", "bad_value", "reason_code"),
+    [
+        (("read_only",), False, kio.INDEX_ARTIFACT_FORBIDDEN_SOURCE),
+        (("network_used",), True, kio.INDEX_ARTIFACT_FORBIDDEN_SOURCE),
+        (("source_policy", "naver_disabled"), False, kio.INDEX_ARTIFACT_FORBIDDEN_SOURCE),
+        (("source_policy", "no_network"), False, kio.INDEX_ARTIFACT_FORBIDDEN_SOURCE),
+        (("point_in_time_constituents",), True, kio.POINT_IN_TIME_CONSTITUENT_CLAIM),
+        (("source_artifacts", "KOSPI", "source_metadata", "provider"), "naver", kio.INDEX_ARTIFACT_FORBIDDEN_SOURCE),
+        (("source_artifacts", "KOSPI", "source_metadata", "naver_disabled"), False, kio.INDEX_ARTIFACT_FORBIDDEN_SOURCE),
+        (("source_artifacts", "KOSDAQ", "source_metadata", "no_live_fetch"), False, kio.INDEX_ARTIFACT_FORBIDDEN_SOURCE),
+        (("source_artifacts", "KOSDAQ", "source_metadata", "point_in_time_constituents"), True, kio.POINT_IN_TIME_CONSTITUENT_CLAIM),
+        (("source_artifacts", "KOSPI", "provider_package", "name"), "naver", kio.INDEX_ARTIFACT_FORBIDDEN_SOURCE),
+    ],
+)
+def test_persisted_overlay_provenance_drift_fails_closed(
+    path: tuple[str, ...],
+    bad_value: object,
+    reason_code: str,
+) -> None:
+    artifacts = _good_artifacts()
+    tampered_overlay = copy.deepcopy(kio.build_korean_index_overlay(artifacts["KOSPI"], artifacts["KOSDAQ"], _good_rl()))
+    target: dict[str, Any] = tampered_overlay
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = bad_value
+    _resign_overlay(tampered_overlay)
+
+    with pytest.raises(kio.KoreanIndexOverlayError) as excinfo:
+        kio.validate_korean_index_overlay(tampered_overlay)
+
+    assert reason_code in excinfo.value.reason_codes
