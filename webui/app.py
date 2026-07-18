@@ -490,7 +490,10 @@ def _create_unavailable_v5_rl_blueprint(reason):
     for index, (rule, route_id) in enumerate(routes):
         def handler(route_id=route_id, **_kwargs):
             if request.method != "GET":
-                return jsonify({"route_id": route_id, "error": {"code": "BAD_REQUEST", "message": "method not allowed"}}), 405
+                response = jsonify({"route_id": route_id, "error": {"code": "BAD_REQUEST", "message": "method not allowed"}})
+                response.status_code = 405
+                response.headers["Allow"] = "GET"
+                return response
             return jsonify({"route_id": route_id, "error": {"code": "INTERNAL_ERROR", "message": message}}), 503
 
         bp.add_url_rule(rule, endpoint=f"unavailable_{index}", view_func=handler, methods=list(_V5_ROUTE_METHODS), provide_automatic_options=False)
@@ -531,6 +534,42 @@ def _build_kronos_v5_blueprint():
         config["KRONOS_V5_AVAILABLE"] = False
         return _create_unavailable_v5_rl_blueprint(f"V5 API is unavailable: {exc}"), config
 
+
+def _v51_config_path():
+    raw_value = os.environ.get("KRONOS_V51_ARTIFACT_DIR", "").strip()
+    if not raw_value:
+        return None, None
+    try:
+        submitted = Path(raw_value).expanduser()
+        candidate = (submitted if submitted.is_absolute() else _REPO_ROOT / submitted).resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None, "KRONOS_V51_ARTIFACT_DIR is not a valid filesystem path"
+    if any(_v5_is_relative_to(candidate, root) for root in _v5_approved_roots()):
+        return candidate, None
+    return None, "KRONOS_V51_ARTIFACT_DIR must stay inside the repository or approved temp directory"
+
+
+def _build_kronos_v51_blueprint():
+    artifact_dir, artifact_error = _v51_config_path()
+    config = {
+        "KRONOS_V51_ARTIFACT_DIR": str(artifact_dir) if artifact_dir is not None else "",
+        "KRONOS_V51_AVAILABLE": artifact_error is None and artifact_dir is not None and artifact_dir.is_dir(),
+        "KRONOS_V51_READ_ONLY": True,
+    }
+    try:
+        try:
+            from .v51_research_api import create_v51_research_api_blueprint
+        except ImportError:
+            from v51_research_api import create_v51_research_api_blueprint
+        return create_v51_research_api_blueprint(artifact_dir=artifact_dir), config
+    except Exception:
+        config["KRONOS_V51_AVAILABLE"] = False
+        try:
+            from .v51_research_api import create_v51_research_api_blueprint
+        except ImportError:
+            from v51_research_api import create_v51_research_api_blueprint
+        return create_v51_research_api_blueprint(artifact_provider=None, artifact_dir=None), config
+
 app = Flask(__name__)
 CORS(app, origins=[origin.strip() for origin in os.environ.get("KRONOS_WEBUI_CORS_ORIGINS", f"http://127.0.0.1:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))},http://localhost:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))}").split(",") if _re.fullmatch(r"https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?", origin.strip())], supports_credentials=False)
 if v2_bp is not None:
@@ -538,6 +577,9 @@ if v2_bp is not None:
 _v5_bp, _v5_config = _build_kronos_v5_blueprint()
 app.config.update(_v5_config)
 app.register_blueprint(_v5_bp)
+_v51_bp, _v51_config = _build_kronos_v51_blueprint()
+app.config.update(_v51_config)
+app.register_blueprint(_v51_bp)
 
 # Global variables to store models
 tokenizer = None

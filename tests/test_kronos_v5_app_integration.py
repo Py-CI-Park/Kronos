@@ -8,7 +8,7 @@ import types
 from pathlib import Path
 
 import pytest
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Flask, jsonify, request
 
 
 V5_ENV = (
@@ -140,7 +140,13 @@ def test_app_import_registers_v5_prefix_and_preserves_legacy_post_routes(monkeyp
     assert CANONICAL_QUERY_SCOPED_V5_RULES <= v5_rule_paths
     assert not (NONCANONICAL_NESTED_V5_RULES & v5_rule_paths)
 
-    legacy_post_rules = {rule.rule for rule in rules if "POST" in rule.methods and not rule.rule.startswith("/api/v5/")}
+    legacy_post_rules = {
+        rule.rule
+        for rule in rules
+        if "POST" in rule.methods
+        and not rule.rule.startswith("/api/v5/")
+        and not rule.rule.startswith("/api/daily-close-v51/")
+    }
     assert legacy_post_rules == EXPECTED_LEGACY_POST_RULES
 
 
@@ -177,6 +183,18 @@ def test_v5_mutating_methods_are_405(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         response = client.open("/api/v5/rl/runs", method=method)
         assert response.status_code == 405, method
         assert _json(response)["error"]["code"] == "BAD_REQUEST"
+
+
+def test_unavailable_v5_compatibility_blueprint_mutating_methods_allow_get(monkeypatch: pytest.MonkeyPatch) -> None:
+    app_module = _reload_app(monkeypatch)
+    fallback_app = Flask(__name__)
+    fallback_app.register_blueprint(app_module._create_unavailable_v5_rl_blueprint("forced unavailable"))
+
+    response = fallback_app.test_client().open("/api/v5/rl/runs", method="POST")
+
+    assert response.status_code == 405
+    assert response.headers["Allow"] == "GET"
+    assert _json(response)["error"]["code"] == "BAD_REQUEST"
 
 
 def test_v5_temp_configured_registry_is_injected_without_default_mutation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
