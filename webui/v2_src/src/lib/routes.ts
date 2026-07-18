@@ -78,10 +78,10 @@ export const V51_VERSION_HISTORY = [
   {
     version: 'V5.1',
     date: '2026-07-17',
-    commitSha: 'ec134dd',
+    commitSha: '6a8fd02',
     releaseTag: 'not released',
     changes: 'Brand, V5.1 information architecture, evidence views, and report access orientation.',
-    validation: '346 frontend tests passed; Svelte check 408 files 0 errors/warnings; official build passed; live browser verified 3440x1440 and portrait 2160x3840 without horizontal overflow.',
+    validation: 'Current verified browser bundle revision 6a8fd02; current frontend tests: 351. Read-only evidence only; no release-default, live-readiness, GO, profit, broker, or order claim.',
     defaultUi: V51_DEFAULT_POLICY,
     rollbackTarget: 'V3 shell and existing V3 route bookmarks',
   },

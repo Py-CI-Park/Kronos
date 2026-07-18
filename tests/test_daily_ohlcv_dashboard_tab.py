@@ -390,7 +390,8 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "model_run_generation_available" in scenario_run_card
     assert "no live/broker/orders" in scenario_run_card
     assert "data-daily-rl-guide-tab" in guide
-    assert "RL_ENV_VISUAL_GUIDE_MVP" in guide
+    assert "RESEARCH_ONLY_GUIDE" in guide
+    assert "RL_ENV_VISUAL_GUIDE_MVP" not in guide
     assert "data-daily-rl-env-visual-map" in guide
     assert "data-daily-rl-loop-diagram" in guide
     assert "data-daily-rl-process-storyboard" in guide
@@ -416,7 +417,9 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "data-daily-rl-workflow-picker" in guide
     assert "data-daily-rl-workflow-inspector" in guide
     assert "data-daily-rl-workflow-safe-config-preview" in guide
-    assert "APPROVAL_GATED_INTENT_RECORD_ONLY" in guide
+    assert "READ_ONLY_WORKFLOW_CATALOG" in guide
+    assert "UNAVAILABLE_FROM_READ_ONLY_DASHBOARD" in guide
+    assert "APPROVAL_GATED_INTENT_RECORD_ONLY" not in guide
     assert "data-daily-rl-approval-trigger-surface" in guide
     assert "data-daily-rl-intent-ledger" in guide
     assert "researchJobIntents" in api

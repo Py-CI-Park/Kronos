@@ -29,7 +29,7 @@ function navRouteIds(): string[] {
   return V51_NAV_GROUPS.flatMap((group) => group.items.flatMap((item) => item.routeId ? [item.routeId] : []));
 }
 
-test('V5.1 brand and version history preserve default, commit, and no-release wording', () => {
+test('V5.1 brand and version history preserve default, current receipt, and no-release wording', () => {
   assert.deepEqual(V51_SHELL_BRAND, {
     name: 'Kronos',
     subtitle: 'AI Quant Reinforcement Learning',
@@ -47,10 +47,13 @@ test('V5.1 brand and version history preserve default, commit, and no-release wo
       releaseTag: entry.releaseTag,
     })),
     [
-      { version: 'V5.1', date: '2026-07-17', commitSha: 'ec134dd', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'not released' },
+      { version: 'V5.1', date: '2026-07-17', commitSha: '6a8fd02', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'not released' },
       { version: 'V5', date: '2026-07-16', commitSha: '59fb74c', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'fork-v1.3.0-dashboard-v5-research-preview' },
     ],
   );
+  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /Current verified browser bundle revision 6a8fd02/);
+  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /current frontend tests: 351/);
+  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /no release-default, live-readiness/);
 });
 
 test('V5.1 navigation groups, order, labels, and actions match the IA contract', () => {

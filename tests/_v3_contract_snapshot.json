@@ -12,6 +12,10 @@
     "webui/v2_src/src/App.svelte": [
       "data-trading-command-center-redirect"
     ],
+    "webui/v2_src/src/tabs/DailyRlGuideTab.svelte": [
+      "APPROVAL_GATED_INTENT_RECORD_ONLY",
+      "RL_ENV_VISUAL_GUIDE_MVP"
+    ],
     "webui/v2_src/src/tabs/DailyRlGuideTab.svelte ::lower": [
       "fake"
     ],
@@ -396,8 +400,8 @@
     }
   },
   "counts": {
-    "absent": 13,
-    "classified": 608,
+    "absent": 15,
+    "classified": 611,
     "e1": 0,
     "e2": 5,
     "loop_absent_expanded": 7,
@@ -405,17 +409,17 @@
     "loop_present_expanded": 59,
     "per_file": {
       "tests/test_daily_ohlcv_dashboard_tab.py": {
-        "physical_assert_nodes": 495,
-        "total_asserts": 495
+        "physical_assert_nodes": 498,
+        "total_asserts": 498
       },
       "tests/test_stom_rl_dashboard_tab.py": {
         "physical_assert_nodes": 55,
         "total_asserts": 118
       }
     },
-    "physical_assert_nodes": 550,
-    "present": 529,
-    "total_asserts": 613
+    "physical_assert_nodes": 553,
+    "present": 530,
+    "total_asserts": 616
   },
   "e1": [],
   "e2": [
@@ -598,7 +602,6 @@
     "webui/v2_src/src/tabs/DailyRlGuideTab.svelte": [
       "AI Agent",
       "AI-readable / AI 개선 지시 고정 포맷",
-      "APPROVAL_GATED_INTENT_RECORD_ONLY",
       "Agent ↔ Environment ↔ Reward",
       "Artifact-backed RL Replay",
       "D3_D4_SIGNAL_QUALITY_AUDIT",
@@ -611,9 +614,11 @@
       "MISSING_SIGNAL_QUALITY_AUDIT",
       "NON_LIVE_RESEARCH_PLATFORM_COMPLETE",
       "PAST_ONLY_MARKET_REGIME_AUDIT",
+      "READ_ONLY_WORKFLOW_CATALOG",
+      "RESEARCH_ONLY_GUIDE",
       "RESEARCH_ONLY_PERFORMANCE_DIAGNOSTIC",
-      "RL_ENV_VISUAL_GUIDE_MVP",
       "ResearchStatusShell",
+      "UNAVAILABLE_FROM_READ_ONLY_DASHBOARD",
       "activeGuideSection = $state('overview')",
       "data-daily-rl-action-probability-bars",
       "data-daily-rl-ai-guidance-format",

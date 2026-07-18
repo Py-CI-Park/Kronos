@@ -116,6 +116,11 @@
     railContract.cost_schedule.zero_cost_control,
     railContract.cost_schedule.stress_control,
   ] as const;
+  const horizonRows = [
+    { id: 'H1', label: 'D 15:20 → D+1 exact 15:20', role: 'primary', column: 'future_return_h1_1520_proxy' },
+    { id: 'H3', label: 'D 15:20 → D+3 exact 15:20', role: 'validation', column: 'future_return_h3_1520_proxy' },
+    { id: 'H5', label: 'D 15:20 → D+5 exact 15:20', role: 'validation', column: 'future_return_h5_1520_proxy' },
+  ] as const;
 
   let collapsed = $state(false);
   const unsubscribe = rightDetailRailCollapsed.subscribe((value) => (collapsed = value));
@@ -187,17 +192,21 @@
             <div><dt>Max invested</dt><dd>₩50,000,000 · {railContract.accounting.max_target_investment_display_percent}</dd></div>
             <div><dt>Reserve cash</dt><dd>₩10,000,000 · {railContract.accounting.reserve_cash_display_percent}</dd></div>
           </dl>
-          <ul class="cost-list" aria-label="Internal cost IDs with user-facing percentages">
+          <ul class="cost-list" aria-label="User-facing cost percentages with internal cost IDs">
             {#each costRows as cost}
-              <li><code>{cost.internal_id}</code><span>{cost.display_percent}</span></li>
+              <li><span>{cost.display_percent}</span><code>{cost.internal_id} · {cost.round_trip_cost_bp} bp</code></li>
             {/each}
           </ul>
         </section>
 
         <section class="rail-card" aria-labelledby="v51-horizon-title">
           <h3 id="v51-horizon-title">Horizons</h3>
-          <p class="horizon-line"><span>{railContract.horizon.primary_horizon}</span><span>H3</span><span>H5</span></p>
-          <p class="muted">H1 is primary; H3/H5 are validation variants using the same 15:20 proxy.</p>
+          <p class="horizon-line" aria-label="Exact 15:20 horizon labels">
+            {#each horizonRows as horizon}
+              <span>{horizon.id}: {horizon.label}</span>
+            {/each}
+          </p>
+          <p class="muted">H1 is primary; H3/H5 are validation variants. All entries use D 15:20 and exact D+N 15:20 proxy exits.</p>
         </section>
 
         <section class="rail-card" aria-labelledby="v51-source-title">

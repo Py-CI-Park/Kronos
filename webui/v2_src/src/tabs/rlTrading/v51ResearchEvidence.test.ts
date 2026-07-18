@@ -5,6 +5,7 @@ import { test } from 'node:test';
 const componentSource = readFileSync(new URL('./V51ResearchEvidence.svelte', import.meta.url), 'utf8');
 const rlTradingTabSource = readFileSync(new URL('../RLTradingTab.svelte', import.meta.url), 'utf8');
 const dailyRlGuideTabSource = readFileSync(new URL('../DailyRlGuideTab.svelte', import.meta.url), 'utf8');
+const rightDetailRailSource = readFileSync(new URL('../../layout/RightDetailRail.svelte', import.meta.url), 'utf8');
 const dailyOhlcvTabSource = readFileSync(new URL('../DailyOhlcvTab.svelte', import.meta.url), 'utf8');
 const dailyVisualLabCardSource = readFileSync(new URL('../dailyOhlcv/DailyVisualLabCard.svelte', import.meta.url), 'utf8');
 
@@ -56,8 +57,8 @@ test('labels keep exact V5.1 no-claim source, accounting, horizon, and cost trut
 
 test('daily guide source markers use 15:20 H1/H3/H5 labels and fail-closed tones', () => {
   assertContainsAll(dailyRlGuideTabSource, [
-    "const H1520_PROXY_LABEL = 'future_return_h1_1520_proxy / future_return_h3_1520_proxy / future_return_h5_1520_proxy';",
-    "const H1520_PROXY_DETAIL = 'H1 primary · H3/H5 validation · 15:20_bar_close_proxy';",
+    "const H1520_PROXY_LABEL = 'H1: D 15:20 → D+1 exact 15:20 · future_return_h1_1520_proxy / H3: D 15:20 → D+3 exact 15:20 · future_return_h3_1520_proxy / H5: D 15:20 → D+5 exact 15:20 · future_return_h5_1520_proxy';",
+    "const H1520_PROXY_DETAIL = 'exact 15:20 proxy labels; H1 primary · H3/H5 validation · price_basis=15:20_bar_close_proxy';",
     '보상 label marker: {H1520_PROXY_LABEL} ({H1520_PROXY_DETAIL}).',
     'legacy ' + 'future_return_' + '1d' + ' is forbidden in state observations',
     "if (normalized === 'PASS') return 'pass';",
@@ -65,8 +66,18 @@ test('daily guide source markers use 15:20 H1/H3/H5 labels and fail-closed tones
     "normalized.includes('INCOMPLETE')",
   ]);
   assert.doesNotMatch(dailyRlGuideTabSource, new RegExp('보상 label marker: future_return_' + '1d'));
-  assert.doesNotMatch(dailyRlGuideTabSource, new RegExp('다음날 연구용 future_return_' + '1d'));
+  assert.doesNotMatch(dailyRlGuideTabSource, new RegExp('다음날 ' + '연구용 ' + 'future_return_' + '1d'));
   assert.doesNotMatch(dailyRlGuideTabSource, /normalized === 'PASS' \|\| normalized === 'INPUT'/);
+  assertContainsAll(dailyRlGuideTabSource, [
+    'RESEARCH_ONLY_GUIDE',
+    'READ_ONLY_WORKFLOW_CATALOG',
+    'UNAVAILABLE_FROM_READ_ONLY_DASHBOARD',
+    'V51_CONTRACT_INITIAL_CAPITAL_KRW = 60000000',
+  ]);
+  assert.doesNotMatch(dailyRlGuideTabSource, new RegExp('RL_ENV_VISUAL_GUIDE_' + 'MVP'));
+  assert.doesNotMatch(dailyRlGuideTabSource, new RegExp('APP' + 'ROVED_FOR_RESEARCH_' + 'INTENT'));
+  assert.doesNotMatch(dailyRlGuideTabSource, new RegExp('POST /api/daily-ohlcv/research-' + 'workflows'));
+  assert.doesNotMatch(dailyRlGuideTabSource, new RegExp("display_capital_krw'\\) \\?\\? " + '100000' + '00'));
 });
 
 test('dashboard cost wording is percent-first with bp only secondary or internal', () => {
@@ -77,7 +88,15 @@ test('dashboard cost wording is percent-first with bp only secondary or internal
   assertContainsAll(dailyRlGuideTabSource, [
     '0.23% (23 bp)',
     'cost sensitivity: {formatCostBpList',
-    'reward labels are future_return_h1_1520_proxy / future_return_h3_1520_proxy / future_return_h5_1520_proxy only',
+    'reward labels are H1: D 15:20 → D+1 exact 15:20 · future_return_h1_1520_proxy / H3: D 15:20 → D+3 exact 15:20 · future_return_h3_1520_proxy / H5: D 15:20 → D+5 exact 15:20 · future_return_h5_1520_proxy only',
+  ]);
+  assertContainsAll(rightDetailRailSource, [
+    'aria-label="User-facing cost percentages with internal cost IDs"',
+    '<li><span>{cost.display_percent}</span><code>{cost.internal_id} · {cost.round_trip_cost_bp} bp</code></li>',
+    "label: 'D 15:20 → D+1 exact 15:20'",
+    "label: 'D 15:20 → D+3 exact 15:20'",
+    "label: 'D 15:20 → D+5 exact 15:20'",
+    'exact D+N 15:20 proxy exits',
   ]);
   assertContainsAll(dailyOhlcvTabSource, [
     "value: '0.23% (23 bp)'",
