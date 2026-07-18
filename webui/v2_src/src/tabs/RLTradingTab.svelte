@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import {
     rlApi,
     type RlCostGateResponse,
@@ -8,6 +8,7 @@
     type RlRunRecord,
     type RlTableRow,
   } from '$lib/rlApi';
+  import { dashboardShell, type DashboardShell } from '$lib/shellMode';
   import { createRequestGate } from '$lib/requestGate';
   import { errorMessage } from '$lib/rlRows';
   import { humanizeVerdict } from '$lib/verdictLabel';
@@ -29,6 +30,7 @@
   import RliableStatsCard from './rlTrading/RliableStatsCard.svelte';
   import EvidenceCharts from './rlTrading/EvidenceCharts.svelte';
   import RlLiveScreen from './rlTrading/RlLiveScreen.svelte';
+  import V51ResearchEvidence from './rlTrading/V51ResearchEvidence.svelte';
   import RunTables from './rlTrading/RunTables.svelte';
   import { costGatePassCount } from './rlTrading/chartOptions';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
@@ -56,6 +58,7 @@
   let loading = $state(false);
   let detailLoading = $state(false);
   let error = $state<string | null>(null);
+  let shell = $state<DashboardShell>('v3');
   const detailField = (key: string): unknown => selectedRun?.summary?.[key] ?? selectedRun?.detail?.[key];
   const textValue = (value: unknown, fallback = '—'): string => value == null || value === '' ? fallback : String(value);
 
@@ -114,8 +117,13 @@
     '23bp cost gate, baseline 대비, drawdown, trade count를 확인합니다.',
     '원시 테이블은 마지막에 열어 원인 분석용으로만 사용합니다.',
   ] as const;
+  const unsubscribeDashboardShell = dashboardShell.subscribe((value) => (shell = value));
+
   onMount(() => {
     void loadDashboard();
+  });
+  onDestroy(() => {
+    unsubscribeDashboardShell();
   });
 
   function choosePreferredRun(candidates: readonly RlRunRecord[]): RlRunRecord | undefined {
@@ -297,6 +305,9 @@
   blockers={rlStatusBlockers}
   nextActions={rlNextInspection}
 />
+{#if shell === 'v5'}
+  <V51ResearchEvidence />
+{/if}
 <RunSelector
   runs={runs}
   multi

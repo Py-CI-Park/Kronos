@@ -11,12 +11,13 @@
   } from '$lib/stores';
   import { ICONS } from '$lib/icons';
   import { fmt } from '$lib/format';
-  import { routeLabel } from '$lib/routes';
+  import { V51_DEFAULT_POLICY, V51_SHELL_BRAND, routeLabelForShell } from '$lib/routes';
   import { dashboardShell, type DashboardShell } from '$lib/shellMode';
   import { requestCommandPalette } from '$lib/commandPalette';
   // Header route label markers: Daily OHLCV · 일봉 RL 설명서 · RL Trading
 
-  const tabLabels: Record<string, string> = {};
+  const MOBILE_SIDEBAR_QUERY = '(max-width: 900px)';
+  const SIDEBAR_ID = 'kronos-sidebar';
 
   let tab = $state('live-training');
   activeTab.subscribe((v) => (tab = v));
@@ -28,18 +29,51 @@
   theme.subscribe((v) => (currentTheme = v));
   let shell = $state<DashboardShell>('v3');
   dashboardShell.subscribe((v) => (shell = v));
+  let sidebarIsCollapsed = $state(false);
+  sidebarCollapsed.subscribe((v) => (sidebarIsCollapsed = v));
+  let sidebarIsMobileOpen = $state(false);
+  sidebarMobileOpen.subscribe((v) => (sidebarIsMobileOpen = v));
+  let sidebarUsesMobileState = $state(false);
+  let sidebarViewportQuery: MediaQueryList | undefined;
 
   let now = $state(fmt.kstTime(Date.now()));
   let timer: number | undefined;
+
+  function setSidebarViewport(matches: boolean): void {
+    sidebarUsesMobileState = matches;
+  }
+
+  function syncSidebarViewport(event: MediaQueryListEvent): void {
+    setSidebarViewport(event.matches);
+  }
+
   onMount(() => {
     timer = window.setInterval(() => (now = fmt.kstTime(Date.now())), 1000);
+    sidebarViewportQuery = window.matchMedia(MOBILE_SIDEBAR_QUERY);
+    setSidebarViewport(sidebarViewportQuery.matches);
+    sidebarViewportQuery.addEventListener('change', syncSidebarViewport);
   });
   onDestroy(() => {
     if (timer != null) clearInterval(timer);
+    sidebarViewportQuery?.removeEventListener('change', syncSidebarViewport);
   });
 
+  function sidebarControlExpanded(): boolean {
+    return sidebarUsesMobileState ? sidebarIsMobileOpen : !sidebarIsCollapsed;
+  }
+
+  function sidebarToggleLabel(): string {
+    if (shell !== 'v5') return '사이드바 토글';
+    if (sidebarUsesMobileState) {
+      return sidebarIsMobileOpen ? 'Close navigation sidebar' : 'Open navigation sidebar';
+    }
+    return sidebarIsCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar';
+  }
+
   function toggleSidebar(): void {
-    if (window.matchMedia('(max-width: 900px)').matches) {
+    const useMobileState = window.matchMedia(MOBILE_SIDEBAR_QUERY).matches;
+    sidebarUsesMobileState = useMobileState;
+    if (useMobileState) {
       sidebarMobileOpen.update((v) => !v);
     } else {
       sidebarCollapsed.update((v) => !v);
@@ -51,9 +85,11 @@
   <button
     type="button"
     class="btn icon ghost"
-    aria-label="사이드바 토글"
+    aria-label={sidebarToggleLabel()}
+    aria-expanded={sidebarControlExpanded()}
+    aria-controls={SIDEBAR_ID}
     onclick={toggleSidebar}
-    title="사이드바 토글"
+    title={sidebarToggleLabel()}
   >
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">{@html ICONS.menu}</svg>
   </button>
@@ -61,7 +97,7 @@
   <div class="crumb">
     <span class="crumb-root">Kronos</span>
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" class="crumb-sep">{@html ICONS.chevron_right}</svg>
-    <span class="crumb-current">{routeLabel(tab) || tabLabels[tab] || tab}</span>
+    <span class="crumb-current">{routeLabelForShell(tab, shell)}</span>
   </div>
 
   <div class="header-meta">
@@ -77,6 +113,11 @@
     {#if shell === 'v4'}
       <span class="header-stat text-caption" data-v4-status-marker title="V4 shell opt-in status">
         V4 opt-in · read-only
+      </span>
+    {/if}
+    {#if shell === 'v5'}
+      <span class="header-stat text-caption" data-v51-version-marker title={`${V51_SHELL_BRAND.subtitle}; ${V51_DEFAULT_POLICY}`}>
+        {V51_SHELL_BRAND.displayVersion}
       </span>
     {/if}
   </div>

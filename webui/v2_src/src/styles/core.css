@@ -155,6 +155,12 @@ ul, ol { list-style: none; padding: 0; }
   --sidebar-w-collapsed: 72px;
   --header-h: 64px;
   --content-max: 1480px;
+  --v5-content-max: 1480px;
+  --v5-content-max-wide: 1920px;
+  --v5-content-max-ultrawide: 2240px;
+  --v5-readable-measure: 80ch;
+  --v5-right-rail-w: clamp(304px, 14vw, 360px);
+  --v5-right-rail-collapsed-w: clamp(136px, 6vw, 168px);
 }
 
 /* ---------- Dark theme ---------- */

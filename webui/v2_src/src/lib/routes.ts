@@ -1,5 +1,6 @@
-import { preserveShellQuery } from './shellMode';
+import { preserveShellQuery, type DashboardShell } from './shellMode';
 import { activeTab } from './stores';
+import type { IconName } from './icons';
 
 export interface DashboardRoute {
   id: string;
@@ -36,6 +37,117 @@ export const DASHBOARD_ROUTES: readonly DashboardRoute[] = [
   { id: 'docs', label: '문서 · Wiki', path: '/', queryTabs: ['docs'] },
 ] as const;
 
+export interface V51NavItem {
+  readonly id?: string;
+  readonly routeId?: string;
+  readonly action?: 'version-history';
+  readonly label: string;
+  readonly icon: IconName;
+  readonly badge?: string | null;
+  readonly status?: 'live' | 'warn' | null;
+  readonly children?: readonly V51NavItem[];
+}
+
+export interface V51NavGroup {
+  readonly label: string;
+  readonly items: readonly V51NavItem[];
+}
+
+export interface V51VersionHistoryEntry {
+  readonly version: 'V5' | 'V5.1';
+  readonly date: string;
+  readonly commitSha: string;
+  readonly releaseTag: string;
+  readonly changes: string;
+  readonly validation: string;
+  readonly defaultUi: string;
+  readonly rollbackTarget: string;
+}
+
+export const V51_SHELL_BRAND = {
+  name: 'Kronos',
+  subtitle: 'AI Quant Reinforcement Learning',
+  version: 'v5.1',
+  updateDate: '2026-07-17',
+  displayVersion: 'v5.1 · Updated 2026-07-17',
+} as const;
+
+export const V51_DEFAULT_POLICY = 'V3 기본 유지 · V5 기본 전환은 미승인·미실행';
+
+export const V51_VERSION_HISTORY = [
+  {
+    version: 'V5.1',
+    date: '2026-07-17',
+    commitSha: 'not assigned',
+    releaseTag: 'not released',
+    changes: 'Brand, V5.1 information architecture, evidence views, and report access orientation.',
+    validation: 'Source navigation test added; check/build/browser verification NOT_RUN in this scoped edit.',
+    defaultUi: V51_DEFAULT_POLICY,
+    rollbackTarget: 'V3 shell and existing V3 route bookmarks',
+  },
+  {
+    version: 'V5',
+    date: '2026-07-16',
+    commitSha: '59fb74c',
+    releaseTag: 'fork-v1.3.0-dashboard-v5-research-preview',
+    changes: 'Learning evidence shell, 12-tab restoration, read-only V5 routes, and research-preview governance.',
+    validation: 'V5 engineering result recorded as 98/100; no model, profit, live-trading, release, or GO claim.',
+    defaultUi: V51_DEFAULT_POLICY,
+    rollbackTarget: 'V3 shell and existing V3 route bookmarks',
+  },
+] as const satisfies readonly V51VersionHistoryEntry[];
+
+export const V51_NAV_GROUPS = [
+  {
+    label: 'COMMAND',
+    items: [
+      { routeId: 'mission-control', label: 'Mission Control', icon: 'pulse', badge: null },
+    ],
+  },
+  {
+    label: 'KRONOS',
+    items: [
+      { routeId: 'forecast', label: 'Forecast Workbench', icon: 'wand', badge: null },
+      { routeId: 'stom', label: 'Prediction Diagnostics', icon: 'pulse', badge: null },
+    ],
+  },
+  {
+    label: 'REINFORCEMENT LEARNING',
+    items: [
+      { routeId: 'daily-ohlcv', label: 'Daily Close RL', icon: 'database', badge: null },
+      { routeId: 'rl', label: 'RL Trading Evidence', icon: 'rocket', badge: 'RL' },
+      { routeId: 'daily-rl-guide', label: 'RL Guide', icon: 'file', badge: null },
+    ],
+  },
+  {
+    label: 'OPERATIONS',
+    items: [
+      { routeId: 'live-training', label: 'Live Training', icon: 'activity', badge: 'LIVE', status: 'live' },
+      { routeId: 'history', label: 'Runs & Reports', icon: 'history', badge: null },
+      { routeId: 'artifacts', label: 'Artifacts & Models', icon: 'package', badge: null },
+      { routeId: 'system-health', label: 'System Health', icon: 'cpu', badge: null },
+    ],
+  },
+  {
+    label: 'KNOWLEDGE',
+    items: [
+      { routeId: 'docs', label: 'Research Reports', icon: 'file', badge: null },
+      { routeId: 'docs', label: 'Wiki', icon: 'file', badge: null },
+      { action: 'version-history', label: 'Version History', icon: 'history', badge: 'v5.1' },
+      { routeId: 'settings', label: 'Settings', icon: 'settings', badge: null },
+    ],
+  },
+] as const satisfies readonly V51NavGroup[];
+
+function v51RouteLabel(tabId: string): string | null {
+  for (const group of V51_NAV_GROUPS) {
+    for (const item of group.items) {
+      if ('routeId' in item && item.routeId === tabId) return item.label;
+    }
+  }
+  return null;
+}
+
 const ROUTE_BY_ID = new Map(DASHBOARD_ROUTES.map((route) => [route.id, route]));
 
 function normalizePath(pathname: string): string {
@@ -71,6 +183,11 @@ export function routeForTab(tabId: string): DashboardRoute | null {
 
 export function routeLabel(tabId: string): string {
   return routeForTab(tabId)?.label ?? tabId;
+}
+
+export function routeLabelForShell(tabId: string, shell: DashboardShell): string {
+  if (shell === 'v5') return v51RouteLabel(tabId) ?? routeLabel(tabId);
+  return routeLabel(tabId);
 }
 
 export function routeUrl(tabId: string, options: { currentSearch?: string } = {}): string {

@@ -3,6 +3,7 @@
   import Sidebar from '$layout/Sidebar.svelte';
   import Header from '$layout/Header.svelte';
   import OpsStrip from '$layout/OpsStrip.svelte';
+  import RightDetailRail from '$layout/RightDetailRail.svelte';
   import V4Shell from '$layout/V4Shell.svelte';
   import HeroStrip from '$layout/HeroStrip.svelte';
   import MissionControl from '$tabs/MissionControl.svelte';
@@ -244,6 +245,9 @@
         {/if}
       </div>
     </div>
+    {#if shell === 'v5'}
+      <RightDetailRail />
+    {/if}
   </div>
 {:else}
 {#if shell === 'v4'}
@@ -258,6 +262,9 @@
       <OpsStrip />
       {@render tabHost()}
     </div>
+    {#if shell === 'v5'}
+      <RightDetailRail />
+    {/if}
   </div>
 {/if}
 {/if}

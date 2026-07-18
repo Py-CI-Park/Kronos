@@ -1,24 +1,20 @@
 <script lang="ts">
   import { activeTab, sidebarCollapsed, sidebarMobileOpen, trainingStatus, metricsLatest } from '$lib/stores';
-  import { ICONS, type IconName } from '$lib/icons';
+  import { ICONS } from '$lib/icons';
   import { fmt } from '$lib/format';
-  import { navigateToTab } from '$lib/routes';
+  import {
+    V51_NAV_GROUPS,
+    V51_SHELL_BRAND,
+    V51_VERSION_HISTORY,
+    navigateToTab,
+    type V51NavGroup,
+    type V51NavItem,
+  } from '$lib/routes';
   import { dashboardShell, type DashboardShell } from '$lib/shellMode';
   import { requestCommandPalette } from '$lib/commandPalette';
 
-  interface NavItem {
-    id: string;
-    label: string;
-    icon: IconName;
-    badge?: string | null;
-    status?: 'live' | 'warn' | null;
-    children?: NavItem[];
-  }
-
-  interface NavGroup {
-    label: string;
-    items: NavItem[];
-  }
+  type NavItem = V51NavItem;
+  type NavGroup = V51NavGroup;
 
   // v3 "AI Quant" technique-based IA (code-grounded):
   //   커맨드 → Kronos 예측(독립 파운데이션) → 트레이딩 리서치(일봉 D0–D9 ⊃ D4 RL·종가매매,
@@ -136,15 +132,41 @@
 
   let shell = $state<DashboardShell>('v3');
   dashboardShell.subscribe((v) => (shell = v));
-  let navGroups = $derived(shell === 'v4' ? v4Groups : v3Groups);
+  let navGroups = $derived<readonly NavGroup[]>(shell === 'v5' ? V51_NAV_GROUPS : shell === 'v4' ? v4Groups : v3Groups);
+  let versionHistoryOpen = $state(false);
 
-  function pick(id: string) {
-    navigateToTab(id);
+  $effect(() => {
+    if (shell !== 'v5') versionHistoryOpen = false;
+  });
+
+  function itemRouteId(item: NavItem): string | null {
+    return item.routeId ?? item.id ?? null;
+  }
+
+  function itemIsActive(item: NavItem): boolean {
+    const routeId = itemRouteId(item);
+    return routeId != null && current === routeId;
+  }
+
+  function toggleVersionHistory(): void {
+    versionHistoryOpen = !versionHistoryOpen;
+    if (versionHistoryOpen && collapsed) sidebarCollapsed.set(false);
+  }
+
+  function pick(item: NavItem): void {
+    if (item.action === 'version-history') {
+      toggleVersionHistory();
+      return;
+    }
+    const routeId = itemRouteId(item);
+    if (!routeId) return;
+    navigateToTab(routeId);
     sidebarMobileOpen.set(false);
   }
 </script>
 
 <aside
+  id="kronos-sidebar"
   class="sidebar"
   data-sidebar-collapsed={collapsed}
   data-mobile-open={mobileOpen}
@@ -152,13 +174,32 @@
   data-v4-shell={shell === 'v4' ? 'sidebar' : undefined}
 >
   <div class="brand">
-    <div class="brand-mark">
+    <div
+      class="brand-mark"
+      aria-label={shell === 'v5' ? `${V51_SHELL_BRAND.name} — ${V51_SHELL_BRAND.subtitle}` : 'Kronos 대시보드'}
+      title={collapsed ? (shell === 'v5' ? `${V51_SHELL_BRAND.name} · ${V51_SHELL_BRAND.displayVersion}` : 'Kronos 대시보드') : undefined}
+    >
       <svg viewBox="0 0 24 24" aria-hidden="true">{@html ICONS.flame}</svg>
     </div>
     {#if !collapsed}
       <div class="brand-text">
-        <span class="brand-name">Kronos 대시보드</span>
-        <span class="brand-tag">official · operations</span>
+        {#if shell === 'v5'}
+          <span class="brand-name">{V51_SHELL_BRAND.name}</span>
+          <span class="brand-tag brand-tag--subtitle">{V51_SHELL_BRAND.subtitle}</span>
+          <span class="brand-version">{V51_SHELL_BRAND.displayVersion}</span>
+          <button
+            type="button"
+            class="version-toggle"
+            aria-expanded={versionHistoryOpen}
+            aria-controls="v51-version-history-panel"
+            onclick={toggleVersionHistory}
+          >
+            Version History
+          </button>
+        {:else}
+          <span class="brand-name">Kronos 대시보드</span>
+          <span class="brand-tag">official · operations</span>
+        {/if}
       </div>
     {/if}
   </div>
@@ -194,12 +235,16 @@
           <button
             type="button"
             class="nav-item"
-            data-tab={item.id}
-            data-active={current === item.id ? 'true' : 'false'}
+            data-tab={itemRouteId(item) ?? undefined}
+            data-nav-action={item.action ?? undefined}
+            data-active={itemIsActive(item) ? 'true' : 'false'}
             data-status={item.status ?? ''}
-            aria-current={current === item.id ? 'page' : undefined}
-            onclick={() => pick(item.id)}
-            title={collapsed ? item.label : undefined}
+            aria-current={itemIsActive(item) ? 'page' : undefined}
+            aria-expanded={item.action === 'version-history' ? versionHistoryOpen : undefined}
+            aria-controls={item.action === 'version-history' ? 'v51-version-history-panel' : undefined}
+            aria-label={collapsed ? item.label : undefined}
+            onclick={() => pick(item)}
+            title={collapsed ? item.label : item.action === 'version-history' ? 'Open V5/V5.1 version history' : undefined}
           >
             <span class="nav-icon">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">{@html ICONS[item.icon]}</svg>
@@ -216,12 +261,14 @@
               <button
                 type="button"
                 class="nav-item nav-item--child"
-                data-tab={child.id}
+                data-tab={itemRouteId(child) ?? undefined}
                 data-nav-child="true"
-                data-active={current === child.id ? 'true' : 'false'}
+                data-active={itemIsActive(child) ? 'true' : 'false'}
                 data-status={child.status ?? ''}
-                aria-current={current === child.id ? 'page' : undefined}
-                onclick={() => pick(child.id)}
+                aria-current={itemIsActive(child) ? 'page' : undefined}
+                aria-label={collapsed ? child.label : undefined}
+                onclick={() => pick(child)}
+                title={collapsed ? child.label : undefined}
               >
                 <span class="nav-icon">
                   <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">{@html ICONS[child.icon]}</svg>
@@ -237,6 +284,33 @@
       </div>
     </div>
   {/each}
+
+  {#if shell === 'v5' && versionHistoryOpen && !collapsed}
+    <section
+      id="v51-version-history-panel"
+      class="version-history"
+      aria-label="Kronos version history"
+      data-v51-version-history
+    >
+      <div class="version-history-title">Version History</div>
+      {#each V51_VERSION_HISTORY as entry}
+        <article class="version-entry">
+          <div class="version-entry-head">
+            <strong>{entry.version}</strong>
+            <span>{entry.date}</span>
+          </div>
+          <dl class="version-entry-facts">
+            <div><dt>Commit</dt><dd>{entry.commitSha}</dd></div>
+            <div><dt>Tag</dt><dd>{entry.releaseTag}</dd></div>
+            <div><dt>Changes</dt><dd>{entry.changes}</dd></div>
+            <div><dt>Validation</dt><dd>{entry.validation}</dd></div>
+            <div><dt>Default</dt><dd>{entry.defaultUi}</dd></div>
+            <div><dt>Rollback</dt><dd>{entry.rollbackTarget}</dd></div>
+          </dl>
+        </article>
+      {/each}
+    </section>
+  {/if}
 
   {#if !collapsed}
     <div class="sidebar-footer">
@@ -271,5 +345,82 @@
     width: 100%;
     border: 1px solid var(--border-faint);
     background: var(--surface-sunken);
+  }
+  .brand-version {
+    margin-top: 4px;
+    color: var(--fg);
+    font: 600 11px/1.3 var(--font-mono);
+  }
+  .brand-tag--subtitle {
+    font-family: var(--font-display);
+    letter-spacing: 0;
+  }
+  .version-toggle {
+    align-self: flex-start;
+    margin-top: 8px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--r-pill);
+    background: var(--surface-sunken);
+    color: var(--fg);
+    font: 600 11px/1 var(--font-display);
+  }
+  .version-toggle:hover {
+    border-color: var(--border);
+    color: var(--accent-strong);
+  }
+  .version-history {
+    margin: 8px 20px 12px;
+    padding: 12px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--r-md);
+    background: var(--surface-sunken);
+    color: var(--fg);
+    overflow: auto;
+    max-height: min(420px, 45vh);
+  }
+  .version-history-title {
+    margin-bottom: 10px;
+    font: 700 12px/1 var(--font-display);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-strong);
+  }
+  .version-entry + .version-entry {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-faint);
+  }
+  .version-entry-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    font: 600 12px/1.2 var(--font-display);
+  }
+  .version-entry-head span {
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+  .version-entry-facts {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .version-entry-facts div {
+    display: grid;
+    gap: 2px;
+  }
+  .version-entry-facts dt {
+    color: var(--dim);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .version-entry-facts dd {
+    margin: 0;
+    color: var(--muted);
   }
 </style>

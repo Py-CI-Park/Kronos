@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import {
     dailyOhlcvApi,
     type DailyArtifactsResponse,
@@ -37,6 +37,19 @@
   import Disclosure from '$lib/Disclosure.svelte';
   import { createRequestGate } from '$lib/requestGate';
   import { createCardRequestManager, type CardRequestState } from '$lib/cardRequest';
+  import { dashboardShell, type DashboardShell } from '$lib/shellMode';
+  import {
+    V51ApiError,
+    fetchV51Accounting,
+    fetchV51CausalPanel,
+    fetchV51SourceCoverage,
+    type V51AccountingRoot,
+    type V51CausalPanelRoot,
+    type V51FalseResearchLocks,
+    type V51NoClaimFlags,
+    type V51ResearchRouteId,
+    type V51SourceCoverageRoot,
+  } from '$lib/v51Api';
 
   let progress = $state<DailyProgressResponse | null>(null);
   let dbSummary = $state<DailyDbSummaryResponse | null>(null);
@@ -71,6 +84,53 @@
   let selectedSymbolError = $state<string | null>(null);
   let endpointErrors = $state<SecondaryCardKey[]>([]);
   let loading = $state(false);
+  let shell = $state<DashboardShell>('v3');
+  const unsubscribeDashboardShell = dashboardShell.subscribe((value) => (shell = value));
+
+  interface V51DailyCardState<T> {
+    data: T | null;
+    loading: boolean;
+    error: string | null;
+    loaded: boolean;
+  }
+
+  function emptyV51DailyCardState<T>(): V51DailyCardState<T> {
+    return { data: null, loading: false, error: null, loaded: false };
+  }
+
+  let v51SourceCoverageState = $state<V51DailyCardState<V51SourceCoverageRoot>>(emptyV51DailyCardState());
+  let v51CausalPanelState = $state<V51DailyCardState<V51CausalPanelRoot>>(emptyV51DailyCardState());
+  let v51AccountingState = $state<V51DailyCardState<V51AccountingRoot>>(emptyV51DailyCardState());
+  let v51EvidenceTouched = $state(false);
+  let v51EvidenceRequestId = 0;
+
+  const v51LockRows: readonly { key: keyof V51FalseResearchLocks; label: string }[] = [
+    { key: 'promotion_allowed', label: 'promotion_allowed' },
+    { key: 'model_build_allowed', label: 'model_build_allowed' },
+    { key: 'paper_forward_allowed', label: 'paper_forward_allowed' },
+    { key: 'live_broker_order_allowed', label: 'live_broker_order_allowed' },
+    { key: 'profitability_claim_allowed', label: 'profitability_claim_allowed' },
+    { key: 'go_summary_allowed', label: 'go_summary_allowed' },
+  ];
+
+  const v51ClaimRows: readonly { key: keyof V51NoClaimFlags; label: string }[] = [
+    { key: 'official_close_claim', label: 'official_close_claim' },
+    { key: 'paper_forward_claim', label: 'paper_forward_claim' },
+    { key: 'live_trading_claim', label: 'live_trading_claim' },
+    { key: 'broker_integration_claim', label: 'broker_integration_claim' },
+    { key: 'profitability_claim', label: 'profitability_claim' },
+    { key: 'go_readiness_claim', label: 'go_readiness_claim' },
+  ];
+
+  let v51DailyProtocol = $derived(
+    v51SourceCoverageState.data?.protocol ?? v51CausalPanelState.data?.protocol ?? v51AccountingState.data?.protocol ?? null,
+  );
+  let v51DailyLocks = $derived(
+    v51SourceCoverageState.data?.locks ?? v51CausalPanelState.data?.locks ?? v51AccountingState.data?.locks ?? null,
+  );
+  let v51DailyClaims = $derived(
+    v51SourceCoverageState.data?.claims ?? v51CausalPanelState.data?.claims ?? v51AccountingState.data?.claims ?? null,
+  );
 
   // G009 Todo 9 — critical (always-visible, not behind a Disclosure) cards
   // get INDEPENDENT loaders + own {loading, error} state so one slow/failed
@@ -147,6 +207,42 @@
     '000250 같은 leading-zero 종목 코드는 문자열 그대로 drilldown합니다.',
     '모델·수익·실거래 판단 전에 artifact hashes, stale/malformed fail-closed 상태를 확인합니다.',
   ] as const;
+
+  function describeV51DailyError(routeId: V51ResearchRouteId, reason: unknown): string {
+    if (reason instanceof V51ApiError) {
+      const status = reason.status === null ? 'no-http-status' : `HTTP ${reason.status}`;
+      return `${routeId} ${reason.code} · ${status} · ${reason.message}`;
+    }
+    return `${routeId} ERROR · ${reason instanceof Error ? reason.message : String(reason)}`;
+  }
+
+  function v51DailyStateFromResult<T>(
+    routeId: V51ResearchRouteId,
+    result: PromiseSettledResult<T>,
+  ): V51DailyCardState<T> {
+    if (result.status === 'fulfilled') {
+      return { data: result.value, loading: false, error: null, loaded: true };
+    }
+    return { data: null, loading: false, error: describeV51DailyError(routeId, result.reason), loaded: true };
+  }
+
+  async function loadV51DailyEvidence(): Promise<void> {
+    if (shell !== 'v5') return;
+    const requestId = ++v51EvidenceRequestId;
+    v51EvidenceTouched = true;
+    v51SourceCoverageState = { ...v51SourceCoverageState, loading: true, error: null };
+    v51CausalPanelState = { ...v51CausalPanelState, loading: true, error: null };
+    v51AccountingState = { ...v51AccountingState, loading: true, error: null };
+    const [sourceCoverage, causalPanel, accounting] = await Promise.allSettled([
+      fetchV51SourceCoverage(),
+      fetchV51CausalPanel(),
+      fetchV51Accounting(),
+    ]);
+    if (requestId !== v51EvidenceRequestId || shell !== 'v5') return;
+    v51SourceCoverageState = v51DailyStateFromResult('SOURCE_COVERAGE', sourceCoverage);
+    v51CausalPanelState = v51DailyStateFromResult('CAUSAL_PANEL', causalPanel);
+    v51AccountingState = v51DailyStateFromResult('ACCOUNTING', accounting);
+  }
   // G009 Todo 9 — progress card: INDEPENDENT loader with its own
   // loading/error state. A timeout resolves to 'TIMEOUT' (never hangs
   // forever) and renders as an explicit ERROR/RETRY state, never as
@@ -260,6 +356,11 @@
     void loadCloseSlotCard();
   }
 
+  function refreshDailyOhlcv(): void {
+    void loadDailyOhlcv();
+    if (shell === 'v5') void loadV51DailyEvidence();
+  }
+
   // Give the first-card progress request a short priority window before the
   // close-slot/secondary artifact scans start. The groups still own independent
   // state and a slow progress request cannot block the others beyond 3s.
@@ -304,6 +405,22 @@
     }
   }
 
+  $effect(() => {
+    if (
+      shell === 'v5'
+      && !v51EvidenceTouched
+      && !v51SourceCoverageState.loading
+      && !v51CausalPanelState.loading
+      && !v51AccountingState.loading
+    ) {
+      void loadV51DailyEvidence();
+    }
+  });
+
+  onDestroy(() => {
+    unsubscribeDashboardShell();
+  });
+
   onMount(() => { void loadDailyOhlcv(); });
 </script>
 
@@ -318,7 +435,7 @@
     현재 화면은 D0 DB 분석, D1 유니버스, D2 데이터셋, D3 예측 베이스라인, D4 포트폴리오 RL, D5 워크포워드/게이트, D6 시각화, D7 연구 진단, D8/D9 레지스트리·페이퍼 포워드 잠금 증거를 표시합니다. 수익 보장, 실거래, 주문, 브로커 준비 상태가 아니며 현재 모델 생성 GO가 아니라 NO-GO/RESEARCH_ONLY 상태를 그대로 노출합니다.
   </p>
   <div style="margin-top:12px">
-    <button type="button" class="btn" onclick={() => void loadDailyOhlcv()} disabled={loading}>{loading ? '갱신 중…' : '새로고침'}</button>
+    <button type="button" class="btn" onclick={refreshDailyOhlcv} disabled={loading}>{loading ? '갱신 중…' : '새로고침'}</button>
   </div>
   {#if endpointErrors.length > 0}
     <div class="notice danger" data-daily-api-error style="margin-top:12px">
@@ -345,6 +462,161 @@
   blockers={dailyStatusBlockers}
   nextActions={dailyNextInspection}
 />
+{#if shell === 'v5'}
+  <section class="panel v51-daily-evidence" data-v51-daily-evidence>
+    <div class="panel-head v51-evidence-head">
+      <div>
+        <div class="text-eyebrow">V5.1 Daily causal/accounting evidence</div>
+        <h2 class="text-h3">15:20 프록시 · 원천/패널/회계 증거</h2>
+        <p class="text-muted" style="margin-top:6px">
+          shell=v5에서만 V5.1 GET API를 읽습니다. v3/v4 Daily 화면은 기존 API/레이아웃을 그대로 유지합니다.
+        </p>
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <span class="pill"><span class="dot"></span>GET-only</span>
+        <span class="pill warn"><span class="dot"></span>READ_ONLY · NOT_RUN until API evidence</span>
+      </div>
+    </div>
+
+    <div class="v51-evidence-grid">
+      <article class="v51-evidence-card" data-v51-source-coverage-card>
+        <div class="text-eyebrow">Source coverage</div>
+        <h3 class="text-h3">source coverage · exact 15:20</h3>
+        {#if v51SourceCoverageState.error}
+          <div class="notice danger" data-v51-source-coverage-error>ERROR · {v51SourceCoverageState.error}</div>
+        {:else if v51SourceCoverageState.loading}
+          <div class="notice" data-v51-source-coverage-loading>V5.1 SOURCE_COVERAGE 로딩 중…</div>
+        {:else if v51SourceCoverageState.data}
+          {#if v51SourceCoverageState.data.status !== 'READY'}
+            <div class="notice warn" data-v51-source-coverage-blocked>BLOCKED · {v51SourceCoverageState.data.status_reason}</div>
+          {/if}
+          <dl class="v51-fact-list">
+            <div><dt>coverage_status</dt><dd>{v51SourceCoverageState.data.source_coverage.coverage_status}</dd></div>
+            <div><dt>source_artifact_id</dt><dd class="mono">{v51SourceCoverageState.data.source.source_artifact_id}</dd></div>
+            <div><dt>source_sha256</dt><dd class="mono">{v51SourceCoverageState.data.source.source_sha256}</dd></div>
+            <div><dt>source_db_sha256</dt><dd class="mono">{v51SourceCoverageState.data.source.source_db_sha256}</dd></div>
+            <div><dt>generated_at</dt><dd>{v51SourceCoverageState.data.source.generated_at}</dd></div>
+            <div><dt>exact_1520_row_count</dt><dd class="tnum">{v51SourceCoverageState.data.source_coverage.exact_1520_row_count.toLocaleString('ko-KR')}</dd></div>
+            <div><dt>symbol_count</dt><dd class="tnum">{v51SourceCoverageState.data.source_coverage.symbol_count.toLocaleString('ko-KR')}</dd></div>
+            <div><dt>session_count</dt><dd class="tnum">{v51SourceCoverageState.data.source_coverage.session_count.toLocaleString('ko-KR')}</dd></div>
+            <div><dt>date_range</dt><dd>{v51SourceCoverageState.data.source_coverage.first_valid_date ?? 'NOT_AVAILABLE'} → {v51SourceCoverageState.data.source_coverage.last_valid_date ?? 'NOT_AVAILABLE'}</dd></div>
+            <div><dt>six_digit_sample_symbol</dt><dd class="tnum">{v51SourceCoverageState.data.source_coverage.sample_symbol}</dd></div>
+            <div><dt>exact_1520_sample</dt><dd class="tnum">{v51SourceCoverageState.data.source_coverage.sample_timestamp_yyyymmddhhmm}</dd></div>
+            <div><dt>price_basis=15:20_bar_close_proxy</dt><dd>official_close=false · nearest_fallback_allowed=false</dd></div>
+            <div><dt>bar_volume_1520</dt><dd>SOURCE_SINGLE_5MIN_BAR_VOLUME</dd></div>
+            <div><dt>cumulative_volume_to_1520=NOT_AVAILABLE</dt><dd>{v51SourceCoverageState.data.source_coverage.volume_to_1520_status}</dd></div>
+            <div><dt>amount_to_1520=NOT_AVAILABLE</dt><dd>{v51SourceCoverageState.data.source_coverage.amount_to_1520_status}</dd></div>
+            <div><dt>missing_policy</dt><dd>{v51SourceCoverageState.data.source_coverage.missing_policy}</dd></div>
+          </dl>
+        {:else}
+          <div class="notice" data-v51-source-coverage-not-run>NOT_RUN · V5.1 source coverage evidence has not loaded.</div>
+        {/if}
+      </article>
+
+      <article class="v51-evidence-card" data-v51-causal-panel-card>
+        <div class="text-eyebrow">Causal panel</div>
+        <h3 class="text-h3">H1/H3/H5 · 15:20 labels</h3>
+        {#if v51CausalPanelState.error}
+          <div class="notice danger" data-v51-causal-panel-error>ERROR · {v51CausalPanelState.error}</div>
+        {:else if v51CausalPanelState.loading}
+          <div class="notice" data-v51-causal-panel-loading>V5.1 CAUSAL_PANEL 로딩 중…</div>
+        {:else if v51CausalPanelState.data}
+          {#if v51CausalPanelState.data.status !== 'READY'}
+            <div class="notice warn" data-v51-causal-panel-blocked>BLOCKED · {v51CausalPanelState.data.status_reason}</div>
+          {/if}
+          <dl class="v51-fact-list">
+            <div><dt>panel_schema</dt><dd>{v51CausalPanelState.data.causal_panel.panel_schema}</dd></div>
+            <div><dt>row_count</dt><dd class="tnum">{v51CausalPanelState.data.causal_panel.row_count.toLocaleString('ko-KR')}</dd></div>
+            <div><dt>price_basis=15:20_bar_close_proxy</dt><dd>official_close=false</dd></div>
+            <div><dt>H1/H3/H5</dt><dd>{v51CausalPanelState.data.causal_panel.primary_horizon} primary · {v51CausalPanelState.data.causal_panel.validation_horizons.join('/')} validation</dd></div>
+            <div><dt>label_columns</dt><dd class="mono">{v51CausalPanelState.data.causal_panel.label_columns.join(' · ')}</dd></div>
+          </dl>
+          <div class="table-wrap v51-panel-preview">
+            <table>
+              <thead><tr><th>six-digit symbol</th><th>session</th><th>timestamp</th><th>entry</th><th>H1</th><th>H3</th><th>H5</th></tr></thead>
+              <tbody>
+                {#each v51CausalPanelState.data.causal_panel.rows_preview as row}
+                  <tr>
+                    <td class="tnum">{row.symbol}</td>
+                    <td>{row.session_date}</td>
+                    <td class="tnum">{row.timestamp_kst}</td>
+                    <td>{row.entry_status}</td>
+                    <td>{row.h1_status}</td>
+                    <td>{row.h3_status}</td>
+                    <td>{row.h5_status}</td>
+                  </tr>
+                {:else}
+                  <tr><td colspan="7">rows_preview=NOT_AVAILABLE</td></tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {:else}
+          <div class="notice" data-v51-causal-panel-not-run>NOT_RUN · V5.1 causal panel evidence has not loaded.</div>
+        {/if}
+      </article>
+
+      <article class="v51-evidence-card" data-v51-accounting-card>
+        <div class="text-eyebrow">Accounting</div>
+        <h3 class="text-h3">account envelope · base_23bp</h3>
+        {#if v51AccountingState.error}
+          <div class="notice danger" data-v51-accounting-error>ERROR · {v51AccountingState.error}</div>
+        {:else if v51AccountingState.loading}
+          <div class="notice" data-v51-accounting-loading>V5.1 ACCOUNTING 로딩 중…</div>
+        {:else if v51AccountingState.data}
+          {#if v51AccountingState.data.status !== 'READY'}
+            <div class="notice warn" data-v51-accounting-blocked>BLOCKED · {v51AccountingState.data.status_reason}</div>
+          {/if}
+          <dl class="v51-fact-list">
+            <div><dt>accounting_status</dt><dd>{v51AccountingState.data.accounting.accounting_status}</dd></div>
+            <div><dt>account envelope</dt><dd>{v51AccountingState.data.accounting.contract.initial_capital_krw.toLocaleString('ko-KR')} KRW · {v51AccountingState.data.accounting.contract.slot_count} slots</dd></div>
+            <div><dt>slot_budget_krw</dt><dd class="tnum">{v51AccountingState.data.accounting.contract.slot_budget_krw.toLocaleString('ko-KR')}</dd></div>
+            <div><dt>max_invested_krw</dt><dd>{v51AccountingState.data.accounting.contract.max_invested_krw.toLocaleString('ko-KR')} · {v51AccountingState.data.accounting.contract.max_target_investment_display_percent}</dd></div>
+            <div><dt>reserve_cash_krw</dt><dd>{v51AccountingState.data.accounting.contract.reserve_cash_krw.toLocaleString('ko-KR')} · {v51AccountingState.data.accounting.contract.reserve_cash_display_percent}</dd></div>
+            <div><dt>slots_used/max_slots</dt><dd>{v51AccountingState.data.accounting.slots_used} / {v51AccountingState.data.accounting.max_slots}</dd></div>
+            <div><dt>economic_nav_krw</dt><dd class="tnum">{v51AccountingState.data.accounting.economic_nav_krw.toLocaleString('ko-KR')}</dd></div>
+            <div><dt>cash_reserve_krw</dt><dd class="tnum">{v51AccountingState.data.accounting.cash_reserve_krw.toLocaleString('ko-KR')}</dd></div>
+            <div><dt>internal_cost_id</dt><dd>{v51AccountingState.data.accounting.internal_cost_id} · display_cost_percent={v51AccountingState.data.accounting.display_cost_percent}</dd></div>
+            <div><dt>cost_schedule.primary</dt><dd>{v51AccountingState.data.accounting.cost_schedule.primary.internal_id} · {v51AccountingState.data.accounting.cost_schedule.primary.round_trip_cost_bp}bp · {v51AccountingState.data.accounting.cost_schedule.primary.display_percent}</dd></div>
+            <div><dt>shorting/leverage/duplicates</dt><dd>{String(v51AccountingState.data.accounting.contract.shorting_allowed)} / {String(v51AccountingState.data.accounting.contract.leverage_allowed)} / {String(v51AccountingState.data.accounting.contract.duplicate_symbol_slots_allowed)}</dd></div>
+          </dl>
+        {:else}
+          <div class="notice" data-v51-accounting-not-run>NOT_RUN · V5.1 accounting evidence has not loaded.</div>
+        {/if}
+      </article>
+
+      <article class="v51-evidence-card" data-v51-daily-locks-card>
+        <div class="text-eyebrow">No-claim rails</div>
+        <h3 class="text-h3">six false locks · read-only protocol</h3>
+        {#if v51DailyProtocol}
+          <dl class="v51-fact-list">
+            <div><dt>method</dt><dd>{v51DailyProtocol.method}</dd></div>
+            <div><dt>read_only</dt><dd>{String(v51DailyProtocol.read_only)}</dd></div>
+            <div><dt>causal_cutoff_kst</dt><dd>{v51DailyProtocol.causal_cutoff_kst}</dd></div>
+            <div><dt>price_basis=15:20_bar_close_proxy</dt><dd>official_close={String(v51DailyProtocol.official_close)}</dd></div>
+            <div><dt>cost ids</dt><dd>{v51DailyProtocol.cost_schedule.zero_cost_control.internal_id}=0.00% · {v51DailyProtocol.cost_schedule.primary.internal_id}=0.23% · {v51DailyProtocol.cost_schedule.stress_control.internal_id}=0.46%</dd></div>
+          </dl>
+        {:else}
+          <div class="notice" data-v51-protocol-not-run>NOT_RUN · no V5.1 protocol root loaded.</div>
+        {/if}
+        {#if v51DailyLocks}
+          <div class="v51-mini-grid" data-v51-six-false-locks>
+            {#each v51LockRows as row}
+              <div><span>{row.label}</span><b>{String(v51DailyLocks[row.key])}</b></div>
+            {/each}
+          </div>
+        {/if}
+        {#if v51DailyClaims}
+          <div class="v51-mini-grid" data-v51-no-claim-facts>
+            {#each v51ClaimRows as row}
+              <div><span>{row.label}</span><b>{String(v51DailyClaims[row.key])}</b></div>
+            {/each}
+          </div>
+        {/if}
+      </article>
+    </div>
+  </section>
+{/if}
 {#if progressCardState.error}
   <div class="notice danger" data-daily-progress-card-error style="margin-top:12px">
     ERROR: {progressCardState.error}
@@ -478,4 +750,21 @@
   table { width:100%; border-collapse:collapse; font-size:12px; }
   th, td { border-bottom:1px solid var(--border-faint); padding:7px; text-align:left; vertical-align:top; }
   .mono { font-family: var(--font-mono); font-size:11px; color:var(--muted); }
+  .v51-daily-evidence { display:grid; gap:16px; }
+  .v51-evidence-head { align-items:flex-start; }
+  .v51-evidence-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; }
+  .v51-evidence-card { border:1px solid var(--border-faint); border-radius:16px; background:var(--surface-sunken); padding:14px; min-width:0; }
+  .v51-evidence-card h3 { margin:4px 0 12px; }
+  .v51-fact-list { display:grid; gap:8px; margin:0; }
+  .v51-fact-list > div { display:grid; grid-template-columns:minmax(120px, 0.45fr) minmax(0, 1fr); gap:10px; align-items:start; }
+  .v51-fact-list dt { color:var(--muted); font-size:11px; text-transform:none; letter-spacing:0.02em; }
+  .v51-fact-list dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+  .v51-panel-preview { margin-top:12px; max-height:220px; overflow:auto; }
+  .v51-mini-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:8px; margin-top:12px; }
+  .v51-mini-grid > div { border:1px solid var(--border-faint); border-radius:12px; padding:10px; background:var(--surface); }
+  .v51-mini-grid span { display:block; color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+  .v51-mini-grid b { display:block; margin-top:4px; font-size:12px; }
+  @media (max-width: 760px) {
+    .v51-fact-list > div { grid-template-columns:1fr; gap:2px; }
+  }
 </style>
