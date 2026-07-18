@@ -195,7 +195,7 @@
     { label: 'paper forward', value: 'false', tone: 'danger' },
     { label: 'model build allowed', value: 'false', tone: 'danger' },
     { label: 'go summary', value: 'false', tone: 'danger' },
-    { label: 'default cost', value: '23bp', tone: 'warn' },
+    { label: 'default cost', value: '0.23% (23 bp)', tone: 'warn' },
   ] as const;
   const dailyStatusBlockers = [
     'D0 price_basis / adjusted-price evidence is still a blocker for stronger claims.',
@@ -558,7 +558,7 @@
 
       <article class="v51-evidence-card" data-v51-accounting-card>
         <div class="text-eyebrow">Accounting</div>
-        <h3 class="text-h3">account envelope · base_23bp</h3>
+        <h3 class="text-h3">account envelope · 0.23% base cost (base_23bp)</h3>
         {#if v51AccountingState.error}
           <div class="notice danger" data-v51-accounting-error>ERROR · {v51AccountingState.error}</div>
         {:else if v51AccountingState.loading}
@@ -576,8 +576,8 @@
             <div><dt>slots_used/max_slots</dt><dd>{v51AccountingState.data.accounting.slots_used} / {v51AccountingState.data.accounting.max_slots}</dd></div>
             <div><dt>economic_nav_krw</dt><dd class="tnum">{v51AccountingState.data.accounting.economic_nav_krw.toLocaleString('ko-KR')}</dd></div>
             <div><dt>cash_reserve_krw</dt><dd class="tnum">{v51AccountingState.data.accounting.cash_reserve_krw.toLocaleString('ko-KR')}</dd></div>
-            <div><dt>internal_cost_id</dt><dd>{v51AccountingState.data.accounting.internal_cost_id} · display_cost_percent={v51AccountingState.data.accounting.display_cost_percent}</dd></div>
-            <div><dt>cost_schedule.primary</dt><dd>{v51AccountingState.data.accounting.cost_schedule.primary.internal_id} · {v51AccountingState.data.accounting.cost_schedule.primary.round_trip_cost_bp}bp · {v51AccountingState.data.accounting.cost_schedule.primary.display_percent}</dd></div>
+            <div><dt>internal_cost_id</dt><dd>display_cost_percent={v51AccountingState.data.accounting.display_cost_percent} · internal_cost_id={v51AccountingState.data.accounting.internal_cost_id}</dd></div>
+            <div><dt>cost_schedule.primary</dt><dd>{v51AccountingState.data.accounting.cost_schedule.primary.display_percent} · {v51AccountingState.data.accounting.cost_schedule.primary.internal_id} · {v51AccountingState.data.accounting.cost_schedule.primary.round_trip_cost_bp} bp</dd></div>
             <div><dt>shorting/leverage/duplicates</dt><dd>{String(v51AccountingState.data.accounting.contract.shorting_allowed)} / {String(v51AccountingState.data.accounting.contract.leverage_allowed)} / {String(v51AccountingState.data.accounting.contract.duplicate_symbol_slots_allowed)}</dd></div>
           </dl>
         {:else}
@@ -594,7 +594,7 @@
             <div><dt>read_only</dt><dd>{String(v51DailyProtocol.read_only)}</dd></div>
             <div><dt>causal_cutoff_kst</dt><dd>{v51DailyProtocol.causal_cutoff_kst}</dd></div>
             <div><dt>price_basis=15:20_bar_close_proxy</dt><dd>official_close={String(v51DailyProtocol.official_close)}</dd></div>
-            <div><dt>cost ids</dt><dd>{v51DailyProtocol.cost_schedule.zero_cost_control.internal_id}=0.00% · {v51DailyProtocol.cost_schedule.primary.internal_id}=0.23% · {v51DailyProtocol.cost_schedule.stress_control.internal_id}=0.46%</dd></div>
+            <div><dt>cost ids</dt><dd>0.00% ({v51DailyProtocol.cost_schedule.zero_cost_control.internal_id}) · 0.23% ({v51DailyProtocol.cost_schedule.primary.internal_id}) · 0.46% ({v51DailyProtocol.cost_schedule.stress_control.internal_id})</dd></div>
           </dl>
         {:else}
           <div class="notice" data-v51-protocol-not-run>NOT_RUN · no V5.1 protocol root loaded.</div>

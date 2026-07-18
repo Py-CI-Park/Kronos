@@ -61,6 +61,21 @@
   let shell = $state<DashboardShell>('v3');
   const detailField = (key: string): unknown => selectedRun?.summary?.[key] ?? selectedRun?.detail?.[key];
   const textValue = (value: unknown, fallback = '—'): string => value == null || value === '' ? fallback : String(value);
+  const numericValue = (value: unknown): number | null => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const text = String(value ?? '').trim();
+    if (!text || (text.includes('%') && !/bp|bps/i.test(text))) return null;
+    const match = text.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const formatCostBp = (value: unknown, fallback: unknown = 23): string => {
+    const source = value == null || value === '' ? fallback : value;
+    const numeric = numericValue(source);
+    if (numeric === null) return textValue(source);
+    return `${(numeric / 100).toFixed(2)}% (${numeric.toFixed(0)} bp)`;
+  };
 
   const ruleRun = $derived(
     runs.find((run) => run.strategy_context?.line === 'rule_mainline' || run.artifact_type === 'baseline') ?? null
@@ -92,9 +107,9 @@
         ? 'RL experiment / research-only'
         : 'evidence artifact / research-only'
   );
-  const selectedCost = $derived(
-    textValue(selectedRun?.strategy_context?.risk_policy_summary?.cost_bps ?? detailField('cost_bps') ?? detailField('cost_round_trip_bp'), '23') + 'bp'
-  );
+  const selectedCost = $derived(formatCostBp(
+    selectedRun?.strategy_context?.risk_policy_summary?.cost_bps ?? detailField('cost_bps') ?? detailField('cost_round_trip_bp'),
+  ));
   const selectedBaseline = $derived(textValue(selectedRun?.strategy_context?.primary_baseline ?? detailField('baseline') ?? 'ts_imb RULE baseline'));
   const selectedDrawdown = $derived(textValue(detailField('max_drawdown_pct') ?? detailField('max_drawdown') ?? detailField('max_dd_pct')));
   const selectedTradeCount = $derived(textValue(detailField('trade_count') ?? detailField('trades') ?? trades.length));
@@ -105,7 +120,7 @@
     { label: 'paper forward', value: 'false', tone: 'danger' },
     { label: 'model build unlock', value: 'false', tone: 'danger' },
     { label: 'profit readiness', value: 'false', tone: 'danger' },
-    { label: 'cost assumption', value: '23bp', tone: 'warn' },
+    { label: 'cost assumption', value: '0.23% (23 bp)', tone: 'warn' },
   ] as const;
   const rlStatusBlockers = [
     'ts_imb는 RL이 아니라 RULE baseline이며, RL 실험은 비교·반증 산출물입니다.',
@@ -114,7 +129,7 @@
   ] as const;
   const rlNextInspection = [
     '선택 run의 verdict와 strategy_context를 먼저 확인합니다.',
-    '23bp cost gate, baseline 대비, drawdown, trade count를 확인합니다.',
+    '0.23% (23 bp) cost gate, baseline 대비, drawdown, trade count를 확인합니다.',
     '원시 테이블은 마지막에 열어 원인 분석용으로만 사용합니다.',
   ] as const;
   const unsubscribeDashboardShell = dashboardShell.subscribe((value) => (shell = value));
@@ -322,7 +337,7 @@
     <div>
       <div class="text-eyebrow">Review flow · before raw tables</div>
       <h2 class="text-h3">선택 산출물 판정 먼저 보기</h2>
-      <p class="text-muted">raw table을 열기 전에 RULE/RL 구분, selected verdict, 23bp cost, baseline, drawdown, trade count를 확인합니다.</p>
+      <p class="text-muted">raw table을 열기 전에 RULE/RL 구분, selected verdict, 0.23% (23 bp) cost, baseline, drawdown, trade count를 확인합니다.</p>
     </div>
     <span class="pill danger"><span class="dot"></span>NOT LIVE-READY</span>
   </div>

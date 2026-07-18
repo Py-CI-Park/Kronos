@@ -463,7 +463,9 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "position_count" in guide
     assert "top_score_bucket" in guide
     assert "hold · buy · add · sell · reduce" in guide
-    assert "future_return_1d" in guide
+    assert "future_return_h1_1520_proxy" in guide
+    assert "future_return_h3_1520_proxy" in guide
+    assert "future_return_h5_1520_proxy" in guide
     assert "no live/broker/orders" in guide
     assert "data-daily-visual-lab-card" in visual_card
     assert "data-daily-d6-d7-usage-guide" in visual_card
@@ -479,7 +481,10 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "D7_REGIME_DIAGNOSTICS" in visual_card
     assert "D7_CORRELATION_RISK" in visual_card
     assert "D7_FAILURE_ANALYSIS" in visual_card
-    assert "PLACEHOLDER_READY" in visual_card
+    assert "PLACEHOLDER_READY" not in visual_card
+    assert "MISSING_ARTIFACT" in visual_card
+    assert "NOT_STARTED" in visual_card
+    assert "BLOCKED" in visual_card
     assert "D7_FALLBACK_DIAGNOSTICS" in visual_card
     assert "feature_importance_by_fold.csv" in visual_card
     assert "failure_reason_attribution.csv" in visual_card
@@ -489,7 +494,7 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "current_gap" in visual_card
     assert "feature별 fold 기여도와 drift" in visual_card
     assert "실패 fold를 숨기거나 성공 fold만 골라" in visual_card
-    assert "correlation_cluster_summary.csv가 생성되기 전까지 PLACEHOLDER_READY" in visual_card
+    assert "correlation_cluster_summary.csv has not been attached" in visual_card
     assert "mergeD7DiagnosticCard" in visual_card
     assert "allowed_use: card.allowed_use || fallback.allowed_use" in visual_card
     assert "blocked_use: card.blocked_use || fallback.blocked_use" in visual_card

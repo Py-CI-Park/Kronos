@@ -131,8 +131,7 @@ export const V51_NAV_GROUPS = [
   {
     label: 'KNOWLEDGE',
     items: [
-      { routeId: 'docs', label: 'Research Reports', icon: 'file', badge: null },
-      { routeId: 'docs', label: 'Wiki', icon: 'file', badge: null },
+      { routeId: 'docs', label: 'Research Reports & Wiki', icon: 'file', badge: null },
       { action: 'version-history', label: 'Version History', icon: 'history', badge: 'v5.1' },
       { routeId: 'settings', label: 'Settings', icon: 'settings', badge: null },
     ],

@@ -88,8 +88,7 @@ test('V5.1 navigation groups, order, labels, and actions match the IA contract',
     {
       group: 'KNOWLEDGE',
       items: [
-        { routeId: 'docs', label: 'Research Reports' },
-        { routeId: 'docs', label: 'Wiki' },
+        { routeId: 'docs', label: 'Research Reports & Wiki' },
         { action: 'version-history', label: 'Version History' },
         { routeId: 'settings', label: 'Settings' },
       ],
@@ -125,7 +124,6 @@ test('V5.1 navigation reuses existing route IDs and aliases without changing V3/
     'artifacts',
     'system-health',
     'docs',
-    'docs',
     'settings',
   ]);
   assert.deepEqual(new Set(navRouteIds()), new Set(routeIds));
@@ -139,5 +137,5 @@ test('V5.1 navigation reuses existing route IDs and aliases without changing V3/
   assert.equal(routeLabelForShell('forecast', 'v4'), '예측 워크벤치');
   assert.equal(routeLabelForShell('forecast', 'v5'), 'Forecast Workbench');
   assert.equal(routeLabelForShell('rl', 'v5'), 'RL Trading Evidence');
-  assert.equal(routeLabelForShell('docs', 'v5'), 'Research Reports');
+  assert.equal(routeLabelForShell('docs', 'v5'), 'Research Reports & Wiki');
 });

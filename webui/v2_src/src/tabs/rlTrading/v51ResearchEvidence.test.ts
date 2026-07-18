@@ -4,6 +4,9 @@ import { test } from 'node:test';
 
 const componentSource = readFileSync(new URL('./V51ResearchEvidence.svelte', import.meta.url), 'utf8');
 const rlTradingTabSource = readFileSync(new URL('../RLTradingTab.svelte', import.meta.url), 'utf8');
+const dailyRlGuideTabSource = readFileSync(new URL('../DailyRlGuideTab.svelte', import.meta.url), 'utf8');
+const dailyOhlcvTabSource = readFileSync(new URL('../DailyOhlcvTab.svelte', import.meta.url), 'utf8');
+const dailyVisualLabCardSource = readFileSync(new URL('../dailyOhlcv/DailyVisualLabCard.svelte', import.meta.url), 'utf8');
 
 function assertContainsAll(source: string, values: readonly string[]): void {
   for (const value of values) assert.ok(source.includes(value), `missing ${value}`);
@@ -41,13 +44,67 @@ test('labels keep exact V5.1 no-claim source, accounting, horizon, and cost trut
     '5M KRW slot budget',
     '10M KRW reserve cash',
     'H1 primary · H3/H5 validation',
-    'cost_00bp → 0.00%',
+    'zero_control_0bp → 0.00%',
     'base_23bp → 0.23%',
     'stress_46bp → 0.46%',
     'six-digit',
     'pykrx offline only',
     'Naver disabled',
     'RULE comparison only · NOT RL',
+  ]);
+});
+
+test('daily guide source markers use 15:20 H1/H3/H5 labels and fail-closed tones', () => {
+  assertContainsAll(dailyRlGuideTabSource, [
+    "const H1520_PROXY_LABEL = 'future_return_h1_1520_proxy / future_return_h3_1520_proxy / future_return_h5_1520_proxy';",
+    "const H1520_PROXY_DETAIL = 'H1 primary · H3/H5 validation · 15:20_bar_close_proxy';",
+    '보상 label marker: {H1520_PROXY_LABEL} ({H1520_PROXY_DETAIL}).',
+    'legacy ' + 'future_return_' + '1d' + ' is forbidden in state observations',
+    "if (normalized === 'PASS') return 'pass';",
+    "normalized.includes('MISSING')",
+    "normalized.includes('INCOMPLETE')",
+  ]);
+  assert.doesNotMatch(dailyRlGuideTabSource, new RegExp('보상 label marker: future_return_' + '1d'));
+  assert.doesNotMatch(dailyRlGuideTabSource, new RegExp('다음날 연구용 future_return_' + '1d'));
+  assert.doesNotMatch(dailyRlGuideTabSource, /normalized === 'PASS' \|\| normalized === 'INPUT'/);
+});
+
+test('dashboard cost wording is percent-first with bp only secondary or internal', () => {
+  assertContainsAll(rlTradingTabSource, [
+    '0.23% (23 bp) cost gate',
+    'selected verdict, 0.23% (23 bp) cost',
+  ]);
+  assertContainsAll(dailyRlGuideTabSource, [
+    '0.23% (23 bp)',
+    'cost sensitivity: {formatCostBpList',
+    'reward labels are future_return_h1_1520_proxy / future_return_h3_1520_proxy / future_return_h5_1520_proxy only',
+  ]);
+  assertContainsAll(dailyOhlcvTabSource, [
+    "value: '0.23% (23 bp)'",
+    'account envelope · 0.23% base cost (base_23bp)',
+    '0.00% ({v51DailyProtocol.cost_schedule.zero_cost_control.internal_id})',
+    '0.23% ({v51DailyProtocol.cost_schedule.primary.internal_id})',
+    '0.46% ({v51DailyProtocol.cost_schedule.stress_control.internal_id})',
+    'display_percent} · {v51AccountingState.data.accounting.cost_schedule.primary.internal_id} · {v51AccountingState.data.accounting.cost_schedule.primary.round_trip_cost_bp} bp',
+  ]);
+  assertContainsAll(dailyVisualLabCardSource, [
+    'const bpCost = (value: unknown)',
+    'bpCost(cost.cost_bp)',
+  ]);
+});
+
+test('visual diagnostics fail closed instead of optimistic placeholder readiness', () => {
+  assert.doesNotMatch(dailyVisualLabCardSource, new RegExp('PLACEHOLDER_' + 'READY'));
+  assertContainsAll(dailyVisualLabCardSource, [
+    "status: 'MISSING_ARTIFACT'",
+    "status: 'NOT_STARTED'",
+    "status: 'BLOCKED'",
+    "status === 'MISSING_ARTIFACT'",
+    "status === 'NOT_STARTED'",
+    "status.includes('INCOMPLETE')",
+    'next action: {item.next_action}',
+    '.term-card.warn',
+    '.term-card.danger',
   ]);
 });
 

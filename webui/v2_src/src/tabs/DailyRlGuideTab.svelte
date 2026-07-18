@@ -30,6 +30,16 @@
   const listText = (value: unknown): string => Array.isArray(value) ? value.join(' · ') : String(value ?? '—');
   const stringItems = (value: unknown): string[] => Array.isArray(value) ? value.map((item) => String(item)) : [];
   const safeJson = (value: unknown): string => JSON.stringify(value ?? {}, null, 2);
+  const H1520_PROXY_LABEL = 'future_return_h1_1520_proxy / future_return_h3_1520_proxy / future_return_h5_1520_proxy';
+  const H1520_PROXY_DETAIL = 'H1 primary · H3/H5 validation · 15:20_bar_close_proxy';
+  const LEGACY_FUTURE_RETURN_LABEL = 'future_return_' + '1d';
+  const publicGuideText = (value: unknown): string => String(value ?? '—')
+    .replace(new RegExp(LEGACY_FUTURE_RETURN_LABEL, 'g'), `${H1520_PROXY_LABEL} (${H1520_PROXY_DETAIL})`)
+    .replace(new RegExp('0/23/46' + 'bp', 'g'), '0.00% / 0.23% / 0.46% (0/23/46 bp)')
+    .replace(new RegExp('23' + 'bp', 'g'), '0.23% (23 bp)');
+  const publicListText = (value: unknown): string => Array.isArray(value)
+    ? value.map(publicGuideText).join(' · ')
+    : publicGuideText(value);
   const boolText = (value: unknown): string => value === true ? 'true' : value === false ? 'false' : '—';
   const asRecord = (value: unknown): Record<string, unknown> => (
     value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -45,6 +55,15 @@
     if (numeric === null) return '—';
     const prefix = numeric > 0 ? '+' : '';
     return `${prefix}${numeric.toFixed(digits)}%`;
+  };
+  const formatCostBp = (value: unknown): string => {
+    const numeric = numberValue(value);
+    return numeric === null ? '—' : `${(numeric / 100).toFixed(2)}% (${numeric.toFixed(0)} bp)`;
+  };
+  const formatCostBpList = (value: unknown): string => {
+    const values = Array.isArray(value) ? value : [value];
+    const labels = values.map(formatCostBp).filter((label) => label !== '—');
+    return labels.length > 0 ? labels.join(' / ') : '—';
   };
   const formatKrw = (value: unknown): string => {
     const numeric = numberValue(value);
@@ -107,7 +126,7 @@
     const matching = allRows.filter((row) => String(field(row, 'action')) === currentAction);
     return matching.length > 0 ? matching : allRows.slice(0, 5);
   };
-  const listRecordItems = (value: unknown, key: string): string[] => stringItems(field(value, key));
+  const listRecordItems = (value: unknown, key: string): string[] => stringItems(field(value, key)).map(publicGuideText);
   const selectedLaneJson = (): string => safeJson(field(selectedResearchLane(), 'ai_guidance_format'));
   const scenarioTemplateRows = (): readonly Record<string, unknown>[] => rows(field(guide?.scenario_generator, 'templates'));
   const selectedScenarioTemplate = (): Record<string, unknown> => {
@@ -169,9 +188,18 @@
   });
   const tone = (status: unknown): string => {
     const normalized = String(status ?? '').toUpperCase();
-    if (normalized === 'PASS' || normalized === 'INPUT') return 'pass';
-    if (normalized.includes('NO-GO') || normalized.includes('FAIL') || normalized.includes('BLOCK')) return 'danger';
-    if (normalized.includes('WATCH') || normalized.includes('RESEARCH')) return 'warn';
+    if (normalized === 'PASS') return 'pass';
+    if (normalized.includes('NO-GO') || normalized.includes('FAIL') || normalized.includes('BLOCK') || normalized.includes('ERROR')) return 'danger';
+    if (
+      normalized === 'INPUT' ||
+      normalized.includes('WATCH') ||
+      normalized.includes('RESEARCH') ||
+      normalized.includes('REFERENCE') ||
+      normalized.includes('MISSING') ||
+      normalized.includes('INCOMPLETE') ||
+      normalized.includes('NOT_STARTED') ||
+      normalized.includes('LOADING')
+    ) return 'warn';
     return 'neutral';
   };
 
@@ -181,7 +209,7 @@
     { label: 'paper forward', value: 'false', tone: 'danger' },
     { label: 'model build allowed', value: 'false', tone: 'danger' },
     { label: 'profit readiness', value: 'false', tone: 'danger' },
-    { label: 'cost model', value: '23bp', tone: 'warn' },
+    { label: 'cost model', value: '0.23% (23 bp)', tone: 'warn' },
   ] as const;
   const guideStatusBlockers = [
     '환경 설명서는 학습 구조를 보여주는 guide이며 D5 통과나 profit evidence가 아닙니다.',
@@ -222,7 +250,7 @@
     {
       no: '05',
       title: 'Reward 계산',
-      detail: '다음날 연구용 future_return_1d에서 23bp 비용과 위험 벌점을 뺍니다.',
+      detail: `다음날 연구용 ${H1520_PROXY_LABEL} (${H1520_PROXY_DETAIL})에서 0.23% (23 bp) 비용과 위험 벌점을 뺍니다.`,
       tone: 'warn',
     },
     {
@@ -265,7 +293,7 @@
     강화학습을 모르는 상태에서도 “무엇을 보고(state), 무엇을 할 수 있고(action), 어떤 점수를 받는지(reward), 왜 아직 실거래가 아닌지”를 한 화면에서 이미지처럼 읽도록 만든 설명서입니다.
   </p>
   <p class="text-muted" style="margin-top:6px">
-    핵심 상태 필드 marker: position_count · top_score_bucket. 행동 marker: hold · buy · add · sell · reduce. 보상 label marker: future_return_1d.
+    핵심 상태 필드 marker: position_count · top_score_bucket. 행동 marker: hold · buy · add · sell · reduce. 보상 label marker: {H1520_PROXY_LABEL} ({H1520_PROXY_DETAIL}).
   </p>
   <div style="margin-top:12px">
     <button type="button" class="btn" onclick={() => void loadGuide()} disabled={loading}>{loading ? '갱신 중…' : '새로고침'}</button>
@@ -320,7 +348,7 @@
   <p class="text-muted" style="margin-top:8px">{guide?.plain_language_verdict ?? '환경 상태를 불러오는 중입니다.'}</p>
   <div class="grid-4-kpi" style="margin-top:16px">
     <div class="metric"><div class="metric-label">environment_built</div><div class="metric-value">{boolText(guide?.environment_built)}</div></div>
-    <div class="metric"><div class="metric-label">cost</div><div class="metric-value tnum">{guide?.cost_round_trip_bp ?? 23}bp</div></div>
+    <div class="metric"><div class="metric-label">cost</div><div class="metric-value tnum">{formatCostBp(guide?.cost_round_trip_bp ?? 23)}</div></div>
     <div class="metric"><div class="metric-label">state shape</div><div class="metric-value">{listText(guide?.state_contract?.shape)}</div></div>
     <div class="metric"><div class="metric-label">status</div><div class="metric-value">{guide?.status ?? 'RESEARCH_ONLY'}</div></div>
   </div>
@@ -402,7 +430,7 @@
 
       <text class="svg-annotation" x="560" y="276">mask 적용 후 체결/보유 상태 갱신</text>
       <text class="svg-annotation" x="452" y="265">보상은 다음 state 학습 신호</text>
-      <text class="svg-callout" x="330" y="452">{guide?.cost_round_trip_bp ?? 23}bp 왕복 비용</text>
+      <text class="svg-callout" x="330" y="452">{formatCostBp(guide?.cost_round_trip_bp ?? 23)} 왕복 비용</text>
       <text class="svg-footer" x="55" y="470">실거래 주문이 아니라, 연구용 일봉 데이터로 “상태 → 행동 → 보상 → 검증”을 반복하는 폐쇄 루프입니다.</text>
     </svg>
   </div>
@@ -443,7 +471,7 @@
       <article class="today-cycle-card" data-cycle-role="reward">
         <div class="step-badge">R</div>
         <h3>{formatNumber(field(frameReward(), 'reward'), 4)}</h3>
-        <p>익일수익 {formatNumber(field(frameReward(), 'net_return_after_cost'), 4)} − {guide?.cost_round_trip_bp ?? 23}bp</p>
+        <p>future_return_h1_1520_proxy {formatNumber(field(frameReward(), 'net_return_after_cost'), 4)} − {formatCostBp(guide?.cost_round_trip_bp ?? 23)} cost</p>
       </article>
     </div>
   </div>
@@ -560,7 +588,7 @@
     <div class="metric"><div class="metric-label">workflows</div><div class="metric-value tnum">{String(field(guide?.research_workflow_catalog, 'workflow_count') ?? '—')}</div></div>
     <div class="metric"><div class="metric-label">completion</div><div class="metric-value tnum">{formatScore(field(guide?.research_workflow_catalog, 'completion_pct'))}</div></div>
     <div class="metric"><div class="metric-label">browser execution</div><div class="metric-value">{boolText(field(guide?.research_workflow_catalog, 'execution_allowed_from_browser'))}</div></div>
-    <div class="metric"><div class="metric-label">default cost</div><div class="metric-value tnum">23bp</div></div>
+    <div class="metric"><div class="metric-label">default cost</div><div class="metric-value tnum">{formatCostBp(23)}</div></div>
   </div>
 
   <div class="scenario-template-grid" data-daily-rl-workflow-picker>
@@ -597,7 +625,7 @@
     </article>
     <aside class="selected-process-side" data-daily-rl-workflow-safe-config-preview>
       <h3>Safe config preview</h3>
-      <div class="kv-row"><span>workflow / cost</span><b>{String(field(safeConfigPreview(), 'workflow_id') ?? '—')} · {String(field(safeConfigPreview(), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>workflow / cost</span><b>{String(field(safeConfigPreview(), 'workflow_id') ?? '—')} · {formatCostBp(field(safeConfigPreview(), 'default_cost_bp') ?? 23)}</b></div>
       <div class="kv-row"><span>approval / browser 실행</span><b>{boolText(field(safeConfigPreview(), 'approval_required'))} · {boolText(field(safeConfigPreview(), 'execution_allowed_from_browser'))}</b></div>
       <div class="kv-row"><span>forbidden fields</span><b>{listText(field(safeConfigPreview(), 'forbidden_fields'))}</b></div>
       <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
@@ -622,7 +650,7 @@
       <h3>Rejected request fields</h3>
       <p class="text-muted">command · shell · argv · env · cwd · broker · account · order · live · paper_forward · model_build · model_build_allowed · paper_forward_allowed · live_broker_order_allowed · arbitrary_path</p>
       <div class="kv-row"><span>schema / approval</span><b>{String(field(jobIntentTemplate(), 'schema_version'))} · {String(field(jobIntentTemplate(), 'approval_status'))}</b></div>
-      <div class="kv-row"><span>workflow / cost</span><b>{String(field(nestedRecord(jobIntentTemplate(), 'config'), 'workflow_id') ?? '—')} · {String(field(nestedRecord(jobIntentTemplate(), 'config'), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>workflow / cost</span><b>{String(field(nestedRecord(jobIntentTemplate(), 'config'), 'workflow_id') ?? '—')} · {formatCostBp(field(nestedRecord(jobIntentTemplate(), 'config'), 'default_cost_bp') ?? 23)}</b></div>
       <div class="kv-row"><span>controls</span><b>{listText(field(nestedRecord(jobIntentTemplate(), 'config'), 'controls'))}</b></div>
       <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
@@ -738,7 +766,7 @@
       <div class="text-eyebrow">Completion report · dashboard-first research platform</div>
       <h2 class="text-h3">비실거래 연구 플랫폼 완료 성과와 남은 lock</h2>
     </div>
-    <span class="pill pass"><span class="dot"></span>{String(field(guide?.dashboard_first_completion_report, 'status') ?? 'NON_LIVE_RESEARCH_PLATFORM_INCOMPLETE')}</span>
+    <span class="pill {tone(field(guide?.dashboard_first_completion_report, 'status') ?? 'INCOMPLETE')}"><span class="dot"></span>{String(field(guide?.dashboard_first_completion_report, 'status') ?? 'NON_LIVE_RESEARCH_PLATFORM_INCOMPLETE')}</span>
   </div>
   <p class="text-muted" style="margin-top:8px">
     {String(field(guide?.dashboard_first_completion_report, 'guardrail') ?? 'Non-live research/dashboard completion can be 100%; live/model/paper readiness remains 0%.')}
@@ -809,7 +837,7 @@
 
   <div class="grid-4-kpi" style="margin-top:16px">
     <div class="metric"><div class="metric-label">templates</div><div class="metric-value tnum">{String(field(guide?.scenario_generator, 'template_count') ?? '—')}</div></div>
-    <div class="metric"><div class="metric-label">default cost</div><div class="metric-value tnum">23bp</div></div>
+    <div class="metric"><div class="metric-label">default cost</div><div class="metric-value tnum">{formatCostBp(23)}</div></div>
     <div class="metric"><div class="metric-label">execution</div><div class="metric-value">{boolText(field(guide?.scenario_generator, 'execution_allowed'))}</div></div>
     <div class="metric"><div class="metric-label">export</div><div class="metric-value">JSON</div></div>
   </div>
@@ -847,7 +875,7 @@
     </article>
     <aside class="selected-process-side">
       <h3>Fixed plan JSON draft</h3>
-      <div class="kv-row"><span>template / cost</span><b>{String(field(selectedScenarioPlan(), 'template_id') ?? '—')} · {String(field(selectedScenarioPlan(), 'default_cost_bp') ?? 23)}bp</b></div>
+      <div class="kv-row"><span>template / cost</span><b>{String(field(selectedScenarioPlan(), 'template_id') ?? '—')} · {formatCostBp(field(selectedScenarioPlan(), 'default_cost_bp') ?? 23)}</b></div>
       <div class="kv-row"><span>scenarios</span><b>{rows(field(selectedScenarioPlan(), 'scenarios')).length}개 draft</b></div>
       <div class="kv-row"><span>guardrails</span><b>{listText(field(selectedScenarioPlan(), 'guardrails'))}</b></div>
       <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
@@ -883,7 +911,7 @@
       {#each stringItems(field(guide?.signal_quality_audit_summary, 'baseline_controls')) as control}
         <span class="chip">{control}</span>
       {/each}
-      <p class="text-muted" style="margin-top:8px">cost sensitivity: {listText(field(guide?.signal_quality_audit_summary, 'cost_sensitivity_bp'))}bp</p>
+      <p class="text-muted" style="margin-top:8px">cost sensitivity: {formatCostBpList(field(guide?.signal_quality_audit_summary, 'cost_sensitivity_bp') ?? [0, 23, 46])}</p>
     </article>
     <article class="mini-chart-card">
       <div class="text-eyebrow">Artifact links</div>
@@ -1226,7 +1254,7 @@
       <div class="flow-node" data-tone={tone(node.status)}>
         <div class="node-id">{node.id}</div>
         <div class="node-label">{node.label}</div>
-        <div class="node-summary">{node.summary}</div>
+        <div class="node-summary">{publicGuideText(node.summary)}</div>
         <div class="node-status">{node.status}</div>
       </div>
       {#if index < rows(guide?.visual_flow).length - 1}
@@ -1249,7 +1277,7 @@
     {#each recordEntries(guide?.what_rl_means_here) as [key, text]}
       <article class="explain-card">
         <div class="text-eyebrow">{key}</div>
-        <p>{text}</p>
+        <p>{publicGuideText(text)}</p>
       </article>
     {/each}
   </div>
@@ -1267,8 +1295,8 @@
   <div class="contract-grid">
     <div class="contract-box">
       <h3>State 관측</h3>
-      <p>fields: {listText(guide?.state_contract?.fields)}</p>
-      <p>{String(guide?.state_contract?.lookahead_policy ?? 'future_return_1d는 관측에 넣지 않습니다.')}</p>
+      <p>fields: {publicListText(guide?.state_contract?.fields)}</p>
+      <p>{String(guide?.state_contract?.lookahead_policy ?? 'legacy future_return_1d is forbidden in state observations; reward labels are future_return_h1_1520_proxy / future_return_h3_1520_proxy / future_return_h5_1520_proxy only.')}</p>
     </div>
     <div class="contract-box">
       <h3>Action space</h3>
@@ -1284,9 +1312,9 @@
     </div>
     <div class="contract-box">
       <h3>Reward</h3>
-      <p class="mono">{guide?.reward_formula ?? 'net_return_after_cost - penalties'}</p>
-      <p>components: {listText(guide?.reward_components)}</p>
-      <p>fill: {guide?.fill_assumption ?? 'daily research label only'}</p>
+      <p class="mono">{publicGuideText(guide?.reward_formula ?? 'net_return_after_cost - penalties')}</p>
+      <p>components: {publicListText(guide?.reward_components)}</p>
+      <p>fill: {publicGuideText(guide?.fill_assumption ?? 'daily research label only')}</p>
     </div>
   </div>
 </section>
@@ -1308,7 +1336,7 @@
           <tr class={tone(check.status)}>
             <td class="mono">{check.check}</td>
             <td>{check.status}</td>
-            <td>{check.meaning_ko}</td>
+            <td>{publicGuideText(check.meaning_ko)}</td>
           </tr>
         {/each}
       </tbody>
