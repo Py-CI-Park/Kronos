@@ -2,13 +2,13 @@
 
 > 문서 ID: `KRONOS-DASHBOARD-V51-IMPLEMENTATION-RESULT-2026-07-18`  
 > 작성일: `2026-07-18 KST`  
-> 실행 기간: `2026-07-18 05:44–14:30 KST`, 마지막 문서 전 커밋까지 약 `8시간 46분`  
+> 실행 기간: `2026-07-18 05:44–검증 종료 KST`, 최초 구현·보강·최종 브라우저 재검증 포함
 > 상태: `COMPLETE / IMPLEMENTED_RESEARCH_FOUNDATION`  
 > 모델·실거래 판정: `NOT_RUN / NO-GO 유지 / LIVE_READY 아님 / PROFIT_CLAIM 없음`  
 > 범위: V5.1 연구 기반, 대시보드 정보구조, 15:20 인과 source/panel, 6,000만원 10-slot 회계, H1/H3/H5 freeze, PyKRX-only offline custody, read-only API/report viewer  
 > 브랜치: `feature/dashboard-v5-learning-evidence`  
 > 기준 commit: `4c8ba1f`  
-> 문서 전 HEAD: `6cb5efd4bc66fe465e4a430c889662d0cafe3ed9`  
+> 최종 브라우저 검증 대상 HEAD: `6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3`
 > 기본 UI: `V3 유지`  
 > tag/push/merge/release-default: 수행하지 않음  
 > 대체 문서: 없음. 이전 `docs/kronos_dashboard_v5_development_result_2026-07-16.md`는 보존하고 본 문서는 V5.1 증분 결과만 기록한다.
@@ -234,7 +234,7 @@ V5.1이 100점이 아닌 이유는 기능 결함보다 검증 형식의 한계�
 
 ## 5. 검증 명령과 결과
 
-본 문서 작성 단계에서는 acceptance에 따라 테스트, format, commit, `.gjc` mutation을 수행하지 않았다. 아래는 문서 전 HEAD `6cb5efd`까지 기록된 검증 사실이다.
+본 문서는 최초 문서 commit `1ec28bd` 이후 최종 blocker 보강 commit `bf6fce9`–`6a8fd02`와 현재 HEAD 기준 검증을 함께 기록한다.
 
 ### 5.1 집중 Python 검증
 
@@ -248,22 +248,25 @@ py -3.11 -m pytest tests/test_kronos_v51_horizon_variants.py tests/test_kronos_v
 py -3.11 -m pytest tests/test_kronos_v51_index_source.py tests/test_kronos_v51_index_overlay.py -q -W error
 # G003 focused: 23 passed
 
-py -3.11 -m pytest tests/test_kronos_v51_research_api.py tests/test_kronos_v51_report_catalog.py tests/test_kronos_v51_research_api_schema.py tests/test_kronos_v51_app_integration.py tests/test_kronos_v5_app_integration.py -q -W error
-# final G004 focused: 54 passed
+py -3.11 -m pytest tests/test_kronos_v51_research_api.py tests/test_kronos_v51_research_api_schema.py tests/test_kronos_v51_app_integration.py tests/test_kronos_v5_app_integration.py -q -W error
+# final API/schema focused: 71 passed
 ```
 
-누적 G001-G004 집중 배치는 다음 결과를 남겼다.
+최종 V5.1 누적 배치는 다음 결과를 남겼다.
 
 ```text
-py -3.11 -m pytest tests/test_kronos_v51_1520_source.py tests/test_kronos_v51_causal_panel.py tests/test_kronos_v51_contract_schema.py tests/test_kronos_v5_close_slot_accounting.py tests/test_kronos_v51_horizon_variants.py tests/test_kronos_v51_index_source.py tests/test_kronos_v51_index_overlay.py tests/test_kronos_v51_research_api.py tests/test_kronos_v51_report_catalog.py tests/test_kronos_v51_research_api_schema.py tests/test_kronos_v51_app_integration.py tests/test_kronos_v5_app_integration.py tests/test_stom_rl_daily_close_slot_dataset.py tests/test_kronos_v5_api_schema.py -q -W error
-# 340 passed
+py -3.11 -m pytest tests/test_kronos_v51_1520_source.py tests/test_kronos_v51_causal_panel.py tests/test_kronos_v51_contract_schema.py tests/test_kronos_v51_horizon_variants.py tests/test_kronos_v5_close_slot_accounting.py tests/test_kronos_v51_index_source.py tests/test_kronos_v51_index_overlay.py tests/test_kronos_v51_report_catalog.py tests/test_kronos_v51_research_api.py tests/test_kronos_v51_research_api_schema.py tests/test_kronos_v51_app_integration.py tests/test_kronos_v5_app_integration.py -q -W error
+# 250 passed
+
+py -3.11 -m pytest tests/test_kronos_v51_horizon_variants.py tests/test_kronos_v5_close_slot_accounting.py tests/test_kronos_v51_index_overlay.py tests/test_kronos_v51_index_source.py -q -W error
+# runtime integration focused: 88 passed
 ```
 
 ### 5.2 Frontend, Svelte, build, audit
 
 ```text
 bun test src
-# 346 passed
+# 351 passed
 
 npm run build
 # Svelte check: 408 files, 0 errors, 0 warnings
@@ -283,11 +286,14 @@ py -3.11 -m pytest tests/test_daily_ohlcv_dashboard_tab.py tests/test_stom_rl_da
 ### 5.4 Browser 검증
 
 ```text
-live Chromium at 3440x1440 and 2160x3840
+live Chromium: http://127.0.0.1:8122/?tab=rl&ui=v5
+loaded bundle: index-jILoBmyy.js / index-wHVaqgPL.css
+source revision: 6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3
+viewports: 3440x1440 and 2160x3840
 # horizontal overflow: false
 # independent left/right rail collapse: passed
 # version history: passed
-# report route: passed
+# Research Reports & Wiki route: passed
 ```
 
 증거:
@@ -315,20 +321,20 @@ live Chromium at 3440x1440 and 2160x3840
 
 ### 6.1 확인 URL
 
-로컬 확인 기본 포트는 실행 환경에 맞게 조정한다. 예시는 `5070`이다.
+최종 로컬 검증 포트는 `8122`이다.
 
 | 목적 | URL |
 |---|---|
-| V3 기본 확인 | `http://127.0.0.1:5070/` |
-| V5.1 opt-in shell | `http://127.0.0.1:5070/?ui=v5` |
-| RL evidence 화면 | `http://127.0.0.1:5070/?tab=rl&ui=v5` |
-| Research Reports | `http://127.0.0.1:5070/?tab=docs&ui=v5` |
-| source coverage API | `http://127.0.0.1:5070/api/daily-close-v51/source-coverage` |
-| causal panel API | `http://127.0.0.1:5070/api/daily-close-v51/causal-panel` |
-| accounting API | `http://127.0.0.1:5070/api/daily-close-v51/accounting` |
-| evaluator API | `http://127.0.0.1:5070/api/daily-close-v51/evaluator` |
-| benchmark overlay API | `http://127.0.0.1:5070/api/daily-close-v51/benchmark-overlay` |
-| report list API | `http://127.0.0.1:5070/api/daily-close-v51/reports` |
+| V3 기본 확인 | `http://127.0.0.1:8122/` |
+| V5.1 opt-in shell | `http://127.0.0.1:8122/?ui=v5` |
+| RL evidence 화면 | `http://127.0.0.1:8122/?tab=rl&ui=v5` |
+| Research Reports & Wiki | `http://127.0.0.1:8122/?tab=docs&ui=v5` |
+| source coverage API | `http://127.0.0.1:8122/api/daily-close-v51/source-coverage` |
+| causal panel API | `http://127.0.0.1:8122/api/daily-close-v51/causal-panel` |
+| accounting API | `http://127.0.0.1:8122/api/daily-close-v51/accounting` |
+| evaluator API | `http://127.0.0.1:8122/api/daily-close-v51/evaluator` |
+| benchmark overlay API | `http://127.0.0.1:8122/api/daily-close-v51/benchmark-overlay` |
+| report list API | `http://127.0.0.1:8122/api/daily-close-v51/reports` |
 
 ### 6.2 사용자 확인 action
 
@@ -411,8 +417,9 @@ Rollback의 기본값은 “V5.1을 기본으로 쓰지 않는 것”이다.
 |---|---|
 | Branch | `feature/dashboard-v5-learning-evidence` |
 | Baseline | `4c8ba1f` |
-| V5.1 구현 범위 | `9d8e2ad` through `6cb5efd` |
-| 문서 전 HEAD | `6cb5efd4bc66fe465e4a430c889662d0cafe3ed9` |
+| V5.1 구현 범위 | `9d8e2ad` through `6a8fd02` |
+| 최초 결과 문서 commit | `1ec28bd708fd19d61396af8cb3e7c0d8887c68a0` |
+| 최종 브라우저 검증 대상 HEAD | `6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3` |
 | tag/push/merge | 수행하지 않음 |
 
 ### 10.2 V5.1 commit 목록
@@ -430,9 +437,14 @@ Rollback의 기본값은 “V5.1을 기본으로 쓰지 않는 것”이다.
 | 9 | `04cf086477aa061cb6305c029723e74acdcb6be7` | `build(v5.1): 공식 대시보드 번들 갱신` | official dist update |
 | 10 | `e3e149b8a49659f27dea51780c82e74a473231a9` | `test(v5.1): 새 셸 내비게이션 회귀 계약 반영` | dashboard regression contract |
 | 11 | `6cb5efd4bc66fe465e4a430c889662d0cafe3ed9` | `test(v5.1): V3 계약 스냅샷 재조정` | approved V3 snapshot drift 정리 |
+| 12 | `1ec28bd708fd19d61396af8cb3e7c0d8887c68a0` | `docs(v5.1): 구현 결과와 연구 Wiki 원장 기록` | 최초 결과 보고서와 Wiki 원장 |
+| 13 | `bf6fce9` | `fix(rl): close V5.1 evaluator integration gaps` | canonical accounting row와 overlay provenance closure |
+| 14 | `18bc153` | `fix(api): fail closed V5.1 evidence contracts` | ERROR schema, identity, overlay, zero-cost ID closure |
+| 15 | `2cf2371` | `fix(ui): make V5.1 research evidence fail closed` | label/cost/placeholder/IA truth closure |
+| 16 | `6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3` | `build(dashboard): refresh V5.1 official assets` | 최종 browser 검증 bundle |
 
 ## 11. 변경 히스토리
 
 | 날짜 | 변경 | 작성자 | commit |
 |---|---|---|---|
-| 2026-07-18 | V5.1 구현·릴리스 결과 보고서 작성. Wiki index와 research ledger에 `IMPLEMENTED_RESEARCH_FOUNDATION` 연결 예정 | GJC Executor | 문서 작성 전 HEAD `6cb5efd` |
+| 2026-07-18 | 최초 결과 문서·Wiki commit `1ec28bd` 후 blocker를 보강하고, 최종 구현 HEAD `6a8fd02`의 bundle을 Chromium 3440×1440/2160×3840에서 재검증 | GJC | `1ec28bd`, `bf6fce9`, `18bc153`, `2cf2371`, `6a8fd02` |

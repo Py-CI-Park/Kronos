@@ -33,20 +33,21 @@ read-only `/api/docs/*` endpoints.
 
 ## 최신 구현 결과
 
-- [Kronos Dashboard V5.1 구현·릴리스 결과](../kronos_dashboard_v51_implementation_result_2026-07-18.md) - `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live 결과는 `NOT_RUN / NO-GO` 유지; branch `feature/dashboard-v5-learning-evidence`; commits `9d8e2ad` through `6cb5efd`; 다음 연구 단계는 coverage/custody 확인 후 새 사전등록 기반 15:20 H1 smoke와 H3/H5 validation variant다.
+- `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` — Kronos Dashboard V5.1 구현·릴리스 결과. `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live 결과는 `NOT_RUN / NO-GO` 유지; branch `feature/dashboard-v5-learning-evidence`; commits `9d8e2ad` through `6a8fd02`; 다음 연구 단계는 coverage/custody 확인 후 새 사전등록 기반 15:20 H1 smoke와 H3/H5 validation variant다.
 
 ## Quick start
 
 ```powershell
 cd D:\Chanil_Park\Project\Programming\Kronos
-$env:KRONOS_WEBUI_PORT = "5070"
+$env:KRONOS_WEBUI_PORT = "8122"
 $env:KRONOS_WEBUI_HOST = "127.0.0.1"
 $env:KRONOS_WEBUI_OPEN_BROWSER = "0"
 C:\Python\64\Python3119\python.exe webui\run.py
 ```
 
-Open `http://127.0.0.1:5070/` for the official dashboard and
-`http://127.0.0.1:5070/rl` for the RL evidence dashboard.
+Open `http://127.0.0.1:8122/` for the official dashboard,
+`http://127.0.0.1:8122/?tab=rl&ui=v5` for V5.1 RL evidence, and
+`http://127.0.0.1:8122/?tab=docs&ui=v5` for Research Reports & Wiki.
 
 Legacy `/v2*` and `/rl-lab` URLs are compatibility redirects only.
 

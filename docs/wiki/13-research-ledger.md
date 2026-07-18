@@ -35,15 +35,16 @@
 
 | 항목 | 값 |
 |---|---|
-| 문서 | [`docs/kronos_dashboard_v51_implementation_result_2026-07-18.md`](../kronos_dashboard_v51_implementation_result_2026-07-18.md) |
+| 문서 | `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` |
 | 상태 | `IMPLEMENTED_RESEARCH_FOUNDATION` |
 | RL 결과 | `NOT_RUN`; prior `NO-GO`/`INCONCLUSIVE` 보존 |
 | 실거래·수익 준비도 | `0/100`; live/broker/order/paper/profit claim 없음 |
 | 브랜치 | `feature/dashboard-v5-learning-evidence` |
 | 기준 commit | `4c8ba1f` |
-| 구현 commit 범위 | `9d8e2ad` through `6cb5efd` |
-| 문서 전 HEAD | `6cb5efd` |
-| 핵심 증거 | G001-G004 focused 340 passed, frontend 346 passed, dashboard regression 33 passed, final G004 54 passed, Svelte 408 files 0 errors/warnings, build passed, npm audit 0 vulnerabilities, browser no horizontal overflow |
+| 구현 commit 범위 | `9d8e2ad` through `6a8fd02` |
+| 최초 결과 문서 commit | `1ec28bd` |
+| 최종 브라우저 검증 대상 HEAD | `6a8fd02ccdbd4d7cb28a4f283a865ad0f91454b3` |
+| 핵심 증거 | V5.1 cumulative 250 passed, runtime integration 88 passed, API/schema 71 passed, frontend 351 passed, dashboard regression 33 passed, Svelte 408 files 0 errors/warnings, build passed, npm audit 0 vulnerabilities, Chromium 3440×1440/2160×3840 horizontal overflow 없음 |
 | full-suite 한계 | monolithic 2,298-test command는 한 프로세스로 완료되지 않음; 900초 timeout 81%, 재시도 84% 무 assertion output; tail partition 342 passed + 승인 snapshot 5 passed |
 | 다음 연구 step | 새 사전등록으로 15:20 H1 smoke를 실행하고 H3/H5 validation variant, full-universe coverage/custody audit, RULE·supervised·shuffle controls를 순서대로 닫는다. |
 
