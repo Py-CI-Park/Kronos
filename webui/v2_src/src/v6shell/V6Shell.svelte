@@ -4,6 +4,8 @@
   import V6SafetyStrip from './V6SafetyStrip.svelte';
   import OverviewPage from './pages/OverviewPage.svelte';
   import DataPage from './pages/DataPage.svelte';
+  import ExperimentPage from './pages/ExperimentPage.svelte';
+  import TrainingPage from './pages/TrainingPage.svelte';
   import { V6_BRAND, V6_PAGES, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
 
   const GROUPS = ['COMMAND', 'REINFORCEMENT LEARNING', 'INSIGHT', 'PLATFORM', 'ADVANCED'] as const;
@@ -64,6 +66,10 @@
       <OverviewPage />
     {:else if page.id === 'data'}
       <DataPage />
+    {:else if page.id === 'experiment'}
+      <ExperimentPage />
+    {:else if page.id === 'training'}
+      <TrainingPage />
     {:else}
       <V6PagePlaceholder {page} />
     {/if}

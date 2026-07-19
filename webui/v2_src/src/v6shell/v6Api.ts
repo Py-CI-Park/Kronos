@@ -73,6 +73,52 @@ export interface V6DataReadiness {
     readonly decision_grade_returns?: boolean;
   };
 }
+export interface V6Experiment {
+  readonly prereg?: {
+    readonly state?: string;
+    readonly path?: string;
+    readonly sha256?: string;
+  };
+  readonly planned?: {
+    readonly strategy?: string;
+    readonly horizons?: { readonly primary?: unknown; readonly validation?: unknown };
+    readonly execution?: { readonly price_basis?: unknown; readonly official_close?: boolean };
+    readonly capital?: {
+      readonly initial_krw?: number;
+      readonly slots?: number;
+      readonly slot_budget_krw?: number;
+      readonly reserve_krw?: number;
+    };
+    readonly costs?: { readonly primary?: unknown; readonly zero_control?: unknown; readonly stress?: unknown };
+    readonly universe?: { readonly manifest?: unknown; readonly size?: unknown };
+    readonly dataset_contract?: unknown;
+    readonly seeds?: unknown;
+    readonly constraints?: unknown;
+  };
+  readonly locks?: Record<string, boolean>;
+}
+
+export interface V6DatasetRun {
+  readonly run_id?: string;
+  readonly path?: string;
+  readonly generated_utc?: string;
+  readonly split_row_counts?: unknown;
+  readonly sha256?: string;
+}
+
+export interface V6TrainingRun {
+  readonly run_id?: string;
+  readonly path?: string;
+  readonly state?: string;
+  readonly seeds?: unknown;
+  readonly generated_utc?: string;
+}
+
+export interface V6Runs {
+  readonly datasets?: readonly V6DatasetRun[];
+  readonly runs?: readonly V6TrainingRun[];
+  readonly training_state?: string;
+}
 
 async function getV6<T>(path: string): Promise<V6ApiResult<T>> {
   try {
@@ -88,3 +134,5 @@ export const getV6Status = (): Promise<V6ApiResult<V6Status>> => getV6('/api/v6/
 export const getV6Universe = (limit: number): Promise<V6ApiResult<V6Universe>> =>
   getV6(`/api/v6/universe?limit=${encodeURIComponent(String(limit))}`);
 export const getV6DataReadiness = (): Promise<V6ApiResult<V6DataReadiness>> => getV6('/api/v6/data-readiness');
+export const getV6Experiment = (): Promise<V6ApiResult<V6Experiment>> => getV6('/api/v6/experiment');
+export const getV6Runs = (): Promise<V6ApiResult<V6Runs>> => getV6('/api/v6/runs');

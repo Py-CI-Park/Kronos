@@ -14,7 +14,7 @@ WEBUI_ROOT: Final = Path(__file__).resolve().parent
 REPO_ROOT: Final = WEBUI_ROOT.parent
 MANIFEST_PATH: Final = REPO_ROOT / "docs" / "kronos_v6_universe_manifest_2026-07-19.json"
 PREREG_PATH: Final = REPO_ROOT / "docs" / "kronos_v6_prereg_h1_2026-07-19.json"
-RUN_DIR: Final = WEBUI_ROOT / "rl_runs" / "v6_daily_h1"
+RUNS_ROOT: Final = WEBUI_ROOT / "rl_runs" / "v6_daily_h1"
 AUDIT_PATH: Final = WEBUI_ROOT / "rl_runs" / "daily_ohlcv_db_summary" / "v6_universe_audit.json"
 DAILY_DB_PATH: Final = REPO_ROOT / "_database" / "Stock_Database_ohlcv_1day.db"
 FIVEMIN_DB_PATH: Final = REPO_ROOT / "_database" / "Stock_Database_ohlcv_5min.db"
@@ -77,12 +77,96 @@ def _query_limit() -> int:
     return value
 
 
-def _run_manifest_present() -> bool:
+def _preregistration() -> dict[str, Any]:
+    prereg: dict[str, Any] = {
+        "state": "NOT_FROZEN",
+        "path": "docs/kronos_v6_prereg_h1_2026-07-19.json",
+        "sha256": None,
+    }
     try:
-        candidates = tuple(RUN_DIR.glob("*manifest*.json"))
+        raw = PREREG_PATH.read_bytes()
+        value = json.loads(raw.decode("utf-8"))
+    except FileNotFoundError:
+        return prereg
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        prereg["error"] = "PREREG_PARSE_FAILED"
+        return prereg
+    if not isinstance(value, Mapping):
+        prereg["error"] = "PREREG_PARSE_FAILED"
+        return prereg
+    prereg["state"] = "FROZEN"
+    prereg["sha256"] = hashlib.sha256(raw).hexdigest()
+    prereg.update({key: value[key] for key in ("hypothesis", "frozen_utc") if key in value})
+    return prereg
+
+
+def _manifest_candidates(filename: str) -> list[Path]:
+    try:
+        candidates = [path for path in RUNS_ROOT.glob(f"*/{filename}") if path.is_file()]
+        return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
     except OSError:
-        return False
-    return any(_read_json(candidate) is not None for candidate in candidates if candidate.is_file())
+        return []
+
+
+def _artifact_path(path: Path) -> str:
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _runs_payload() -> dict[str, Any]:
+    datasets: list[dict[str, Any]] = []
+    for path in _manifest_candidates("dataset_manifest.json"):
+        if len(datasets) == 50:
+            break
+        try:
+            raw = path.read_bytes()
+            value = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(value, Mapping):
+            continue
+        split_row_counts = value.get("split_row_counts")
+        datasets.append({
+            "run_id": value.get("run_id", path.parent.name),
+            "path": _artifact_path(path),
+            "generated_utc": value.get("generated_utc"),
+            "split_row_counts": dict(split_row_counts) if isinstance(split_row_counts, Mapping) else {},
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        })
+
+    runs: list[dict[str, Any]] = []
+    for path in _manifest_candidates("run_manifest.json"):
+        if len(runs) == 50:
+            break
+        value = _read_json(path)
+        if value is None:
+            continue
+        seeds = value.get("seeds")
+        runs.append({
+            "run_id": value.get("run_id", path.parent.name),
+            "path": _artifact_path(path),
+            "state": value.get("state"),
+            "seeds": list(seeds) if isinstance(seeds, list) else [],
+            "generated_utc": value.get("generated_utc"),
+        })
+
+    return {
+        "schema_version": "kronos_v6_runs.v1",
+        "status": "OK",
+        "datasets": datasets,
+        "runs": runs,
+        "training_state": "HAS_RUNS" if runs else "NOT_RUN",
+    }
+
+
+def _experiment_state() -> str:
+    return _preregistration()["state"]
+
+
+def _run_state() -> str:
+    return _runs_payload()["training_state"]
 
 
 def _journey_data() -> dict[str, Any]:
@@ -99,12 +183,31 @@ def _journey_data() -> dict[str, Any]:
     }
 
 
-def _experiment_state() -> str:
-    return "FROZEN" if _read_json(PREREG_PATH) is not None else "NOT_FROZEN"
+def _experiment_payload() -> dict[str, Any]:
+    return {
+        "schema_version": "kronos_v6_experiment_state.v1",
+        "status": "OK",
+        "prereg": _preregistration(),
+        "planned": {
+            "strategy": "daily_close_10slot",
+            "horizons": {"primary": "H1", "validation": ["H3", "H5"]},
+            "execution": {"price_basis": "15:20_bar_close_proxy", "official_close": False},
+            "capital": {
+                "initial_krw": 60000000,
+                "slots": 10,
+                "slot_budget_krw": 5000000,
+                "reserve_krw": 10000000,
+            },
+            "costs": {"primary": "0.23%", "zero_control": "0.00%", "stress": "0.46%"},
+            "universe": {"manifest": "docs/kronos_v6_universe_manifest_2026-07-19.json", "size": 500},
+            "dataset_contract": "kronos_v6_joined_dataset.v1",
+            "seeds": [0, 1, 2],
+            "constraints": {"shorting": False, "leverage": False, "duplicate_slots": False},
+        },
+        "locks": dict(SIX_FALSE_LOCKS),
+    }
 
 
-def _run_state() -> str:
-    return "PRESENT" if _run_manifest_present() else "NOT_RUN"
 
 
 def _file_details(path: Path, *, include_tables: bool = False) -> dict[str, Any]:
@@ -186,6 +289,21 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             return _error(400, "BAD_REQUEST")
         return _response(_status_payload())
 
+    def experiment_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        if request.args:
+            return _error(400, "BAD_REQUEST")
+        return _response(_experiment_payload())
+
+    def runs_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        if request.args:
+            return _error(400, "BAD_REQUEST")
+        return _response(_runs_payload())
+
+
     def universe_handler() -> Response:
         if request.method != "GET":
             return _method_not_allowed()
@@ -221,6 +339,8 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
 
     for rule, endpoint, handler in (
         ("/status", "status", status_handler),
+        ("/experiment", "experiment", experiment_handler),
+        ("/runs", "runs", runs_handler),
         ("/universe", "universe", universe_handler),
         ("/data-readiness", "data_readiness", readiness_handler),
     ):
