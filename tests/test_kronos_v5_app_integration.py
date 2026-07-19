@@ -146,6 +146,10 @@ def test_app_import_registers_v5_prefix_and_preserves_legacy_post_routes(monkeyp
         if "POST" in rule.methods
         and not rule.rule.startswith("/api/v5/")
         and not rule.rule.startswith("/api/daily-close-v51/")
+        # /api/v6/ routes register POST only to answer a fail-closed 405
+        # METHOD_NOT_ALLOWED envelope (see tests/test_v6_platform_api.py and
+        # tests/test_v6_insight_api.py); they are not legacy mutation routes.
+        and not rule.rule.startswith("/api/v6/")
     }
     assert legacy_post_rules == EXPECTED_LEGACY_POST_RULES
 
