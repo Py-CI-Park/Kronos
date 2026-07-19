@@ -151,6 +151,58 @@ export interface V6RunDetail {
 }
 
 
+export interface V6InsightSeriesRow {
+  readonly date: number;
+  readonly close?: number | null;
+  readonly volume?: number | null;
+  readonly foreign_ratio?: number | null;
+  readonly inst_netbuy?: number | null;
+}
+
+export interface V6InsightSymbol {
+  readonly status?: string;
+  readonly code?: string;
+  readonly total_rows?: number;
+  readonly sampled?: boolean;
+  readonly series?: readonly V6InsightSeriesRow[];
+  readonly price_basis_caveat?: string;
+  readonly flow_caveat?: string;
+  readonly reason?: string;
+}
+
+export interface V6InsightFlowRow {
+  readonly table?: string;
+  readonly code?: string;
+  readonly inst_netbuy_sum?: number;
+  readonly foreign_ratio_delta?: number;
+  readonly last_close?: number;
+  readonly last_date?: number;
+}
+
+export interface V6InsightFlow {
+  readonly status?: string;
+  readonly window?: number;
+  readonly top_inst_buy?: readonly V6InsightFlowRow[];
+  readonly top_inst_sell?: readonly V6InsightFlowRow[];
+  readonly top_foreign_gain?: readonly V6InsightFlowRow[];
+  readonly top_foreign_loss?: readonly V6InsightFlowRow[];
+  readonly not_a_recommendation?: boolean;
+  readonly note?: string;
+  readonly price_basis_caveat?: string;
+  readonly flow_caveat?: string;
+  readonly reason?: string;
+}
+
+export interface V6InsightRegime {
+  readonly index_regime?: { readonly state?: string; readonly reason?: string };
+  readonly breadth_proxy?: {
+    readonly as_of_date?: number;
+    readonly tables_evaluated?: number;
+    readonly pct_above_20s_mean?: number;
+    readonly disclaimer?: string;
+  };
+}
+
 async function getV6<T>(path: string): Promise<V6ApiResult<T>> {
   try {
     const response = await fetch(path, { headers: { Accept: 'application/json' } });
@@ -169,3 +221,8 @@ export const getV6Experiment = (): Promise<V6ApiResult<V6Experiment>> => getV6('
 export const getV6Runs = (): Promise<V6ApiResult<V6Runs>> => getV6('/api/v6/runs');
 export const getV6RunDetail = (dataset: string, train: string): Promise<V6ApiResult<V6RunDetail>> =>
   getV6(`/api/v6/run-detail?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}`);
+export const getV6InsightSymbol = (code: string, maxPoints?: number): Promise<V6ApiResult<V6InsightSymbol>> =>
+  getV6(`/api/v6/insight/symbol?code=${encodeURIComponent(code)}${maxPoints === undefined ? '' : `&max_points=${encodeURIComponent(String(maxPoints))}`}`);
+export const getV6InsightFlow = (window?: number, limit?: number): Promise<V6ApiResult<V6InsightFlow>> =>
+  getV6(`/api/v6/insight/flow${window === undefined && limit === undefined ? '' : `?${[window === undefined ? '' : `window=${encodeURIComponent(String(window))}`, limit === undefined ? '' : `limit=${encodeURIComponent(String(limit))}`].filter(Boolean).join('&')}`}`);
+export const getV6InsightRegime = (): Promise<V6ApiResult<V6InsightRegime>> => getV6('/api/v6/insight/regime');

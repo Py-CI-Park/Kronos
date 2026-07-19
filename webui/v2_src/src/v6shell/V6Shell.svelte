@@ -8,6 +8,10 @@
   import TrainingPage from './pages/TrainingPage.svelte';
   import EvaluationPage from './pages/EvaluationPage.svelte';
   import ComparePage from './pages/ComparePage.svelte';
+  import InsightSymbolPage from './pages/InsightSymbolPage.svelte';
+  import InsightFlowPage from './pages/InsightFlowPage.svelte';
+  import InsightRegimePage from './pages/InsightRegimePage.svelte';
+  import ReportPage from './pages/ReportPage.svelte';
   import { V6_BRAND, V6_PAGES, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
 
   const GROUPS = ['COMMAND', 'REINFORCEMENT LEARNING', 'INSIGHT', 'PLATFORM', 'ADVANCED'] as const;
@@ -76,6 +80,14 @@
       <EvaluationPage />
     {:else if page.id === 'compare'}
       <ComparePage />
+    {:else if page.id === 'report'}
+      <ReportPage />
+    {:else if page.id === 'insight-symbol'}
+      <InsightSymbolPage />
+    {:else if page.id === 'insight-flow'}
+      <InsightFlowPage />
+    {:else if page.id === 'insight-regime'}
+      <InsightRegimePage />
     {:else}
       <V6PagePlaceholder {page} />
     {/if}

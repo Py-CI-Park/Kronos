@@ -585,6 +585,11 @@ try:
 except ImportError:
     from v6_platform_api import create_v6_platform_blueprint
 app.register_blueprint(create_v6_platform_blueprint())
+try:
+    from .v6_insight_api import create_v6_insight_blueprint
+except ImportError:
+    from v6_insight_api import create_v6_insight_blueprint
+app.register_blueprint(create_v6_insight_blueprint())
 
 # Global variables to store models
 tokenizer = None

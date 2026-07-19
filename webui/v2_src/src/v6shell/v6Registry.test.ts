@@ -21,8 +21,8 @@ test('V6 registry preserves the planned page order and group membership', () => 
 
 test('V6 registry keeps workflow steps and implementation status honest', () => {
   assert.deepEqual(V6_PAGES.map((page) => page.step).filter((step): step is number => step !== null), [1, 2, 3, 4, 5, 6, 7]);
-  assert.deepEqual(V6_PAGES.filter((page) => ['overview', 'data', 'experiment', 'training', 'evaluation', 'compare'].includes(page.id)).map((page) => page.status), ['BUILT', 'BUILT', 'BUILT', 'BUILT', 'BUILT', 'BUILT']);
-  assert.ok(V6_PAGES.filter((page) => !['overview', 'data', 'experiment', 'training', 'evaluation', 'compare'].includes(page.id)).every((page) => page.status === 'NOT_BUILT'));
+  assert.deepEqual(V6_PAGES.filter((page) => ['overview', 'data', 'experiment', 'training', 'evaluation', 'compare', 'report', 'insight-symbol', 'insight-flow', 'insight-regime'].includes(page.id)).map((page) => page.status), ['BUILT', 'BUILT', 'BUILT', 'BUILT', 'BUILT', 'BUILT', 'BUILT', 'BUILT', 'BUILT', 'BUILT']);
+  assert.ok(V6_PAGES.filter((page) => !['overview', 'data', 'experiment', 'training', 'evaluation', 'compare', 'report', 'insight-symbol', 'insight-flow', 'insight-regime'].includes(page.id)).every((page) => page.status === 'NOT_BUILT'));
 });
 
 test('V6 brand, fallback, and URLs match the shell contract', () => {
