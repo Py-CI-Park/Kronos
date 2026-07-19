@@ -1,29 +1,28 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import V6PagePlaceholder from './V6PagePlaceholder.svelte';
   import V6SafetyStrip from './V6SafetyStrip.svelte';
-  import OverviewPage from './pages/OverviewPage.svelte';
-  import DataPage from './pages/DataPage.svelte';
-  import ExperimentPage from './pages/ExperimentPage.svelte';
-  import TrainingPage from './pages/TrainingPage.svelte';
-  import EvaluationPage from './pages/EvaluationPage.svelte';
-  import ComparePage from './pages/ComparePage.svelte';
-  import InsightSymbolPage from './pages/InsightSymbolPage.svelte';
-  import InsightFlowPage from './pages/InsightFlowPage.svelte';
-  import InsightRegimePage from './pages/InsightRegimePage.svelte';
-  import ReportPage from './pages/ReportPage.svelte';
+  import HomePage from './pages/HomePage.svelte';
+  import RLWorkspace from './RLWorkspace.svelte';
+  import InsightWorkspace from './InsightWorkspace.svelte';
   import IntradayPage from './pages/IntradayPage.svelte';
   import KronosPage from './pages/KronosPage.svelte';
   import SettingsPage from './pages/SettingsPage.svelte';
-  import { V6_BRAND, V6_PAGES, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
+  import { V6_BRAND, V6_PAGES, resolveV6Location, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
 
-  const GROUPS = ['COMMAND', 'REINFORCEMENT LEARNING', 'INSIGHT', 'PLATFORM', 'ADVANCED'] as const;
+  const GROUPS = ['COMMAND', 'RESEARCH', 'PLATFORM', 'ADVANCED'] as const;
   let page = $state<V6PageDef>(V6_PAGES[0]);
 
   function selectFromLocation(): void {
-    page = resolveV6Page(new URLSearchParams(window.location.search).get('tab'));
+    const params = new URLSearchParams(window.location.search);
+    const location = resolveV6Location(params.get('tab'), params.get('step'), params.get('sub'));
+    page = resolveV6Page(location.tab);
+    if (params.get('tab') !== location.tab || params.get('step') !== (location.step ?? null) || params.get('sub') !== (location.sub ?? null)) {
+      const canonical = new URLSearchParams({ ui: 'v6', tab: location.tab });
+      if (location.step) canonical.set('step', location.step);
+      if (location.sub) canonical.set('sub', location.sub);
+      history.replaceState(history.state, '', `?${canonical.toString()}`);
+    }
   }
-
   function selectPage(id: string): void {
     page = resolveV6Page(id);
     history.pushState(history.state, '', v6PageUrl(id));
@@ -38,30 +37,15 @@
 
 <div class="v6-shell" data-v6-shell>
   <aside class="sidebar" aria-label="V6 탐색">
-    <header class="brand">
-      <p>{V6_BRAND.subtitle}</p>
-      <h1>{V6_BRAND.name}</h1>
-      <small>{V6_BRAND.version} · {V6_BRAND.updateDate}</small>
-    </header>
+    <header class="brand"><p>{V6_BRAND.subtitle}</p><h1>{V6_BRAND.name}</h1><small>{V6_BRAND.version} · {V6_BRAND.updateDate}</small></header>
     <nav>
       {#each GROUPS as group}
         <section class="nav-group" aria-label={group}>
           <h2>{group}</h2>
           {#each V6_PAGES.filter((item) => item.group === group) as item}
-            <button
-              type="button"
-              class:active={page.id === item.id}
-              aria-current={page.id === item.id ? 'page' : undefined}
-              aria-label={`${item.labelKo} (${item.label})`}
-              onclick={() => selectPage(item.id)}
-            >
-              {#if item.step !== null}
-                <span class="step-badge">{item.step}</span>
-              {:else}
-                <span class="initial-badge">{item.label.slice(0, 1)}</span>
-              {/if}
+            <button type="button" class:active={page.id === item.id} aria-current={page.id === item.id ? 'page' : undefined} aria-label={`${item.labelKo} (${item.label})`} onclick={() => selectPage(item.id)}>
+              {#if item.step !== null}<span class="step-badge">{item.step}</span>{:else}<span class="initial-badge">{item.label.slice(0, 1)}</span>{/if}
               <span class="nav-label">{item.labelKo} <small>{item.label}</small></span>
-              {#if item.status === 'NOT_BUILT'}<span class="planned">예정</span>{/if}
             </button>
           {/each}
         </section>
@@ -71,63 +55,16 @@
 
   <main>
     <V6SafetyStrip />
-    {#if page.id === 'overview'}
-      <OverviewPage />
-    {:else if page.id === 'data'}
-      <DataPage />
-    {:else if page.id === 'experiment'}
-      <ExperimentPage />
-    {:else if page.id === 'training'}
-      <TrainingPage />
-    {:else if page.id === 'evaluation'}
-      <EvaluationPage />
-    {:else if page.id === 'compare'}
-      <ComparePage />
-    {:else if page.id === 'report'}
-      <ReportPage />
-    {:else if page.id === 'insight-symbol'}
-      <InsightSymbolPage />
-    {:else if page.id === 'insight-flow'}
-      <InsightFlowPage />
-    {:else if page.id === 'insight-regime'}
-      <InsightRegimePage />
-    {:else if page.id === 'intraday'}
-      <IntradayPage />
-    {:else if page.id === 'kronos'}
-      <KronosPage />
-    {:else if page.id === 'settings'}
-      <SettingsPage />
-    {:else}
-      <V6PagePlaceholder {page} />
-    {/if}
+    {#if page.id === 'home'}<HomePage />
+    {:else if page.id === 'rl'}<RLWorkspace />
+    {:else if page.id === 'insight'}<InsightWorkspace />
+    {:else if page.id === 'lanes'}<section class="lanes" aria-label="다른 연구 레인"><IntradayPage /><KronosPage /></section>
+    {:else}<SettingsPage />{/if}
   </main>
 </div>
 
 <style>
   .v6-shell { display: grid; grid-template-columns: 272px minmax(0, 1fr); min-height: 100vh; overflow-x: hidden; background: var(--surface-sunken); color: var(--fg); }
-  .sidebar { min-width: 0; border-right: 1px solid var(--border); background: var(--surface-raised); padding: 18px 12px; }
-  .brand { padding: 4px 8px 20px; border-bottom: 1px solid var(--border); }
-  .brand p { margin: 0 0 6px; color: var(--accent); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-  .brand h1 { margin: 0; color: var(--fg-strong); font-size: 1.25rem; line-height: 1.2; }
-  .brand small { display: block; margin-top: 8px; color: var(--muted); font-size: 0.7rem; }
-  nav { margin-top: 14px; }
-  .nav-group + .nav-group { margin-top: 14px; }
-  .nav-group h2 { margin: 0 8px 5px; color: var(--dim); font-size: 0.65rem; letter-spacing: 0.1em; }
-  button { width: 100%; min-width: 0; margin: 2px 0; padding: 7px 8px; display: flex; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
-  button:hover, button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--fg-strong); }
-  button:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
-  .step-badge, .initial-badge { flex: 0 0 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 50%; color: var(--accent-strong); font-size: 0.72rem; font-weight: 800; }
-  .initial-badge { font-size: 0.65rem; }
-  .nav-label { min-width: 0; flex: 1; font-size: 0.86rem; }
-  .nav-label small { margin-left: 4px; color: var(--muted); font-size: 0.68rem; }
-  .planned { flex: 0 0 auto; border: 1px solid var(--warn); border-radius: 999px; padding: 1px 5px; color: var(--warn); font-size: 0.63rem; }
-  main { min-width: 0; padding: clamp(12px, 3vw, 32px); display: flex; flex-direction: column; gap: 16px; }
-  @media (max-width: 900px) {
-    .v6-shell { grid-template-columns: 64px minmax(0, 1fr); }
-    .sidebar { padding: 12px 8px; }
-    .brand { padding: 4px 0 12px; text-align: center; }
-    .brand p, .brand h1, .brand small, .nav-group h2, .nav-label, .planned { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    button { justify-content: center; padding: 7px 2px; }
-  }
-  @media (max-width: 390px) { main { padding: 10px; } }
+  .sidebar { min-width: 0; border-right: 1px solid var(--border); background: var(--surface-raised); padding: 18px 12px; }.brand { padding: 4px 8px 20px; border-bottom: 1px solid var(--border); }.brand p { margin: 0 0 6px; color: var(--accent); font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.brand h1 { margin: 0; color: var(--fg-strong); font-size: 1.25rem; line-height: 1.2; }.brand small { display: block; margin-top: 8px; color: var(--muted); font-size: .7rem; }nav { margin-top: 14px; }.nav-group + .nav-group { margin-top: 14px; }.nav-group h2 { margin: 0 8px 5px; color: var(--dim); font-size: .65rem; letter-spacing: .1em; }.nav-group button { width: 100%; min-width: 0; margin: 2px 0; padding: 7px 8px; display: flex; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; text-align: left; cursor: pointer; }.nav-group button:hover, .nav-group button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--fg-strong); }.nav-group button:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }.step-badge, .initial-badge { flex: 0 0 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 50%; color: var(--accent-strong); font-size: .72rem; font-weight: 800; }.initial-badge { font-size: .65rem; }.nav-label { min-width: 0; flex: 1; font-size: .86rem; }.nav-label small { margin-left: 4px; color: var(--muted); font-size: .68rem; }main { width: 100%; min-width: 0; padding: 24px clamp(24px, 3vw, 56px); display: flex; flex-direction: column; gap: 16px; }.lanes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }
+  @media (max-width: 900px) { .v6-shell { grid-template-columns: 64px minmax(0, 1fr); }.sidebar { padding: 12px 8px; }.brand { padding: 4px 0 12px; text-align: center; }.brand p, .brand h1, .brand small, .nav-group h2, .nav-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }.nav-group button { justify-content: center; padding: 7px 2px; }.lanes { grid-template-columns: 1fr; } }@media (max-width: 390px) { main { padding: 10px; } }
 </style>

@@ -1,89 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getV6DataReadiness, getV6Universe, type V6DataReadiness, type V6Universe } from '../v6Api';
-
   const INDEX_COMMAND = 'py -3.11 scripts/collect_korean_index_artifact.py --market KOSPI --start-date 2018-01-01 --end-date 2026-06-12 --output-dir artifacts/korean_index';
-  let readiness = $state<V6DataReadiness | null>(null);
-  let universe = $state<V6Universe | null>(null);
-  let error = $state<string | null>(null);
-  let loading = $state(true);
-
-  function bytes(value: number | undefined): string {
-    return typeof value === 'number' ? `${new Intl.NumberFormat('ko-KR').format(value)} bytes` : 'MISSING';
-  }
-  function number(value: number | undefined): string {
-    return typeof value === 'number' ? new Intl.NumberFormat('ko-KR').format(value) : 'MISSING';
-  }
-  function value(value: unknown): string {
-    if (value === undefined || value === null || value === '') return 'MISSING';
-    return typeof value === 'string' ? value : JSON.stringify(value);
-  }
-  function presence(present: boolean | undefined, state: string | undefined): string {
-    return present === true || state === 'PRESENT' ? 'PRESENT' : 'MISSING';
-  }
-
-  async function load(): Promise<void> {
-    loading = true;
-    error = null;
-    const [readinessResult, universeResult] = await Promise.all([getV6DataReadiness(), getV6Universe(20)]);
-    loading = false;
-    if (!readinessResult.ok || !readinessResult.data) { error = readinessResult.error ?? '알 수 없는 오류가 발생했습니다.'; return; }
-    if (!universeResult.ok || !universeResult.data) { error = universeResult.error ?? '알 수 없는 오류가 발생했습니다.'; return; }
-    readiness = readinessResult.data;
-    universe = universeResult.data;
-  }
-
+  let readiness = $state<V6DataReadiness | null>(null); let universe = $state<V6Universe | null>(null); let error = $state<string | null>(null); let loading = $state(true);
+  const text = (value: unknown) => value === undefined || value === null || value === '' ? 'MISSING' : String(value);
+  const number = (value: number | undefined) => typeof value === 'number' ? new Intl.NumberFormat('ko-KR').format(value) : 'MISSING';
+  const bytes = (value: number | undefined) => typeof value === 'number' ? `${new Intl.NumberFormat('ko-KR').format(value)} bytes` : 'MISSING';
+  const present = (item: { present?: boolean; state?: string }) => item.present === true || item.state === 'PRESENT';
+  async function load() { loading = true; error = null; const [a, b] = await Promise.all([getV6DataReadiness(), getV6Universe(20)]); loading = false; if (a.ok && a.data && b.ok && b.data) { readiness = a.data; universe = b.data; } else error = a.error ?? b.error ?? '알 수 없는 오류가 발생했습니다.'; }
   onMount(load);
 </script>
-
-{#if loading}
-  <section class="panel" aria-live="polite"><p>데이터 준비 상태를 확인하고 있습니다.</p></section>
-{:else if error}
-  <section class="panel error" aria-live="assertive">
-    <h1>데이터 준비 상태를 불러오지 못했습니다</h1><p>{error}</p><button type="button" onclick={load}>다시 시도</button>
-  </section>
-{:else if readiness && universe}
-  <section class="data-page" aria-labelledby="data-title">
-    <header><p class="eyebrow">DATA READINESS</p><h1 id="data-title">데이터 준비 상태</h1><p>표시된 값은 읽기 전용 API 응답에서만 가져옵니다.</p></header>
-
-    <section class="card" aria-labelledby="daily-title">
-      <h2 id="daily-title">일봉 DB <span class={`chip ${readiness.daily_db.present === true || readiness.daily_db.state === 'PRESENT' ? '' : 'missing'}`}>{presence(readiness.daily_db.present, readiness.daily_db.state)}</span></h2>
-      <dl><div><dt>크기</dt><dd>{bytes(readiness.daily_db.size_bytes)}</dd></div><div><dt>테이블 수</dt><dd>{number(readiness.daily_db.table_count)}</dd></div><div><dt>수정 시각</dt><dd>{value(readiness.daily_db.mtime ?? readiness.daily_db.mtime_epoch)}</dd></div></dl>
-      <p class="caveat">기간과 모집단은 감사 응답의 범위에 한정됩니다: {value(readiness.audit.disclaimers)}</p>
-    </section>
-
-    <section class="card" aria-labelledby="universe-title">
-      <h2 id="universe-title">연구 universe <span class="chip">{number(universe.total)}</span></h2>
-      <dl><div><dt>필터</dt><dd>{value(universe.filters)}</dd></div><div><dt>종목 유형</dt><dd>{value(universe.instrument_type)}</dd></div><div><dt>모집단</dt><dd>{value(readiness.audit.population)}</dd></div></dl>
-      <p class="warning"><strong>UNVERIFIED:</strong> instrument_type은 검증되지 않았습니다. {value(universe.instrument_type)}</p>
-      <div class="table-wrap"><table><caption>상위 20개 universe 행</caption><thead><tr><th>table</th><th>code</th><th>rows</th><th>first_date</th><th>last_date</th></tr></thead><tbody>{#if universe.universe.length}{#each universe.universe as row}<tr><td>{value(row.table)}</td><td>{value(row.code)}</td><td>{number(row.rows)}</td><td>{value(row.first_date)}</td><td>{value(row.last_date)}</td></tr>{/each}{:else}<tr><td colspan="5">MISSING</td></tr>{/if}</tbody></table></div>
-    </section>
-
-    <section class="card" aria-labelledby="fivemin-title">
-      <h2 id="fivemin-title">5분봉 DB <span class={`chip ${readiness.fivemin_db.present === true || readiness.fivemin_db.state === 'PRESENT' ? '' : 'missing'}`}>{presence(readiness.fivemin_db.present, readiness.fivemin_db.state)}</span></h2>
-      <dl><div><dt>크기</dt><dd>{bytes(readiness.fivemin_db.size_bytes)}</dd></div></dl>
-      <p class="caveat">15:20 체결가는 장중 기준 시점의 권위 있는 체결가로만 취급하며, 종가 또는 수익률 근거로 대체하지 않습니다.</p>
-    </section>
-
-    <section class="card blocked" aria-labelledby="index-title">
-      <h2 id="index-title">지수 overlay <span class="chip">{value(readiness.index.state)}</span></h2>
-      <p>{value(readiness.index.reason)}</p>
-      {#if readiness.index.state === 'BLOCKED'}<code>{INDEX_COMMAND}</code>{/if}
-    </section>
-
-    <section class="card warning" aria-labelledby="basis-title">
-      <h2 id="basis-title">price basis <span class="chip">{value(readiness.price_basis.status)}</span></h2>
-      <p><strong>UNKNOWN_CONFIRMED:</strong> 수정주가 여부 미검증 → 수익률 증거 사용 금지</p>
-      <p>decision_grade_returns: {readiness.price_basis.decision_grade_returns === undefined ? 'MISSING' : String(readiness.price_basis.decision_grade_returns)}</p>
-    </section>
-  </section>
-{/if}
-
-<style>
-  .data-page, .panel { max-width: 980px; border: 1px solid var(--border); border-radius: 14px; padding: clamp(18px, 4vw, 32px); background: var(--surface, var(--surface)); color: var(--fg); }
-  .eyebrow { margin: 0; color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .1em; } h1 { margin: 7px 0; color: var(--fg-strong); font-size: clamp(1.7rem, 6vw, 2.5rem); } header > p { color: var(--muted); }
-  .card { margin-top: 16px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 16px; background: var(--surface-raised); } h2 { margin: 0 0 12px; color: var(--fg-strong); font-size: 1.05rem; } .chip { display: inline-block; margin-left: 5px; border: 1px solid var(--info); border-radius: 999px; padding: 2px 6px; color: var(--accent-strong); font-size: .68rem; vertical-align: middle; } .missing, .blocked .chip { border-color: var(--danger); color: var(--danger); }
-  dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; } dl div { min-width: 0; } dt { color: var(--muted); font-size: .74rem; } dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--fg); font-size: .86rem; } .caveat, .warning { color: var(--warn); line-height: 1.55; } .blocked { border-color: var(--danger); background: var(--danger-soft); } code { display: block; overflow-wrap: anywhere; border: 1px solid var(--danger); border-radius: 6px; padding: 9px; color: var(--danger); font-size: .75rem; line-height: 1.5; }
-  .table-wrap { max-width: 100%; overflow-x: auto; } table { width: 100%; min-width: 550px; border-collapse: collapse; font-size: .78rem; } caption { padding: 12px 0 6px; color: var(--muted); text-align: left; } th, td { border-top: 1px solid var(--border); padding: 7px; overflow-wrap: anywhere; text-align: left; } th { color: var(--muted); } .error { border-color: var(--danger); color: var(--danger); } button { border: 1px solid var(--accent); border-radius: 6px; padding: 6px 10px; background: transparent; color: var(--accent-strong); font: inherit; cursor: pointer; }
-  @media (max-width: 600px) { dl { grid-template-columns: 1fr; } }
-</style>
+{#if loading}<section class="panel">데이터 준비 상태를 확인하고 있습니다.</section>
+{:else if error}<section class="panel error"><h1>데이터 준비 상태를 불러오지 못했습니다</h1><p>{error}</p><button onclick={load}>다시 시도</button></section>
+{:else if readiness && universe}<section class="data-page"><header><p class="eyebrow">DATA READINESS</p><h1>데이터 준비 상태</h1><p>표시된 값은 읽기 전용 API 응답에서만 가져옵니다.</p></header>
+  <div class="grid stats"><section class="card"><p>일봉 DB 테이블</p><strong>{number(readiness.daily_db.table_count)}</strong><i></i><small>{present(readiness.daily_db) ? 'PRESENT' : 'MISSING'} · {bytes(readiness.daily_db.size_bytes)}</small></section><section class="card"><p>universe</p><strong>{number(universe.total)}</strong><i></i><small>연구 모집단 · 상위 20행 표시</small></section><section class="card"><p>5분봉 DB 크기</p><strong>{bytes(readiness.fivemin_db.size_bytes)}</strong><i></i><small>{present(readiness.fivemin_db) ? 'PRESENT' : 'MISSING'}</small></section></div>
+  <section class="card blocked"><h2>지수 overlay <span class="chip">{text(readiness.index.state)}</span></h2><p>{text(readiness.index.reason)}</p>{#if readiness.index.state === 'BLOCKED'}<code>{INDEX_COMMAND}</code>{/if}</section>
+  <section class="card"><h2>데이터 사용 경계</h2><p><span class="chip warn">가격 기준 미검증</span> 유동성 필터용으로만 사용, 수익률 증거 금지</p><p><span class="chip warn">ETF 혼입 가능</span> D1 종목유형 검증 전 학습 최종 아님</p></section>
+  <section class="card wide"><h2>연구 universe <span class="chip">{number(universe.total)}</span></h2><div class="table-wrap"><table><caption>상위 20개 universe 행</caption><thead><tr><th>table</th><th>code</th><th>rows</th><th>first_date</th><th>last_date</th></tr></thead><tbody>{#if universe.universe.length}{#each universe.universe as row}<tr><td>{text(row.table)}</td><td>{text(row.code)}</td><td>{number(row.rows)}</td><td>{text(row.first_date)}</td><td>{text(row.last_date)}</td></tr>{/each}{:else}<tr><td colspan="5">표시할 데이터 없음 · NOT_RUN</td></tr>{/if}</tbody></table></div></section>
+</section>{/if}
+<style>.data-page,.panel{width:100%;border:1px solid var(--border);border-radius:14px;padding:clamp(18px,4vw,32px);background:var(--surface);color:var(--fg)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;margin-top:16px}.card{border:1px solid var(--border-strong);border-radius:10px;padding:16px;background:var(--surface-raised)}.wide{grid-column:1/-1;margin-top:16px}.eyebrow{margin:0;color:var(--accent);font-size:.82rem;font-weight:800;letter-spacing:.1em}h1{margin:7px 0;color:var(--fg-strong);font-size:clamp(1.8rem,6vw,2.6rem)}h2{margin:0 0 12px;color:var(--fg-strong);font-size:1.15rem}header>p,small{color:var(--muted)}.stats p{margin:0;color:var(--muted)}.stats strong{display:block;margin:8px 0;color:var(--fg-strong);font-size:1.55rem}.stats i{display:block;width:78%;height:4px;background:var(--accent);border-radius:99px}.chip{display:inline-block;border:1px solid var(--info);border-radius:999px;padding:2px 6px;color:var(--accent-strong);font-size:.78rem}.warn{border-color:var(--warn);color:var(--warn)}.blocked{margin-top:16px;border-color:var(--danger);background:var(--danger-soft)}.blocked .chip,.error{color:var(--danger)}code{display:block;overflow-wrap:anywhere;border:1px solid var(--danger);border-radius:6px;padding:9px;color:var(--danger);font-size:.85rem}.table-wrap{overflow-x:auto}table{width:100%;min-width:550px;border-collapse:collapse;font-size:.85rem}caption{padding:12px 0 6px;color:var(--muted);text-align:left}th,td{border-top:1px solid var(--border);padding:8px;text-align:left;overflow-wrap:anywhere}th{color:var(--muted)}button{border:1px solid var(--accent);border-radius:6px;padding:6px 10px;background:transparent;color:var(--accent-strong);font:inherit}</style>

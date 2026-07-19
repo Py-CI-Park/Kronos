@@ -1,71 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { getV6RunDetail, getV6Runs, type V6RunDetail, type V6Runs, type V6RunSeed } from '../v6Api';
-
-  let runsData = $state<V6Runs | null>(null);
-  let detail = $state<V6RunDetail | null>(null);
-  let selected = $state('');
-  let error = $state<string | null>(null);
-  let loading = $state(true);
-  let detailLoading = $state(false);
-
-  function runKey(dataset: string | undefined, train: string | undefined): string { return `${dataset ?? ''}\u0000${train ?? ''}`; }
-  function text(value: unknown): string { return value === undefined || value === null || value === '' ? 'MISSING' : String(value); }
-  function number(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) ? value : undefined; }
-  function won(value: unknown): string { const amount = number(value); return amount === undefined ? 'MISSING' : `₩${new Intl.NumberFormat('ko-KR').format(amount)}`; }
-  function percent(value: unknown): string { const amount = number(value); return amount === undefined ? 'MISSING' : `${amount.toFixed(2)}%`; }
-  function fractionPercent(value: unknown): string { const amount = number(value); return amount === undefined ? 'MISSING' : `${(amount * 100).toFixed(2)}%`; }
-  function seeds(): readonly [string, V6RunSeed][] { return Object.entries(detail?.manifest?.per_seed ?? {}); }
-  function verdict(): string { return text(detail?.manifest?.verdict_candidate?.value); }
-  function verdictClass(): string { return verdict() === 'NO_GO' ? 'no-go' : verdict() === 'GO_CANDIDATE_VALIDATION_ONLY' ? 'candidate' : 'inconclusive'; }
-  function eventRows(): readonly { episode?: unknown; val_nav?: unknown }[] { return Array.isArray(detail?.events_tail) ? detail.events_tail.slice(-10) : []; }
-
-  async function load(): Promise<void> {
-    loading = true; error = null;
-    const result = await getV6Runs();
-    loading = false;
-    if (result.ok && result.data) runsData = result.data;
-    else error = result.error ?? '알 수 없는 오류가 발생했습니다.';
-  }
-
-  async function selectRun(): Promise<void> {
-    const [dataset, train] = selected.split('\u0000');
-    if (!dataset || !train) return;
-    detailLoading = true; detail = null; error = null;
-    const result = await getV6RunDetail(dataset, train);
-    detailLoading = false;
-    if (result.ok && result.data) detail = result.data;
-    else error = result.error ?? '알 수 없는 오류가 발생했습니다.';
-  }
-
-  onMount(load);
+ import {onMount}from'svelte';import EChartsRenderer from '../../charts/EChartsRenderer.svelte';import{getV6RunDetail,getV6Runs,type V6RunDetail,type V6Runs,type V6RunSeed}from'../v6Api';let runsData=$state<V6Runs|null>(null);let detail=$state<V6RunDetail|null>(null);let selected=$state('');let error=$state<string|null>(null);let loading=$state(true);let detailLoading=$state(false);
+ const key=(d:string|undefined,r:string|undefined)=>`${d??''}\u0000${r??''}`;const text=(v:unknown)=>v===undefined||v===null||v===''?'MISSING':String(v);const num=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?v:undefined;const won=(v:unknown)=>num(v)===undefined?'MISSING':`₩${new Intl.NumberFormat('ko-KR').format(num(v)!)}`;const color=(name:string)=>typeof document==='undefined'?'transparent':getComputedStyle(document.documentElement).getPropertyValue(name).trim();const seeds=()=>Object.entries(detail?.manifest?.per_seed??{}) as [string,V6RunSeed][];const events=$derived((detail?.events_tail??[]).filter(e=>typeof e.episode==='number'&&typeof e.val_nav==='number'));
+ const navOption=$derived({tooltip:{trigger:'axis',valueFormatter:(v:number)=>won(v)},xAxis:{type:'category',data:events.map(e=>e.episode)},yAxis:{type:'value',axisLabel:{formatter:(v:number)=>won(v)}},series:[{type:'line',data:events.map(e=>e.val_nav),itemStyle:{color:color('--accent')},markLine:{silent:true,data:[{yAxis:60000000,label:{formatter:'no-trade 60M'}}]}}]});
+ const costOption=$derived({tooltip:{trigger:'axis',valueFormatter:(v:number)=>won(v)},legend:{},xAxis:{type:'category',data:['0.00%','0.23%','0.46%']},yAxis:{type:'value',axisLabel:{formatter:(v:number)=>won(v)}},series:seeds().map(([seed,v])=>({type:'bar',name:`seed ${seed}`,data:['0.0000','0.0023','0.0046'].map(c=>v.final_val_metrics?.cost_scenario_navs?.[c]),itemStyle:{color:color('--accent')},markLine:{silent:true,data:[{yAxis:60000000,label:{formatter:'no-trade 60M'}}]}}))});
+ async function selectRun(){const[d,r]=selected.split('\u0000');if(!d||!r)return;detailLoading=true;detail=null;const x=await getV6RunDetail(d,r);detailLoading=false;if(x.ok&&x.data)detail=x.data;else error=x.error??'알 수 없는 오류가 발생했습니다.'}async function load(){loading=true;const x=await getV6Runs();loading=false;if(x.ok&&x.data){runsData=x.data;const run=x.data.runs?.[0];if(run){selected=key(run.dataset_run_id,run.run_id);selectRun()}}else error=x.error??'알 수 없는 오류가 발생했습니다.'}onMount(load);
 </script>
-
-{#if loading}
-  <section class="panel" aria-live="polite"><p>평가 실행 기록을 확인하고 있습니다.</p></section>
-{:else if error && !runsData}
-  <section class="panel error" aria-live="assertive"><h1>평가 실행 기록을 불러오지 못했습니다</h1><p>{error}</p><button type="button" onclick={load}>다시 시도</button></section>
-{:else if runsData}
-  <section class="evaluation-page" aria-labelledby="evaluation-title">
-    <header><p class="eyebrow">EVALUATION EVIDENCE</p><h1 id="evaluation-title">평가</h1><p>표시된 결과는 선택한 실행의 읽기 전용 manifest에서만 가져옵니다.</p></header>
-    {#if !(runsData.runs?.length)}
-      <section class="empty-state"><h2>아직 평가할 실행이 없습니다</h2><p>학습 페이지에서 데이터셋과 학습 실행 기록을 먼저 확인하세요.</p></section>
-    {:else}
-      <section class="card picker"><h2>실행 선택</h2><div class="run-list">{#each runsData.runs ?? [] as run}<button type="button" class:chosen={selected === runKey(run.dataset_run_id, run.run_id)} onclick={() => { selected = runKey(run.dataset_run_id, run.run_id); selectRun(); }}><span>{text(run.dataset_run_id)} · {text(run.run_id)}</span><span class="chip">{text(run.verdict_candidate?.value)}</span></button>{/each}</div></section>
-      {#if detailLoading}<section class="card" aria-live="polite">선택한 실행 manifest를 읽고 있습니다.</section>
-      {:else if error}<section class="card error" aria-live="assertive"><p>{error}</p><button type="button" onclick={selectRun}>다시 시도</button></section>
-      {:else if detail?.reason}<section class="card error"><h2>실행 상세를 표시할 수 없습니다</h2><p>{detail.reason}</p></section>
-      {:else if detail?.manifest}
-        <section class={`card verdict ${verdictClass()}`}><h2>판정 <span class="chip">{verdict()}</span></h2>{#if verdict() === 'GO_CANDIDATE_VALIDATION_ONLY'}<p>검증 후보 · 수익·실거래 주장 아님</p>{:else if verdict() === 'INCONCLUSIVE'}<p>증거가 결론을 뒷받침하기에 충분하지 않습니다.</p>{/if}{#if Array.isArray(detail.manifest.verdict_candidate?.reasons)}<ul>{#each detail.manifest.verdict_candidate.reasons as reason}<li>{String(reason)}</li>{/each}</ul>{/if}</section>
-        <section class="card"><h2>seed별 검증</h2><div class="table-wrap"><table><thead><tr><th>seed</th><th>episodes</th><th>best episode</th><th>val NAV (₩)</th><th>return %</th><th>MDD %</th><th>trades</th></tr></thead><tbody>{#each seeds() as [seed, value]}<tr><th>{seed}</th><td>{text(value.episodes_ran)}</td><td>{text(value.best_episode)}</td><td>{won(value.final_val_metrics?.nav)}</td><td>{percent(value.final_val_metrics?.total_net_return_pct)}</td><td>{fractionPercent(value.final_val_metrics?.max_drawdown)}</td><td>{text(value.final_val_metrics?.trade_count)}</td></tr>{/each}</tbody></table></div><h3>수수료 민감도</h3><div class="table-wrap"><table><thead><tr><th>seed</th><th>0.00%</th><th>0.23%</th><th>0.46%</th></tr></thead><tbody>{#each seeds() as [seed, value]}<tr><th>{seed}</th><td>{won(value.final_val_metrics?.cost_scenario_navs?.['0.0000'])}</td><td>{won(value.final_val_metrics?.cost_scenario_navs?.['0.0023'])}</td><td>{won(value.final_val_metrics?.cost_scenario_navs?.['0.0046'])}</td></tr>{/each}</tbody></table></div></section>
-        <section class="card"><h2>기준선 NAV vs policy</h2><div class="table-wrap"><table><thead><tr><th>전략</th><th>NAV</th></tr></thead><tbody>{#each ['no_trade', 'rule_topk_ret5', 'random_topk'] as name}<tr><th>{name}</th><td>{won(detail.manifest.baselines?.[name]?.nav)}</td></tr>{/each}</tbody></table></div></section>
-        <section class="card"><h2>test 상태</h2>{#if detail.manifest.test?.state === 'NOT_RUN'}<p>untouched test는 아직 읽지 않았습니다 (사전등록상 1회만 허용)</p>{:else}<p>{text(detail.manifest.test?.state)}</p>{/if}</section>
-        <section class="card"><h2>최근 validation events</h2>{#if eventRows().length}<ol>{#each eventRows() as event}<li>episode {text(event.episode)} · val NAV {won(event.val_nav)}</li>{/each}</ol>{:else}<p class="absence">표시할 validation event가 없습니다.</p>{/if}</section>
-      {/if}
-    {/if}
-  </section>
-{/if}
-
-<style>
-  .evaluation-page, .panel { max-width: 980px; border: 1px solid var(--border); border-radius: 14px; padding: clamp(18px, 4vw, 32px); background: var(--surface); color: var(--fg); } .eyebrow { margin: 0; color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .1em; } h1 { margin: 7px 0; color: var(--fg-strong); font-size: clamp(1.7rem, 6vw, 2.5rem); } header > p, .absence { color: var(--muted); } .card, .empty-state { margin-top: 16px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 16px; background: var(--surface-raised); } .empty-state { border-color: var(--warn); background: var(--warn-soft); } h2 { margin: 0 0 12px; color: var(--fg-strong); font-size: 1.05rem; } h3 { margin: 18px 0 8px; color: var(--accent-strong); font-size: .9rem; } .run-list { display: grid; gap: 7px; } .run-list button { width: 100%; display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--border-strong); border-radius: 6px; padding: 8px; background: var(--surface-sunken); color: var(--fg); font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; } .run-list button.chosen { border-color: var(--accent); } .chip { display: inline-block; margin-left: 5px; border: 1px solid currentColor; border-radius: 999px; padding: 2px 6px; font-size: .68rem; vertical-align: middle; } .verdict.no-go { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); } .verdict.candidate { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); } .verdict.inconclusive { border-color: var(--dim); color: var(--muted); } .table-wrap { max-width: 100%; overflow-x: auto; } table { width: 100%; min-width: 580px; border-collapse: collapse; font-size: .78rem; } th, td { border-top: 1px solid var(--border); padding: 7px; overflow-wrap: anywhere; text-align: left; } th { color: var(--muted); } .error { border-color: var(--danger); color: var(--danger); } button { border: 1px solid var(--accent); border-radius: 6px; padding: 6px 10px; background: transparent; color: var(--accent-strong); font: inherit; cursor: pointer; } li { overflow-wrap: anywhere; }
-</style>
+{#if loading}<section class="panel">평가 실행 기록을 확인하고 있습니다.</section>{:else if error&&!runsData}<section class="panel error">{error}</section>{:else if runsData}<section class="evaluation-page"><header><p class="eyebrow">EVALUATION EVIDENCE</p><h1>평가</h1><p>선택한 실행의 읽기 전용 manifest에서만 표시합니다.</p></header>{#if !(runsData.runs?.length)}<section class="empty-state"><h2>아직 평가할 실행이 없습니다</h2></section>{:else}<section class="card picker"><h2>실행 선택</h2>{#each runsData.runs??[] as run}<button class:chosen={selected===key(run.dataset_run_id,run.run_id)} onclick={()=>{selected=key(run.dataset_run_id,run.run_id);selectRun()}}>{text(run.dataset_run_id)} · {text(run.run_id)}</button>{/each}</section>{#if detailLoading}<section class="card">선택한 실행 manifest를 읽고 있습니다.</section>{:else if detail?.manifest}<section class="card verdict"><h2>판정 {text(detail.manifest.verdict_candidate?.value)}</h2>{#each (detail.manifest.verdict_candidate?.reasons??[]) as reason}<p>{text(reason)}</p>{/each}</section><section class="card wide"><h2>validation NAV 곡선</h2>{#if events.length}<EChartsRenderer option={navOption} height="320px" caption="episode별 validation NAV · no-trade 60M" />{:else}<p>표시할 데이터 없음 · NOT_RUN</p>{/if}</section><section class="card wide"><h2>seed별 비용 민감도</h2>{#if seeds().length}<EChartsRenderer option={costOption} height="320px" caption="seed별 final validation NAV · 비용 시나리오" />{:else}<p>표시할 데이터 없음 · NOT_RUN</p>{/if}</section><div class="grid"><section class="card"><h2>seed별 검증</h2><div class="table-wrap"><table><thead><tr><th>seed</th><th>episodes</th><th>val NAV</th><th>trades</th></tr></thead><tbody>{#each seeds() as [seed,v]}<tr><th>{seed}</th><td>{text(v.episodes_ran)}</td><td>{won(v.final_val_metrics?.nav)}</td><td>{text(v.final_val_metrics?.trade_count)}</td></tr>{/each}</tbody></table></div></section><section class="card"><h2>기준선 NAV vs policy</h2><div class="table-wrap"><table><thead><tr><th>전략</th><th>NAV</th></tr></thead><tbody>{#each ['no_trade','rule_topk_ret5','random_topk'] as name}<tr><th>{name}</th><td>{won(detail.manifest.baselines?.[name]?.nav)}</td></tr>{/each}</tbody></table></div></section></div>{/if}{/if}</section>{/if}
+<style>.evaluation-page,.panel{width:100%;border:1px solid var(--border);border-radius:14px;padding:clamp(18px,4vw,32px);background:var(--surface);color:var(--fg)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;margin-top:16px}.card,.empty-state{margin-top:16px;border:1px solid var(--border-strong);border-radius:10px;padding:16px;background:var(--surface-raised)}.wide{grid-column:1/-1}.eyebrow{color:var(--accent);font-size:.82rem;font-weight:800;letter-spacing:.1em}h1{font-size:clamp(1.8rem,6vw,2.6rem)}h1,h2{color:var(--fg-strong)}h2{font-size:1.15rem}.picker button{display:block;width:100%;margin:6px 0;border:1px solid var(--border-strong);border-radius:6px;padding:8px;background:var(--surface-sunken);color:var(--fg);font:inherit;text-align:left}.picker .chosen{border-color:var(--accent)}.verdict{border-color:var(--danger);background:var(--danger-soft)}.table-wrap{overflow-x:auto}table{width:100%;min-width:420px;border-collapse:collapse;font-size:.85rem}th,td{border-top:1px solid var(--border);padding:8px;text-align:left}th{color:var(--muted)}.error{color:var(--danger)}</style>

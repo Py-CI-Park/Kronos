@@ -4,7 +4,7 @@ export interface V6PageDef {
   readonly id: string;
   readonly label: string;
   readonly labelKo: string;
-  readonly group: 'COMMAND' | 'REINFORCEMENT LEARNING' | 'INSIGHT' | 'PLATFORM' | 'ADVANCED';
+  readonly group: 'COMMAND' | 'RESEARCH' | 'PLATFORM' | 'ADVANCED';
   readonly step: number | null;
   readonly status: V6PageStatus;
   readonly description: string;
@@ -17,26 +17,56 @@ export const V6_BRAND = {
   updateDate: '2026-07-19',
 } as const;
 
+export interface V6StepDef {
+  readonly id: string;
+  readonly label: string;
+  readonly labelKo: string;
+  readonly statusKey: 'data' | 'experiment' | 'training' | 'evaluation' | 'compare' | 'report';
+}
+
+export const V6_RL_STEPS: readonly V6StepDef[] = [
+  { id: 'data', label: 'Data', labelKo: '데이터', statusKey: 'data' },
+  { id: 'experiment', label: 'Experiment', labelKo: '실험 설계', statusKey: 'experiment' },
+  { id: 'training', label: 'Training', labelKo: '학습', statusKey: 'training' },
+  { id: 'evaluation', label: 'Evaluation', labelKo: '평가', statusKey: 'evaluation' },
+  { id: 'compare', label: 'Compare', labelKo: '비교', statusKey: 'compare' },
+  { id: 'report', label: 'Report', labelKo: '보고서', statusKey: 'report' },
+];
+
+export const V6_INSIGHT_SUBTABS = [
+  { id: 'symbol', labelKo: '종목 심층' },
+  { id: 'flow', labelKo: '수급 흐름' },
+  { id: 'regime', labelKo: '시장 국면' },
+] as const;
+
 export const V6_PAGES: readonly V6PageDef[] = [
-  { id: 'overview', label: 'Overview', labelKo: '개요', group: 'COMMAND', step: 1, status: 'BUILT', description: 'V6 연구 워크플로의 개요와 현재 구현 상태를 확인하는 화면입니다.' },
-  { id: 'data', label: 'Data', labelKo: '데이터', group: 'REINFORCEMENT LEARNING', step: 2, status: 'BUILT', description: '강화학습 연구에 사용할 데이터 범위와 검증 상태를 다루는 화면입니다.' },
-  { id: 'experiment', label: 'Experiment', labelKo: '실험 설계', group: 'REINFORCEMENT LEARNING', step: 3, status: 'BUILT', description: '실험 설계와 비교 조건을 명시하는 화면입니다.' },
-  { id: 'training', label: 'Training', labelKo: '학습', group: 'REINFORCEMENT LEARNING', step: 4, status: 'BUILT', description: '학습 실행과 검증 경계를 다루는 화면입니다.' },
-  { id: 'evaluation', label: 'Evaluation', labelKo: '평가', group: 'REINFORCEMENT LEARNING', step: 5, status: 'BUILT', description: '평가 기준과 실패 조건을 검토하는 화면입니다.' },
-  { id: 'compare', label: 'Compare', labelKo: '비교', group: 'REINFORCEMENT LEARNING', step: 6, status: 'BUILT', description: '실험 결과 비교와 기준선 검토를 위한 화면입니다.' },
-  { id: 'report', label: 'Report', labelKo: '보고서', group: 'REINFORCEMENT LEARNING', step: 7, status: 'BUILT', description: '연구 결과를 근거와 함께 보고하는 화면입니다.' },
-  { id: 'insight-symbol', label: 'Symbol Drill-down', labelKo: '종목 심층', group: 'INSIGHT', step: null, status: 'BUILT', description: '개별 종목 연구 근거를 살펴보는 화면입니다.' },
-  { id: 'insight-flow', label: 'Flow Ranking', labelKo: '수급 흐름', group: 'INSIGHT', step: null, status: 'BUILT', description: '수급 흐름 연구를 검토하는 화면입니다.' },
-  { id: 'insight-regime', label: 'Market Regime', labelKo: '시장 국면', group: 'INSIGHT', step: null, status: 'BUILT', description: '시장 국면 연구를 검토하는 화면입니다.' },
-  { id: 'intraday', label: 'Intraday RL', labelKo: '인트라데이 RL', group: 'PLATFORM', step: null, status: 'BUILT', description: '인트라데이 강화학습 연구를 위한 화면입니다.' },
-  { id: 'kronos', label: 'Kronos Research', labelKo: 'Kronos 예측', group: 'PLATFORM', step: null, status: 'BUILT', description: 'Kronos 예측 연구를 검토하는 화면입니다.' },
+  { id: 'home', label: 'Home', labelKo: '홈', group: 'COMMAND', step: 1, status: 'BUILT', description: 'V6 연구 상태와 빠른 이동을 확인하는 홈 화면입니다.' },
+  { id: 'rl', label: 'Reinforcement Learning', labelKo: '강화학습', group: 'RESEARCH', step: 2, status: 'BUILT', description: '강화학습 연구 여정과 단계별 근거를 다루는 작업공간입니다.' },
+  { id: 'insight', label: 'Insights', labelKo: '인사이트', group: 'RESEARCH', step: null, status: 'BUILT', description: '종목, 수급, 시장 국면 관찰을 다루는 작업공간입니다.' },
+  { id: 'lanes', label: 'Other Lanes', labelKo: '다른 레인', group: 'PLATFORM', step: null, status: 'BUILT', description: '인트라데이 RL과 Kronos 예측 레인을 함께 확인합니다.' },
   { id: 'settings', label: 'Settings', labelKo: '설정', group: 'ADVANCED', step: null, status: 'BUILT', description: 'V6 연구 환경 설정을 다루는 화면입니다.' },
 ];
 
+export function resolveV6Location(tab: string | null, step: string | null, sub: string | null): { tab: string; step?: string; sub?: string } {
+  if (tab === 'overview') return { tab: 'home' };
+  if (V6_RL_STEPS.some((item) => item.id === tab)) return { tab: 'rl', step: tab };
+  if (tab === 'insight-symbol') return { tab: 'insight', sub: 'symbol' };
+  if (tab === 'insight-flow') return { tab: 'insight', sub: 'flow' };
+  if (tab === 'insight-regime') return { tab: 'insight', sub: 'regime' };
+  if (tab === 'intraday' || tab === 'kronos') return { tab: 'lanes' };
+  const resolvedTab = V6_PAGES.some((page) => page.id === tab) ? tab! : 'home';
+  const location: { tab: string; step?: string; sub?: string } = { tab: resolvedTab };
+  if (resolvedTab === 'rl' && V6_RL_STEPS.some((item) => item.id === step)) location.step = step!;
+  if (resolvedTab === 'insight' && V6_INSIGHT_SUBTABS.some((item) => item.id === sub)) location.sub = sub!;
+  return location;
+}
+
 export function resolveV6Page(tab: string | null): V6PageDef {
-  return V6_PAGES.find((page) => page.id === tab) ?? V6_PAGES[0];
+  const location = resolveV6Location(tab, null, null);
+  return V6_PAGES.find((page) => page.id === location.tab) ?? V6_PAGES[0];
 }
 
 export function v6PageUrl(id: string): string {
-  return id === 'overview' ? '/?ui=v6' : `/?ui=v6&tab=${encodeURIComponent(id)}`;
+  const location = resolveV6Location(id, null, null);
+  return location.tab === 'home' ? '/?ui=v6' : `/?ui=v6&tab=${encodeURIComponent(location.tab)}${location.step ? `&step=${encodeURIComponent(location.step)}` : ''}`;
 }
