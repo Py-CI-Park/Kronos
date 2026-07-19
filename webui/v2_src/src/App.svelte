@@ -34,6 +34,7 @@
   import { resolveRoute, syncTabFromLocation } from '$lib/routes';
   import { dashboardShell, initializeDashboardShell, type DashboardShell } from '$lib/shellMode';
   import { isLearningNowRouteLocation } from './v5/learningNow';
+  import V6Shell from './v6shell/V6Shell.svelte';
 
   type V51WorkspaceDomain = 'kronos' | 'rl' | 'training-system';
 
@@ -50,7 +51,7 @@
     activeShell: DashboardShell,
     locationLike: Pick<Location, 'pathname' | 'search'> | null,
   ): boolean {
-    return isLearningNowRouteLocation(locationLike);
+    return activeShell !== 'v6' && isLearningNowRouteLocation(locationLike);
   }
 
   function activateLearningNowRoute(): void {
@@ -81,7 +82,9 @@
 
   onMount(() => {
     const mountedShell = initializeDashboardShell();
-    if (shouldRenderLearningNowRoute(mountedShell, window.location)) {
+    if (mountedShell === 'v6') {
+      learningNowRouteActive = false;
+    } else if (shouldRenderLearningNowRoute(mountedShell, window.location)) {
       activateLearningNowRoute();
     } else {
       learningNowRouteActive = false;
@@ -89,7 +92,9 @@
     }
     const handlePopstate = () => {
       const nextShell = initializeDashboardShell();
-      if (shouldRenderLearningNowRoute(nextShell, window.location)) {
+      if (nextShell === 'v6') {
+        learningNowRouteActive = false;
+      } else if (shouldRenderLearningNowRoute(nextShell, window.location)) {
         activateLearningNowRoute();
       } else {
         learningNowRouteActive = false;
@@ -269,6 +274,8 @@
   <V4Shell>
     {@render tabHost()}
   </V4Shell>
+{:else if shell === 'v6'}
+  <V6Shell />
 {:else}
   <div class="app-shell" data-kronos-shell={shell} data-sidebar={collapsed ? 'collapsed' : 'expanded'}>
     <Sidebar />

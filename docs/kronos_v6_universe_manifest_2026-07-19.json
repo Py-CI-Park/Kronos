@@ -1,0 +1,3543 @@
+{
+ "db": {
+  "mtime_epoch": 1781251246,
+  "path_suffix": "_database/Stock_Database_ohlcv_1day.db",
+  "size_bytes": 1009057792
+ },
+ "filters": {
+  "active_min_last_date": 20260601,
+  "liquidity_window_sessions": 60,
+  "min_median_liquidity_proxy_krw": 1000000000.0,
+  "min_rows": 750,
+  "table_pattern": "^A\\d{6}$ and endswith '0' (common-stock heuristic)",
+  "top_n": 500
+ },
+ "flow_columns_disclaimer": "fill-rate audit only; point-in-time publication-lag gate pending before feature use",
+ "generated_utc": "2026-07-19T08:45:37Z",
+ "instrument_type": {
+  "note": "code-ending-0 heuristic includes ETF/ETN/index products (e.g. A069500, A122630); a D1 instrument-type gate must verify and quarantine non-common-stock instruments before this universe is training-final",
+  "status": "UNVERIFIED_CODE_HEURISTIC_ONLY"
+ },
+ "liquidity_proxy_disclaimer": "close*volume heuristic only; not verified traded amount; not return evidence",
+ "population": {
+  "common_stock_candidate_tables": 3731,
+  "non_common_tables": 996,
+  "passed_all_filters": 1168,
+  "skipped": {
+   "illiquid": 1754,
+   "inactive": 254,
+   "no_rows": 0,
+   "short_history": 555
+  },
+  "total_tables": 4727
+ },
+ "price_basis": {
+  "allowed_use_here": "universe_filtering_and_feature_candidates_only",
+  "decision_grade_returns": "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED",
+  "status": "UNKNOWN_CONFIRMED"
+ },
+ "schema_version": "kronos_v6_daily_universe_audit.v1",
+ "universe": [
+  {
+   "code": "005930",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A005930"
+  },
+  {
+   "code": "000660",
+   "first_date": 19961226,
+   "last_date": 20260612,
+   "rows": 7352,
+   "table": "A000660"
+  },
+  {
+   "code": "122630",
+   "first_date": 20100222,
+   "last_date": 20260612,
+   "rows": 4013,
+   "table": "A122630"
+  },
+  {
+   "code": "069500",
+   "first_date": 20021014,
+   "last_date": 20260612,
+   "rows": 5840,
+   "table": "A069500"
+  },
+  {
+   "code": "252670",
+   "first_date": 20160922,
+   "last_date": 20260612,
+   "rows": 2384,
+   "table": "A252670"
+  },
+  {
+   "code": "396500",
+   "first_date": 20210810,
+   "last_date": 20260612,
+   "rows": 1182,
+   "table": "A396500"
+  },
+  {
+   "code": "233740",
+   "first_date": 20151217,
+   "last_date": 20260612,
+   "rows": 2569,
+   "table": "A233740"
+  },
+  {
+   "code": "005380",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A005380"
+  },
+  {
+   "code": "009150",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A009150"
+  },
+  {
+   "code": "091160",
+   "first_date": 20060627,
+   "last_date": 20260612,
+   "rows": 4921,
+   "table": "A091160"
+  },
+  {
+   "code": "114800",
+   "first_date": 20090916,
+   "last_date": 20260612,
+   "rows": 4121,
+   "table": "A114800"
+  },
+  {
+   "code": "047040",
+   "first_date": 20010323,
+   "last_date": 20260612,
+   "rows": 6222,
+   "table": "A047040"
+  },
+  {
+   "code": "229200",
+   "first_date": 20151001,
+   "last_date": 20260612,
+   "rows": 2623,
+   "table": "A229200"
+  },
+  {
+   "code": "402340",
+   "first_date": 20211129,
+   "last_date": 20260612,
+   "rows": 1109,
+   "table": "A402340"
+  },
+  {
+   "code": "102110",
+   "first_date": 20080403,
+   "last_date": 20260612,
+   "rows": 4485,
+   "table": "A102110"
+  },
+  {
+   "code": "010170",
+   "first_date": 19960108,
+   "last_date": 20260612,
+   "rows": 7639,
+   "table": "A010170"
+  },
+  {
+   "code": "034020",
+   "first_date": 20001025,
+   "last_date": 20260612,
+   "rows": 6320,
+   "table": "A034020"
+  },
+  {
+   "code": "379800",
+   "first_date": 20210409,
+   "last_date": 20260612,
+   "rows": 1267,
+   "table": "A379800"
+  },
+  {
+   "code": "006400",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A006400"
+  },
+  {
+   "code": "360750",
+   "first_date": 20200807,
+   "last_date": 20260612,
+   "rows": 1431,
+   "table": "A360750"
+  },
+  {
+   "code": "329180",
+   "first_date": 20210917,
+   "last_date": 20260612,
+   "rows": 1155,
+   "table": "A329180"
+  },
+  {
+   "code": "042700",
+   "first_date": 20050722,
+   "last_date": 20260612,
+   "rows": 5153,
+   "table": "A042700"
+  },
+  {
+   "code": "012450",
+   "first_date": 19870527,
+   "last_date": 20260612,
+   "rows": 10160,
+   "table": "A012450"
+  },
+  {
+   "code": "395270",
+   "first_date": 20210730,
+   "last_date": 20260612,
+   "rows": 1189,
+   "table": "A395270"
+  },
+  {
+   "code": "010120",
+   "first_date": 19940711,
+   "last_date": 20260612,
+   "rows": 8078,
+   "table": "A010120"
+  },
+  {
+   "code": "001440",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A001440"
+  },
+  {
+   "code": "079550",
+   "first_date": 20151002,
+   "last_date": 20260612,
+   "rows": 2622,
+   "table": "A079550"
+  },
+  {
+   "code": "000270",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000270"
+  },
+  {
+   "code": "006800",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A006800"
+  },
+  {
+   "code": "036930",
+   "first_date": 19991224,
+   "last_date": 20260612,
+   "rows": 6520,
+   "table": "A036930"
+  },
+  {
+   "code": "066570",
+   "first_date": 20020422,
+   "last_date": 20260612,
+   "rows": 5957,
+   "table": "A066570"
+  },
+  {
+   "code": "105560",
+   "first_date": 20081010,
+   "last_date": 20260612,
+   "rows": 4357,
+   "table": "A105560"
+  },
+  {
+   "code": "011070",
+   "first_date": 20080724,
+   "last_date": 20260612,
+   "rows": 4410,
+   "table": "A011070"
+  },
+  {
+   "code": "298040",
+   "first_date": 20180713,
+   "last_date": 20260612,
+   "rows": 1941,
+   "table": "A298040"
+  },
+  {
+   "code": "032820",
+   "first_date": 20000622,
+   "last_date": 20260612,
+   "rows": 6403,
+   "table": "A032820"
+  },
+  {
+   "code": "267260",
+   "first_date": 20170510,
+   "last_date": 20260612,
+   "rows": 2229,
+   "table": "A267260"
+  },
+  {
+   "code": "086520",
+   "first_date": 20070720,
+   "last_date": 20260612,
+   "rows": 4657,
+   "table": "A086520"
+  },
+  {
+   "code": "035420",
+   "first_date": 20021029,
+   "last_date": 20260612,
+   "rows": 5829,
+   "table": "A035420"
+  },
+  {
+   "code": "373220",
+   "first_date": 20220127,
+   "last_date": 20260612,
+   "rows": 1067,
+   "table": "A373220"
+  },
+  {
+   "code": "000720",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000720"
+  },
+  {
+   "code": "028260",
+   "first_date": 20141218,
+   "last_date": 20260612,
+   "rows": 2816,
+   "table": "A028260"
+  },
+  {
+   "code": "005490",
+   "first_date": 19880610,
+   "last_date": 20260612,
+   "rows": 9860,
+   "table": "A005490"
+  },
+  {
+   "code": "148020",
+   "first_date": 20111020,
+   "last_date": 20260612,
+   "rows": 3599,
+   "table": "A148020"
+  },
+  {
+   "code": "042660",
+   "first_date": 20010202,
+   "last_date": 20260612,
+   "rows": 6256,
+   "table": "A042660"
+  },
+  {
+   "code": "007660",
+   "first_date": 20000822,
+   "last_date": 20260612,
+   "rows": 6362,
+   "table": "A007660"
+  },
+  {
+   "code": "133690",
+   "first_date": 20101018,
+   "last_date": 20260612,
+   "rows": 3850,
+   "table": "A133690"
+  },
+  {
+   "code": "010140",
+   "first_date": 19940128,
+   "last_date": 20260612,
+   "rows": 8210,
+   "table": "A010140"
+  },
+  {
+   "code": "064350",
+   "first_date": 20131030,
+   "last_date": 20260612,
+   "rows": 3096,
+   "table": "A064350"
+  },
+  {
+   "code": "379810",
+   "first_date": 20210409,
+   "last_date": 20260612,
+   "rows": 1267,
+   "table": "A379810"
+  },
+  {
+   "code": "012330",
+   "first_date": 19890905,
+   "last_date": 20260612,
+   "rows": 9495,
+   "table": "A012330"
+  },
+  {
+   "code": "178320",
+   "first_date": 20170327,
+   "last_date": 20260612,
+   "rows": 2257,
+   "table": "A178320"
+  },
+  {
+   "code": "066970",
+   "first_date": 20030102,
+   "last_date": 20260612,
+   "rows": 5786,
+   "table": "A066970"
+  },
+  {
+   "code": "322000",
+   "first_date": 20191119,
+   "last_date": 20260612,
+   "rows": 1610,
+   "table": "A322000"
+  },
+  {
+   "code": "100790",
+   "first_date": 20190315,
+   "last_date": 20260612,
+   "rows": 1779,
+   "table": "A100790"
+  },
+  {
+   "code": "080220",
+   "first_date": 20050201,
+   "last_date": 20260612,
+   "rows": 5269,
+   "table": "A080220"
+  },
+  {
+   "code": "196170",
+   "first_date": 20141212,
+   "last_date": 20260612,
+   "rows": 2820,
+   "table": "A196170"
+  },
+  {
+   "code": "051910",
+   "first_date": 20010425,
+   "last_date": 20260612,
+   "rows": 6200,
+   "table": "A051910"
+  },
+  {
+   "code": "353200",
+   "first_date": 20200521,
+   "last_date": 20260612,
+   "rows": 1487,
+   "table": "A353200"
+  },
+  {
+   "code": "305720",
+   "first_date": 20180912,
+   "last_date": 20260612,
+   "rows": 1899,
+   "table": "A305720"
+  },
+  {
+   "code": "000150",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000150"
+  },
+  {
+   "code": "055550",
+   "first_date": 20010910,
+   "last_date": 20260612,
+   "rows": 6106,
+   "table": "A055550"
+  },
+  {
+   "code": "403870",
+   "first_date": 20220715,
+   "last_date": 20260612,
+   "rows": 954,
+   "table": "A403870"
+  },
+  {
+   "code": "028050",
+   "first_date": 19961224,
+   "last_date": 20260612,
+   "rows": 7353,
+   "table": "A028050"
+  },
+  {
+   "code": "009830",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A009830"
+  },
+  {
+   "code": "139260",
+   "first_date": 20110406,
+   "last_date": 20260612,
+   "rows": 3733,
+   "table": "A139260"
+  },
+  {
+   "code": "247540",
+   "first_date": 20190305,
+   "last_date": 20260612,
+   "rows": 1787,
+   "table": "A247540"
+  },
+  {
+   "code": "032830",
+   "first_date": 20100512,
+   "last_date": 20260612,
+   "rows": 3958,
+   "table": "A032830"
+  },
+  {
+   "code": "068270",
+   "first_date": 20050719,
+   "last_date": 20260612,
+   "rows": 5156,
+   "table": "A068270"
+  },
+  {
+   "code": "272210",
+   "first_date": 20191113,
+   "last_date": 20260612,
+   "rows": 1614,
+   "table": "A272210"
+  },
+  {
+   "code": "395160",
+   "first_date": 20210730,
+   "last_date": 20260612,
+   "rows": 1189,
+   "table": "A395160"
+  },
+  {
+   "code": "047810",
+   "first_date": 20110630,
+   "last_date": 20260612,
+   "rows": 3675,
+   "table": "A047810"
+  },
+  {
+   "code": "292150",
+   "first_date": 20180330,
+   "last_date": 20260612,
+   "rows": 2011,
+   "table": "A292150"
+  },
+  {
+   "code": "086790",
+   "first_date": 20051212,
+   "last_date": 20260612,
+   "rows": 5055,
+   "table": "A086790"
+  },
+  {
+   "code": "017670",
+   "first_date": 19891107,
+   "last_date": 20260612,
+   "rows": 9447,
+   "table": "A017670"
+  },
+  {
+   "code": "015760",
+   "first_date": 19890810,
+   "last_date": 20260612,
+   "rows": 9516,
+   "table": "A015760"
+  },
+  {
+   "code": "000250",
+   "first_date": 20001004,
+   "last_date": 20260612,
+   "rows": 6335,
+   "table": "A000250"
+  },
+  {
+   "code": "009540",
+   "first_date": 19960103,
+   "last_date": 20260612,
+   "rows": 7643,
+   "table": "A009540"
+  },
+  {
+   "code": "027360",
+   "first_date": 20181121,
+   "last_date": 20260612,
+   "rows": 1854,
+   "table": "A027360"
+  },
+  {
+   "code": "010060",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A010060"
+  },
+  {
+   "code": "251340",
+   "first_date": 20160810,
+   "last_date": 20260612,
+   "rows": 2411,
+   "table": "A251340"
+  },
+  {
+   "code": "375500",
+   "first_date": 20210125,
+   "last_date": 20260612,
+   "rows": 1318,
+   "table": "A375500"
+  },
+  {
+   "code": "277810",
+   "first_date": 20210203,
+   "last_date": 20260612,
+   "rows": 1311,
+   "table": "A277810"
+  },
+  {
+   "code": "091230",
+   "first_date": 20060627,
+   "last_date": 20260612,
+   "rows": 4921,
+   "table": "A091230"
+  },
+  {
+   "code": "058470",
+   "first_date": 20011218,
+   "last_date": 20260612,
+   "rows": 6038,
+   "table": "A058470"
+  },
+  {
+   "code": "034730",
+   "first_date": 20091111,
+   "last_date": 20260612,
+   "rows": 4082,
+   "table": "A034730"
+  },
+  {
+   "code": "367760",
+   "first_date": 20201029,
+   "last_date": 20260612,
+   "rows": 1377,
+   "table": "A367760"
+  },
+  {
+   "code": "381180",
+   "first_date": 20210409,
+   "last_date": 20260612,
+   "rows": 1267,
+   "table": "A381180"
+  },
+  {
+   "code": "000990",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000990"
+  },
+  {
+   "code": "000810",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000810"
+  },
+  {
+   "code": "050890",
+   "first_date": 20050708,
+   "last_date": 20260612,
+   "rows": 5163,
+   "table": "A050890"
+  },
+  {
+   "code": "006260",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A006260"
+  },
+  {
+   "code": "034220",
+   "first_date": 20040723,
+   "last_date": 20260612,
+   "rows": 5402,
+   "table": "A034220"
+  },
+  {
+   "code": "102970",
+   "first_date": 20080529,
+   "last_date": 20260612,
+   "rows": 4449,
+   "table": "A102970"
+  },
+  {
+   "code": "207940",
+   "first_date": 20161110,
+   "last_date": 20260612,
+   "rows": 2350,
+   "table": "A207940"
+  },
+  {
+   "code": "352820",
+   "first_date": 20201015,
+   "last_date": 20260612,
+   "rows": 1387,
+   "table": "A352820"
+  },
+  {
+   "code": "003670",
+   "first_date": 20011101,
+   "last_date": 20260612,
+   "rows": 6071,
+   "table": "A003670"
+  },
+  {
+   "code": "232080",
+   "first_date": 20151112,
+   "last_date": 20260612,
+   "rows": 2594,
+   "table": "A232080"
+  },
+  {
+   "code": "449450",
+   "first_date": 20230105,
+   "last_date": 20260612,
+   "rows": 836,
+   "table": "A449450"
+  },
+  {
+   "code": "455850",
+   "first_date": 20230425,
+   "last_date": 20260612,
+   "rows": 761,
+   "table": "A455850"
+  },
+  {
+   "code": "043260",
+   "first_date": 20011129,
+   "last_date": 20260612,
+   "rows": 6051,
+   "table": "A043260"
+  },
+  {
+   "code": "141080",
+   "first_date": 20130510,
+   "last_date": 20260612,
+   "rows": 3211,
+   "table": "A141080"
+  },
+  {
+   "code": "222800",
+   "first_date": 20150807,
+   "last_date": 20260612,
+   "rows": 2659,
+   "table": "A222800"
+  },
+  {
+   "code": "035720",
+   "first_date": 19991111,
+   "last_date": 20260612,
+   "rows": 6551,
+   "table": "A035720"
+  },
+  {
+   "code": "090710",
+   "first_date": 20061205,
+   "last_date": 20260612,
+   "rows": 4811,
+   "table": "A090710"
+  },
+  {
+   "code": "071050",
+   "first_date": 20030721,
+   "last_date": 20260612,
+   "rows": 5650,
+   "table": "A071050"
+  },
+  {
+   "code": "003230",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A003230"
+  },
+  {
+   "code": "067310",
+   "first_date": 20051011,
+   "last_date": 20260612,
+   "rows": 5099,
+   "table": "A067310"
+  },
+  {
+   "code": "108490",
+   "first_date": 20181026,
+   "last_date": 20260612,
+   "rows": 1872,
+   "table": "A108490"
+  },
+  {
+   "code": "240810",
+   "first_date": 20160502,
+   "last_date": 20260612,
+   "rows": 2480,
+   "table": "A240810"
+  },
+  {
+   "code": "316140",
+   "first_date": 20190213,
+   "last_date": 20260612,
+   "rows": 1800,
+   "table": "A316140"
+  },
+  {
+   "code": "298380",
+   "first_date": 20181219,
+   "last_date": 20260612,
+   "rows": 1834,
+   "table": "A298380"
+  },
+  {
+   "code": "069540",
+   "first_date": 20040213,
+   "last_date": 20260612,
+   "rows": 5512,
+   "table": "A069540"
+  },
+  {
+   "code": "006360",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A006360"
+  },
+  {
+   "code": "096770",
+   "first_date": 20070725,
+   "last_date": 20260612,
+   "rows": 4654,
+   "table": "A096770"
+  },
+  {
+   "code": "089030",
+   "first_date": 20111110,
+   "last_date": 20260612,
+   "rows": 3584,
+   "table": "A089030"
+  },
+  {
+   "code": "098460",
+   "first_date": 20080603,
+   "last_date": 20260612,
+   "rows": 4446,
+   "table": "A098460"
+  },
+  {
+   "code": "319400",
+   "first_date": 20190508,
+   "last_date": 20260612,
+   "rows": 1743,
+   "table": "A319400"
+  },
+  {
+   "code": "018260",
+   "first_date": 20140825,
+   "last_date": 20260612,
+   "rows": 2894,
+   "table": "A018260"
+  },
+  {
+   "code": "011790",
+   "first_date": 19970718,
+   "last_date": 20260612,
+   "rows": 7191,
+   "table": "A011790"
+  },
+  {
+   "code": "267270",
+   "first_date": 20170510,
+   "last_date": 20260612,
+   "rows": 2229,
+   "table": "A267270"
+  },
+  {
+   "code": "003280",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A003280"
+  },
+  {
+   "code": "039490",
+   "first_date": 20040423,
+   "last_date": 20260612,
+   "rows": 5465,
+   "table": "A039490"
+  },
+  {
+   "code": "047050",
+   "first_date": 20010323,
+   "last_date": 20260612,
+   "rows": 6222,
+   "table": "A047050"
+  },
+  {
+   "code": "278530",
+   "first_date": 20171121,
+   "last_date": 20260612,
+   "rows": 2098,
+   "table": "A278530"
+  },
+  {
+   "code": "131970",
+   "first_date": 20131022,
+   "last_date": 20260612,
+   "rows": 3102,
+   "table": "A131970"
+  },
+  {
+   "code": "017900",
+   "first_date": 19961016,
+   "last_date": 20260612,
+   "rows": 7411,
+   "table": "A017900"
+  },
+  {
+   "code": "086280",
+   "first_date": 20051226,
+   "last_date": 20260612,
+   "rows": 5045,
+   "table": "A086280"
+  },
+  {
+   "code": "095340",
+   "first_date": 20071001,
+   "last_date": 20260612,
+   "rows": 4610,
+   "table": "A095340"
+  },
+  {
+   "code": "307950",
+   "first_date": 20190328,
+   "last_date": 20260612,
+   "rows": 1770,
+   "table": "A307950"
+  },
+  {
+   "code": "411060",
+   "first_date": 20211215,
+   "last_date": 20260612,
+   "rows": 1097,
+   "table": "A411060"
+  },
+  {
+   "code": "006340",
+   "first_date": 19880504,
+   "last_date": 20260612,
+   "rows": 9889,
+   "table": "A006340"
+  },
+  {
+   "code": "138540",
+   "first_date": 20110310,
+   "last_date": 20260612,
+   "rows": 3752,
+   "table": "A138540"
+  },
+  {
+   "code": "018880",
+   "first_date": 19960731,
+   "last_date": 20260612,
+   "rows": 7472,
+   "table": "A018880"
+  },
+  {
+   "code": "010950",
+   "first_date": 19870527,
+   "last_date": 20260612,
+   "rows": 10160,
+   "table": "A010950"
+  },
+  {
+   "code": "364980",
+   "first_date": 20201007,
+   "last_date": 20260612,
+   "rows": 1392,
+   "table": "A364980"
+  },
+  {
+   "code": "434730",
+   "first_date": 20220628,
+   "last_date": 20260612,
+   "rows": 967,
+   "table": "A434730"
+  },
+  {
+   "code": "016360",
+   "first_date": 19880328,
+   "last_date": 20260612,
+   "rows": 9919,
+   "table": "A016360"
+  },
+  {
+   "code": "033780",
+   "first_date": 19991008,
+   "last_date": 20260612,
+   "rows": 6575,
+   "table": "A033780"
+  },
+  {
+   "code": "039030",
+   "first_date": 20000824,
+   "last_date": 20260612,
+   "rows": 6360,
+   "table": "A039030"
+  },
+  {
+   "code": "226950",
+   "first_date": 20180718,
+   "last_date": 20260612,
+   "rows": 1938,
+   "table": "A226950"
+  },
+  {
+   "code": "128940",
+   "first_date": 20100730,
+   "last_date": 20260612,
+   "rows": 3903,
+   "table": "A128940"
+  },
+  {
+   "code": "426030",
+   "first_date": 20220511,
+   "last_date": 20260612,
+   "rows": 999,
+   "table": "A426030"
+  },
+  {
+   "code": "336260",
+   "first_date": 20191018,
+   "last_date": 20260612,
+   "rows": 1632,
+   "table": "A336260"
+  },
+  {
+   "code": "347700",
+   "first_date": 20210323,
+   "last_date": 20260612,
+   "rows": 1280,
+   "table": "A347700"
+  },
+  {
+   "code": "046970",
+   "first_date": 20121127,
+   "last_date": 20260612,
+   "rows": 3322,
+   "table": "A046970"
+  },
+  {
+   "code": "218410",
+   "first_date": 20150630,
+   "last_date": 20260612,
+   "rows": 2687,
+   "table": "A218410"
+  },
+  {
+   "code": "263750",
+   "first_date": 20170914,
+   "last_date": 20260612,
+   "rows": 2140,
+   "table": "A263750"
+  },
+  {
+   "code": "082740",
+   "first_date": 20110104,
+   "last_date": 20260612,
+   "rows": 3795,
+   "table": "A082740"
+  },
+  {
+   "code": "390390",
+   "first_date": 20210630,
+   "last_date": 20260612,
+   "rows": 1211,
+   "table": "A390390"
+  },
+  {
+   "code": "105190",
+   "first_date": 20080925,
+   "last_date": 20260612,
+   "rows": 4367,
+   "table": "A105190"
+  },
+  {
+   "code": "001510",
+   "first_date": 19860920,
+   "last_date": 20260612,
+   "rows": 10359,
+   "table": "A001510"
+  },
+  {
+   "code": "003490",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A003490"
+  },
+  {
+   "code": "445290",
+   "first_date": 20221115,
+   "last_date": 20260612,
+   "rows": 872,
+   "table": "A445290"
+  },
+  {
+   "code": "950160",
+   "first_date": 20171106,
+   "last_date": 20260612,
+   "rows": 2109,
+   "table": "A950160"
+  },
+  {
+   "code": "024060",
+   "first_date": 19960320,
+   "last_date": 20260612,
+   "rows": 7579,
+   "table": "A024060"
+  },
+  {
+   "code": "267250",
+   "first_date": 20170510,
+   "last_date": 20260612,
+   "rows": 2229,
+   "table": "A267250"
+  },
+  {
+   "code": "423160",
+   "first_date": 20220426,
+   "last_date": 20260612,
+   "rows": 1009,
+   "table": "A423160"
+  },
+  {
+   "code": "237350",
+   "first_date": 20160127,
+   "last_date": 20260612,
+   "rows": 2543,
+   "table": "A237350"
+  },
+  {
+   "code": "078600",
+   "first_date": 20041210,
+   "last_date": 20260612,
+   "rows": 5305,
+   "table": "A078600"
+  },
+  {
+   "code": "381170",
+   "first_date": 20210409,
+   "last_date": 20260612,
+   "rows": 1267,
+   "table": "A381170"
+  },
+  {
+   "code": "152100",
+   "first_date": 20120110,
+   "last_date": 20260612,
+   "rows": 3542,
+   "table": "A152100"
+  },
+  {
+   "code": "161510",
+   "first_date": 20120829,
+   "last_date": 20260612,
+   "rows": 3384,
+   "table": "A161510"
+  },
+  {
+   "code": "004020",
+   "first_date": 19870523,
+   "last_date": 20260612,
+   "rows": 10163,
+   "table": "A004020"
+  },
+  {
+   "code": "442580",
+   "first_date": 20220922,
+   "last_date": 20260612,
+   "rows": 908,
+   "table": "A442580"
+  },
+  {
+   "code": "087010",
+   "first_date": 20150722,
+   "last_date": 20260612,
+   "rows": 2671,
+   "table": "A087010"
+  },
+  {
+   "code": "259960",
+   "first_date": 20210810,
+   "last_date": 20260612,
+   "rows": 1182,
+   "table": "A259960"
+  },
+  {
+   "code": "038500",
+   "first_date": 20010201,
+   "last_date": 20260612,
+   "rows": 6257,
+   "table": "A038500"
+  },
+  {
+   "code": "007810",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A007810"
+  },
+  {
+   "code": "010130",
+   "first_date": 19901024,
+   "last_date": 20260612,
+   "rows": 9168,
+   "table": "A010130"
+  },
+  {
+   "code": "319660",
+   "first_date": 20190510,
+   "last_date": 20260612,
+   "rows": 1741,
+   "table": "A319660"
+  },
+  {
+   "code": "082920",
+   "first_date": 20091028,
+   "last_date": 20260612,
+   "rows": 4092,
+   "table": "A082920"
+  },
+  {
+   "code": "005830",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A005830"
+  },
+  {
+   "code": "091180",
+   "first_date": 20060627,
+   "last_date": 20260612,
+   "rows": 4921,
+   "table": "A091180"
+  },
+  {
+   "code": "103590",
+   "first_date": 20080801,
+   "last_date": 20260612,
+   "rows": 4404,
+   "table": "A103590"
+  },
+  {
+   "code": "028300",
+   "first_date": 19960719,
+   "last_date": 20260612,
+   "rows": 7482,
+   "table": "A028300"
+  },
+  {
+   "code": "011930",
+   "first_date": 19960731,
+   "last_date": 20260612,
+   "rows": 7472,
+   "table": "A011930"
+  },
+  {
+   "code": "123320",
+   "first_date": 20100409,
+   "last_date": 20260612,
+   "rows": 3980,
+   "table": "A123320"
+  },
+  {
+   "code": "005290",
+   "first_date": 19991221,
+   "last_date": 20260612,
+   "rows": 6523,
+   "table": "A005290"
+  },
+  {
+   "code": "097230",
+   "first_date": 20070831,
+   "last_date": 20260612,
+   "rows": 4628,
+   "table": "A097230"
+  },
+  {
+   "code": "425040",
+   "first_date": 20230119,
+   "last_date": 20260612,
+   "rows": 826,
+   "table": "A425040"
+  },
+  {
+   "code": "058610",
+   "first_date": 20020723,
+   "last_date": 20260612,
+   "rows": 5896,
+   "table": "A058610"
+  },
+  {
+   "code": "157500",
+   "first_date": 20120516,
+   "last_date": 20260612,
+   "rows": 3456,
+   "table": "A157500"
+  },
+  {
+   "code": "448330",
+   "first_date": 20221129,
+   "last_date": 20260612,
+   "rows": 862,
+   "table": "A448330"
+  },
+  {
+   "code": "005940",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A005940"
+  },
+  {
+   "code": "003550",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A003550"
+  },
+  {
+   "code": "332570",
+   "first_date": 20200731,
+   "last_date": 20260612,
+   "rows": 1436,
+   "table": "A332570"
+  },
+  {
+   "code": "144600",
+   "first_date": 20110718,
+   "last_date": 20260612,
+   "rows": 3663,
+   "table": "A144600"
+  },
+  {
+   "code": "052690",
+   "first_date": 20091214,
+   "last_date": 20260612,
+   "rows": 4059,
+   "table": "A052690"
+  },
+  {
+   "code": "083650",
+   "first_date": 20051202,
+   "last_date": 20260612,
+   "rows": 5061,
+   "table": "A083650"
+  },
+  {
+   "code": "117700",
+   "first_date": 20091030,
+   "last_date": 20260612,
+   "rows": 4090,
+   "table": "A117700"
+  },
+  {
+   "code": "138040",
+   "first_date": 20110513,
+   "last_date": 20260612,
+   "rows": 3708,
+   "table": "A138040"
+  },
+  {
+   "code": "069660",
+   "first_date": 20021014,
+   "last_date": 20260612,
+   "rows": 5840,
+   "table": "A069660"
+  },
+  {
+   "code": "095610",
+   "first_date": 20080520,
+   "last_date": 20260612,
+   "rows": 4456,
+   "table": "A095610"
+  },
+  {
+   "code": "036570",
+   "first_date": 20000711,
+   "last_date": 20260612,
+   "rows": 6390,
+   "table": "A036570"
+  },
+  {
+   "code": "138080",
+   "first_date": 20140227,
+   "last_date": 20260612,
+   "rows": 3015,
+   "table": "A138080"
+  },
+  {
+   "code": "112610",
+   "first_date": 20141127,
+   "last_date": 20260612,
+   "rows": 2831,
+   "table": "A112610"
+  },
+  {
+   "code": "033790",
+   "first_date": 20010626,
+   "last_date": 20260612,
+   "rows": 6158,
+   "table": "A033790"
+  },
+  {
+   "code": "000880",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000880"
+  },
+  {
+   "code": "226490",
+   "first_date": 20150824,
+   "last_date": 20260612,
+   "rows": 2649,
+   "table": "A226490"
+  },
+  {
+   "code": "090430",
+   "first_date": 20060629,
+   "last_date": 20260612,
+   "rows": 4919,
+   "table": "A090430"
+  },
+  {
+   "code": "011200",
+   "first_date": 19951005,
+   "last_date": 20260612,
+   "rows": 7714,
+   "table": "A011200"
+  },
+  {
+   "code": "329200",
+   "first_date": 20190719,
+   "last_date": 20260612,
+   "rows": 1692,
+   "table": "A329200"
+  },
+  {
+   "code": "102780",
+   "first_date": 20080521,
+   "last_date": 20260612,
+   "rows": 4455,
+   "table": "A102780"
+  },
+  {
+   "code": "327260",
+   "first_date": 20191224,
+   "last_date": 20260612,
+   "rows": 1585,
+   "table": "A327260"
+  },
+  {
+   "code": "284430",
+   "first_date": 20171130,
+   "last_date": 20260612,
+   "rows": 2091,
+   "table": "A284430"
+  },
+  {
+   "code": "004170",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A004170"
+  },
+  {
+   "code": "005880",
+   "first_date": 19920423,
+   "last_date": 20260612,
+   "rows": 8732,
+   "table": "A005880"
+  },
+  {
+   "code": "315960",
+   "first_date": 20190122,
+   "last_date": 20260612,
+   "rows": 1813,
+   "table": "A315960"
+  },
+  {
+   "code": "030530",
+   "first_date": 19960923,
+   "last_date": 20260612,
+   "rows": 7427,
+   "table": "A030530"
+  },
+  {
+   "code": "036540",
+   "first_date": 20010502,
+   "last_date": 20260612,
+   "rows": 6196,
+   "table": "A036540"
+  },
+  {
+   "code": "024110",
+   "first_date": 19960103,
+   "last_date": 20260612,
+   "rows": 7643,
+   "table": "A024110"
+  },
+  {
+   "code": "243880",
+   "first_date": 20160513,
+   "last_date": 20260612,
+   "rows": 2473,
+   "table": "A243880"
+  },
+  {
+   "code": "446770",
+   "first_date": 20221115,
+   "last_date": 20260612,
+   "rows": 872,
+   "table": "A446770"
+  },
+  {
+   "code": "084370",
+   "first_date": 20060117,
+   "last_date": 20260612,
+   "rows": 5030,
+   "table": "A084370"
+  },
+  {
+   "code": "120110",
+   "first_date": 20100201,
+   "last_date": 20260612,
+   "rows": 4027,
+   "table": "A120110"
+  },
+  {
+   "code": "310210",
+   "first_date": 20220624,
+   "last_date": 20260612,
+   "rows": 969,
+   "table": "A310210"
+  },
+  {
+   "code": "088350",
+   "first_date": 20100317,
+   "last_date": 20260612,
+   "rows": 3997,
+   "table": "A088350"
+  },
+  {
+   "code": "257720",
+   "first_date": 20210929,
+   "last_date": 20260612,
+   "rows": 1150,
+   "table": "A257720"
+  },
+  {
+   "code": "356860",
+   "first_date": 20201214,
+   "last_date": 20260612,
+   "rows": 1345,
+   "table": "A356860"
+  },
+  {
+   "code": "006110",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A006110"
+  },
+  {
+   "code": "161390",
+   "first_date": 20121004,
+   "last_date": 20260612,
+   "rows": 3360,
+   "table": "A161390"
+  },
+  {
+   "code": "093370",
+   "first_date": 20061222,
+   "last_date": 20260612,
+   "rows": 4798,
+   "table": "A093370"
+  },
+  {
+   "code": "033160",
+   "first_date": 19971110,
+   "last_date": 20260612,
+   "rows": 7098,
+   "table": "A033160"
+  },
+  {
+   "code": "006910",
+   "first_date": 19960314,
+   "last_date": 20260612,
+   "rows": 7585,
+   "table": "A006910"
+  },
+  {
+   "code": "001040",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A001040"
+  },
+  {
+   "code": "021240",
+   "first_date": 19960824,
+   "last_date": 20260612,
+   "rows": 7452,
+   "table": "A021240"
+  },
+  {
+   "code": "367380",
+   "first_date": 20201029,
+   "last_date": 20260612,
+   "rows": 1377,
+   "table": "A367380"
+  },
+  {
+   "code": "089970",
+   "first_date": 20180823,
+   "last_date": 20260612,
+   "rows": 1913,
+   "table": "A089970"
+  },
+  {
+   "code": "031980",
+   "first_date": 19970107,
+   "last_date": 20260612,
+   "rows": 7347,
+   "table": "A031980"
+  },
+  {
+   "code": "233160",
+   "first_date": 20151217,
+   "last_date": 20260612,
+   "rows": 2569,
+   "table": "A233160"
+  },
+  {
+   "code": "139220",
+   "first_date": 20110406,
+   "last_date": 20260612,
+   "rows": 3733,
+   "table": "A139220"
+  },
+  {
+   "code": "290130",
+   "first_date": 20180227,
+   "last_date": 20260612,
+   "rows": 2033,
+   "table": "A290130"
+  },
+  {
+   "code": "187660",
+   "first_date": 20210603,
+   "last_date": 20260612,
+   "rows": 1230,
+   "table": "A187660"
+  },
+  {
+   "code": "030200",
+   "first_date": 19981223,
+   "last_date": 20260612,
+   "rows": 6769,
+   "table": "A030200"
+  },
+  {
+   "code": "214450",
+   "first_date": 20150724,
+   "last_date": 20260612,
+   "rows": 2669,
+   "table": "A214450"
+  },
+  {
+   "code": "267770",
+   "first_date": 20170425,
+   "last_date": 20260612,
+   "rows": 2236,
+   "table": "A267770"
+  },
+  {
+   "code": "444200",
+   "first_date": 20221018,
+   "last_date": 20260612,
+   "rows": 892,
+   "table": "A444200"
+  },
+  {
+   "code": "017960",
+   "first_date": 19950710,
+   "last_date": 20260612,
+   "rows": 7784,
+   "table": "A017960"
+  },
+  {
+   "code": "099320",
+   "first_date": 20080613,
+   "last_date": 20260612,
+   "rows": 4439,
+   "table": "A099320"
+  },
+  {
+   "code": "048410",
+   "first_date": 20020808,
+   "last_date": 20260612,
+   "rows": 5884,
+   "table": "A048410"
+  },
+  {
+   "code": "000100",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000100"
+  },
+  {
+   "code": "139480",
+   "first_date": 20110610,
+   "last_date": 20260612,
+   "rows": 3689,
+   "table": "A139480"
+  },
+  {
+   "code": "305540",
+   "first_date": 20180912,
+   "last_date": 20260612,
+   "rows": 1899,
+   "table": "A305540"
+  },
+  {
+   "code": "294400",
+   "first_date": 20180423,
+   "last_date": 20260612,
+   "rows": 1995,
+   "table": "A294400"
+  },
+  {
+   "code": "222080",
+   "first_date": 20150902,
+   "last_date": 20260612,
+   "rows": 2642,
+   "table": "A222080"
+  },
+  {
+   "code": "323280",
+   "first_date": 20190624,
+   "last_date": 20260612,
+   "rows": 1711,
+   "table": "A323280"
+  },
+  {
+   "code": "385510",
+   "first_date": 20210525,
+   "last_date": 20260612,
+   "rows": 1237,
+   "table": "A385510"
+  },
+  {
+   "code": "014680",
+   "first_date": 19890522,
+   "last_date": 20260612,
+   "rows": 9583,
+   "table": "A014680"
+  },
+  {
+   "code": "017800",
+   "first_date": 19960703,
+   "last_date": 20260612,
+   "rows": 7495,
+   "table": "A017800"
+  },
+  {
+   "code": "357780",
+   "first_date": 20200806,
+   "last_date": 20260612,
+   "rows": 1432,
+   "table": "A357780"
+  },
+  {
+   "code": "323410",
+   "first_date": 20210806,
+   "last_date": 20260612,
+   "rows": 1184,
+   "table": "A323410"
+  },
+  {
+   "code": "234340",
+   "first_date": 20190712,
+   "last_date": 20260612,
+   "rows": 1697,
+   "table": "A234340"
+  },
+  {
+   "code": "412570",
+   "first_date": 20211215,
+   "last_date": 20260612,
+   "rows": 1097,
+   "table": "A412570"
+  },
+  {
+   "code": "326030",
+   "first_date": 20200702,
+   "last_date": 20260612,
+   "rows": 1457,
+   "table": "A326030"
+  },
+  {
+   "code": "241560",
+   "first_date": 20161118,
+   "last_date": 20260612,
+   "rows": 2344,
+   "table": "A241560"
+  },
+  {
+   "code": "008770",
+   "first_date": 19910312,
+   "last_date": 20260612,
+   "rows": 9060,
+   "table": "A008770"
+  },
+  {
+   "code": "071970",
+   "first_date": 20090515,
+   "last_date": 20260612,
+   "rows": 4209,
+   "table": "A071970"
+  },
+  {
+   "code": "189300",
+   "first_date": 20161018,
+   "last_date": 20260612,
+   "rows": 2367,
+   "table": "A189300"
+  },
+  {
+   "code": "020150",
+   "first_date": 20110304,
+   "last_date": 20260612,
+   "rows": 3756,
+   "table": "A020150"
+  },
+  {
+   "code": "101490",
+   "first_date": 20090414,
+   "last_date": 20260612,
+   "rows": 4230,
+   "table": "A101490"
+  },
+  {
+   "code": "348340",
+   "first_date": 20221104,
+   "last_date": 20260612,
+   "rows": 879,
+   "table": "A348340"
+  },
+  {
+   "code": "183300",
+   "first_date": 20170323,
+   "last_date": 20260612,
+   "rows": 2259,
+   "table": "A183300"
+  },
+  {
+   "code": "204320",
+   "first_date": 20141006,
+   "last_date": 20260612,
+   "rows": 2868,
+   "table": "A204320"
+  },
+  {
+   "code": "023530",
+   "first_date": 20060209,
+   "last_date": 20260612,
+   "rows": 5014,
+   "table": "A023530"
+  },
+  {
+   "code": "078930",
+   "first_date": 20040805,
+   "last_date": 20260612,
+   "rows": 5393,
+   "table": "A078930"
+  },
+  {
+   "code": "064760",
+   "first_date": 20030818,
+   "last_date": 20260612,
+   "rows": 5631,
+   "table": "A064760"
+  },
+  {
+   "code": "032500",
+   "first_date": 20000321,
+   "last_date": 20260612,
+   "rows": 6464,
+   "table": "A032500"
+  },
+  {
+   "code": "088980",
+   "first_date": 20060315,
+   "last_date": 20260612,
+   "rows": 4991,
+   "table": "A088980"
+  },
+  {
+   "code": "138930",
+   "first_date": 20110330,
+   "last_date": 20260612,
+   "rows": 3738,
+   "table": "A138930"
+  },
+  {
+   "code": "002380",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A002380"
+  },
+  {
+   "code": "100090",
+   "first_date": 20080801,
+   "last_date": 20260612,
+   "rows": 4404,
+   "table": "A100090"
+  },
+  {
+   "code": "290650",
+   "first_date": 20181101,
+   "last_date": 20260612,
+   "rows": 1868,
+   "table": "A290650"
+  },
+  {
+   "code": "083450",
+   "first_date": 20060201,
+   "last_date": 20260612,
+   "rows": 5020,
+   "table": "A083450"
+  },
+  {
+   "code": "009420",
+   "first_date": 19891218,
+   "last_date": 20260612,
+   "rows": 9412,
+   "table": "A009420"
+  },
+  {
+   "code": "237690",
+   "first_date": 20160623,
+   "last_date": 20260612,
+   "rows": 2445,
+   "table": "A237690"
+  },
+  {
+   "code": "010820",
+   "first_date": 19890511,
+   "last_date": 20260612,
+   "rows": 9591,
+   "table": "A010820"
+  },
+  {
+   "code": "103140",
+   "first_date": 20080730,
+   "last_date": 20260612,
+   "rows": 4406,
+   "table": "A103140"
+  },
+  {
+   "code": "077360",
+   "first_date": 20051014,
+   "last_date": 20260612,
+   "rows": 5096,
+   "table": "A077360"
+  },
+  {
+   "code": "441800",
+   "first_date": 20220927,
+   "last_date": 20260612,
+   "rows": 905,
+   "table": "A441800"
+  },
+  {
+   "code": "037030",
+   "first_date": 19991224,
+   "last_date": 20260612,
+   "rows": 4125,
+   "table": "A037030"
+  },
+  {
+   "code": "028670",
+   "first_date": 20070921,
+   "last_date": 20260612,
+   "rows": 4613,
+   "table": "A028670"
+  },
+  {
+   "code": "001820",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A001820"
+  },
+  {
+   "code": "000500",
+   "first_date": 19870608,
+   "last_date": 20260612,
+   "rows": 10151,
+   "table": "A000500"
+  },
+  {
+   "code": "126340",
+   "first_date": 20130701,
+   "last_date": 20260612,
+   "rows": 3177,
+   "table": "A126340"
+  },
+  {
+   "code": "360200",
+   "first_date": 20200807,
+   "last_date": 20260612,
+   "rows": 1431,
+   "table": "A360200"
+  },
+  {
+   "code": "421320",
+   "first_date": 20220329,
+   "last_date": 20260612,
+   "rows": 1029,
+   "table": "A421320"
+  },
+  {
+   "code": "011170",
+   "first_date": 19910530,
+   "last_date": 20260612,
+   "rows": 8995,
+   "table": "A011170"
+  },
+  {
+   "code": "032640",
+   "first_date": 20000921,
+   "last_date": 20260612,
+   "rows": 6343,
+   "table": "A032640"
+  },
+  {
+   "code": "003530",
+   "first_date": 19861125,
+   "last_date": 20260612,
+   "rows": 10306,
+   "table": "A003530"
+  },
+  {
+   "code": "161890",
+   "first_date": 20121019,
+   "last_date": 20260612,
+   "rows": 3349,
+   "table": "A161890"
+  },
+  {
+   "code": "271050",
+   "first_date": 20170613,
+   "last_date": 20260612,
+   "rows": 2206,
+   "table": "A271050"
+  },
+  {
+   "code": "090460",
+   "first_date": 20070126,
+   "last_date": 20260612,
+   "rows": 4776,
+   "table": "A090460"
+  },
+  {
+   "code": "453850",
+   "first_date": 20230314,
+   "last_date": 20260612,
+   "rows": 791,
+   "table": "A453850"
+  },
+  {
+   "code": "195870",
+   "first_date": 20160624,
+   "last_date": 20260612,
+   "rows": 2444,
+   "table": "A195870"
+  },
+  {
+   "code": "049080",
+   "first_date": 20131219,
+   "last_date": 20260612,
+   "rows": 3060,
+   "table": "A049080"
+  },
+  {
+   "code": "441640",
+   "first_date": 20220927,
+   "last_date": 20260612,
+   "rows": 905,
+   "table": "A441640"
+  },
+  {
+   "code": "077970",
+   "first_date": 20040510,
+   "last_date": 20260612,
+   "rows": 5455,
+   "table": "A077970"
+  },
+  {
+   "code": "232140",
+   "first_date": 20151224,
+   "last_date": 20260612,
+   "rows": 2564,
+   "table": "A232140"
+  },
+  {
+   "code": "001430",
+   "first_date": 19910312,
+   "last_date": 20260612,
+   "rows": 9060,
+   "table": "A001430"
+  },
+  {
+   "code": "174900",
+   "first_date": 20170918,
+   "last_date": 20260612,
+   "rows": 2138,
+   "table": "A174900"
+  },
+  {
+   "code": "357870",
+   "first_date": 20200707,
+   "last_date": 20260612,
+   "rows": 1454,
+   "table": "A357870"
+  },
+  {
+   "code": "230240",
+   "first_date": 20151216,
+   "last_date": 20260612,
+   "rows": 2570,
+   "table": "A230240"
+  },
+  {
+   "code": "261220",
+   "first_date": 20161227,
+   "last_date": 20260612,
+   "rows": 2317,
+   "table": "A261220"
+  },
+  {
+   "code": "356680",
+   "first_date": 20230316,
+   "last_date": 20260612,
+   "rows": 789,
+   "table": "A356680"
+  },
+  {
+   "code": "368770",
+   "first_date": 20210121,
+   "last_date": 20260612,
+   "rows": 1320,
+   "table": "A368770"
+  },
+  {
+   "code": "011210",
+   "first_date": 20110221,
+   "last_date": 20260612,
+   "rows": 3764,
+   "table": "A011210"
+  },
+  {
+   "code": "455890",
+   "first_date": 20230509,
+   "last_date": 20260612,
+   "rows": 753,
+   "table": "A455890"
+  },
+  {
+   "code": "064290",
+   "first_date": 20110105,
+   "last_date": 20260612,
+   "rows": 3794,
+   "table": "A064290"
+  },
+  {
+   "code": "393890",
+   "first_date": 20220930,
+   "last_date": 20260612,
+   "rows": 902,
+   "table": "A393890"
+  },
+  {
+   "code": "433500",
+   "first_date": 20220628,
+   "last_date": 20260612,
+   "rows": 967,
+   "table": "A433500"
+  },
+  {
+   "code": "100840",
+   "first_date": 20080222,
+   "last_date": 20260612,
+   "rows": 4514,
+   "table": "A100840"
+  },
+  {
+   "code": "377300",
+   "first_date": 20211103,
+   "last_date": 20260612,
+   "rows": 1127,
+   "table": "A377300"
+  },
+  {
+   "code": "046120",
+   "first_date": 20000811,
+   "last_date": 20260612,
+   "rows": 6368,
+   "table": "A046120"
+  },
+  {
+   "code": "131290",
+   "first_date": 20110105,
+   "last_date": 20260612,
+   "rows": 3794,
+   "table": "A131290"
+  },
+  {
+   "code": "166090",
+   "first_date": 20170428,
+   "last_date": 20260612,
+   "rows": 2233,
+   "table": "A166090"
+  },
+  {
+   "code": "298020",
+   "first_date": 20180713,
+   "last_date": 20260612,
+   "rows": 1941,
+   "table": "A298020"
+  },
+  {
+   "code": "253590",
+   "first_date": 20180404,
+   "last_date": 20260612,
+   "rows": 2008,
+   "table": "A253590"
+  },
+  {
+   "code": "397030",
+   "first_date": 20220728,
+   "last_date": 20260612,
+   "rows": 945,
+   "table": "A397030"
+  },
+  {
+   "code": "046890",
+   "first_date": 20020117,
+   "last_date": 20260612,
+   "rows": 6019,
+   "table": "A046890"
+  },
+  {
+   "code": "140410",
+   "first_date": 20120120,
+   "last_date": 20260612,
+   "rows": 3534,
+   "table": "A140410"
+  },
+  {
+   "code": "417840",
+   "first_date": 20221028,
+   "last_date": 20260612,
+   "rows": 884,
+   "table": "A417840"
+  },
+  {
+   "code": "051900",
+   "first_date": 20010425,
+   "last_date": 20260612,
+   "rows": 6200,
+   "table": "A051900"
+  },
+  {
+   "code": "203650",
+   "first_date": 20141013,
+   "last_date": 20260612,
+   "rows": 2864,
+   "table": "A203650"
+  },
+  {
+   "code": "192820",
+   "first_date": 20140407,
+   "last_date": 20260612,
+   "rows": 2988,
+   "table": "A192820"
+  },
+  {
+   "code": "229640",
+   "first_date": 20160922,
+   "last_date": 20260612,
+   "rows": 2384,
+   "table": "A229640"
+  },
+  {
+   "code": "036170",
+   "first_date": 19991221,
+   "last_date": 20260612,
+   "rows": 6523,
+   "table": "A036170"
+  },
+  {
+   "code": "052710",
+   "first_date": 20030801,
+   "last_date": 20260612,
+   "rows": 5641,
+   "table": "A052710"
+  },
+  {
+   "code": "022100",
+   "first_date": 20001128,
+   "last_date": 20260612,
+   "rows": 6296,
+   "table": "A022100"
+  },
+  {
+   "code": "200710",
+   "first_date": 20141216,
+   "last_date": 20260612,
+   "rows": 2818,
+   "table": "A200710"
+  },
+  {
+   "code": "001450",
+   "first_date": 19890825,
+   "last_date": 20260612,
+   "rows": 9504,
+   "table": "A001450"
+  },
+  {
+   "code": "330860",
+   "first_date": 20201117,
+   "last_date": 20260612,
+   "rows": 1364,
+   "table": "A330860"
+  },
+  {
+   "code": "307520",
+   "first_date": 20181108,
+   "last_date": 20260612,
+   "rows": 1863,
+   "table": "A307520"
+  },
+  {
+   "code": "008350",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A008350"
+  },
+  {
+   "code": "005690",
+   "first_date": 19880520,
+   "last_date": 20260612,
+   "rows": 9876,
+   "table": "A005690"
+  },
+  {
+   "code": "281740",
+   "first_date": 20171212,
+   "last_date": 20260612,
+   "rows": 2083,
+   "table": "A281740"
+  },
+  {
+   "code": "097950",
+   "first_date": 20070928,
+   "last_date": 20260612,
+   "rows": 4611,
+   "table": "A097950"
+  },
+  {
+   "code": "423920",
+   "first_date": 20220419,
+   "last_date": 20260612,
+   "rows": 1014,
+   "table": "A423920"
+  },
+  {
+   "code": "215790",
+   "first_date": 20150508,
+   "last_date": 20260612,
+   "rows": 2723,
+   "table": "A215790"
+  },
+  {
+   "code": "271560",
+   "first_date": 20170707,
+   "last_date": 20260612,
+   "rows": 2188,
+   "table": "A271560"
+  },
+  {
+   "code": "025860",
+   "first_date": 19951110,
+   "last_date": 20260612,
+   "rows": 7683,
+   "table": "A025860"
+  },
+  {
+   "code": "044490",
+   "first_date": 20011108,
+   "last_date": 20260612,
+   "rows": 6066,
+   "table": "A044490"
+  },
+  {
+   "code": "180640",
+   "first_date": 20130916,
+   "last_date": 20260612,
+   "rows": 3123,
+   "table": "A180640"
+  },
+  {
+   "code": "080580",
+   "first_date": 20141224,
+   "last_date": 20260612,
+   "rows": 2812,
+   "table": "A080580"
+  },
+  {
+   "code": "011780",
+   "first_date": 19880122,
+   "last_date": 20260612,
+   "rows": 9971,
+   "table": "A011780"
+  },
+  {
+   "code": "171090",
+   "first_date": 20170920,
+   "last_date": 20260612,
+   "rows": 2136,
+   "table": "A171090"
+  },
+  {
+   "code": "062970",
+   "first_date": 20190620,
+   "last_date": 20260612,
+   "rows": 1713,
+   "table": "A062970"
+  },
+  {
+   "code": "357880",
+   "first_date": 20211110,
+   "last_date": 20260612,
+   "rows": 1122,
+   "table": "A357880"
+  },
+  {
+   "code": "115440",
+   "first_date": 20100127,
+   "last_date": 20260612,
+   "rows": 4030,
+   "table": "A115440"
+  },
+  {
+   "code": "364970",
+   "first_date": 20201007,
+   "last_date": 20260612,
+   "rows": 1392,
+   "table": "A364970"
+  },
+  {
+   "code": "175330",
+   "first_date": 20130718,
+   "last_date": 20260612,
+   "rows": 3164,
+   "table": "A175330"
+  },
+  {
+   "code": "074600",
+   "first_date": 20031212,
+   "last_date": 20260612,
+   "rows": 5551,
+   "table": "A074600"
+  },
+  {
+   "code": "023160",
+   "first_date": 19960328,
+   "last_date": 20260612,
+   "rows": 7572,
+   "table": "A023160"
+  },
+  {
+   "code": "003160",
+   "first_date": 19960731,
+   "last_date": 20260612,
+   "rows": 7472,
+   "table": "A003160"
+  },
+  {
+   "code": "124500",
+   "first_date": 20130701,
+   "last_date": 20260612,
+   "rows": 3177,
+   "table": "A124500"
+  },
+  {
+   "code": "105840",
+   "first_date": 20100726,
+   "last_date": 20260612,
+   "rows": 3907,
+   "table": "A105840"
+  },
+  {
+   "code": "449170",
+   "first_date": 20221130,
+   "last_date": 20260612,
+   "rows": 861,
+   "table": "A449170"
+  },
+  {
+   "code": "388050",
+   "first_date": 20220401,
+   "last_date": 20260612,
+   "rows": 1026,
+   "table": "A388050"
+  },
+  {
+   "code": "005850",
+   "first_date": 19881108,
+   "last_date": 20260612,
+   "rows": 9736,
+   "table": "A005850"
+  },
+  {
+   "code": "005070",
+   "first_date": 19870928,
+   "last_date": 20260612,
+   "rows": 10057,
+   "table": "A005070"
+  },
+  {
+   "code": "139230",
+   "first_date": 20110406,
+   "last_date": 20260612,
+   "rows": 3733,
+   "table": "A139230"
+  },
+  {
+   "code": "091170",
+   "first_date": 20060627,
+   "last_date": 20260612,
+   "rows": 4921,
+   "table": "A091170"
+  },
+  {
+   "code": "003380",
+   "first_date": 20170630,
+   "last_date": 20260612,
+   "rows": 2193,
+   "table": "A003380"
+  },
+  {
+   "code": "242040",
+   "first_date": 20160907,
+   "last_date": 20260612,
+   "rows": 2392,
+   "table": "A242040"
+  },
+  {
+   "code": "145020",
+   "first_date": 20151224,
+   "last_date": 20260612,
+   "rows": 2564,
+   "table": "A145020"
+  },
+  {
+   "code": "032350",
+   "first_date": 20060608,
+   "last_date": 20260612,
+   "rows": 4934,
+   "table": "A032350"
+  },
+  {
+   "code": "161580",
+   "first_date": 20170601,
+   "last_date": 20260612,
+   "rows": 2213,
+   "table": "A161580"
+  },
+  {
+   "code": "001740",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A001740"
+  },
+  {
+   "code": "140860",
+   "first_date": 20151217,
+   "last_date": 20260612,
+   "rows": 2569,
+   "table": "A140860"
+  },
+  {
+   "code": "228790",
+   "first_date": 20151007,
+   "last_date": 20260612,
+   "rows": 2619,
+   "table": "A228790"
+  },
+  {
+   "code": "019210",
+   "first_date": 19970806,
+   "last_date": 20260612,
+   "rows": 7175,
+   "table": "A019210"
+  },
+  {
+   "code": "039200",
+   "first_date": 20070117,
+   "last_date": 20260612,
+   "rows": 4783,
+   "table": "A039200"
+  },
+  {
+   "code": "007340",
+   "first_date": 19880924,
+   "last_date": 20260612,
+   "rows": 9771,
+   "table": "A007340"
+  },
+  {
+   "code": "348370",
+   "first_date": 20211101,
+   "last_date": 20260612,
+   "rows": 1129,
+   "table": "A348370"
+  },
+  {
+   "code": "053690",
+   "first_date": 20090623,
+   "last_date": 20260612,
+   "rows": 4182,
+   "table": "A053690"
+  },
+  {
+   "code": "451060",
+   "first_date": 20230131,
+   "last_date": 20260612,
+   "rows": 820,
+   "table": "A451060"
+  },
+  {
+   "code": "069960",
+   "first_date": 20021125,
+   "last_date": 20260612,
+   "rows": 5810,
+   "table": "A069960"
+  },
+  {
+   "code": "244580",
+   "first_date": 20160513,
+   "last_date": 20260612,
+   "rows": 2473,
+   "table": "A244580"
+  },
+  {
+   "code": "035900",
+   "first_date": 20010830,
+   "last_date": 20260612,
+   "rows": 6113,
+   "table": "A035900"
+  },
+  {
+   "code": "389500",
+   "first_date": 20221017,
+   "last_date": 20260612,
+   "rows": 893,
+   "table": "A389500"
+  },
+  {
+   "code": "251600",
+   "first_date": 20160811,
+   "last_date": 20260612,
+   "rows": 2410,
+   "table": "A251600"
+  },
+  {
+   "code": "252710",
+   "first_date": 20160922,
+   "last_date": 20260612,
+   "rows": 2384,
+   "table": "A252710"
+  },
+  {
+   "code": "004710",
+   "first_date": 19880706,
+   "last_date": 20260612,
+   "rows": 9838,
+   "table": "A004710"
+  },
+  {
+   "code": "003720",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A003720"
+  },
+  {
+   "code": "214150",
+   "first_date": 20150403,
+   "last_date": 20260612,
+   "rows": 2746,
+   "table": "A214150"
+  },
+  {
+   "code": "290550",
+   "first_date": 20181221,
+   "last_date": 20260612,
+   "rows": 1832,
+   "table": "A290550"
+  },
+  {
+   "code": "051600",
+   "first_date": 20071214,
+   "last_date": 20260612,
+   "rows": 4557,
+   "table": "A051600"
+  },
+  {
+   "code": "024840",
+   "first_date": 19960325,
+   "last_date": 20260612,
+   "rows": 7576,
+   "table": "A024840"
+  },
+  {
+   "code": "056080",
+   "first_date": 20011113,
+   "last_date": 20260612,
+   "rows": 6063,
+   "table": "A056080"
+  },
+  {
+   "code": "139130",
+   "first_date": 20110607,
+   "last_date": 20260612,
+   "rows": 3692,
+   "table": "A139130"
+  },
+  {
+   "code": "170920",
+   "first_date": 20131008,
+   "last_date": 20260612,
+   "rows": 3111,
+   "table": "A170920"
+  },
+  {
+   "code": "035250",
+   "first_date": 20011025,
+   "last_date": 20260612,
+   "rows": 6076,
+   "table": "A035250"
+  },
+  {
+   "code": "213420",
+   "first_date": 20150206,
+   "last_date": 20260612,
+   "rows": 2783,
+   "table": "A213420"
+  },
+  {
+   "code": "033640",
+   "first_date": 19991214,
+   "last_date": 20260612,
+   "rows": 6528,
+   "table": "A033640"
+  },
+  {
+   "code": "214370",
+   "first_date": 20151117,
+   "last_date": 20260612,
+   "rows": 2591,
+   "table": "A214370"
+  },
+  {
+   "code": "251270",
+   "first_date": 20170512,
+   "last_date": 20260612,
+   "rows": 2227,
+   "table": "A251270"
+  },
+  {
+   "code": "361580",
+   "first_date": 20200821,
+   "last_date": 20260612,
+   "rows": 1422,
+   "table": "A361580"
+  },
+  {
+   "code": "425420",
+   "first_date": 20221117,
+   "last_date": 20260612,
+   "rows": 870,
+   "table": "A425420"
+  },
+  {
+   "code": "073490",
+   "first_date": 20050204,
+   "last_date": 20260612,
+   "rows": 5266,
+   "table": "A073490"
+  },
+  {
+   "code": "371460",
+   "first_date": 20201208,
+   "last_date": 20260612,
+   "rows": 1349,
+   "table": "A371460"
+  },
+  {
+   "code": "274090",
+   "first_date": 20200303,
+   "last_date": 20260612,
+   "rows": 1540,
+   "table": "A274090"
+  },
+  {
+   "code": "385720",
+   "first_date": 20210525,
+   "last_date": 20260612,
+   "rows": 1237,
+   "table": "A385720"
+  },
+  {
+   "code": "014620",
+   "first_date": 20010111,
+   "last_date": 20260612,
+   "rows": 6269,
+   "table": "A014620"
+  },
+  {
+   "code": "086450",
+   "first_date": 20070529,
+   "last_date": 20260612,
+   "rows": 4693,
+   "table": "A086450"
+  },
+  {
+   "code": "307180",
+   "first_date": 20181221,
+   "last_date": 20260612,
+   "rows": 1832,
+   "table": "A307180"
+  },
+  {
+   "code": "059090",
+   "first_date": 20020115,
+   "last_date": 20260612,
+   "rows": 6021,
+   "table": "A059090"
+  },
+  {
+   "code": "355150",
+   "first_date": 20200918,
+   "last_date": 20260612,
+   "rows": 1402,
+   "table": "A355150"
+  },
+  {
+   "code": "034230",
+   "first_date": 20021105,
+   "last_date": 20260612,
+   "rows": 5824,
+   "table": "A034230"
+  },
+  {
+   "code": "241520",
+   "first_date": 20161219,
+   "last_date": 20260612,
+   "rows": 2323,
+   "table": "A241520"
+  },
+  {
+   "code": "064260",
+   "first_date": 20040723,
+   "last_date": 20260612,
+   "rows": 5402,
+   "table": "A064260"
+  },
+  {
+   "code": "270810",
+   "first_date": 20170616,
+   "last_date": 20260612,
+   "rows": 2203,
+   "table": "A270810"
+  },
+  {
+   "code": "003000",
+   "first_date": 19880805,
+   "last_date": 20260612,
+   "rows": 9812,
+   "table": "A003000"
+  },
+  {
+   "code": "377990",
+   "first_date": 20210305,
+   "last_date": 20260612,
+   "rows": 1292,
+   "table": "A377990"
+  },
+  {
+   "code": "033100",
+   "first_date": 19970818,
+   "last_date": 20260612,
+   "rows": 7166,
+   "table": "A033100"
+  },
+  {
+   "code": "060250",
+   "first_date": 20020108,
+   "last_date": 20260612,
+   "rows": 6026,
+   "table": "A060250"
+  },
+  {
+   "code": "092870",
+   "first_date": 20141224,
+   "last_date": 20260612,
+   "rows": 2812,
+   "table": "A092870"
+  },
+  {
+   "code": "078150",
+   "first_date": 20041208,
+   "last_date": 20260612,
+   "rows": 5307,
+   "table": "A078150"
+  },
+  {
+   "code": "060370",
+   "first_date": 20020215,
+   "last_date": 20260612,
+   "rows": 6001,
+   "table": "A060370"
+  },
+  {
+   "code": "449190",
+   "first_date": 20221202,
+   "last_date": 20260612,
+   "rows": 859,
+   "table": "A449190"
+  },
+  {
+   "code": "036460",
+   "first_date": 19991215,
+   "last_date": 20260612,
+   "rows": 6527,
+   "table": "A036460"
+  },
+  {
+   "code": "137400",
+   "first_date": 20120706,
+   "last_date": 20260612,
+   "rows": 3421,
+   "table": "A137400"
+  },
+  {
+   "code": "252990",
+   "first_date": 20210520,
+   "last_date": 20260612,
+   "rows": 1240,
+   "table": "A252990"
+  },
+  {
+   "code": "100590",
+   "first_date": 20181214,
+   "last_date": 20260612,
+   "rows": 1837,
+   "table": "A100590"
+  },
+  {
+   "code": "078350",
+   "first_date": 20040514,
+   "last_date": 20260612,
+   "rows": 5451,
+   "table": "A078350"
+  },
+  {
+   "code": "368590",
+   "first_date": 20201106,
+   "last_date": 20260612,
+   "rows": 1371,
+   "table": "A368590"
+  },
+  {
+   "code": "358570",
+   "first_date": 20230330,
+   "last_date": 20260612,
+   "rows": 779,
+   "table": "A358570"
+  },
+  {
+   "code": "354500",
+   "first_date": 20200507,
+   "last_date": 20260612,
+   "rows": 1497,
+   "table": "A354500"
+  },
+  {
+   "code": "092220",
+   "first_date": 20061016,
+   "last_date": 20260612,
+   "rows": 4847,
+   "table": "A092220"
+  },
+  {
+   "code": "107640",
+   "first_date": 20131210,
+   "last_date": 20260612,
+   "rows": 3067,
+   "table": "A107640"
+  },
+  {
+   "code": "000210",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000210"
+  },
+  {
+   "code": "281820",
+   "first_date": 20171205,
+   "last_date": 20260612,
+   "rows": 2088,
+   "table": "A281820"
+  },
+  {
+   "code": "001120",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A001120"
+  },
+  {
+   "code": "371160",
+   "first_date": 20201216,
+   "last_date": 20260612,
+   "rows": 1343,
+   "table": "A371160"
+  },
+  {
+   "code": "072950",
+   "first_date": 20120321,
+   "last_date": 20260612,
+   "rows": 3494,
+   "table": "A072950"
+  },
+  {
+   "code": "388420",
+   "first_date": 20210610,
+   "last_date": 20260612,
+   "rows": 1225,
+   "table": "A388420"
+  },
+  {
+   "code": "418660",
+   "first_date": 20220222,
+   "last_date": 20260612,
+   "rows": 1052,
+   "table": "A418660"
+  },
+  {
+   "code": "382800",
+   "first_date": 20211029,
+   "last_date": 20260612,
+   "rows": 1130,
+   "table": "A382800"
+  },
+  {
+   "code": "033240",
+   "first_date": 19990106,
+   "last_date": 20260612,
+   "rows": 6764,
+   "table": "A033240"
+  },
+  {
+   "code": "449180",
+   "first_date": 20221202,
+   "last_date": 20260612,
+   "rows": 859,
+   "table": "A449180"
+  },
+  {
+   "code": "006650",
+   "first_date": 19990811,
+   "last_date": 20260612,
+   "rows": 6615,
+   "table": "A006650"
+  },
+  {
+   "code": "322310",
+   "first_date": 20210224,
+   "last_date": 20260612,
+   "rows": 1298,
+   "table": "A322310"
+  },
+  {
+   "code": "161000",
+   "first_date": 20120917,
+   "last_date": 20260612,
+   "rows": 3371,
+   "table": "A161000"
+  },
+  {
+   "code": "438080",
+   "first_date": 20220826,
+   "last_date": 20260612,
+   "rows": 925,
+   "table": "A438080"
+  },
+  {
+   "code": "042370",
+   "first_date": 20000803,
+   "last_date": 20260612,
+   "rows": 6374,
+   "table": "A042370"
+  },
+  {
+   "code": "272290",
+   "first_date": 20170710,
+   "last_date": 20260612,
+   "rows": 2187,
+   "table": "A272290"
+  },
+  {
+   "code": "005090",
+   "first_date": 19930106,
+   "last_date": 20260612,
+   "rows": 8526,
+   "table": "A005090"
+  },
+  {
+   "code": "004370",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A004370"
+  },
+  {
+   "code": "121600",
+   "first_date": 20110209,
+   "last_date": 20260612,
+   "rows": 3772,
+   "table": "A121600"
+  },
+  {
+   "code": "379780",
+   "first_date": 20210409,
+   "last_date": 20260612,
+   "rows": 1267,
+   "table": "A379780"
+  },
+  {
+   "code": "089010",
+   "first_date": 20070117,
+   "last_date": 20260612,
+   "rows": 4783,
+   "table": "A089010"
+  },
+  {
+   "code": "041510",
+   "first_date": 20000427,
+   "last_date": 20260612,
+   "rows": 6439,
+   "table": "A041510"
+  },
+  {
+   "code": "006730",
+   "first_date": 19960116,
+   "last_date": 20260612,
+   "rows": 7632,
+   "table": "A006730"
+  },
+  {
+   "code": "003030",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A003030"
+  },
+  {
+   "code": "030000",
+   "first_date": 19980303,
+   "last_date": 20260612,
+   "rows": 7011,
+   "table": "A030000"
+  },
+  {
+   "code": "127120",
+   "first_date": 20111226,
+   "last_date": 20260612,
+   "rows": 3552,
+   "table": "A127120"
+  },
+  {
+   "code": "091580",
+   "first_date": 20070523,
+   "last_date": 20260612,
+   "rows": 4696,
+   "table": "A091580"
+  },
+  {
+   "code": "065440",
+   "first_date": 20030128,
+   "last_date": 20260612,
+   "rows": 5768,
+   "table": "A065440"
+  },
+  {
+   "code": "004800",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A004800"
+  },
+  {
+   "code": "036810",
+   "first_date": 20000118,
+   "last_date": 20260612,
+   "rows": 6507,
+   "table": "A036810"
+  },
+  {
+   "code": "195940",
+   "first_date": 20210809,
+   "last_date": 20260612,
+   "rows": 1183,
+   "table": "A195940"
+  },
+  {
+   "code": "200470",
+   "first_date": 20141226,
+   "last_date": 20260612,
+   "rows": 2811,
+   "table": "A200470"
+  },
+  {
+   "code": "282330",
+   "first_date": 20171208,
+   "last_date": 20260612,
+   "rows": 2085,
+   "table": "A282330"
+  },
+  {
+   "code": "340440",
+   "first_date": 20191227,
+   "last_date": 20260612,
+   "rows": 1583,
+   "table": "A340440"
+  },
+  {
+   "code": "123310",
+   "first_date": 20100329,
+   "last_date": 20260612,
+   "rows": 3989,
+   "table": "A123310"
+  },
+  {
+   "code": "079370",
+   "first_date": 20060201,
+   "last_date": 20260612,
+   "rows": 5020,
+   "table": "A079370"
+  },
+  {
+   "code": "412350",
+   "first_date": 20220624,
+   "last_date": 20260612,
+   "rows": 969,
+   "table": "A412350"
+  },
+  {
+   "code": "042520",
+   "first_date": 20091009,
+   "last_date": 20260612,
+   "rows": 4105,
+   "table": "A042520"
+  },
+  {
+   "code": "005010",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A005010"
+  },
+  {
+   "code": "007390",
+   "first_date": 19960122,
+   "last_date": 20260612,
+   "rows": 7627,
+   "table": "A007390"
+  },
+  {
+   "code": "004990",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A004990"
+  },
+  {
+   "code": "279530",
+   "first_date": 20171017,
+   "last_date": 20260612,
+   "rows": 2123,
+   "table": "A279530"
+  },
+  {
+   "code": "037460",
+   "first_date": 19991216,
+   "last_date": 20260612,
+   "rows": 6526,
+   "table": "A037460"
+  },
+  {
+   "code": "293180",
+   "first_date": 20180330,
+   "last_date": 20260612,
+   "rows": 2011,
+   "table": "A293180"
+  },
+  {
+   "code": "399720",
+   "first_date": 20220520,
+   "last_date": 20260612,
+   "rows": 992,
+   "table": "A399720"
+  },
+  {
+   "code": "000120",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A000120"
+  },
+  {
+   "code": "018670",
+   "first_date": 19970827,
+   "last_date": 20260612,
+   "rows": 7158,
+   "table": "A018670"
+  },
+  {
+   "code": "452260",
+   "first_date": 20230331,
+   "last_date": 20260612,
+   "rows": 778,
+   "table": "A452260"
+  },
+  {
+   "code": "052020",
+   "first_date": 20010705,
+   "last_date": 20260612,
+   "rows": 6151,
+   "table": "A052020"
+  },
+  {
+   "code": "115180",
+   "first_date": 20160229,
+   "last_date": 20260612,
+   "rows": 2523,
+   "table": "A115180"
+  },
+  {
+   "code": "012860",
+   "first_date": 19960105,
+   "last_date": 20260612,
+   "rows": 7641,
+   "table": "A012860"
+  },
+  {
+   "code": "388790",
+   "first_date": 20210903,
+   "last_date": 20260612,
+   "rows": 1165,
+   "table": "A388790"
+  },
+  {
+   "code": "060280",
+   "first_date": 20020703,
+   "last_date": 20260612,
+   "rows": 5909,
+   "table": "A060280"
+  },
+  {
+   "code": "383310",
+   "first_date": 20210528,
+   "last_date": 20260612,
+   "rows": 1234,
+   "table": "A383310"
+  },
+  {
+   "code": "448630",
+   "first_date": 20221129,
+   "last_date": 20260612,
+   "rows": 862,
+   "table": "A448630"
+  },
+  {
+   "code": "039440",
+   "first_date": 20020228,
+   "last_date": 20260612,
+   "rows": 5992,
+   "table": "A039440"
+  },
+  {
+   "code": "001250",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A001250"
+  },
+  {
+   "code": "089890",
+   "first_date": 20061108,
+   "last_date": 20260612,
+   "rows": 4830,
+   "table": "A089890"
+  },
+  {
+   "code": "065350",
+   "first_date": 20040806,
+   "last_date": 20260612,
+   "rows": 5392,
+   "table": "A065350"
+  },
+  {
+   "code": "052400",
+   "first_date": 20011018,
+   "last_date": 20260612,
+   "rows": 6081,
+   "table": "A052400"
+  },
+  {
+   "code": "122640",
+   "first_date": 20141229,
+   "last_date": 20260612,
+   "rows": 2810,
+   "table": "A122640"
+  },
+  {
+   "code": "130660",
+   "first_date": 20101216,
+   "last_date": 20260612,
+   "rows": 3807,
+   "table": "A130660"
+  },
+  {
+   "code": "348210",
+   "first_date": 20201008,
+   "last_date": 20260612,
+   "rows": 1391,
+   "table": "A348210"
+  },
+  {
+   "code": "295040",
+   "first_date": 20180423,
+   "last_date": 20260612,
+   "rows": 1995,
+   "table": "A295040"
+  },
+  {
+   "code": "438100",
+   "first_date": 20220826,
+   "last_date": 20260612,
+   "rows": 925,
+   "table": "A438100"
+  },
+  {
+   "code": "081660",
+   "first_date": 20100928,
+   "last_date": 20260612,
+   "rows": 3864,
+   "table": "A081660"
+  },
+  {
+   "code": "029780",
+   "first_date": 20070627,
+   "last_date": 20260612,
+   "rows": 4673,
+   "table": "A029780"
+  },
+  {
+   "code": "094170",
+   "first_date": 20150630,
+   "last_date": 20260612,
+   "rows": 2687,
+   "table": "A094170"
+  },
+  {
+   "code": "389020",
+   "first_date": 20230307,
+   "last_date": 20260612,
+   "rows": 796,
+   "table": "A389020"
+  },
+  {
+   "code": "004090",
+   "first_date": 19860415,
+   "last_date": 20260612,
+   "rows": 10488,
+   "table": "A004090"
+  },
+  {
+   "code": "254490",
+   "first_date": 20230127,
+   "last_date": 20260612,
+   "rows": 822,
+   "table": "A254490"
+  },
+  {
+   "code": "328130",
+   "first_date": 20220721,
+   "last_date": 20260612,
+   "rows": 950,
+   "table": "A328130"
+  }
+ ],
+ "universe_size": 500
+}
