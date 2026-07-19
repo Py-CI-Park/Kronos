@@ -2,13 +2,13 @@
 
 > 문서 ID: `KRONOS-DASHBOARD-V51-IMPLEMENTATION-RESULT-2026-07-18`  
 > 작성일: `2026-07-18 KST`  
-> 실행 기간: `2026-07-18 05:44–검증 종료 KST`, 최초 구현·보강·최종 브라우저 재검증 포함
+> 실행 기간: `2026-07-18 05:44–2026-07-19 UX 단순화 검증 종료 KST`, 최초 구현·보강·내비게이션 통합·최종 브라우저 재검증 포함
 > 상태: `COMPLETE / IMPLEMENTED_RESEARCH_FOUNDATION`  
 > 모델·실거래 판정: `NOT_RUN / NO-GO 유지 / LIVE_READY 아님 / PROFIT_CLAIM 없음`  
 > 범위: V5.1 연구 기반, 대시보드 정보구조, 15:20 인과 source/panel, 6,000만원 10-slot 회계, H1/H3/H5 freeze, PyKRX-only offline custody, read-only API/report viewer  
 > 브랜치: `feature/dashboard-v5-learning-evidence`  
 > 기준 commit: `4c8ba1f`  
-> 최종 브라우저 검증 대상 HEAD: `c1e4b37` (`c43ee9b` verification snapshot 포함)
+> UX 단순화 구현 및 브라우저 검증 commit: `11268cb` (`c43ee9b` 기존 verification snapshot 보존)
 > 기본 UI: `V3 유지`  
 > tag/push/merge/release-default: 수행하지 않음  
 > 대체 문서: 없음. 이전 `docs/kronos_dashboard_v5_development_result_2026-07-16.md`는 보존하고 본 문서는 V5.1 증분 결과만 기록한다.
@@ -157,34 +157,38 @@ Non-GET method는 artifact나 report를 읽기 전에 `405`로 닫힌다. Query 
 
 ### 3.6 V5.1 IA와 독립 rails
 
-V5.1 화면은 `Kronos / AI Quant Reinforcement Learning` 브랜드와 5개 navigation group을 적용했다.
+V5.1 화면의 사용자 표시 제목은 `AI Quant Reinforcement Learning`이며, `Kronos`는 예측 연구 영역 이름으로만 남긴다. 2026-07-19 UX 단순화에서 기존 12개 표시 항목을 다음 9개 항목으로 정리했다.
 
 ```text
 COMMAND
   Mission Control
 KRONOS
-  Forecast Workbench
-  Prediction Diagnostics
+  Kronos Research
+    Forecast Workbench / Prediction Diagnostics
 REINFORCEMENT LEARNING
-  Daily Close RL
-  RL Trading Evidence
-  RL Guide
+  RL Research & Evidence
+    RL Evidence Console / Daily Close RL / RL Guide
 OPERATIONS
-  Live Training
+  Training & System
+    Kronos fine-tuning / System Health
   Runs & Reports
   Artifacts & Models
-  System Health
 KNOWLEDGE
-  Research Reports
-  Wiki
+  Research Reports & Wiki
   Version History
   Settings
 ```
 
-핵심 의도는 Kronos 예측과 RL 정책 연구의 판정을 합치지 않는 것이다. 두 rail은 독립적으로 동작한다.
+기존 route ID와 deep link는 삭제하지 않았다. `forecast`, `stom`, `rl`, `daily-ohlcv`, `daily-rl-guide`, `live-training`, `system-health`는 기존 주소로 직접 열리며, 왼쪽에는 해당 통합 workspace 하나만 활성화된다. 무거운 패널은 동시에 mount하지 않고 선택한 패널 하나만 렌더링한다.
 
-- 좌측 navigation collapse와 우측 detail rail collapse가 서로 독립이다.
-- 우측 rail을 접어도 `NO-GO`, `READ-ONLY`, six false locks, no-live/no-profit, `NOT_RUN` blocker 문구는 사라지지 않는다.
+- `Kronos Research`는 예측 생성과 예측 진단을 한 진입점으로 묶는다.
+- `RL Research & Evidence`는 일봉 연구·RL 증거·가이드를 한 workspace 안의 명시적 세부 선택으로 묶는다.
+- `Training & System`은 Kronos fine-tuning 진행률과 GPU/CPU/RAM 상태를 한 요약에서 보여주되 RL 성과와 혼합하지 않는다.
+- 좌측 navigation collapse와 우측 `Evidence & Safety` rail collapse는 서로 독립이다.
+- 우측 rail은 일반 desktop `400–480px`, 울트라와이드 최대 `560px`로 넓혔고 기술 세부사항은 disclosure로 정리했다.
+- 우측 rail은 `NOT_RUN`이나 RULE evidence가 수익성 있는 live RL 결과로 오인되는 것을 막기 위해 유지한다.
+- rail을 접어도 `NO-GO`, `READ-ONLY`, six false locks, no-live/no-profit, `NOT_RUN` 문구는 사라지지 않는다.
+- Version History는 sidebar 폭에 갇힌 작은 패널 대신 중앙 dialog로 열리며, focus 진입·Tab 순환·Escape 닫기·focus 복귀를 지원한다.
 - report viewer는 read-only list/read API만 사용한다.
 - 3,440×1,440 울트라와이드와 2,160×3,840 portrait에서 horizontal overflow가 없었다.
 
@@ -418,9 +422,9 @@ Rollback의 기본값은 “V5.1을 기본으로 쓰지 않는 것”이다.
 |---|---|
 | Branch | `feature/dashboard-v5-learning-evidence` |
 | Baseline | `4c8ba1f` |
-| V5.1 구현 범위 | `9d8e2ad` through `c1e4b37` |
+| V5.1 구현 범위 | `9d8e2ad` through `11268cb` |
 | 최초 결과 문서 commit | `1ec28bd708fd19d61396af8cb3e7c0d8887c68a0` |
-| 최종 브라우저 검증 대상 HEAD | `c1e4b37` (`c43ee9b` verification snapshot) |
+| UX 단순화 브라우저 검증 대상 | `11268cb` |
 | tag/push/merge | 수행하지 않음 |
 
 ### 10.2 V5.1 commit 목록
@@ -456,9 +460,11 @@ Rollback의 기본값은 “V5.1을 기본으로 쓰지 않는 것”이다.
 | 27 | `05689ea` | `build(dashboard): publish aligned V5.1 version bundle` | version evidence 중간 bundle |
 | 28 | `3628995` | `fix(ui): make V5.1 verification metadata immutable` | self-reference 없는 verification snapshot |
 | 29 | `c1e4b37` | `build(dashboard): publish immutable verification metadata` | 최종 Chromium 검증 bundle |
+| 30 | `11268cb` | `feat(v5.1): simplify research dashboard navigation` | V5.1 통합 workspace, Evidence & Safety rail, version dialog, 공식 dist 갱신 |
 
 ## 11. 변경 히스토리
 
 | 날짜 | 변경 | 작성자 | commit |
 |---|---|---|---|
 | 2026-07-18 | cleaner 재검토 blocker를 닫고 `c43ee9b`를 immutable verification snapshot으로 고정한 최종 bundle `c1e4b37`을 Chromium 3440×1440/2160×3840에서 재검증 | GJC | `1ec28bd` through `c1e4b37` |
+| 2026-07-19 | V5.1 표시 제목에서 Kronos를 제거하고 KRONOS/RL/Training & System workspace를 통합했다. 우측 rail을 넓히고 기술 세부사항을 disclosure로 정리했으며 Version History를 keyboard focus 관리가 있는 중앙 dialog로 교체했다. 353 frontend tests, 409-file Svelte check, build, 33 dashboard regression, 27 bundle tests, 5 V3 contract tests와 Chromium 3440×1440/2160×3840을 검증했다. | GJC | `11268cb` |

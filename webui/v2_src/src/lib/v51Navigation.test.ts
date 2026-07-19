@@ -61,12 +61,12 @@ test('V5.1 brand and version history preserve default, current receipt, and no-r
       releaseTag: entry.releaseTag,
     })),
     [
-      { version: 'V5.1', date: '2026-07-17', commitSha: 'c43ee9b', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'not released' },
+      { version: 'V5.1', date: '2026-07-19', commitSha: '11268cb', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'not released' },
       { version: 'V5', date: '2026-07-16', commitSha: '59fb74c', defaultUi: V51_DEFAULT_POLICY, releaseTag: 'fork-v1.3.0-dashboard-v5-research-preview' },
     ],
   );
-  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /Verification snapshot c43ee9b recorded 353 frontend tests/);
-  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /metadata-only bundles do not claim new research validation/);
+  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /Commit 11268cb passed 353 frontend tests/);
+  assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /Svelte check across 409 files with zero errors\/warnings/);
   assert.match(V51_VERSION_HISTORY[0]?.validation ?? '', /no release-default, live-readiness/);
 });
 

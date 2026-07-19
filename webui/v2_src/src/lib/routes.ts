@@ -78,11 +78,11 @@ export const V51_DEFAULT_POLICY = 'V3 기본 유지 · V5 기본 전환은 미�
 export const V51_VERSION_HISTORY = [
   {
     version: 'V5.1',
-    date: '2026-07-17',
-    commitSha: 'c43ee9b',
+    date: '2026-07-19',
+    commitSha: '11268cb',
     releaseTag: 'not released',
-    changes: 'Brand, V5.1 information architecture, evidence views, and report access orientation.',
-    validation: 'Verification snapshot c43ee9b recorded 353 frontend tests and live browser evidence; later metadata-only bundles do not claim new research validation. Read-only evidence only; no release-default, live-readiness, GO, profit, broker, or order claim.',
+    changes: 'Consolidated Kronos, RL, and training/system workspaces; widened the Evidence & Safety rail; enlarged the V5.1 title; and replaced the cramped history panel with an accessible dialog.',
+    validation: 'Commit 11268cb passed 353 frontend tests, Svelte check across 409 files with zero errors/warnings, dashboard regression tests, V3 contract tests, production build, and live Chromium checks at 3440x1440 and 2160x3840. Read-only evidence only; no release-default, live-readiness, GO, profit, broker, or order claim.',
     defaultUi: V51_DEFAULT_POLICY,
     rollbackTarget: 'V3 shell and existing V3 route bookmarks',
   },
