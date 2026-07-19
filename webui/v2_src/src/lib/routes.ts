@@ -40,6 +40,7 @@ export const DASHBOARD_ROUTES: readonly DashboardRoute[] = [
 export interface V51NavItem {
   readonly id?: string;
   readonly routeId?: string;
+  readonly activeRouteIds?: readonly string[];
   readonly action?: 'version-history';
   readonly label: string;
   readonly icon: IconName;
@@ -65,11 +66,11 @@ export interface V51VersionHistoryEntry {
 }
 
 export const V51_SHELL_BRAND = {
-  name: 'Kronos',
-  subtitle: 'AI Quant Reinforcement Learning',
+  name: 'AI Quant Reinforcement Learning',
+  subtitle: 'Research & Operations',
   version: 'v5.1',
-  updateDate: '2026-07-17',
-  displayVersion: 'v5.1 · Updated 2026-07-17',
+  updateDate: '2026-07-19',
+  displayVersion: 'v5.1 · Updated 2026-07-19',
 } as const;
 
 export const V51_DEFAULT_POLICY = 'V3 기본 유지 · V5 기본 전환은 미승인·미실행';
@@ -107,25 +108,21 @@ export const V51_NAV_GROUPS = [
   {
     label: 'KRONOS',
     items: [
-      { routeId: 'forecast', label: 'Forecast Workbench', icon: 'wand', badge: null },
-      { routeId: 'stom', label: 'Prediction Diagnostics', icon: 'pulse', badge: null },
+      { routeId: 'forecast', activeRouteIds: ['forecast', 'stom'], label: 'Kronos Research', icon: 'wand', badge: null },
     ],
   },
   {
     label: 'REINFORCEMENT LEARNING',
     items: [
-      { routeId: 'daily-ohlcv', label: 'Daily Close RL', icon: 'database', badge: null },
-      { routeId: 'rl', label: 'RL Trading Evidence', icon: 'rocket', badge: 'RL' },
-      { routeId: 'daily-rl-guide', label: 'RL Guide', icon: 'file', badge: null },
+      { routeId: 'rl', activeRouteIds: ['rl', 'daily-ohlcv', 'daily-rl-guide'], label: 'RL Research & Evidence', icon: 'rocket', badge: 'RL' },
     ],
   },
   {
     label: 'OPERATIONS',
     items: [
-      { routeId: 'live-training', label: 'Live Training', icon: 'activity', badge: 'LIVE', status: 'live' },
+      { routeId: 'live-training', activeRouteIds: ['live-training', 'system-health'], label: 'Training & System', icon: 'activity', badge: 'LIVE', status: 'live' },
       { routeId: 'history', label: 'Runs & Reports', icon: 'history', badge: null },
       { routeId: 'artifacts', label: 'Artifacts & Models', icon: 'package', badge: null },
-      { routeId: 'system-health', label: 'System Health', icon: 'cpu', badge: null },
     ],
   },
   {
@@ -138,10 +135,14 @@ export const V51_NAV_GROUPS = [
   },
 ] as const satisfies readonly V51NavGroup[];
 
+function v51ItemMatchesRoute(item: V51NavItem, tabId: string): boolean {
+  return item.routeId === tabId || item.activeRouteIds?.includes(tabId) === true;
+}
+
 function v51RouteLabel(tabId: string): string | null {
   for (const group of V51_NAV_GROUPS) {
     for (const item of group.items) {
-      if ('routeId' in item && item.routeId === tabId) return item.label;
+      if (v51ItemMatchesRoute(item, tabId)) return item.label;
     }
   }
   return null;

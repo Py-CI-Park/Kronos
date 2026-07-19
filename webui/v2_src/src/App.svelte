@@ -6,6 +6,7 @@
   import RightDetailRail from '$layout/RightDetailRail.svelte';
   import V4Shell from '$layout/V4Shell.svelte';
   import HeroStrip from '$layout/HeroStrip.svelte';
+  import V51WorkspaceNav from '$layout/V51WorkspaceNav.svelte';
   import MissionControl from '$tabs/MissionControl.svelte';
   import LiveTrainingTab from '$tabs/LiveTrainingTab.svelte';
   import ForecastWorkbenchTab from '$tabs/ForecastWorkbenchTab.svelte';
@@ -33,6 +34,16 @@
   import { resolveRoute, syncTabFromLocation } from '$lib/routes';
   import { dashboardShell, initializeDashboardShell, type DashboardShell } from '$lib/shellMode';
   import { isLearningNowRouteLocation } from './v5/learningNow';
+
+  type V51WorkspaceDomain = 'kronos' | 'rl' | 'training-system';
+
+  function v51WorkspaceDomainForTab(tabId: string, activeShell: DashboardShell): V51WorkspaceDomain | null {
+    if (activeShell !== 'v5') return null;
+    if (tabId === 'forecast' || tabId === 'stom') return 'kronos';
+    if (tabId === 'rl' || tabId === 'daily-ohlcv' || tabId === 'daily-rl-guide') return 'rl';
+    if (tabId === 'live-training' || tabId === 'system-health') return 'training-system';
+    return null;
+  }
 
 
   function shouldRenderLearningNowRoute(
@@ -105,6 +116,7 @@
   const unsubscribeActiveTab = activeTab.subscribe((v) => (tab = v));
   let shell = $state<DashboardShell>(initialShell);
   const unsubscribeDashboardShell = dashboardShell.subscribe((v) => (shell = v));
+  let v51WorkspaceDomain = $derived(v51WorkspaceDomainForTab(tab, shell));
   let collapsed = $state(false);
   const unsubscribeSidebarCollapsed = sidebarCollapsed.subscribe((v) => (collapsed = v));
   $effect(() => {
@@ -130,6 +142,9 @@
     data-v3-tab-host={shell === 'v3' ? '' : undefined}
     data-v4-domain-host={shell === 'v4' ? '' : undefined}
   >
+    {#if v51WorkspaceDomain}
+      <V51WorkspaceNav domain={v51WorkspaceDomain} selectedRouteId={tab} />
+    {/if}
     {#if tab === 'mission-control'}
       {#if shell === 'v4'}
         <V4MissionControl />

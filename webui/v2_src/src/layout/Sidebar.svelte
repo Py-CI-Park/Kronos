@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { activeTab, sidebarCollapsed, sidebarMobileOpen, trainingStatus, metricsLatest } from '$lib/stores';
   import { ICONS } from '$lib/icons';
   import { fmt } from '$lib/format';
@@ -134,6 +135,8 @@
   dashboardShell.subscribe((v) => (shell = v));
   let navGroups = $derived<readonly NavGroup[]>(shell === 'v5' ? V51_NAV_GROUPS : shell === 'v4' ? v4Groups : v3Groups);
   let versionHistoryOpen = $state(false);
+  let versionHistoryDialog = $state<HTMLDivElement | null>(null);
+  let versionHistoryTrigger = $state<HTMLButtonElement | null>(null);
 
   $effect(() => {
     if (shell !== 'v5') versionHistoryOpen = false;
@@ -145,17 +148,57 @@
 
   function itemIsActive(item: NavItem): boolean {
     const routeId = itemRouteId(item);
-    return routeId != null && current === routeId;
+    return (routeId != null && current === routeId) || item.activeRouteIds?.includes(current) === true;
   }
 
-  function toggleVersionHistory(): void {
-    versionHistoryOpen = !versionHistoryOpen;
-    if (versionHistoryOpen && collapsed) sidebarCollapsed.set(false);
+  function closeVersionHistory(): void {
+    const trigger = versionHistoryTrigger;
+    versionHistoryOpen = false;
+    void tick().then(() => trigger?.focus());
   }
 
-  function pick(item: NavItem): void {
+  function toggleVersionHistory(trigger?: HTMLButtonElement): void {
+    if (versionHistoryOpen) {
+      closeVersionHistory();
+      return;
+    }
+    versionHistoryTrigger = trigger ?? null;
+    versionHistoryOpen = true;
+    if (collapsed) sidebarCollapsed.set(false);
+    void tick().then(() => versionHistoryDialog?.focus());
+  }
+
+  function handleVersionHistoryKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeVersionHistory();
+      return;
+    }
+    if (event.key !== 'Tab' || !versionHistoryDialog) return;
+    const focusable = Array.from(
+      versionHistoryDialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]):not([tabindex="-1"]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (focusable.length === 0) {
+      event.preventDefault();
+      versionHistoryDialog.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function pick(item: NavItem, trigger?: HTMLButtonElement): void {
     if (item.action === 'version-history') {
-      toggleVersionHistory();
+      toggleVersionHistory(trigger);
       return;
     }
     const routeId = itemRouteId(item);
@@ -192,7 +235,7 @@
             class="version-toggle"
             aria-expanded={versionHistoryOpen}
             aria-controls="v51-version-history-panel"
-            onclick={toggleVersionHistory}
+            onclick={(event) => toggleVersionHistory(event.currentTarget)}
           >
             Version History
           </button>
@@ -243,7 +286,7 @@
             aria-expanded={item.action === 'version-history' ? versionHistoryOpen : undefined}
             aria-controls={item.action === 'version-history' ? 'v51-version-history-panel' : undefined}
             aria-label={collapsed ? item.label : undefined}
-            onclick={() => pick(item)}
+            onclick={(event) => pick(item, event.currentTarget)}
             title={collapsed ? item.label : item.action === 'version-history' ? 'Open V5/V5.1 version history' : undefined}
           >
             <span class="nav-icon">
@@ -285,32 +328,6 @@
     </div>
   {/each}
 
-  {#if shell === 'v5' && versionHistoryOpen && !collapsed}
-    <section
-      id="v51-version-history-panel"
-      class="version-history"
-      aria-label="Kronos version history"
-      data-v51-version-history
-    >
-      <div class="version-history-title">Version History</div>
-      {#each V51_VERSION_HISTORY as entry}
-        <article class="version-entry">
-          <div class="version-entry-head">
-            <strong>{entry.version}</strong>
-            <span>{entry.date}</span>
-          </div>
-          <dl class="version-entry-facts">
-            <div><dt>Commit</dt><dd>{entry.commitSha}</dd></div>
-            <div><dt>Tag</dt><dd>{entry.releaseTag}</dd></div>
-            <div><dt>Changes</dt><dd>{entry.changes}</dd></div>
-            <div><dt>Validation</dt><dd>{entry.validation}</dd></div>
-            <div><dt>Default</dt><dd>{entry.defaultUi}</dd></div>
-            <div><dt>Rollback</dt><dd>{entry.rollbackTarget}</dd></div>
-          </dl>
-        </article>
-      {/each}
-    </section>
-  {/if}
 
   {#if !collapsed}
     <div class="sidebar-footer">
@@ -337,6 +354,62 @@
   {/if}
 </aside>
 
+{#if shell === 'v5' && versionHistoryOpen}
+  <div class="version-history-layer" data-v51-version-history-layer>
+    <div
+      id="v51-version-history-panel"
+      class="version-history"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="v51-version-history-title"
+      tabindex="-1"
+      bind:this={versionHistoryDialog}
+      onkeydown={handleVersionHistoryKeydown}
+      data-v51-version-history
+    >
+      <div class="version-history-header">
+        <div>
+          <p class="version-history-kicker">V5 / V5.1 governance</p>
+          <h2 id="v51-version-history-title">Version History</h2>
+        </div>
+        <button
+          type="button"
+          class="version-history-close"
+          aria-label="Close version history"
+          onclick={closeVersionHistory}
+        >
+          Close
+        </button>
+      </div>
+      <div class="version-history-list">
+        {#each V51_VERSION_HISTORY as entry}
+          <article class="version-entry">
+            <div class="version-entry-head">
+              <strong>{entry.version}</strong>
+              <span>{entry.date}</span>
+            </div>
+            <dl class="version-entry-facts">
+              <div><dt>Commit</dt><dd>{entry.commitSha}</dd></div>
+              <div><dt>Tag</dt><dd>{entry.releaseTag}</dd></div>
+              <div><dt>Changes</dt><dd>{entry.changes}</dd></div>
+              <div><dt>Validation</dt><dd>{entry.validation}</dd></div>
+              <div><dt>Default</dt><dd>{entry.defaultUi}</dd></div>
+              <div><dt>Rollback</dt><dd>{entry.rollbackTarget}</dd></div>
+            </dl>
+          </article>
+        {/each}
+      </div>
+    </div>
+    <button
+      type="button"
+      class="version-history-backdrop"
+      aria-label="Close version history"
+      tabindex="-1"
+      onclick={closeVersionHistory}
+    ></button>
+  </div>
+{/if}
+
 <style>
   .sidebar-command {
     padding: 12px 20px 0;
@@ -346,19 +419,42 @@
     border: 1px solid var(--border-faint);
     background: var(--surface-sunken);
   }
+  :global(.sidebar[data-kronos-shell="v5"]) .brand {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  :global(.sidebar[data-kronos-shell="v5"][data-sidebar-collapsed="true"]) .brand {
+    align-items: center;
+    padding-inline: 0;
+  }
+  :global(.sidebar[data-kronos-shell="v5"]) .brand-text {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  :global(.sidebar[data-kronos-shell="v5"]) .brand-name {
+    color: var(--fg-strong);
+    font: 800 clamp(18px, 1.2vw, 21px)/1.06 var(--font-display);
+    letter-spacing: -0.025em;
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
   .brand-version {
-    margin-top: 4px;
+    margin-top: 5px;
     color: var(--fg);
     font: 600 11px/1.3 var(--font-mono);
   }
   .brand-tag--subtitle {
+    margin-top: 5px;
     font-family: var(--font-display);
+    font-size: 12px;
     letter-spacing: 0;
   }
   .version-toggle {
     align-self: flex-start;
-    margin-top: 8px;
-    padding: 4px 8px;
+    margin-top: 9px;
+    padding: 5px 9px;
     border: 1px solid var(--border-faint);
     border-radius: var(--r-pill);
     background: var(--surface-sunken);
@@ -369,34 +465,91 @@
     border-color: var(--border);
     color: var(--accent-strong);
   }
-  .version-history {
-    margin: 8px 20px 12px;
-    padding: 12px;
-    border: 1px solid var(--border-faint);
-    border-radius: var(--r-md);
-    background: var(--surface-sunken);
-    color: var(--fg);
-    overflow: auto;
-    max-height: min(420px, 45vh);
+  .version-toggle:focus-visible,
+  .version-history-close:focus-visible,
+  .version-history-backdrop:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
   }
-  .version-history-title {
-    margin-bottom: 10px;
-    font: 700 12px/1 var(--font-display);
+  .version-history-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: clamp(16px, 4vw, 48px);
+  }
+  .version-history-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background: color-mix(in oklab, var(--fg-strong) 34%, transparent);
+  }
+  .version-history {
+    position: relative;
+    z-index: 1;
+    width: min(760px, calc(100vw - 32px));
+    max-height: min(78dvh, 720px);
+    overflow: auto;
+    padding: clamp(18px, 3vw, 26px);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    background: var(--surface-elev);
+    color: var(--fg);
+    box-shadow: var(--shadow-lg), var(--card-highlight);
+  }
+  .version-history-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .version-history-kicker {
+    margin-bottom: 6px;
+    color: var(--muted);
+    font: 700 11px/1.1 var(--font-display);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--fg-strong);
   }
-  .version-entry + .version-entry {
-    margin-top: 12px;
-    padding-top: 12px;
+  .version-history-header h2 {
+    color: var(--fg-strong);
+    font: 800 clamp(24px, 4vw, 32px)/1.1 var(--font-display);
+    letter-spacing: -0.03em;
+  }
+  .version-history-close {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    background: var(--surface-sunken);
+    color: var(--fg-strong);
+    font: 700 12px/1 var(--font-display);
+  }
+  .version-history-close:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-raised);
+    color: var(--accent-strong);
+  }
+  .version-entry {
+    padding: 16px 0;
     border-top: 1px solid var(--border-faint);
+  }
+  .version-entry:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .version-entry:last-child {
+    padding-bottom: 0;
   }
   .version-entry-head {
     display: flex;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
-    font: 600 12px/1.2 var(--font-display);
+    gap: 12px;
+    margin-bottom: 12px;
+    color: var(--fg-strong);
+    font: 700 14px/1.2 var(--font-display);
   }
   .version-entry-head span {
     color: var(--muted);
@@ -404,23 +557,46 @@
   }
   .version-entry-facts {
     display: grid;
-    gap: 6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
     margin: 0;
-    font-size: 11px;
-    line-height: 1.35;
+    font-size: 12px;
+    line-height: 1.45;
   }
   .version-entry-facts div {
     display: grid;
-    gap: 2px;
+    gap: 3px;
+    min-width: 0;
   }
   .version-entry-facts dt {
     color: var(--dim);
-    font-weight: 700;
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
   .version-entry-facts dd {
     margin: 0;
     color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 640px) {
+    .version-history {
+      width: min(100%, calc(100vw - 24px));
+      padding: 16px;
+      border-radius: 18px;
+    }
+    .version-history-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .version-history-close {
+      align-self: flex-start;
+    }
+    .version-entry-head {
+      flex-direction: column;
+    }
+    .version-entry-facts {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

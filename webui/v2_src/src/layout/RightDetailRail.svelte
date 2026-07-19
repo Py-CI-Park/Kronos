@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { rightDetailRailCollapsed, toggleRightDetailRailCollapsed } from '$lib/stores';
   import type { V51FalseResearchLocks, V51NoClaimFlags, V51Protocol } from '$lib/v51Api';
+  import { V51_SHELL_BRAND } from '$lib/routes';
 
   type RailContract = Pick<
     V51Protocol,
@@ -88,9 +89,9 @@
   const compactStatusRows = [
     'NO-GO',
     'READ-ONLY',
+    'NOT_RUN ≠ RESULT',
     '6 LOCKS FALSE',
-    'NO LIVE / PROFIT',
-    'NOT_RUN ≠ result',
+    'NO LIVE / NO PROFIT',
   ] as const;
 
   const lockRows = [
@@ -134,8 +135,8 @@
   <div class="rail-sticky">
     <div class="rail-control-row">
       <div class="rail-heading">
-        <span class="rail-eyebrow">V5.1 guardrail</span>
-        <h2 id="v51-rail-title">Right detail rail</h2>
+        <span class="rail-eyebrow">Research controls</span>
+        <h2 id="v51-rail-title">Evidence & Safety</h2>
       </div>
       <button
         type="button"
@@ -150,95 +151,127 @@
     </div>
 
     <section class="compact-summary" aria-label="V5.1 blocker and status summary">
-      <p class="summary-title">Research status</p>
+      <p class="summary-title">Compact safety summary</p>
       <div class="status-stack" aria-label="Collapsed-visible guardrails">
         {#each compactStatusRows as row}
           <span class="status-pill">{row}</span>
         {/each}
       </div>
-      <p class="summary-blocker"><strong>Blocker:</strong> D0/D1/source and index evidence remain proof-bound.</p>
-      <p class="summary-note">Collapsed rail still exposes NO-GO, read-only, NOT_RUN and six false locks.</p>
+      <p class="summary-blocker"><strong>NO-GO:</strong> D0/D1/source and index evidence remain proof-bound.</p>
+      <p class="summary-note">This rail prevents NOT_RUN or RULE evidence from being read as a profitable/live RL result.</p>
+      <p class="summary-note">Collapsed rail still exposes NO-GO, read-only, NOT_RUN, six false locks, and no-live/no-profit claims.</p>
     </section>
 
     {#if collapsed}
       <div id="v51-detail-rail-panel" class="sr-only">
-        Expanded V5.1 details are collapsed. The visible summary still states NO-GO, read-only, NOT_RUN and six false locks.
+        Expanded V5.1 details are collapsed. The visible summary still states NO-GO, read-only, NOT_RUN, six false locks, and no-live/no-profit claims.
       </div>
     {:else}
       <div id="v51-detail-rail-panel" class="rail-panel">
         <section class="rail-card version-card" aria-labelledby="v51-version-title">
-          <span class="rail-eyebrow">Kronos</span>
-          <h3 id="v51-version-title">AI Quant Reinforcement Learning</h3>
-          <p class="version-line">{railContract.api_version} · Updated 2026-07-17</p>
+          <span class="rail-eyebrow">{V51_SHELL_BRAND.subtitle}</span>
+          <h3 id="v51-version-title">{V51_SHELL_BRAND.name}</h3>
+          <p class="version-line">{railContract.api_version} · Updated {V51_SHELL_BRAND.updateDate}</p>
           <p class="muted">Research UI only. V3 default/routes and V4 behavior remain unchanged unless shell v5 is active.</p>
         </section>
 
-        <section class="rail-card" aria-labelledby="v51-protocol-title">
-          <h3 id="v51-protocol-title">Causal source contract</h3>
-          <dl class="fact-list">
-            <div><dt>Decision cutoff</dt><dd>{railContract.causal_cutoff_kst} KST</dd></div>
-            <div><dt>Price basis</dt><dd>{railContract.price_basis}</dd></div>
-            <div><dt>Official close</dt><dd>{String(railContract.official_close)}</dd></div>
-            <div><dt>Nearest fallback</dt><dd>{String(railContract.source_policy.nearest_fallback_allowed)}</dd></div>
-            <div><dt>Symbol identity</dt><dd>Six-digit strings, e.g. 000250</dd></div>
-          </dl>
-        </section>
+        <details class="rail-card rail-details" aria-labelledby="v51-protocol-title">
+          <summary>
+            <span id="v51-protocol-title" class="details-title">Causal source contract</span>
+            <span class="details-cue" aria-hidden="true"></span>
+          </summary>
+          <div class="details-body">
+            <dl class="fact-list">
+              <div><dt>Read-only</dt><dd>{String(railContract.read_only)}</dd></div>
+              <div><dt>Decision cutoff</dt><dd>{railContract.causal_cutoff_kst} KST</dd></div>
+              <div><dt>Price basis</dt><dd>{railContract.price_basis}</dd></div>
+              <div><dt>Official close</dt><dd>{String(railContract.official_close)}</dd></div>
+              <div><dt>Nearest fallback</dt><dd>{String(railContract.source_policy.nearest_fallback_allowed)}</dd></div>
+              <div><dt>Symbol identity</dt><dd>Six-digit strings, e.g. 000250</dd></div>
+            </dl>
+          </div>
+        </details>
 
-        <section class="rail-card" aria-labelledby="v51-accounting-title">
-          <h3 id="v51-accounting-title">Capital and costs</h3>
-          <dl class="fact-list">
-            <div><dt>Initial capital</dt><dd>₩60,000,000</dd></div>
-            <div><dt>Slots</dt><dd>{railContract.accounting.slot_count} × ₩5,000,000</dd></div>
-            <div><dt>Max invested</dt><dd>₩50,000,000 · {railContract.accounting.max_target_investment_display_percent}</dd></div>
-            <div><dt>Reserve cash</dt><dd>₩10,000,000 · {railContract.accounting.reserve_cash_display_percent}</dd></div>
-          </dl>
-          <ul class="cost-list" aria-label="User-facing cost percentages with internal cost IDs">
-            {#each costRows as cost}
-              <li><span>{cost.display_percent}</span><code>{cost.internal_id} · {cost.round_trip_cost_bp} bp</code></li>
-            {/each}
-          </ul>
-        </section>
+        <details class="rail-card rail-details" aria-labelledby="v51-accounting-title">
+          <summary>
+            <span id="v51-accounting-title" class="details-title">Capital and costs</span>
+            <span class="details-cue" aria-hidden="true"></span>
+          </summary>
+          <div class="details-body">
+            <dl class="fact-list">
+              <div><dt>Initial capital</dt><dd>₩60,000,000</dd></div>
+              <div><dt>Slots</dt><dd>{railContract.accounting.slot_count} × ₩5,000,000</dd></div>
+              <div><dt>Max invested</dt><dd>₩50,000,000 · {railContract.accounting.max_target_investment_display_percent}</dd></div>
+              <div><dt>Reserve cash</dt><dd>₩10,000,000 · {railContract.accounting.reserve_cash_display_percent}</dd></div>
+            </dl>
+            <ul class="cost-list" aria-label="User-facing cost percentages with internal cost IDs">
+              {#each costRows as cost}
+                <li><span>{cost.display_percent}</span><code>{cost.internal_id} · {cost.round_trip_cost_bp} bp</code></li>
+              {/each}
+            </ul>
+          </div>
+        </details>
 
-        <section class="rail-card" aria-labelledby="v51-horizon-title">
-          <h3 id="v51-horizon-title">Horizons</h3>
-          <p class="horizon-line" aria-label="Exact 15:20 horizon labels">
-            {#each horizonRows as horizon}
-              <span>{horizon.id}: {horizon.label}</span>
-            {/each}
-          </p>
-          <p class="muted">H1 is primary; H3/H5 are validation variants. All entries use D 15:20 and exact D+N 15:20 proxy exits.</p>
-        </section>
+        <details class="rail-card rail-details" aria-labelledby="v51-horizon-title">
+          <summary>
+            <span id="v51-horizon-title" class="details-title">Horizons</span>
+            <span class="details-cue" aria-hidden="true"></span>
+          </summary>
+          <div class="details-body">
+            <p class="horizon-line" aria-label="Exact 15:20 horizon labels">
+              {#each horizonRows as horizon}
+                <span>{horizon.id}: {horizon.label}</span>
+              {/each}
+            </p>
+            <p class="muted">H1 is primary; H3/H5 are validation variants. All entries use D 15:20 and exact D+N 15:20 proxy exits.</p>
+          </div>
+        </details>
 
-        <section class="rail-card" aria-labelledby="v51-source-title">
-          <h3 id="v51-source-title">Offline source policy</h3>
-          <dl class="fact-list">
-            <div><dt>Index provider</dt><dd>{railContract.overlay_policy.allowed_index_provider}</dd></div>
-            <div><dt>Offline artifact</dt><dd>{String(railContract.overlay_policy.offline_artifact_required)}</dd></div>
-            <div><dt>PyKRX</dt><dd>offline-only</dd></div>
-            <div><dt>Naver fallback</dt><dd>{String(railContract.source_policy.naver_fallback_allowed)}</dd></div>
-            <div><dt>Network required</dt><dd>{String(railContract.source_policy.network_required)}</dd></div>
-            <div><dt>Missing index</dt><dd>{railContract.overlay_policy.missing_index_state}</dd></div>
-          </dl>
-        </section>
+        <details class="rail-card rail-details" aria-labelledby="v51-source-title">
+          <summary>
+            <span id="v51-source-title" class="details-title">Offline source policy</span>
+            <span class="details-cue" aria-hidden="true"></span>
+          </summary>
+          <div class="details-body">
+            <dl class="fact-list">
+              <div><dt>Index provider</dt><dd>{railContract.overlay_policy.allowed_index_provider}</dd></div>
+              <div><dt>Offline artifact</dt><dd>{String(railContract.overlay_policy.offline_artifact_required)}</dd></div>
+              <div><dt>PyKRX</dt><dd>offline-only</dd></div>
+              <div><dt>Naver fallback</dt><dd>{String(railContract.source_policy.naver_fallback_allowed)}</dd></div>
+              <div><dt>Network required</dt><dd>{String(railContract.source_policy.network_required)}</dd></div>
+              <div><dt>Missing index</dt><dd>{railContract.overlay_policy.missing_index_state}</dd></div>
+            </dl>
+          </div>
+        </details>
 
-        <section class="rail-card danger-card" aria-labelledby="v51-locks-title">
-          <h3 id="v51-locks-title">Six false locks</h3>
-          <ul class="lock-list">
-            {#each lockRows as row}
-              <li><span>{row.label}</span><code>{row.key}={String(row.value)}</code></li>
-            {/each}
-          </ul>
-        </section>
+        <details class="rail-card rail-details danger-card" aria-labelledby="v51-locks-title">
+          <summary>
+            <span id="v51-locks-title" class="details-title">Six false locks</span>
+            <span class="details-cue" aria-hidden="true"></span>
+          </summary>
+          <div class="details-body">
+            <ul class="lock-list">
+              {#each lockRows as row}
+                <li><span>{row.label}</span><code>{row.key}={String(row.value)}</code></li>
+              {/each}
+            </ul>
+          </div>
+        </details>
 
-        <section class="rail-card" aria-labelledby="v51-claims-title">
-          <h3 id="v51-claims-title">No-claim facts</h3>
-          <ul class="lock-list">
-            {#each claimRows as row}
-              <li><span>{row.label}</span><code>{row.key}={String(row.value)}</code></li>
-            {/each}
-          </ul>
-          <p class="muted">No live trading, no broker integration, no paper-forward and no profitability claim.</p>
-        </section>
+        <details class="rail-card rail-details" aria-labelledby="v51-claims-title">
+          <summary>
+            <span id="v51-claims-title" class="details-title">No-claim facts</span>
+            <span class="details-cue" aria-hidden="true"></span>
+          </summary>
+          <div class="details-body">
+            <ul class="lock-list">
+              {#each claimRows as row}
+                <li><span>{row.label}</span><code>{row.key}={String(row.value)}</code></li>
+              {/each}
+            </ul>
+            <p class="muted">No live trading, no broker integration, no paper-forward and no profitability claim.</p>
+          </div>
+        </details>
       </div>
     {/if}
   </div>
@@ -303,19 +336,22 @@
   }
 
   .rail-heading h2,
-  .rail-card h3 {
+  .rail-card h3,
+  .details-title {
     color: var(--fg-strong);
     font-family: var(--font-display);
     letter-spacing: -0.01em;
   }
 
   .rail-heading h2 {
-    font-size: 15px;
-    line-height: 1.25;
+    font-size: 18px;
+    line-height: 1.2;
   }
 
-  .rail-card h3 {
+  .rail-card h3,
+  .details-title {
     font-size: 14px;
+    font-weight: 800;
     line-height: 1.3;
   }
 
@@ -365,20 +401,23 @@
 
   .status-stack {
     display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
     gap: 6px;
   }
 
   .status-pill {
     display: inline-flex;
     align-items: center;
-    min-height: 24px;
+    justify-content: center;
+    width: 100%;
+    min-height: 27px;
     border-radius: var(--r-pill);
-    padding: 5px 8px;
+    padding: 6px 9px;
     background: var(--danger-soft);
     color: var(--danger);
-    font: 800 10.5px/1.1 var(--font-mono);
-    letter-spacing: 0.01em;
-    overflow-wrap: anywhere;
+    font: 800 11px/1.12 var(--font-mono);
+    letter-spacing: 0;
+    white-space: normal;
   }
 
   .status-pill:nth-child(2) {
@@ -387,6 +426,11 @@
   }
 
   .status-pill:nth-child(3) {
+    background: var(--warn-soft);
+    color: var(--warn);
+  }
+
+  .status-pill:nth-child(4) {
     background: var(--warn-soft);
     color: var(--warn);
   }
@@ -416,6 +460,47 @@
     gap: 10px;
   }
 
+  .rail-details {
+    padding: 0;
+  }
+
+  .rail-details summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px;
+    list-style: none;
+  }
+
+  .rail-details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .rail-details summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: var(--r-lg);
+  }
+
+  .details-cue::before {
+    content: 'Show';
+    color: var(--muted);
+    font: 800 10.5px/1 var(--font-display);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .rail-details[open] .details-cue::before {
+    content: 'Hide';
+  }
+
+  .details-body {
+    display: grid;
+    gap: 10px;
+    padding: 0 13px 13px;
+  }
+
   .version-card {
     border-color: color-mix(in oklab, var(--accent) 34%, var(--border));
     background: linear-gradient(180deg, var(--surface), color-mix(in oklab, var(--accent-soft) 36%, var(--surface)));
@@ -438,9 +523,10 @@
   .fact-list div,
   .lock-list li,
   .cost-list li {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: minmax(120px, 0.42fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 8px 12px;
     min-width: 0;
   }
 
@@ -457,8 +543,9 @@
   .cost-list span {
     color: var(--fg-strong);
     font: 700 11px/1.35 var(--font-mono);
-    text-align: right;
+    text-align: left;
     overflow-wrap: anywhere;
+    word-break: normal;
   }
 
   .cost-list,
@@ -486,7 +573,8 @@
     padding: 6px 9px;
     background: var(--surface-sunken);
     color: var(--fg-strong);
-    font: 800 12px/1 var(--font-mono);
+    font: 800 12px/1.25 var(--font-mono);
+    overflow-wrap: anywhere;
   }
 
   .sr-only {
@@ -518,7 +606,7 @@
     }
 
     .right-detail-rail[data-collapsed="true"] {
-      width: min(220px, calc(100vw - 24px));
+      width: min(var(--v5-right-rail-collapsed-w), calc(100vw - 24px));
       min-width: 0;
     }
 
@@ -547,6 +635,12 @@
 
     .status-stack {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .fact-list div,
+    .lock-list li,
+    .cost-list li {
+      grid-template-columns: 1fr;
     }
   }
 </style>
