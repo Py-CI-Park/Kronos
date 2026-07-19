@@ -9,6 +9,7 @@ import json
 import math
 import sqlite3
 from datetime import datetime, timezone
+import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 from urllib.parse import quote
@@ -132,25 +133,96 @@ def write_joined_dataset(
     horizons: Iterable[int] = DEFAULT_HORIZONS,
     universe_manifest_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Build and write a deterministic CSV plus its provenance manifest."""
+    """Stream the joined dataset to disk symbol-by-symbol with a provenance manifest.
+
+    Memory stays bounded to one symbol's rows; the full-universe build previously
+    exhausted memory by holding every row plus the whole CSV in memory.
+    """
     if not run_id or Path(run_id).name != run_id:
         raise ValueError("run_id must be a non-empty single path component")
-    result = build_joined_dataset(
-        universe, daily_db_path=daily_db_path, fivemin_db_path=fivemin_db_path,
-        start_yyyymmdd=start_yyyymmdd, end_yyyymmdd=end_yyyymmdd, horizons=horizons,
-        universe_manifest_path=universe_manifest_path,
-    )
+    normalized_horizons = _validate_horizons(horizons)
+    start = _coerce_yyyymmdd(start_yyyymmdd, "start_yyyymmdd")
+    end = _coerce_yyyymmdd(end_yyyymmdd, "end_yyyymmdd")
+    if start > end:
+        raise ValueError("start_yyyymmdd must not be after end_yyyymmdd")
+
+    manifest_used: Path | None = None
+    if universe is None:
+        manifest_used = Path(universe_manifest_path or DEFAULT_UNIVERSE_MANIFEST_PATH)
+        tables = load_default_universe(manifest_used)
+    else:
+        tables = [str(table) for table in universe]
+        if universe_manifest_path is not None:
+            manifest_used = Path(universe_manifest_path)
+    if len(set(tables)) != len(tables):
+        raise ValueError("universe must not contain duplicate tables")
+
     destination = Path(out_root) / run_id
     destination.mkdir(parents=True, exist_ok=True)
     dataset_path = destination / "dataset.csv"
-    dataset_path.write_bytes(_dataset_csv_bytes(result["rows"], tuple(result["manifest"]["horizons"])))
-    result["manifest"]["generated_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    result["manifest"]["dataset_sha256"] = _sha256_file(dataset_path)
+
+    base_fields = tuple(field for field in CSV_FIELDS
+                        if not field.startswith("future_return_h") and not field.startswith("label_reason_h"))
+    label_fields = tuple(item for horizon in normalized_horizons for item in
+                         (f"future_return_h{horizon}_1520_proxy", f"label_reason_h{horizon}"))
+    fieldnames = [*base_fields, *label_fields]
+
+    missing_by_split = {split: {f"missing_h{h}_labels": 0 for h in normalized_horizons}
+                        for split in ("train", "val", "test", "embargo_dropped")}
+    missing_by_symbol: dict[str, dict[str, int]] = {}
+    split_counts = {split: 0 for split in ("train", "val", "test", "embargo_dropped")}
+    daily_path = Path(daily_db_path)
+    sorted_tables = sorted(tables)
+    with _connect_daily_readonly(daily_path) as conn, \
+            dataset_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n", extrasaction="raise")
+        writer.writeheader()
+        for position, table in enumerate(sorted_tables, start=1):
+            symbol = daily_1520_source.resolve_5min_table(table).symbol
+            daily_rows = _read_daily_rows(conn, table)
+            fills = daily_1520_source.read_exact_1520_rows(
+                fivemin_db_path, table, start_date=start, end_date=end
+            )
+            symbol_rows = _build_symbol_rows(
+                symbol, table, daily_rows, fills, normalized_horizons, missing_by_split, missing_by_symbol
+            )
+            for row in symbol_rows:
+                split_counts[row["split"]] += 1
+                writer.writerow({field: "" if row.get(field) is None else row.get(field) for field in fieldnames})
+            if position % 25 == 0 or position == len(sorted_tables):
+                sys.stderr.write(f"[daily_v6_dataset] {position}/{len(sorted_tables)} tables written\n")
+                sys.stderr.flush()
+
+    manifest = {
+        "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "schema_version": SCHEMA_VERSION,
+        "universe": {
+            "size": len(tables),
+            "manifest_path": str(manifest_used) if manifest_used else None,
+            "manifest_sha256": _sha256_file(manifest_used) if manifest_used else None,
+        },
+        "db_snapshot_stats": {
+            "daily": _snapshot_stats(daily_path),
+            "fivemin": _snapshot_stats(Path(fivemin_db_path)),
+        },
+        "features": [{"name": name, "timing": FEATURE_TIMING,
+                      "daily_price_basis_caveat": DAILY_PRICE_BASIS_CAVEAT}
+                     for name in CSV_FIELDS[4:11]],
+        "label_policy": {
+            "source": "exact_15_20_bars_only", "entry": "15:20 close proxy",
+            "exit": "nth_following_observed_exact_15_20_session", "exit_gap_guard_calendar_days": "n*2+5",
+            "missing_exit_reason": "missing_exit",
+        },
+        "horizons": list(normalized_horizons),
+        "split_row_counts": split_counts,
+        "per_split_missing_label_counts": missing_by_split,
+        "per_symbol_missing_label_counts": missing_by_symbol,
+        "false_research_locks": dict(daily_1520_source.FALSE_RESEARCH_LOCKS),
+        "dataset_sha256": _sha256_file(dataset_path),
+    }
     manifest_path = destination / "dataset_manifest.json"
-    manifest_path.write_text(json.dumps(result["manifest"], ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    result["dataset_path"] = dataset_path
-    result["manifest_path"] = manifest_path
-    return result
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {"manifest": manifest, "dataset_path": dataset_path, "manifest_path": manifest_path}
 
 
 def _build_symbol_rows(
@@ -168,8 +240,15 @@ def _build_symbol_rows(
     output: list[dict[str, Any]] = []
     missing_by_symbol[symbol] = {f"missing_h{h}_labels": 0 for h in horizons}
     max_horizon = max(horizons)
+    # Feature lookback needs at most 21 prior sessions (ret_20d_prev); keep a
+    # monotone pointer instead of rescanning the full daily history per fill.
+    feature_window = 25
+    daily_dates = [row["date"] for row in daily_rows]
+    pointer = 0
     for index, (fill, session) in enumerate(zip(fills, sessions)):
-        previous = [row for row in daily_rows if row["date"] < session]
+        while pointer < len(daily_dates) and daily_dates[pointer] < session:
+            pointer += 1
+        previous = daily_rows[max(0, pointer - feature_window):pointer]
         row: dict[str, Any] = {
             "symbol": symbol, "table": table, "session_yyyymmdd": session,
             **_features(previous), "entry_close_1520": _number(fill.close, "15:20 close"),
