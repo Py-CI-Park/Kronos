@@ -6,6 +6,8 @@
   import DataPage from './pages/DataPage.svelte';
   import ExperimentPage from './pages/ExperimentPage.svelte';
   import TrainingPage from './pages/TrainingPage.svelte';
+  import EvaluationPage from './pages/EvaluationPage.svelte';
+  import ComparePage from './pages/ComparePage.svelte';
   import { V6_BRAND, V6_PAGES, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
 
   const GROUPS = ['COMMAND', 'REINFORCEMENT LEARNING', 'INSIGHT', 'PLATFORM', 'ADVANCED'] as const;
@@ -70,6 +72,10 @@
       <ExperimentPage />
     {:else if page.id === 'training'}
       <TrainingPage />
+    {:else if page.id === 'evaluation'}
+      <EvaluationPage />
+    {:else if page.id === 'compare'}
+      <ComparePage />
     {:else}
       <V6PagePlaceholder {page} />
     {/if}

@@ -112,13 +112,44 @@ export interface V6TrainingRun {
   readonly state?: string;
   readonly seeds?: unknown;
   readonly generated_utc?: string;
+  readonly dataset_run_id?: string;
+  readonly verdict_candidate?: { readonly value?: string; readonly reasons?: readonly unknown[] };
 }
-
 export interface V6Runs {
   readonly datasets?: readonly V6DatasetRun[];
   readonly runs?: readonly V6TrainingRun[];
   readonly training_state?: string;
 }
+export interface V6RunSeed {
+  readonly episodes_ran?: number;
+  readonly best_episode?: number;
+  readonly final_val_metrics?: {
+    readonly nav?: number;
+    readonly total_net_return_pct?: number;
+    readonly max_drawdown?: number;
+    readonly trade_count?: number;
+    readonly cost_scenario_navs?: Record<string, number>;
+  };
+}
+
+export interface V6RunDetail {
+  readonly status?: string;
+  readonly dataset_run_id?: string;
+  readonly train_run_id?: string;
+  readonly manifest?: {
+    readonly per_seed?: Record<string, V6RunSeed>;
+    readonly baselines?: Record<string, { readonly nav?: number }>;
+    readonly shuffled_label_control?: Record<string, V6RunSeed>;
+    readonly verdict_candidate?: { readonly value?: string; readonly reasons?: readonly unknown[] };
+    readonly test?: { readonly state?: string };
+    readonly seeds?: unknown;
+    readonly false_research_locks?: unknown;
+  };
+  readonly manifest_sha256?: string;
+  readonly events_tail?: readonly { readonly episode?: unknown; readonly val_nav?: unknown }[];
+  readonly reason?: string;
+}
+
 
 async function getV6<T>(path: string): Promise<V6ApiResult<T>> {
   try {
@@ -136,3 +167,5 @@ export const getV6Universe = (limit: number): Promise<V6ApiResult<V6Universe>> =
 export const getV6DataReadiness = (): Promise<V6ApiResult<V6DataReadiness>> => getV6('/api/v6/data-readiness');
 export const getV6Experiment = (): Promise<V6ApiResult<V6Experiment>> => getV6('/api/v6/experiment');
 export const getV6Runs = (): Promise<V6ApiResult<V6Runs>> => getV6('/api/v6/runs');
+export const getV6RunDetail = (dataset: string, train: string): Promise<V6ApiResult<V6RunDetail>> =>
+  getV6(`/api/v6/run-detail?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}`);

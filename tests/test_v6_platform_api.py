@@ -28,7 +28,7 @@ def test_v6_routes_return_expected_readiness_payloads(client) -> None:
 
 
 def test_v6_rejects_non_get_methods_with_json_envelope(client) -> None:
-    for path in ("/api/v6/status", "/api/v6/experiment", "/api/v6/runs"):
+    for path in ("/api/v6/status", "/api/v6/experiment", "/api/v6/runs", "/api/v6/run-detail"):
         response = client.post(path)
         assert response.status_code == 405
         assert response.headers["Allow"] == "GET"
@@ -63,6 +63,54 @@ def test_v6_rejects_unknown_query_parameters(client) -> None:
 
     assert response.status_code == 400
     assert response.get_json() == {"status": "ERROR", "error": {"code": "BAD_REQUEST"}}
+    response = client.get("/api/v6/run-detail?dataset=dataset-1&train=train-1&unexpected=value")
+
+    assert response.status_code == 400
+    assert response.get_json() == {"status": "ERROR", "error": {"code": "BAD_REQUEST"}}
+
+@pytest.mark.parametrize("dataset, train", [("../x", "train-1"), ("dataset-1", "a b")])
+def test_v6_run_detail_rejects_bad_ids(client, dataset, train) -> None:
+    response = client.get("/api/v6/run-detail", query_string={"dataset": dataset, "train": train})
+
+    assert response.status_code == 400
+    assert response.get_json() == {"status": "ERROR", "error": {"code": "BAD_REQUEST"}}
+
+
+def test_v6_run_detail_blocks_when_manifest_is_missing(client, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", tmp_path / "missing-runs")
+
+    response = client.get("/api/v6/run-detail?dataset=dataset-1&train=train-1")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "BLOCKED", "reason": "RUN_MANIFEST_MISSING"}
+
+
+def test_v6_run_detail_returns_manifest_sha_and_event_tail(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    run_dir = runs_root / "dataset-1" / "train_1"
+    run_dir.mkdir(parents=True)
+    manifest = {"verdict_candidate": "NO_GO", "metrics": {"score": 0.0}}
+    raw = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+    (run_dir / "run_manifest.json").write_bytes(raw)
+    (run_dir / "events.jsonl").write_text(
+        '{"event":"started"}\nnot-json\n{"event":"finished"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+
+    response = client.get("/api/v6/run-detail?dataset=dataset-1&train=1")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload == {
+        "schema_version": "kronos_v6_run_detail.v1",
+        "status": "OK",
+        "dataset_run_id": "dataset-1",
+        "train_run_id": "train_1",
+        "manifest": manifest,
+        "manifest_sha256": hashlib.sha256(raw).hexdigest(),
+        "events_tail": [{"event": "started"}, {"event": "finished"}],
+    }
 
 def test_v6_experiment_reports_unfrozen_preregistration_and_read_only_plan(client, monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(v6_platform_api, "PREREG_PATH", tmp_path / "missing-prereg.json")
@@ -140,4 +188,23 @@ def test_v6_runs_lists_dataset_manifest(client, monkeypatch, tmp_path) -> None:
         "generated_utc": "2026-07-19T00:00:00Z",
         "split_row_counts": {"train": 10, "validation": 5},
         "sha256": hashlib.sha256(raw).hexdigest(),
+    }]
+
+    run_manifest_path = runs_root / "dataset-1" / "train-1" / "run_manifest.json"
+    run_manifest_path.parent.mkdir()
+    run_manifest_path.write_text(
+        json.dumps({"dataset_run_id": "dataset-1", "verdict_candidate": "NO_GO"}),
+        encoding="utf-8",
+    )
+
+    runs = client.get("/api/v6/runs").get_json()["runs"]
+
+    assert runs == [{
+        "run_id": "train-1",
+        "dataset_run_id": "dataset-1",
+        "path": run_manifest_path.as_posix(),
+        "state": None,
+        "seeds": [],
+        "generated_utc": None,
+        "verdict_candidate": "NO_GO",
     }]

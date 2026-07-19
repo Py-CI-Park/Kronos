@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
@@ -30,6 +31,7 @@ SIX_FALSE_LOCKS: Final = {
     "go_summary_allowed": False,
 }
 ALL_ROUTE_METHODS: Final = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+RUN_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 
 
 def _response(payload: Mapping[str, Any], status_code: int = 200) -> Response:
@@ -76,6 +78,55 @@ def _query_limit() -> int:
         raise ValueError
     return value
 
+def _run_detail_query() -> tuple[str, str]:
+    if set(request.args) != {"dataset", "train"}:
+        raise ValueError
+    if any(len(request.args.getlist(key)) != 1 for key in ("dataset", "train")):
+        raise ValueError
+    dataset_run_id = request.args["dataset"]
+    train = request.args["train"]
+    if (
+        ".." in dataset_run_id
+        or ".." in train
+        or RUN_ID_PATTERN.fullmatch(dataset_run_id) is None
+        or RUN_ID_PATTERN.fullmatch(train) is None
+    ):
+        raise ValueError
+    train_run_id = train if train.startswith("train_") else f"train_{train}"
+    return dataset_run_id, train_run_id
+
+
+def _events_tail(path: Path) -> list[Any]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    events: list[Any] = []
+    for line in lines:
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events[-50:]
+
+
+def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any]:
+    manifest_path = RUNS_ROOT / dataset_run_id / train_run_id / "run_manifest.json"
+    try:
+        raw = manifest_path.read_bytes()
+        manifest = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {"status": "BLOCKED", "reason": "RUN_MANIFEST_MISSING"}
+    return {
+        "schema_version": "kronos_v6_run_detail.v1",
+        "status": "OK",
+        "dataset_run_id": dataset_run_id,
+        "train_run_id": train_run_id,
+        "manifest": manifest,
+        "manifest_sha256": hashlib.sha256(raw).hexdigest(),
+        "events_tail": _events_tail(manifest_path.with_name("events.jsonl")),
+    }
+
 
 def _preregistration() -> dict[str, Any]:
     prereg: dict[str, Any] = {
@@ -114,6 +165,18 @@ def _artifact_path(path: Path) -> str:
     except ValueError:
         return path.as_posix()
 
+def _run_manifest_candidates() -> list[Path]:
+    try:
+        candidates = [
+            path
+            for pattern in ("*/run_manifest.json", "*/*/run_manifest.json")
+            for path in RUNS_ROOT.glob(pattern)
+            if path.is_file()
+        ]
+        return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
+    except OSError:
+        return []
+
 
 def _runs_payload() -> dict[str, Any]:
     datasets: list[dict[str, Any]] = []
@@ -137,19 +200,22 @@ def _runs_payload() -> dict[str, Any]:
         })
 
     runs: list[dict[str, Any]] = []
-    for path in _manifest_candidates("run_manifest.json"):
+    for path in _run_manifest_candidates():
         if len(runs) == 50:
             break
         value = _read_json(path)
         if value is None:
             continue
         seeds = value.get("seeds")
+        dataset_run_id = value.get("dataset_run_id", path.parent.parent.name)
         runs.append({
             "run_id": value.get("run_id", path.parent.name),
+            "dataset_run_id": dataset_run_id,
             "path": _artifact_path(path),
             "state": value.get("state"),
             "seeds": list(seeds) if isinstance(seeds, list) else [],
             "generated_utc": value.get("generated_utc"),
+            "verdict_candidate": value.get("verdict_candidate"),
         })
 
     return {
@@ -303,6 +369,15 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             return _error(400, "BAD_REQUEST")
         return _response(_runs_payload())
 
+    def run_detail_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        try:
+            dataset_run_id, train_run_id = _run_detail_query()
+        except ValueError:
+            return _error(400, "BAD_REQUEST")
+        return _response(_run_detail_payload(dataset_run_id, train_run_id))
+
 
     def universe_handler() -> Response:
         if request.method != "GET":
@@ -341,6 +416,7 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
         ("/status", "status", status_handler),
         ("/experiment", "experiment", experiment_handler),
         ("/runs", "runs", runs_handler),
+        ("/run-detail", "run_detail", run_detail_handler),
         ("/universe", "universe", universe_handler),
         ("/data-readiness", "data_readiness", readiness_handler),
     ):
