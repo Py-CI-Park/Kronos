@@ -1,6 +1,8 @@
 import json
 import os
 import sys
+import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -10,9 +12,41 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from webui import rl_dashboard  # noqa: E402
+from webui import rl_dashboard, rl_dashboard_runs  # noqa: E402
 from webui.app import app as flask_app  # noqa: E402
 
+
+IDENTITY_FIELDS = ("run_uid", "revision", "source_sha256", "source_protocol")
+
+
+def _identity_fields(record: dict) -> dict:
+    return {key: record[key] for key in IDENTITY_FIELDS}
+
+
+def _assert_identity_contract(record: dict) -> None:
+    run_uid = record["run_uid"]
+    assert isinstance(run_uid, str)
+    assert str(uuid.UUID(run_uid)) == run_uid
+
+    revision = record["revision"]
+    assert isinstance(revision, int) and not isinstance(revision, bool)
+    assert revision > 0
+
+    source_sha256 = record["source_sha256"]
+    assert isinstance(source_sha256, str)
+    assert len(source_sha256) == 64
+    assert source_sha256 == source_sha256.lower()
+    int(source_sha256, 16)
+
+    assert record["source_protocol"] == rl_dashboard_runs.RUN_IDENTITY_PROTOCOL
+
+
+def _write_minimal_baseline_run(run_dir: Path) -> None:
+    run_dir.mkdir(parents=True)
+    (run_dir / "baseline_summary.json").write_text(
+        json.dumps({"mode": "stom_rl_baseline_run", "summary": {"policy_count": 1}}),
+        encoding="utf-8-sig",
+    )
 
 def _write_csv(path: Path, header: str, rows: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -216,6 +250,112 @@ def _write_rl_fixture(root: Path) -> None:
         json.dumps({"schema_version": "stom_rl_live_event.v1", "event_count": 1, "phases": {"eval": 1}}),
         encoding="utf-8-sig",
     )
+    daily_sb3 = root / "daily_ohlcv_portfolio_sb3" / "daily_sb3_run"
+    daily_sb3.mkdir(parents=True)
+    (daily_sb3 / "sb3_smoke_summary.json").write_text(
+        json.dumps(
+            {
+                "mode": "stom_rl_sb3_smoke",
+                "schema_version": "daily_portfolio_sb3_as_sb3_smoke.v1",
+                "summary": {
+                    "algorithm_count": 1,
+                    "best_model": "fold_00_dqn",
+                    "best_algorithm_by_avg_episode_net": "dqn",
+                    "feature_columns": ["feature_score"],
+                    "live_event_count": 2,
+                    "live_event_phases": {"fold_completed": 1, "completed": 1},
+                    "primary_cost_label": "base_23bp",
+                    "primary_cost_bps": 23.0,
+                    "oos_rows_used_for_fit": 0,
+                    "model_build_allowed": False,
+                    "paper_forward_allowed": False,
+                    "live_broker_order_allowed": False,
+                    "profit_claim_allowed": False,
+                },
+                "models": [
+                    {
+                        "algorithm": "dqn",
+                        "model": "fold_00_dqn",
+                        "policy": "stable_baselines3_dqn",
+                        "model_path": "models/fold_00/portfolio_dqn_model.zip",
+                        "model_sha256": "a" * 64,
+                        "training_timesteps": 512,
+                        "avg_episode_net_return_pct": 0.0,
+                        "trade_count": 0,
+                        "cost_bps": 23.0,
+                        "passes_cost_gate": False,
+                        "is_smoke": False,
+                        "research_only": True,
+                    }
+                ],
+                "live_events": {"schema_version": "stom_rl_live_event.v1", "event_count": 2, "phases": {"fold_completed": 1, "completed": 1}},
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+    (daily_sb3 / "rl_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "daily_portfolio_sb3_rl_manifest.v1",
+                "artifact_type": "sb3_smoke",
+                "stage": "G016_SLICE3_DAILY_PORTFOLIO_SB3_RESEARCH",
+                "status": "COMPLETED_RESEARCH_ONLY",
+                "authority": "D3_D2_DB_LINEAGE_APPROVED_RESEARCH_ONLY",
+                "oos_rows_used_for_fit": 0,
+                "false_locks": {
+                    "model_build_allowed": False,
+                    "paper_forward_allowed": False,
+                    "live_broker_order_allowed": False,
+                    "profit_claim_allowed": False,
+                },
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+    (daily_sb3 / "rl_live_events.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "schema_version": "stom_rl_live_event.v1",
+                    "run_id": "daily_sb3_run",
+                    "algorithm": "portfolio_dqn",
+                    "phase": phase,
+                    "global_step": step,
+                    "action": None,
+                    "action_name": None,
+                    "reward": 0.0,
+                    "equity": 1000000.0,
+                    "source": "daily_portfolio_sb3",
+                    "info": {
+                        "fold": 0 if phase == "fold_completed" else None,
+                        "cost_scenario": "base_23bp",
+                        "reward_kind": "raw_reward",
+                        "reward_unit": "score",
+                        "equity_kind": "krw_nav",
+                        "equity_unit": "krw",
+                        "action_recorded": False,
+                        "device": {"requested": "cpu", "used": "cpu", "eval": "cpu"},
+                        "source_lineage": {"d2_daily_db_sha256": "b" * 64},
+                    },
+                }
+            )
+            for step, phase in [(1, "fold_completed"), (2, "completed")]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (daily_sb3 / "rl_live_summary.json").write_text(
+        json.dumps({"schema_version": "stom_rl_live_event.v1", "event_count": 2, "phases": {"fold_completed": 1, "completed": 1}}),
+        encoding="utf-8-sig",
+    )
+    (daily_sb3 / "source_hashes.json").write_text(
+        json.dumps({"schema_version": "daily_portfolio_sb3_source_hashes.v1", "config_sha256": "c" * 64, "model_hashes": {"fold_00": "a" * 64}}),
+        encoding="utf-8-sig",
+    )
+    (daily_sb3 / "training_manifest.json").write_text(
+        json.dumps({"schema_version": "daily_portfolio_sb3_training_manifest.v1", "oos_rows_used_for_fit": 0, "primary_cost_label": "base_23bp"}),
+        encoding="utf-8-sig",
+    )
 
     readiness = root / "orderbook_readiness_run"
     readiness.mkdir()
@@ -319,6 +459,67 @@ def test_rl_dashboard_helpers_list_detail_and_tables(tmp_path, monkeypatch):
     assert readiness_detail["strategy_context"]["is_live_ready"] is False
     assert readiness_detail["strategy_context"]["is_profit_model"] is False
     assert readiness_rows["rows"][0]["quote_coverage"] == 0.98
+
+
+def test_rl_dashboard_identity_fields_match_list_detail_and_api(tmp_path, monkeypatch):
+    _write_rl_fixture(tmp_path)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    list_record = next(run for run in rl_dashboard.list_rl_runs(limit=10) if run["name"] == "bandit_run")
+    detail = rl_dashboard.load_rl_run("bandit_run")
+    _assert_identity_contract(list_record)
+    _assert_identity_contract(detail)
+    assert _identity_fields(detail) == _identity_fields(list_record)
+
+    client = flask_app.test_client()
+    api_runs = client.get("/api/rl/runs")
+    assert api_runs.status_code == 200
+    api_list_record = next(run for run in api_runs.get_json()["runs"] if run["name"] == "bandit_run")
+    api_detail = client.get("/api/rl/runs/bandit_run")
+    assert api_detail.status_code == 200
+    api_detail_payload = api_detail.get_json()
+    _assert_identity_contract(api_list_record)
+    _assert_identity_contract(api_detail_payload)
+    assert _identity_fields(api_list_record) == _identity_fields(api_detail_payload) == _identity_fields(list_record)
+
+
+def test_rl_dashboard_identity_changes_when_artifact_file_mutates(tmp_path, monkeypatch):
+    _write_rl_fixture(tmp_path)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+    run_dir = tmp_path / "bandit_run"
+
+    before = rl_dashboard.load_rl_run("bandit_run")
+    summary_path = run_dir / "eval_summary.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8-sig"))
+    payload["eval_summary"]["trade_count"] = 2
+    summary_path.write_text(json.dumps(payload), encoding="utf-8-sig")
+    latest_mtime = max(path.stat().st_mtime for path in run_dir.rglob("*") if path.is_file())
+    future_mtime = max(time.time(), latest_mtime) + 2.0
+    os.utime(summary_path, (future_mtime, future_mtime))
+
+    after = rl_dashboard.load_rl_run("bandit_run")
+    after_list = next(run for run in rl_dashboard.list_rl_runs(limit=10) if run["name"] == "bandit_run")
+    assert after["run_uid"] == before["run_uid"]
+    assert after["revision"] > before["revision"]
+    assert after["source_sha256"] != before["source_sha256"]
+    assert _identity_fields(after_list) == _identity_fields(after)
+
+
+def test_rl_dashboard_run_uid_disambiguates_same_named_runs_under_different_roots(tmp_path, monkeypatch):
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+    run_name = "same_run"
+    _write_minimal_baseline_run(left_root / run_name)
+    _write_minimal_baseline_run(right_root / run_name)
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [left_root, right_root])
+
+    records = [run for run in rl_dashboard.list_rl_runs(limit=10) if run["name"] == run_name]
+
+    assert len(records) == 2
+    for record in records:
+        _assert_identity_contract(record)
+    assert len({record["run_uid"] for record in records}) == 2
+    assert len({record["source_sha256"] for record in records}) == 1
 
 
 def _write_portfolio_fixture(root: Path) -> None:

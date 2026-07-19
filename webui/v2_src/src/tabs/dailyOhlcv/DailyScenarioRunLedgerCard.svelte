@@ -93,5 +93,5 @@
   tr.warn td { background:rgba(245, 158, 11, 0.06); }
   tr.danger td { background:rgba(239, 68, 68, 0.06); }
   .command-list { margin-top:16px; padding:12px; border:1px solid var(--border-faint); border-radius:12px; display:grid; gap:8px; }
-  code { display:block; white-space:pre-wrap; font-family:var(--font-mono); font-size:12px; color:var(--text); }
+  code { display:block; white-space:pre-wrap; font-family:var(--font-mono); font-size:12px; color:var(--fg); }
 </style>

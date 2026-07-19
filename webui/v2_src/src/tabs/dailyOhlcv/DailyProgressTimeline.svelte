@@ -78,11 +78,12 @@
 </section>
 
 <style>
-  .timeline { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-top:16px; }
-  .stage { border:1px solid var(--border); border-radius:var(--r-lg); padding:12px; background:var(--surface); }
-  .stage-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .timeline { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-top:16px; min-width:0; }
+  .stage { border:1px solid var(--border); border-radius:var(--r-lg); padding:12px; background:var(--surface); min-width:0; }
+  .stage-top { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; flex-wrap:wrap; }
+  .stage-top .pill { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
   .stage-label { margin-top:8px; font-weight:700; }
-  .stage-evidence { margin-top:6px; color:var(--muted); font-size:12px; line-height:1.45; }
+  .stage-evidence { margin-top:6px; color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
   .stage-locks { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
   .stage-locks span { border:1px solid var(--border); border-radius:999px; padding:2px 6px; color:var(--muted); font-size:10px; }
   .stage-verification { margin-top:8px; color:var(--muted); font-size:11px; line-height:1.35; word-break:break-word; display:grid; gap:4px; }
@@ -90,4 +91,11 @@
   .provenance-row { display:grid; grid-template-columns: 48px 96px minmax(180px, 1fr) minmax(220px, 2fr); gap:8px; align-items:start; border-top:1px solid var(--border-faint); padding:8px 0; font-size:12px; }
   .provenance-row code { white-space:normal; word-break:break-word; color:var(--muted); }
   .command-list { display:grid; gap:4px; }
+  /* Narrow screens: stack the provenance columns so the fixed 48/96px + 180/220px
+     minimums cannot force horizontal overflow (Todo 10 / B1). */
+  @media (max-width: 680px) {
+    .provenance-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .provenance-row > strong,
+    .provenance-row > span { overflow-wrap: anywhere; }
+  }
 </style>

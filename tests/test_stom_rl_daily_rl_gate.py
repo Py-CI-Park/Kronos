@@ -10,6 +10,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from stom_rl.daily_rl_train import (  # noqa: E402
+    _verdict_for_d4,
     build_action_prior_values,
     build_action_filter_decision,
     build_action_distribution,
@@ -17,6 +18,7 @@ from stom_rl.daily_rl_train import (  # noqa: E402
     run_daily_rl,
     write_rl_artifacts,
 )
+from stom_rl.rl_events import RlLiveEventWriter  # noqa: E402
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -376,30 +378,38 @@ def test_run_daily_rl_emits_research_only_gate_and_required_metrics(tmp_path: Pa
     assert observation_manifest["gate"] == "D4_OBSERVATION_STATE_MANIFEST"
     assert observation_manifest["reward_action_telemetry_sufficient_for_d4"] is False
     assert "shuffle_control" in observation_manifest["frozen_d3_comparison"]["required_baselines"]
-    state_rows = list(csv.DictReader(Path(written["state_observations_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["state_observations_path"]).open("r", encoding="utf-8", newline="") as handle:
+        state_rows = list(csv.DictReader(handle))
     assert {"cash_fraction", "exposure_fraction", "future_label_exposed"} <= set(state_rows[0])
     assert {"action_mask_hold_buy_add_sell_reduce", "mask_reason_hold", "mask_reason_buy"} <= set(state_rows[0])
     assert training_manifest["telemetry"]["training_status"] == "TABULAR_Q_TELEMETRY_RECORDED"
     assert training_manifest["artifact_hashes"]["policy_metrics"]
-    learning_curve = list(csv.DictReader(Path(written["learning_curve_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["learning_curve_path"]).open("r", encoding="utf-8", newline="") as handle:
+        learning_curve = list(csv.DictReader(handle))
     assert {"episode", "rolling_mean_reward", "best_total_reward"} <= set(learning_curve[0])
-    action_distribution = list(csv.DictReader(Path(written["action_distribution_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["action_distribution_path"]).open("r", encoding="utf-8", newline="") as handle:
+        action_distribution = list(csv.DictReader(handle))
     assert {"split", "action", "action_rate"} <= set(action_distribution[0])
     assert {"requested_action", "executed_action", "invalid_action_reason", "no_trade_action"} <= set(action_distribution[0])
-    reward_rows = list(csv.DictReader(Path(written["reward_breakdown_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["reward_breakdown_path"]).open("r", encoding="utf-8", newline="") as handle:
+        reward_rows = list(csv.DictReader(handle))
     assert {"net_return_after_cost", "no_trade_hold_reward", "mask_reason_reduce"} <= set(reward_rows[0])
-    ablation_rows = list(csv.DictReader(Path(written["reward_action_ablations_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["reward_action_ablations_path"]).open("r", encoding="utf-8", newline="") as handle:
+        ablation_rows = list(csv.DictReader(handle))
     assert {"ablation", "delta_vs_recorded_reward", "cost_round_trip_bp"} <= set(ablation_rows[0])
     assert {row["ablation"] for row in ablation_rows} >= {"recorded_reward", "without_turnover_cost"}
-    opportunity_rows = list(csv.DictReader(Path(written["no_trade_opportunity_diagnostics_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["no_trade_opportunity_diagnostics_path"]).open("r", encoding="utf-8", newline="") as handle:
+        opportunity_rows = list(csv.DictReader(handle))
     assert {"diagnostic", "top_candidate_net_after_entry_cost", "future_label_used_for_training_state"} <= set(opportunity_rows[0])
-    abstention_rows = list(csv.DictReader(Path(written["abstention_reasons_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["abstention_reasons_path"]).open("r", encoding="utf-8", newline="") as handle:
+        abstention_rows = list(csv.DictReader(handle))
     assert {"action_filter_mode", "future_label_exposed", "filter_reason_buy"} <= set(abstention_rows[0])
     assert abstention_rows[0]["future_label_exposed"] == "False"
     opportunity_summary = json.loads(Path(written["no_trade_opportunity_summary_path"]).read_text(encoding="utf-8"))
     assert opportunity_summary["guardrail"].startswith("No-trade opportunity diagnostics")
     assert opportunity_summary["training_state_uses_future_label"] is False
-    policy_rows = list(csv.DictReader(Path(written["policy_baseline_comparison_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["policy_baseline_comparison_path"]).open("r", encoding="utf-8", newline="") as handle:
+        policy_rows = list(csv.DictReader(handle))
     assert {"baseline_strategy", "policy_nav", "baseline_nav", "baseline_delta_total_net_return"} <= set(policy_rows[0])
     policy_manifest = json.loads(Path(written["policy_evaluation_manifest_path"]).read_text(encoding="utf-8"))
     assert policy_manifest["readiness_status"] == "D4_RESEARCH_ONLY_DIAGNOSTICS"
@@ -469,3 +479,109 @@ def test_d3_failed_or_skipped_forces_research_override(tmp_path: Path, monkeypat
     assert verdict["gate_dependency"] == "D3_FAILED_OR_SKIPPED"
     assert verdict["d3_status_normalized"] == "SKIPPED"
     assert verdict["go_summary_allowed"] is False
+
+
+def test_non_improving_verdict_fires():
+    declining_curve = [
+        {"episode": episode, "val_nav": nav}
+        for episode, nav in enumerate([1.05, 1.03, 1.01, 0.99, 0.97, 0.95], start=1)
+    ]
+    verdict = _verdict_for_d4(
+        prediction_verdict={"status": "WATCH"},
+        manifest={},
+        eval_metrics={"invalid_action_rate": 0.0},
+        learning_curve=declining_curve,
+    )
+    assert "TRAINING_CURVE_NON_IMPROVING" in verdict["reasons"]
+    assert verdict["val_nav_slope"] is not None
+    assert verdict["val_nav_slope"] <= 0
+    assert verdict["go_summary_allowed"] is False
+    assert verdict["model_build_allowed"] is False
+
+    improving_curve = [
+        {"episode": episode, "val_nav": nav}
+        for episode, nav in enumerate([0.95, 0.97, 0.99, 1.01, 1.03, 1.05], start=1)
+    ]
+    improving_verdict = _verdict_for_d4(
+        prediction_verdict={"status": "WATCH"},
+        manifest={},
+        eval_metrics={"invalid_action_rate": 0.0},
+        learning_curve=improving_curve,
+    )
+    assert "TRAINING_CURVE_NON_IMPROVING" not in improving_verdict["reasons"]
+    assert improving_verdict["val_nav_slope"] is not None
+    assert improving_verdict["val_nav_slope"] > 0
+
+    no_data_verdict = _verdict_for_d4(
+        prediction_verdict={"status": "WATCH"},
+        manifest={},
+        eval_metrics={"invalid_action_rate": 0.0},
+        learning_curve=None,
+    )
+    assert "TRAINING_CURVE_NON_IMPROVING" not in no_data_verdict["reasons"]
+    assert no_data_verdict["val_nav_slope"] is None
+
+
+def test_learning_curve_has_val_nav(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import stom_rl.daily_rl_train as rl_train
+
+    prediction_root = tmp_path / "webui" / "rl_runs" / "daily_ohlcv_prediction"
+    portfolio_root = tmp_path / "webui" / "rl_runs" / "daily_ohlcv_portfolio"
+    run_dir = _create_prediction_run(prediction_root, verdict_status="WATCH")
+    monkeypatch.setattr(rl_train, "DEFAULT_PREDICTION_ROOT", prediction_root)
+    monkeypatch.setattr(rl_train, "DEFAULT_PORTFOLIO_ROOT", portfolio_root)
+
+    result = run_daily_rl(prediction_run_dir=run_dir, episodes=3, candidate_limit=2, max_positions=2, seed=3)
+
+    assert result["learning_curve"]
+    assert "val_nav" in result["learning_curve"][0]
+    assert "final_shaped_equity" in result["learning_curve"][0]
+    assert any(row["val_nav"] is not None for row in result["learning_curve"])
+    assert any(row.get("val_nav") is not None for row in result["episode_metrics"])
+
+    written = write_rl_artifacts(result, run_id="portfolio_val_nav_unit")
+    with Path(written["learning_curve_path"]).open("r", encoding="utf-8", newline="") as handle:
+        curve_rows = list(csv.DictReader(handle))
+    assert "val_nav" in curve_rows[0]
+    assert "final_shaped_equity" in curve_rows[0]
+    with Path(written["episode_metrics_path"]).open("r", encoding="utf-8", newline="") as handle:
+        episode_rows = list(csv.DictReader(handle))
+    assert "val_nav" in episode_rows[0]
+    assert "final_shaped_equity" in episode_rows[0]
+
+
+def test_daily_rl_writer_none_byte_identical(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import stom_rl.daily_rl_train as rl_train
+
+    prediction_root = tmp_path / "webui" / "rl_runs" / "daily_ohlcv_prediction"
+    run_dir = _create_prediction_run(prediction_root, verdict_status="WATCH")
+    monkeypatch.setattr(rl_train, "DEFAULT_PREDICTION_ROOT", prediction_root)
+
+    result_default = run_daily_rl(prediction_run_dir=run_dir, episodes=3, candidate_limit=2, max_positions=2, seed=3)
+
+    writer_path = tmp_path / "unused_events.jsonl"
+    writer = RlLiveEventWriter(writer_path, run_id="writer-parity-unit")
+    writer.reset()
+    result_with_writer = run_daily_rl(
+        prediction_run_dir=run_dir,
+        episodes=3,
+        candidate_limit=2,
+        max_positions=2,
+        seed=3,
+        event_writer=writer,
+    )
+
+    # Passing an active event_writer must not change any computed training/eval data --
+    # it is a side-channel telemetry stream only (C6/C10: event_writer default None is
+    # byte-identical to any other event_writer value for the returned result).
+    assert result_default["policy_metrics"]["q_policy_rows"] == result_with_writer["policy_metrics"]["q_policy_rows"]
+    assert result_default["episode_metrics"] == result_with_writer["episode_metrics"]
+    assert result_default["reward_breakdown"] == result_with_writer["reward_breakdown"]
+    assert result_default["learning_curve"] == result_with_writer["learning_curve"]
+    assert result_default["manifest"]["verdict"]["reasons"] == result_with_writer["manifest"]["verdict"]["reasons"]
+
+    written_events = writer_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(written_events) > 0
+    first_event = json.loads(written_events[0])
+    assert first_event["schema_version"] == "stom_rl_live_event.v1"
+    assert first_event["source"] == "daily_rl_train"

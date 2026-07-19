@@ -1,0 +1,25 @@
+{
+  "schema": "kronos_daily_sb3_protocol_fixture.v1",
+  "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+  "canonical_protocol_sha256": "f25f0e2077789cbb81488aca3bf0184473ff4758c2904d2a7e485d3ab267318c",
+  "canonical_protocol_byte_length": 52644,
+  "cell_count": 50,
+  "first_cell_uid": "kdp1-cell-eb8a5e156f99afa041f59b3daf61ed52",
+  "first_attempt_uid": "kdp1-attempt-27158adeb0097d9457b97e6ff1e8b462",
+  "last_cell_uid": "kdp1-cell-aa14a486e992d376fcd58c5fe48ee4dc",
+  "last_attempt_uid": "kdp1-attempt-cf22460a9323611abb9bf66fd4716970",
+  "fold_session_counts": {
+    "fold-01": {
+      "train": 104,
+      "purge_embargo": 5,
+      "validation": 47
+    },
+    "fold-02": {
+      "train": 156,
+      "purge_embargo": 5,
+      "validation": 47
+    }
+  },
+  "historical_secondary_only_session_count": 47,
+  "available_session_count": 260
+}

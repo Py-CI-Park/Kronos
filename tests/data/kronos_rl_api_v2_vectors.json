@@ -1,0 +1,725 @@
+{
+  "schema": "kronos_rl_api_v2_vectors.v3",
+  "source": {
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "generated_at": "2026-07-15T00:00:00Z"
+  },
+  "locks": {
+    "promotion_allowed": false,
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "profitability_claim_allowed": false,
+    "go_summary_allowed": false
+  },
+  "run": {
+    "run_id": "run-1",
+    "state": {
+      "status": "RUNNING",
+      "progress": {
+        "step": 1,
+        "total_steps": 3,
+        "percent": 33.333333
+      },
+      "updated_at": "2026-07-15T00:00:00Z",
+      "started_at": "2026-07-15T00:00:00Z",
+      "finished_at": null
+    },
+    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "created_at": "2026-07-15T00:00:00Z"
+  },
+  "matrix": {
+    "seeds": [
+      "seed-01",
+      "seed-02",
+      "seed-03",
+      "seed-04",
+      "seed-05"
+    ],
+    "columns": [
+      "fold-01:baseline",
+      "fold-01:cost-00bp",
+      "fold-01:cost-23bp",
+      "fold-01:cost-46bp",
+      "fold-01:no-trade",
+      "fold-02:baseline",
+      "fold-02:cost-00bp",
+      "fold-02:cost-23bp",
+      "fold-02:cost-46bp",
+      "fold-02:no-trade"
+    ],
+    "cells": [
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-01:baseline",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-01:cost-00bp",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-01:cost-23bp",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-01:cost-46bp",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-01:no-trade",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-02:baseline",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-02:cost-00bp",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-02:cost-23bp",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-02:cost-46bp",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-01",
+        "column_id": "fold-02:no-trade",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-01:baseline",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-01:cost-00bp",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-01:cost-23bp",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-01:cost-46bp",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-01:no-trade",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-02:baseline",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-02:cost-00bp",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-02:cost-23bp",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-02:cost-46bp",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-02",
+        "column_id": "fold-02:no-trade",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-01:baseline",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-01:cost-00bp",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-01:cost-23bp",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-01:cost-46bp",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-01:no-trade",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-02:baseline",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-02:cost-00bp",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-02:cost-23bp",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-02:cost-46bp",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-03",
+        "column_id": "fold-02:no-trade",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-01:baseline",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-01:cost-00bp",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-01:cost-23bp",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-01:cost-46bp",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-01:no-trade",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-02:baseline",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-02:cost-00bp",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-02:cost-23bp",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-02:cost-46bp",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-04",
+        "column_id": "fold-02:no-trade",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-01:baseline",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-01:cost-00bp",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-01:cost-23bp",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-01:cost-46bp",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-01:no-trade",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-02:baseline",
+        "state": "FAIL"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-02:cost-00bp",
+        "state": "BLOCKED"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-02:cost-23bp",
+        "state": "PENDING"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-02:cost-46bp",
+        "state": "PASS"
+      },
+      {
+        "row_id": "seed-05",
+        "column_id": "fold-02:no-trade",
+        "state": "FAIL"
+      }
+    ],
+    "summary": {
+      "total_cells": 50,
+      "pass_count": 13,
+      "fail_count": 13,
+      "blocked_count": 12,
+      "pending_count": 12
+    }
+  },
+  "events": [
+    {
+      "event_type": "ARTIFACT",
+      "event_id": "event-artifact",
+      "occurred_at": "2026-07-15T00:00:00Z",
+      "artifact_id": "artifact-1",
+      "payload_sha256": "9d6ca3704af030f2aba85e0aa89123f1a59fb1764506a0cf97a226679ca31a72"
+    },
+    {
+      "event_type": "MESSAGE",
+      "event_id": "event-message",
+      "occurred_at": "2026-07-15T00:00:00Z",
+      "level": "INFO",
+      "message": "started",
+      "payload_sha256": "857ab279003abd0053c1e825b5c27d50b0883c73b9ed7d602a4034ab9b61e780"
+    },
+    {
+      "event_type": "PROGRESS",
+      "event_id": "event-progress",
+      "occurred_at": "2026-07-15T00:00:00Z",
+      "progress": {
+        "step": 1,
+        "total_steps": 3,
+        "percent": 33.333333
+      },
+      "payload_sha256": "8cd3fd7844706d1f4ceb32f1b7b4b3db009d89829a976cb1840f85a6f32d2034"
+    },
+    {
+      "event_type": "STATE",
+      "event_id": "event-state",
+      "occurred_at": "2026-07-15T00:00:00Z",
+      "state": {
+        "status": "RUNNING",
+        "progress": {
+          "step": 1,
+          "total_steps": 3,
+          "percent": 33.333333
+        },
+        "updated_at": "2026-07-15T00:00:00Z",
+        "started_at": "2026-07-15T00:00:00Z",
+        "finished_at": null
+      },
+      "payload_sha256": "47f4f49708da6ce4557e44a37582088b6daee9b02bab094ea1c63a9e2cfab73e"
+    }
+  ],
+  "cursor_cases": {
+    "RUNS": {
+      "order": [
+        "created_at:desc",
+        "run_id:asc"
+      ],
+      "tie_breaker": "run_id",
+      "run_id": null,
+      "last_key": {
+        "created_at": "2026-07-15T00:00:00Z",
+        "run_id": "run-1"
+      },
+      "token": "eyJsYXN0X2tleSI6eyJjcmVhdGVkX2F0IjoiMjAyNi0wNy0xNVQwMDowMDowMFoiLCJydW5faWQiOiJydW4tMSJ9LCJvcmRlciI6WyJjcmVhdGVkX2F0OmRlc2MiLCJydW5faWQ6YXNjIl0sInBhZ2VfbGltaXQiOjEwMCwicm91dGVfaWQiOiJSVU5TIiwicnVuX2lkIjpudWxsLCJzb3VyY2Vfc2hhMjU2IjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInRpZV9icmVha2VyIjoicnVuX2lkIiwidiI6MX1jiYqlPkaJ5CjnvqXHOrqN5MvD1SUwwN6hFEDc6-Hm8w"
+    },
+    "EVENTS": {
+      "order": [
+        "occurred_at:asc",
+        "event_id:asc"
+      ],
+      "tie_breaker": "event_id",
+      "run_id": "run-1",
+      "last_key": {
+        "occurred_at": "2026-07-15T00:00:00Z",
+        "event_id": "event-message"
+      },
+      "token": "eyJsYXN0X2tleSI6eyJldmVudF9pZCI6ImV2ZW50LW1lc3NhZ2UiLCJvY2N1cnJlZF9hdCI6IjIwMjYtMDctMTVUMDA6MDA6MDBaIn0sIm9yZGVyIjpbIm9jY3VycmVkX2F0OmFzYyIsImV2ZW50X2lkOmFzYyJdLCJwYWdlX2xpbWl0IjoxMDAsInJvdXRlX2lkIjoiRVZFTlRTIiwicnVuX2lkIjoicnVuLTEiLCJzb3VyY2Vfc2hhMjU2IjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInRpZV9icmVha2VyIjoiZXZlbnRfaWQiLCJ2IjoxffhHGcJmVlfM_2KcdQbCTD1I0HVfH_7JO9Pt0EmRCQsQ"
+    },
+    "LEDGER": {
+      "order": [
+        "occurred_at:asc",
+        "entry_id:asc"
+      ],
+      "tie_breaker": "entry_id",
+      "run_id": null,
+      "last_key": {
+        "occurred_at": "2026-07-15T00:00:00Z",
+        "entry_id": "entry-1"
+      },
+      "token": "eyJsYXN0X2tleSI6eyJlbnRyeV9pZCI6ImVudHJ5LTEiLCJvY2N1cnJlZF9hdCI6IjIwMjYtMDctMTVUMDA6MDA6MDBaIn0sIm9yZGVyIjpbIm9jY3VycmVkX2F0OmFzYyIsImVudHJ5X2lkOmFzYyJdLCJwYWdlX2xpbWl0IjoxMDAsInJvdXRlX2lkIjoiTEVER0VSIiwicnVuX2lkIjpudWxsLCJzb3VyY2Vfc2hhMjU2IjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInRpZV9icmVha2VyIjoiZW50cnlfaWQiLCJ2IjoxfdEHDiNHOUTB6fwuBYlfr0FYSVgeT5Ut3_7v8LeF4xLW"
+    },
+    "ARTIFACTS": {
+      "order": [
+        "created_at:asc",
+        "artifact_id:asc"
+      ],
+      "tie_breaker": "artifact_id",
+      "run_id": null,
+      "last_key": {
+        "created_at": "2026-07-15T00:00:00Z",
+        "artifact_id": "artifact-1"
+      },
+      "token": "eyJsYXN0X2tleSI6eyJhcnRpZmFjdF9pZCI6ImFydGlmYWN0LTEiLCJjcmVhdGVkX2F0IjoiMjAyNi0wNy0xNVQwMDowMDowMFoifSwib3JkZXIiOlsiY3JlYXRlZF9hdDphc2MiLCJhcnRpZmFjdF9pZDphc2MiXSwicGFnZV9saW1pdCI6MTAwLCJyb3V0ZV9pZCI6IkFSVElGQUNUUyIsInJ1bl9pZCI6bnVsbCwic291cmNlX3NoYTI1NiI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJ0aWVfYnJlYWtlciI6ImFydGlmYWN0X2lkIiwidiI6MX2-G3clCdSwZ4GEIv8ALLDsHFBWI591_kR7QHe0ycGi-w"
+    }
+  },
+  "route_ids": [
+    "RUNS",
+    "RUN_DETAIL",
+    "EVENTS",
+    "MATRIX",
+    "LEDGER",
+    "ARTIFACTS",
+    "D0",
+    "D1",
+    "FIXTURE"
+  ],
+  "error_codes": [
+    "BAD_REQUEST",
+    "NOT_FOUND",
+    "INVALID_CURSOR",
+    "VALIDATION_ERROR",
+    "INTERNAL_ERROR"
+  ],
+  "route_error_matrix": {
+    "RUNS": [
+      "BAD_REQUEST",
+      "INVALID_CURSOR",
+      "INTERNAL_ERROR"
+    ],
+    "RUN_DETAIL": [
+      "NOT_FOUND",
+      "INTERNAL_ERROR"
+    ],
+    "EVENTS": [
+      "NOT_FOUND",
+      "INVALID_CURSOR",
+      "INTERNAL_ERROR"
+    ],
+    "MATRIX": [
+      "INTERNAL_ERROR"
+    ],
+    "LEDGER": [
+      "INVALID_CURSOR",
+      "INTERNAL_ERROR"
+    ],
+    "ARTIFACTS": [
+      "INVALID_CURSOR",
+      "INTERNAL_ERROR"
+    ],
+    "D0": [
+      "INTERNAL_ERROR"
+    ],
+    "D1": [
+      "INTERNAL_ERROR"
+    ],
+    "FIXTURE": [
+      "INTERNAL_ERROR"
+    ]
+  },
+  "d0_d1_semantic_cases": [
+    {"id": "d0-pass-raw", "route": "D0", "status": "PASS", "price_basis": "RAW", "accepted": true},
+    {"id": "d0-pass-adjusted", "route": "D0", "status": "PASS", "price_basis": "ADJUSTED", "accepted": true},
+    {"id": "d0-pass-unknown", "route": "D0", "status": "PASS", "price_basis": "UNKNOWN", "accepted": false},
+    {"id": "d0-fail-unknown", "route": "D0", "status": "FAIL", "price_basis": "UNKNOWN", "accepted": false},
+    {"id": "d0-blocked-unknown", "route": "D0", "status": "BLOCKED", "price_basis": "UNKNOWN", "accepted": true},
+    {"id": "d0-pending-unknown", "route": "D0", "status": "PENDING", "price_basis": "UNKNOWN", "accepted": true},
+    {"id": "d1-pass-official", "route": "D1", "status": "PASS", "universe": "OFFICIAL", "accepted": true},
+    {"id": "d1-pass-manual-reviewed", "route": "D1", "status": "PASS", "universe": "MANUAL_REVIEWED", "accepted": true},
+    {"id": "d1-pass-unknown", "route": "D1", "status": "PASS", "universe": "UNKNOWN", "accepted": false},
+    {"id": "d1-fail-unknown", "route": "D1", "status": "FAIL", "universe": "UNKNOWN", "accepted": false},
+    {"id": "d1-blocked-unknown", "route": "D1", "status": "BLOCKED", "universe": "UNKNOWN", "accepted": true},
+    {"id": "d1-pending-unknown", "route": "D1", "status": "PENDING", "universe": "UNKNOWN", "accepted": true}
+  ],
+  "manifest": [
+    "source",
+    "locks",
+    "run",
+    "matrix",
+    "events",
+    "cursor_cases",
+    "route_ids",
+    "error_codes",
+    "route_error_matrix",
+    "d0_d1_semantic_cases",
+    "multi_page",
+    "cursor_schema",
+    "test_metadata",
+    "progress_cases",
+    "portable_filename_cases",
+    "pagination_cases",
+    "early_year_timestamp_order",
+    "jcs_vector_file"
+  ],
+  "multi_page": {
+    "route": "RUNS",
+    "pages": [
+      {
+        "items": [
+          {
+            "run_id": "run-1",
+            "state": {
+              "status": "RUNNING",
+              "progress": {
+                "step": 1,
+                "total_steps": 3,
+                "percent": 33.333333
+              },
+              "updated_at": "2026-07-15T00:00:00Z",
+              "started_at": "2026-07-15T00:00:00Z",
+              "finished_at": null
+            },
+            "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "created_at": "2026-07-15T00:00:00Z"
+          }
+        ],
+        "next_cursor": "eyJsYXN0X2tleSI6eyJjcmVhdGVkX2F0IjoiMjAyNi0wNy0xNVQwMDowMDowMFoiLCJydW5faWQiOiJydW4tMSJ9LCJvcmRlciI6WyJjcmVhdGVkX2F0OmRlc2MiLCJydW5faWQ6YXNjIl0sInBhZ2VfbGltaXQiOjEwMCwicm91dGVfaWQiOiJSVU5TIiwicnVuX2lkIjpudWxsLCJzb3VyY2Vfc2hhMjU2IjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInRpZV9icmVha2VyIjoicnVuX2lkIiwidiI6MX1jiYqlPkaJ5CjnvqXHOrqN5MvD1SUwwN6hFEDc6-Hm8w"
+      },
+      {
+        "items": [
+          {
+            "run_id": "run-2",
+            "state": {
+              "status": "RUNNING",
+              "progress": {
+                "step": 1,
+                "total_steps": 3,
+                "percent": 33.333333
+              },
+              "updated_at": "2026-07-15T00:00:00Z",
+              "started_at": "2026-07-15T00:00:00Z",
+              "finished_at": null
+            },
+            "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "created_at": "2026-07-15T00:00:00Z"
+          }
+        ],
+        "next_cursor": null
+      }
+    ],
+    "expected_run_ids": [
+      "run-1",
+      "run-2"
+    ]
+  },
+  "pagination_cases": {
+    "whole_vs_fractional": {
+      "route": "LEDGER",
+      "items": [
+        {
+          "entry_id": "entry-whole",
+          "occurred_at": "2026-07-15T00:00:00Z",
+          "kind": "DEBIT",
+          "amount": 1,
+          "currency": "KRONOS_CREDIT",
+          "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "entry_id": "entry-fractional",
+          "occurred_at": "2026-07-15T00:00:00.500000Z",
+          "kind": "DEBIT",
+          "amount": 1,
+          "currency": "KRONOS_CREDIT",
+          "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    "duplicate_complete_key": {
+      "route": "LEDGER",
+      "items": [
+        {
+          "entry_id": "entry-duplicate",
+          "occurred_at": "2026-07-15T00:00:00Z",
+          "kind": "DEBIT",
+          "amount": 1,
+          "currency": "KRONOS_CREDIT",
+          "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "entry_id": "entry-duplicate",
+          "occurred_at": "2026-07-15T00:00:00.000000Z",
+          "kind": "DEBIT",
+          "amount": 1,
+          "currency": "KRONOS_CREDIT",
+          "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    "artifacts_pages": {
+      "route": "ARTIFACTS",
+      "pages": [
+        [
+          {
+            "artifact": {
+              "artifact_id": "artifact-whole",
+              "filename": "whole.json",
+              "media_type": "application/json",
+              "byte_length": 2,
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-07-15T00:00:00Z"
+            },
+            "download_url": "/api/v5/rl/artifacts/artifact-whole/download",
+            "portable_filename": "whole.json"
+          }
+        ],
+        [
+          {
+            "artifact": {
+              "artifact_id": "artifact-fractional",
+              "filename": "fractional.json",
+              "media_type": "application/json",
+              "byte_length": 2,
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-07-15T00:00:00.500000Z"
+            },
+            "download_url": "/api/v5/rl/artifacts/artifact-fractional/download",
+            "portable_filename": "fractional.json"
+          }
+        ]
+      ],
+      "expected_artifact_ids": [
+        "artifact-whole",
+        "artifact-fractional"
+      ]
+    }
+  },
+  "cursor_schema": {
+    "min_length": 16,
+    "max_length": 2048,
+    "pattern": "^[A-Za-z0-9_-]+$"
+  },
+  "test_metadata": {
+    "cursor_test_key_hex": "6b726f6e6f732d76352d637572736f722d746573742d6b65792d7631"
+  },
+  "progress_cases": [
+    {
+      "id": "exact-half",
+      "step": 1,
+      "total_steps": 200000000,
+      "percent": 0.000001
+    },
+    {
+      "id": "below-half",
+      "step": 1,
+      "total_steps": 200000003,
+      "percent": 0.0
+    },
+    {
+      "id": "above-half",
+      "step": 1,
+      "total_steps": 199999997,
+      "percent": 0.000001
+    },
+    {
+      "id": "large-half-counterexample",
+      "step": 2000003,
+      "total_steps": 200000000,
+      "percent": 1.000002
+    },
+    {
+      "id": "safe-integer-max",
+      "step": 9007199254740991,
+      "total_steps": 9007199254740991,
+      "percent": 100.0,
+      "accepted": true
+    },
+    {
+      "id": "step-safe-integer-max-plus-one",
+      "step": 9007199254740992,
+      "total_steps": 9007199254740992,
+      "percent": 100.0,
+      "accepted": false
+    },
+    {
+      "id": "total-steps-safe-integer-max-plus-one",
+      "step": 1,
+      "total_steps": 9007199254740992,
+      "percent": 0.0,
+      "accepted": false
+    }
+  ],
+  "portable_filename_cases": [
+    {
+      "filename": "report.json",
+      "accepted": true
+    },
+    {
+      "filename": "CON.json",
+      "accepted": false
+    },
+    {
+      "filename": "prn.csv",
+      "accepted": false
+    },
+    {
+      "filename": "Aux.txt",
+      "accepted": false
+    },
+    {
+      "filename": "NUL.zip",
+      "accepted": false
+    },
+    {
+      "filename": "com1.json",
+      "accepted": false
+    },
+    {
+      "filename": "Lpt9.csv",
+      "accepted": false
+    }
+  ],
+  "early_year_timestamp_order": {
+    "route": "LEDGER",
+    "items": [
+      {"entry_id": "year-0001-a", "occurred_at": "0001-01-01T00:00:00.000001Z", "kind": "DEBIT", "amount": 1, "currency": "KRONOS_CREDIT", "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      {"entry_id": "year-0001-b", "occurred_at": "0001-01-01T00:00:00.000002Z", "kind": "DEBIT", "amount": 1, "currency": "KRONOS_CREDIT", "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      {"entry_id": "year-0099", "occurred_at": "0099-01-01T00:00:00Z", "kind": "DEBIT", "amount": 1, "currency": "KRONOS_CREDIT", "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      {"entry_id": "year-0100", "occurred_at": "0100-01-01T00:00:00Z", "kind": "DEBIT", "amount": 1, "currency": "KRONOS_CREDIT", "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    ]
+  },
+  "jcs_vector_file": "kronos_jcs_rfc8785_v1_vectors.json"
+}

@@ -25,18 +25,29 @@ read-only `/api/docs/*` endpoints.
 - [09-api-reference](09-api-reference) - read-only API catalog
 - [10-dashboard-guide](10-dashboard-guide) - official dashboard usage guide
 
+### Research governance
+- [11-reinforcement-learning](11-reinforcement-learning) - reinforcement-learning study guide
+- [12-portfolio-rl-roadmap](12-portfolio-rl-roadmap) - portfolio RL roadmap
+- [13-research-ledger](13-research-ledger) - current research status and evidence index
+- [14-document-standard](14-document-standard) - document taxonomy and report templates
+
+## 최신 구현 결과
+
+- `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` — Kronos Dashboard V5.1 구현·릴리스 결과. `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live 결과는 `NOT_RUN / NO-GO` 유지; branch `feature/dashboard-v5-learning-evidence`; commits `9d8e2ad` through `c1e4b37`; 다음 연구 단계는 coverage/custody 확인 후 새 사전등록 기반 15:20 H1 smoke와 H3/H5 validation variant다.
+
 ## Quick start
 
 ```powershell
 cd D:\Chanil_Park\Project\Programming\Kronos
-$env:KRONOS_WEBUI_PORT = "5070"
+$env:KRONOS_WEBUI_PORT = "8122"
 $env:KRONOS_WEBUI_HOST = "127.0.0.1"
 $env:KRONOS_WEBUI_OPEN_BROWSER = "0"
 C:\Python\64\Python3119\python.exe webui\run.py
 ```
 
-Open `http://127.0.0.1:5070/` for the official dashboard and
-`http://127.0.0.1:5070/rl` for the RL evidence dashboard.
+Open `http://127.0.0.1:8122/` for the official dashboard,
+`http://127.0.0.1:8122/?tab=rl&ui=v5` for V5.1 RL evidence, and
+`http://127.0.0.1:8122/?tab=docs&ui=v5` for Research Reports & Wiki.
 
 Legacy `/v2*` and `/rl-lab` URLs are compatibility redirects only.
 
@@ -47,3 +58,5 @@ Legacy `/v2*` and `/rl-lab` URLs are compatibility redirects only.
 - Prefer Korean operator-facing copy, with English terms where they are already
   dashboard labels.
 - Do not claim live-trading readiness or profitability from dashboard evidence.
+- Keep prior evidence documents immutable; add new dated results and connect them through the research ledger.
+- Show user-facing transaction costs as percentages while preserving legacy API/artifact identifiers when compatibility requires them.

@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_v5_oos_custody.v1.schema.json",
+  "title": "Kronos V5 fresh OOS custody status contracts",
+  "description": "Closed status-only custody contracts. Runtime semantic validation enforces JCS bytes, Ed25519 signatures, KRX calendar ordering, authority separation, hash-chain continuity, one-use <=1h capabilities, and no raw/ciphertext OOS surfaces.",
+  "oneOf": [
+    {"$ref": "#/$defs/krxCalendarEnvelope"},
+    {"$ref": "#/$defs/custodyManifest"},
+    {"$ref": "#/$defs/accessEventEnvelope"},
+    {"$ref": "#/$defs/capabilityEnvelope"},
+    {"$ref": "#/$defs/releaseReceiptEnvelope"},
+    {"$ref": "#/$defs/denialReceipt"},
+    {"$ref": "#/$defs/authorityGrant"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "zeroOrSha256": {"type": "string", "pattern": "^(?:0{64}|[0-9a-f]{64})$"},
+    "nonzeroSha256": {"type": "string", "pattern": "^(?!0{64}$)[0-9a-f]{64}$"},
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "principalUri": {"type": "string", "pattern": "^agent://[^/\\s]+$"},
+    "b64u32": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"},
+    "b64u64": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"},
+    "utcSeconds": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "krxDate": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "krxTimestamp": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T(?:09:00:00|15:30:00)\\+09:00$"},
+    "sixLocksFalse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promotion_allowed", "model_build_allowed", "paper_forward_allowed", "live_broker_order_allowed", "profitability_claim_allowed", "go_summary_allowed"],
+      "properties": {
+        "promotion_allowed": {"const": false},
+        "model_build_allowed": {"const": false},
+        "paper_forward_allowed": {"const": false},
+        "live_broker_order_allowed": {"const": false},
+        "profitability_claim_allowed": {"const": false},
+        "go_summary_allowed": {"const": false}
+      }
+    },
+    "calendarSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_date", "market", "is_open", "open_time", "close_time", "timezone"],
+      "properties": {
+        "session_date": {"$ref": "#/$defs/krxDate"},
+        "market": {"const": "KRX"},
+        "is_open": {"type": "boolean"},
+        "open_time": {"oneOf": [{"$ref": "#/$defs/krxTimestamp"}, {"type": "null"}]},
+        "close_time": {"oneOf": [{"$ref": "#/$defs/krxTimestamp"}, {"type": "null"}]},
+        "timezone": {"const": "Asia/Seoul"}
+      }
+    },
+    "krxCalendarStatement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "calendar_uid", "issued_at", "timezone", "columns", "sessions"],
+      "properties": {
+        "schema": {"const": "kronos_krx_calendar_manifest_statement.v1"},
+        "calendar_uid": {"$ref": "#/$defs/uuid"},
+        "issued_at": {"$ref": "#/$defs/utcSeconds"},
+        "timezone": {"const": "Asia/Seoul"},
+        "columns": {"const": ["session_date", "market", "is_open", "open_time", "close_time", "timezone"]},
+        "sessions": {"type": "array", "minItems": 60, "items": {"$ref": "#/$defs/calendarSession"}}
+      }
+    },
+    "krxCalendarEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "statement", "signature"],
+      "properties": {
+        "schema": {"const": "kronos_krx_calendar_manifest.v1"},
+        "statement": {"$ref": "#/$defs/krxCalendarStatement"},
+        "signature": {"$ref": "#/$defs/b64u64"}
+      }
+    },
+    "sealedArchiveCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_kind", "archive_sha256", "archive_byte_length", "archive_media_type", "locator_commitment_sha256"],
+      "properties": {
+        "content_kind": {"const": "SEALED_ARCHIVE_COMMITMENT"},
+        "archive_sha256": {"$ref": "#/$defs/sha256"},
+        "archive_byte_length": {"type": "integer", "minimum": 1},
+        "archive_media_type": {"const": "application/octet-stream+sealed-oos"},
+        "locator_commitment_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "custodyAcl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["custodian_principal_uri", "evaluator_principal_uri", "evaluator_action", "capability_ttl_seconds"],
+      "properties": {
+        "custodian_principal_uri": {"$ref": "#/$defs/principalUri"},
+        "evaluator_principal_uri": {"$ref": "#/$defs/principalUri"},
+        "evaluator_action": {"const": "OOS_EVALUATION_NOT_RUN_STATUS_ONLY"},
+        "capability_ttl_seconds": {"type": "integer", "minimum": 1, "maximum": 3600}
+      }
+    },
+    "custodyManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "custody_uid", "custody_state", "preregistered_at", "calendar_manifest_sha256", "first_open_sessions", "sealed_archive", "acl", "created_at"],
+      "properties": {
+        "schema": {"const": "kronos_oos_custody_manifest.v1"},
+        "custody_uid": {"$ref": "#/$defs/uuid"},
+        "custody_state": {"enum": ["SEALED", "FRESH_OOS_NOT_AVAILABLE", "CAPABILITY_ISSUED", "CAPABILITY_CONSUMED", "RELEASE_RECEIVED", "CONTAMINATED"]},
+        "preregistered_at": {"$ref": "#/$defs/utcSeconds"},
+        "calendar_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "first_open_sessions": {"type": "array", "minItems": 60, "maxItems": 60, "uniqueItems": true, "items": {"$ref": "#/$defs/krxDate"}},
+        "sealed_archive": {"$ref": "#/$defs/sealedArchiveCommitment"},
+        "acl": {"$ref": "#/$defs/custodyAcl"},
+        "created_at": {"$ref": "#/$defs/utcSeconds"}
+      }
+    },
+    "authorityGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "principal_uri", "role", "scope", "purpose", "key_id", "public_key"],
+      "properties": {
+        "schema": {"const": "kronos_oos_authority_grant.v1"},
+        "principal_uri": {"$ref": "#/$defs/principalUri"},
+        "role": {"enum": ["OOS_CUSTODIAN", "OOS_EVALUATOR"]},
+        "scope": {"enum": ["OOS_CUSTODY", "OOS_CAPABILITY", "OOS_EVALUATION"]},
+        "purpose": {"enum": ["OOS_CUSTODY", "OOS_CAPABILITY", "OOS_EVALUATION"]},
+        "key_id": {"$ref": "#/$defs/uuid"},
+        "public_key": {"$ref": "#/$defs/b64u32"}
+      },
+      "oneOf": [
+        {"properties": {"role": {"const": "OOS_CUSTODIAN"}, "scope": {"const": "OOS_CUSTODY"}, "purpose": {"const": "OOS_CUSTODY"}}},
+        {"properties": {"role": {"const": "OOS_CUSTODIAN"}, "scope": {"const": "OOS_CAPABILITY"}, "purpose": {"const": "OOS_CAPABILITY"}}},
+        {"properties": {"role": {"const": "OOS_EVALUATOR"}, "scope": {"const": "OOS_EVALUATION"}, "purpose": {"const": "OOS_EVALUATION"}}}
+      ]
+    },
+    "accessTransitionTable": {
+      "description": "Allowed access-chain custody transitions; FRESH_OOS_NOT_AVAILABLE and CONTAMINATED are terminal and have no outgoing rows.",
+      "const": [
+        {"from": "START", "event_type": "GENESIS_SEALED", "to": "SEALED"},
+        {"from": "SEALED", "event_type": "CAPABILITY_ISSUED", "to": "CAPABILITY_ISSUED"},
+        {"from": "SEALED", "event_type": "DENIED", "to": "FRESH_OOS_NOT_AVAILABLE"},
+        {"from": "SEALED", "event_type": "CONTAMINATED", "to": "CONTAMINATED"},
+        {"from": "CAPABILITY_ISSUED", "event_type": "CAPABILITY_CONSUMED", "to": "CAPABILITY_CONSUMED"},
+        {"from": "CAPABILITY_ISSUED", "event_type": "DENIED", "to": "FRESH_OOS_NOT_AVAILABLE"},
+        {"from": "CAPABILITY_ISSUED", "event_type": "CONTAMINATED", "to": "CONTAMINATED"},
+        {"from": "CAPABILITY_CONSUMED", "event_type": "RELEASE_RECEIVED", "to": "RELEASE_RECEIVED"},
+        {"from": "CAPABILITY_CONSUMED", "event_type": "CONTAMINATED", "to": "CONTAMINATED"}
+      ]
+    },
+    "accessEventStatement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "event_uid", "custody_uid", "sequence", "event_type", "actor_principal_uri", "actor_role", "key_id", "scope", "purpose", "action", "custody_manifest_sha256", "calendar_manifest_sha256", "sealed_archive_sha256", "capability_sha256", "release_receipt_sha256", "previous_event_sha256", "genesis_event_sha256", "occurred_at", "next_custody_state"],
+      "properties": {
+        "schema": {"const": "kronos_oos_access_event_statement.v1"},
+        "event_uid": {"$ref": "#/$defs/uuid"},
+        "custody_uid": {"$ref": "#/$defs/uuid"},
+        "sequence": {"type": "integer", "minimum": 0},
+        "event_type": {"enum": ["GENESIS_SEALED", "CAPABILITY_ISSUED", "CAPABILITY_CONSUMED", "DENIED", "CONTAMINATED", "RELEASE_RECEIVED"]},
+        "actor_principal_uri": {"$ref": "#/$defs/principalUri"},
+        "actor_role": {"enum": ["OOS_CUSTODIAN", "OOS_EVALUATOR"]},
+        "key_id": {"$ref": "#/$defs/uuid"},
+        "scope": {"enum": ["OOS_CUSTODY", "OOS_EVALUATION"]},
+        "purpose": {"enum": ["OOS_CUSTODY", "OOS_EVALUATION"]},
+        "action": {"enum": ["OOS_CUSTODY_SEAL_STATUS_ONLY", "OOS_CAPABILITY_ISSUE_STATUS_ONLY", "OOS_CAPABILITY_CONSUME_STATUS_ONLY", "OOS_CUSTODY_DENY_STATUS_ONLY", "OOS_CUSTODY_CONTAMINATE_STATUS_ONLY", "OOS_EVALUATION_NOT_RUN_STATUS_ONLY"]},
+        "custody_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "calendar_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "sealed_archive_sha256": {"$ref": "#/$defs/sha256"},
+        "capability_sha256": {"$ref": "#/$defs/zeroOrSha256"},
+        "release_receipt_sha256": {"$ref": "#/$defs/zeroOrSha256"},
+        "previous_event_sha256": {"$ref": "#/$defs/zeroOrSha256"},
+        "genesis_event_sha256": {"$ref": "#/$defs/zeroOrSha256"},
+        "occurred_at": {"$ref": "#/$defs/utcSeconds"},
+        "next_custody_state": {"enum": ["SEALED", "FRESH_OOS_NOT_AVAILABLE", "CAPABILITY_ISSUED", "CAPABILITY_CONSUMED", "RELEASE_RECEIVED", "CONTAMINATED"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"event_type": {"const": "GENESIS_SEALED"}}}, "then": {"properties": {"actor_role": {"const": "OOS_CUSTODIAN"}, "scope": {"const": "OOS_CUSTODY"}, "purpose": {"const": "OOS_CUSTODY"}, "action": {"const": "OOS_CUSTODY_SEAL_STATUS_ONLY"}, "capability_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "release_receipt_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "next_custody_state": {"const": "SEALED"}}}},
+        {"if": {"properties": {"event_type": {"const": "CAPABILITY_ISSUED"}}}, "then": {"properties": {"actor_role": {"const": "OOS_CUSTODIAN"}, "scope": {"const": "OOS_CUSTODY"}, "purpose": {"const": "OOS_CUSTODY"}, "action": {"const": "OOS_CAPABILITY_ISSUE_STATUS_ONLY"}, "capability_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "release_receipt_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "next_custody_state": {"const": "CAPABILITY_ISSUED"}}}},
+        {"if": {"properties": {"event_type": {"const": "CAPABILITY_CONSUMED"}}}, "then": {"properties": {"actor_role": {"const": "OOS_CUSTODIAN"}, "scope": {"const": "OOS_CUSTODY"}, "purpose": {"const": "OOS_CUSTODY"}, "action": {"const": "OOS_CAPABILITY_CONSUME_STATUS_ONLY"}, "capability_sha256": {"$ref": "#/$defs/nonzeroSha256"}, "release_receipt_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "next_custody_state": {"const": "CAPABILITY_CONSUMED"}}}},
+        {"if": {"properties": {"event_type": {"const": "DENIED"}}}, "then": {"properties": {"actor_role": {"const": "OOS_CUSTODIAN"}, "scope": {"const": "OOS_CUSTODY"}, "purpose": {"const": "OOS_CUSTODY"}, "action": {"const": "OOS_CUSTODY_DENY_STATUS_ONLY"}, "capability_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "release_receipt_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "next_custody_state": {"const": "FRESH_OOS_NOT_AVAILABLE"}}}},
+        {"if": {"properties": {"event_type": {"const": "CONTAMINATED"}}}, "then": {"properties": {"actor_role": {"const": "OOS_CUSTODIAN"}, "scope": {"const": "OOS_CUSTODY"}, "purpose": {"const": "OOS_CUSTODY"}, "action": {"const": "OOS_CUSTODY_CONTAMINATE_STATUS_ONLY"}, "capability_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "release_receipt_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}, "next_custody_state": {"const": "CONTAMINATED"}}}},
+        {"if": {"properties": {"event_type": {"const": "RELEASE_RECEIVED"}}}, "then": {"properties": {"actor_role": {"const": "OOS_EVALUATOR"}, "scope": {"const": "OOS_EVALUATION"}, "purpose": {"const": "OOS_EVALUATION"}, "action": {"const": "OOS_EVALUATION_NOT_RUN_STATUS_ONLY"}, "capability_sha256": {"$ref": "#/$defs/nonzeroSha256"}, "release_receipt_sha256": {"$ref": "#/$defs/nonzeroSha256"}, "next_custody_state": {"const": "RELEASE_RECEIVED"}}}}
+      ]
+    },
+    "accessEventEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "statement", "signature"],
+      "properties": {
+        "schema": {"const": "kronos_oos_access_event.v1"},
+        "statement": {"$ref": "#/$defs/accessEventStatement"},
+        "signature": {"$ref": "#/$defs/b64u64"}
+      }
+    },
+    "capabilityStatement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "capability_uid", "custody_uid", "custodian_principal_uri", "role", "key_id", "scope", "purpose", "evaluator_principal_uri", "evaluator_action", "calendar_manifest_sha256", "custody_manifest_sha256", "access_chain_head_sha256", "sealed_archive_sha256", "issued_at", "expires_at", "nonce", "max_uses"],
+      "properties": {
+        "schema": {"const": "kronos_oos_capability_statement.v1"},
+        "capability_uid": {"$ref": "#/$defs/uuid"},
+        "custody_uid": {"$ref": "#/$defs/uuid"},
+        "custodian_principal_uri": {"$ref": "#/$defs/principalUri"},
+        "role": {"const": "OOS_CUSTODIAN"},
+        "key_id": {"$ref": "#/$defs/uuid"},
+        "scope": {"const": "OOS_CAPABILITY"},
+        "purpose": {"const": "OOS_CAPABILITY"},
+        "evaluator_principal_uri": {"$ref": "#/$defs/principalUri"},
+        "evaluator_action": {"const": "OOS_EVALUATION_NOT_RUN_STATUS_ONLY"},
+        "calendar_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "custody_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "access_chain_head_sha256": {"$ref": "#/$defs/sha256"},
+        "sealed_archive_sha256": {"$ref": "#/$defs/sha256"},
+        "issued_at": {"$ref": "#/$defs/utcSeconds"},
+        "expires_at": {"$ref": "#/$defs/utcSeconds"},
+        "nonce": {"$ref": "#/$defs/b64u32"},
+        "max_uses": {"const": 1}
+      }
+    },
+    "capabilityEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "statement", "signature"],
+      "properties": {
+        "schema": {"const": "kronos_oos_capability.v1"},
+        "statement": {"$ref": "#/$defs/capabilityStatement"},
+        "signature": {"$ref": "#/$defs/b64u64"}
+      }
+    },
+    "releaseReceiptStatement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "receipt_uid", "custody_uid", "capability_sha256", "calendar_manifest_sha256", "custody_manifest_sha256", "access_chain_head_sha256", "sealed_archive_sha256", "evaluator_principal_uri", "role", "key_id", "scope", "purpose", "evaluator_action", "issued_at", "status", "result", "reason_codes", "fresh_oos_consumed", "raw_data_read", "archive_opened", "decrypt_attempted", "six_locks_false"],
+      "properties": {
+        "schema": {"const": "kronos_oos_release_receipt_statement.v1"},
+        "receipt_uid": {"$ref": "#/$defs/uuid"},
+        "custody_uid": {"$ref": "#/$defs/uuid"},
+        "capability_sha256": {"$ref": "#/$defs/sha256"},
+        "calendar_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "custody_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "access_chain_head_sha256": {"$ref": "#/$defs/sha256"},
+        "sealed_archive_sha256": {"$ref": "#/$defs/sha256"},
+        "evaluator_principal_uri": {"$ref": "#/$defs/principalUri"},
+        "role": {"const": "OOS_EVALUATOR"},
+        "key_id": {"$ref": "#/$defs/uuid"},
+        "scope": {"const": "OOS_EVALUATION"},
+        "purpose": {"const": "OOS_EVALUATION"},
+        "evaluator_action": {"const": "OOS_EVALUATION_NOT_RUN_STATUS_ONLY"},
+        "issued_at": {"$ref": "#/$defs/utcSeconds"},
+        "status": {"const": "RELEASE_RECEIVED"},
+        "result": {"const": "NOT_RUN"},
+        "reason_codes": {"const": ["STATUS_ONLY_RELEASE_NO_OOS_READ"]},
+        "fresh_oos_consumed": {"const": false},
+        "raw_data_read": {"const": false},
+        "archive_opened": {"const": false},
+        "decrypt_attempted": {"const": false},
+        "six_locks_false": {"$ref": "#/$defs/sixLocksFalse"}
+      }
+    },
+    "releaseReceiptEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "statement", "signature"],
+      "properties": {
+        "schema": {"const": "kronos_oos_release_receipt.v1"},
+        "statement": {"$ref": "#/$defs/releaseReceiptStatement"},
+        "signature": {"$ref": "#/$defs/b64u64"}
+      }
+    },
+    "denialReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "status", "result", "reason_codes", "fresh_oos_consumed", "capability_consumed", "raw_data_read", "archive_opened", "decrypt_attempted", "six_locks_false"],
+      "properties": {
+        "schema": {"const": "kronos_oos_denial_receipt.v1"},
+        "status": {"enum": ["FRESH_OOS_NOT_AVAILABLE", "CONTAMINATED"]},
+        "result": {"const": "NOT_RUN"},
+        "reason_codes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "fresh_oos_consumed": {"const": false},
+        "capability_consumed": {"type": "boolean"},
+        "raw_data_read": {"const": false},
+        "archive_opened": {"const": false},
+        "decrypt_attempted": {"const": false},
+        "six_locks_false": {"$ref": "#/$defs/sixLocksFalse"}
+      }
+    }
+  }
+}

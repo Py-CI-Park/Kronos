@@ -241,7 +241,7 @@
     <span style="margin-left:auto" class="text-caption">버퍼 GPU {ring.length} / CPU {hostRing.length} · 최신 {formatTime(chartLatestTs)}</span>
   </div>
 
-  <EChartsRenderer {option} height="240px" />
+  <EChartsRenderer {option} height="240px" caption="GPU/시스템 리소스 스파크라인" />
 
   <div class="resource-mini-grid">
     <div class="stack" style="gap:8px;align-items:center">

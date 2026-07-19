@@ -35,20 +35,18 @@ def test_official_dashboard_sources_register_stom_rl_trading_tab():
     status_shell = (DASHBOARD_SRC / "tabs" / "ResearchStatusShell.svelte").read_text(encoding="utf-8")
     source = _rl_source_text()
 
-    assert "data-trading-command-center-redirect" in app
+    # Consolidation A: RL trading is now rendered by the Svelte RLTradingTab
+    # (the Next.js command-center redirect card is retired).
+    assert "RLTradingTab" in app
     assert "tab === 'rl'" in app
-    assert "path: '/rl'" in routes
-    for marker in ["'/daily-ohlcv'", "'/daily'", "'/daily-rl-guide'", "'/daily-ohlcv/rl-guide'", "'/rl-lab'", "'/v2/rl-lab'", "'/v2/rl-trading'"]:
-        assert marker in routes
-    for section in ["daily-gates", "workflow", "evidence"]:
-        assert section in routes
-    assert "id: 'daily-ohlcv'" not in routes
-    assert "id: 'daily-rl-guide'" not in routes
+    assert "data-trading-command-center-redirect" not in app
+    assert "id: 'rl'" in routes
+    assert "id: 'daily-ohlcv'" in routes  # B1: daily is a registered Svelte tab
+    assert "id: 'daily-rl-guide'" in routes  # A: daily RL guide is a registered Svelte tab
     assert "id: 'rl'" in sidebar
     assert "label: 'Trading Command Center'" in sidebar
-    assert "id: 'daily-ohlcv'" not in sidebar
-    assert "id: 'daily-rl-guide'" not in sidebar
-    assert "routeLabel(tab)" in header
+    assert "id: 'daily-ohlcv'" in sidebar  # B1: daily is a registered Svelte tab
+    assert "routeLabelForShell(tab, shell)" in header
     assert "data-rl-trading-tab" in source
     assert "data-rl-orderbook-readiness-card" in source
     assert "orderbook_rl_readiness" in source
@@ -182,11 +180,11 @@ def test_v2_dist_contains_rl_trading_bundle_marker_when_built():
         path.read_text(encoding="utf-8", errors="ignore")
         for path in (dist / "assets").glob("index-*.js")
     )
+    # Consolidation A: the RL trading tab is now bundled into the Svelte app.
     assert "Trading Command Center" in bundle_text
-    assert "data-trading-command-center-redirect" in bundle_text
-    assert "RULE / RL EVIDENCE" not in bundle_text
-    assert "data-rl-trading-tab" not in bundle_text
-    assert "data-rl-orderbook-readiness-card" not in bundle_text
+    assert "data-rl-trading-tab" in bundle_text
+    assert "data-rl-orderbook-readiness-card" in bundle_text
+    assert "data-trading-command-center-redirect" not in bundle_text
     assert "Cumulative profit curve" not in bundle_text
 
 

@@ -1,0 +1,45 @@
+{
+  "schema": "kronos_daily_sb3_aggregate_evaluator_fixture.v1",
+  "description": "Compact deterministic synthetic fixture expanded by tests into the frozen 50-cell protocol matrix.",
+  "seed_fold_returns": {
+    "seed-01": {"fold-01": 0.08, "fold-02": 0.06},
+    "seed-02": {"fold-01": 0.06, "fold-02": 0.05},
+    "seed-03": {"fold-01": 0.05, "fold-02": 0.045},
+    "seed-04": {"fold-01": 0.04, "fold-02": 0.035},
+    "seed-05": {"fold-01": 0.03, "fold-02": 0.025}
+  },
+  "variant_return_adjustments": {
+    "baseline": -0.001,
+    "cost-00bp": 0.01,
+    "cost-23bp": 0.0,
+    "cost-46bp": -0.01,
+    "no-trade": 0.0
+  },
+  "comparators_23bp": {
+    "no_trade_cash": 0.0,
+    "shuffle_control": 0.01,
+    "equal_weight_topk_momentum": 0.02,
+    "ts_imb_rule_baseline": 0.025,
+    "buy_and_hold_cash": 0.015
+  },
+  "folds_as_seeds_direct_values": [0.08, 0.06, 0.06, 0.05, 0.05, 0.045, 0.04, 0.035, 0.03, 0.025],
+  "scenarios": [
+    {"id": "watch_research_only", "mutation": {}, "expected_rule": "WATCH_RESEARCH_ONLY", "expected_verdict": "WATCH_RESEARCH_ONLY"},
+    {"id": "first_match_missing_before_stopped", "mutation": {"drop": [{"seed_id": "seed-01", "fold_id": "fold-01", "variant_id": "baseline"}], "set_status": [{"seed_id": "seed-01", "fold_id": "fold-02", "variant_id": "cost-23bp", "status": "STOPPED"}]}, "expected_rule": "MISSING_CELLS", "expected_verdict": "INCONCLUSIVE"},
+    {"id": "stopped_cells", "mutation": {"set_status": [{"seed_id": "seed-01", "fold_id": "fold-01", "variant_id": "cost-23bp", "status": "STOPPED"}]}, "expected_rule": "STOPPED_CELLS", "expected_verdict": "INCONCLUSIVE"},
+    {"id": "failed_cells", "mutation": {"set_status": [{"seed_id": "seed-01", "fold_id": "fold-01", "variant_id": "cost-23bp", "status": "FAILED"}]}, "expected_rule": "FAILED_CELLS", "expected_verdict": "INCONCLUSIVE"},
+    {"id": "nonfinite_metrics", "mutation": {"set_cell_metric": [{"seed_id": "seed-01", "fold_id": "fold-01", "variant_id": "cost-23bp", "key": "economic_net_return", "value": "NaN"}]}, "expected_rule": "NONFINITE_METRICS", "expected_verdict": "INCONCLUSIVE"},
+    {"id": "primary_23bp_incomplete", "mutation": {"set_status": [{"seed_id": "seed-01", "fold_id": "fold-01", "variant_id": "cost-23bp", "status": "RUNNING"}]}, "expected_rule": "PRIMARY_23BP_INCOMPLETE", "expected_verdict": "INCONCLUSIVE"},
+    {"id": "missing_required_comparators", "mutation": {"remove_primary_comparators": true}, "expected_rule": "MISSING_REQUIRED_COMPARATORS", "expected_verdict": "INCONCLUSIVE"},
+    {"id": "partial_comparator_fold_incomplete", "mutation": {"remove_primary_comparator": [{"seed_id": "seed-01", "fold_id": "fold-02", "variant_id": "cost-23bp", "comparator_id": "shuffle_control"}]}, "expected_rule": "MISSING_REQUIRED_COMPARATORS", "expected_verdict": "INCONCLUSIVE"},
+    {"id": "invalid_action_stop", "mutation": {"primary_invalid_action_count": 6, "primary_eval_step_count": 100}, "expected_rule": "INVALID_ACTION_RATE_ABOVE_0_05", "expected_verdict": "INCONCLUSIVE"},
+    {"id": "invalid_action_boundary_at_threshold", "mutation": {"primary_invalid_action_count": 5, "primary_eval_step_count": 100}, "expected_rule": "WATCH_RESEARCH_ONLY", "expected_verdict": "WATCH_RESEARCH_ONLY"},
+    {"id": "non_improving_23bp", "mutation": {"primary_returns_by_seed": {"seed-01": -0.01, "seed-02": -0.01, "seed-03": -0.01, "seed-04": -0.01, "seed-05": -0.01}, "comparators": {"no_trade_cash": 0.0, "shuffle_control": -0.02, "equal_weight_topk_momentum": -0.02, "ts_imb_rule_baseline": -0.02, "buy_and_hold_cash": -0.02}}, "expected_rule": "NON_IMPROVING_23BP", "expected_verdict": "NO-GO"},
+    {"id": "never_traded_23bp", "mutation": {"primary_returns_by_seed": {"seed-01": 0.04, "seed-02": 0.04, "seed-03": 0.04, "seed-04": 0.04, "seed-05": 0.04}, "primary_trade_count": 0, "comparators": {"no_trade_cash": 0.0, "shuffle_control": 0.0, "equal_weight_topk_momentum": 0.0, "ts_imb_rule_baseline": 0.0, "buy_and_hold_cash": 0.0}}, "expected_rule": "NEVER_TRADED_23BP", "expected_verdict": "NO-GO"},
+    {"id": "shuffle_control_not_beaten", "mutation": {"primary_returns_by_seed": {"seed-01": 0.02, "seed-02": 0.02, "seed-03": 0.02, "seed-04": 0.02, "seed-05": 0.02}, "comparators": {"no_trade_cash": 0.0, "shuffle_control": 0.03, "equal_weight_topk_momentum": 0.0, "ts_imb_rule_baseline": 0.0, "buy_and_hold_cash": 0.0}}, "expected_rule": "SHUFFLE_CONTROL_NOT_BEATEN", "expected_verdict": "NO-GO"},
+    {"id": "best_comparator_not_beaten", "mutation": {"primary_returns_by_seed": {"seed-01": 0.02, "seed-02": 0.02, "seed-03": 0.02, "seed-04": 0.02, "seed-05": 0.02}, "comparators": {"no_trade_cash": 0.0, "shuffle_control": 0.0, "equal_weight_topk_momentum": 0.03, "ts_imb_rule_baseline": 0.025, "buy_and_hold_cash": 0.015}}, "expected_rule": "BEST_COMPARATOR_NOT_BEATEN", "expected_verdict": "NO-GO"},
+    {"id": "max_drawdown_below_threshold", "mutation": {"primary_returns_by_seed": {"seed-01": 0.05, "seed-02": 0.05, "seed-03": 0.05, "seed-04": 0.05, "seed-05": 0.05}, "comparators": {"no_trade_cash": 0.0, "shuffle_control": 0.0, "equal_weight_topk_momentum": 0.0, "ts_imb_rule_baseline": 0.0, "buy_and_hold_cash": 0.0}, "primary_max_drawdown_pct": -25.0}, "expected_rule": "MAX_DRAWDOWN_BELOW_-20PCT", "expected_verdict": "NO-GO"},
+    {"id": "max_drawdown_boundary_at_threshold", "mutation": {"primary_returns_by_seed": {"seed-01": 0.05, "seed-02": 0.05, "seed-03": 0.05, "seed-04": 0.05, "seed-05": 0.05}, "comparators": {"no_trade_cash": 0.0, "shuffle_control": 0.0, "equal_weight_topk_momentum": 0.0, "ts_imb_rule_baseline": 0.0, "buy_and_hold_cash": 0.0}, "primary_max_drawdown_pct": -20.0}, "expected_rule": "WATCH_RESEARCH_ONLY", "expected_verdict": "WATCH_RESEARCH_ONLY"},
+    {"id": "seed_noise_ci_crosses_zero", "mutation": {"primary_returns_by_seed": {"seed-01": 0.04, "seed-02": 0.04, "seed-03": 0.04, "seed-04": -0.005, "seed-05": -0.005}, "comparators": {"no_trade_cash": 0.0, "shuffle_control": 0.0, "equal_weight_topk_momentum": 0.0, "ts_imb_rule_baseline": 0.0, "buy_and_hold_cash": 0.0}}, "expected_rule": "SEED_NOISE_CI_CROSSES_ZERO", "expected_verdict": "SEED_NOISE_NO_GO"}
+  ]
+}

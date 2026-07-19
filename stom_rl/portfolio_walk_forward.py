@@ -150,8 +150,10 @@ def _write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequen
         writer.writerows(rows)
 
 
-def _load_candidates(path: Optional[str]) -> pd.DataFrame:
-    if path:
+def _load_candidates(path: Optional[str], candidates: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    if candidates is not None:
+        frame = candidates.copy()
+    elif path:
         frame = read_candidates_csv(path)
     else:
         frame = synthetic_candidates()
@@ -676,8 +678,12 @@ def _evaluate_on_test(
     }
 
 
-def run_portfolio_walk_forward(config: PortfolioWalkForwardConfig) -> Dict[str, Any]:
-    candidates = _load_candidates(config.candidate_path)
+def run_portfolio_walk_forward(
+    config: PortfolioWalkForwardConfig,
+    *,
+    candidates: Optional[pd.DataFrame] = None,
+) -> Dict[str, Any]:
+    candidates = _load_candidates(config.candidate_path, candidates)
     if config.shuffle_signal:
         # Destroy the per-timestamp selection signal (rank_score + feature_*) while
         # keeping price/fill_price/symbol intact — the mandatory shuffle test (§7).

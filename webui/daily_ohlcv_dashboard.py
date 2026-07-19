@@ -6,11 +6,16 @@ import csv
 import json
 import hashlib
 import math
+import threading
 import re
 from pathlib import Path
+from typing import NamedTuple
 from datetime import datetime, timezone
 from typing import Any
+from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 
+from webui import artifact_cache
 from stom_rl.daily_ohlcv_db import (
     DEFAULT_ARTIFACT_ROOT as DB_SUMMARY_ROOT,
     DECISION_GRADE_RETURN_STATUS,
@@ -47,6 +52,26 @@ from stom_rl.daily_registry import DEFAULT_DAILY_REGISTRY_ROOT
 from stom_rl.daily_portfolio_env import environment_contract
 from stom_rl.daily_scenario_runner import DEFAULT_SCENARIO_ROOT, RESEARCH_GUARDRAIL
 from stom_rl.daily_scenario_batch import DEFAULT_SCENARIO_BATCH_ROOT
+from stom_rl.daily_close_slot_dataset import (
+    COST_MODEL_SCHEMA_VERSION as CLOSE_SLOT_COST_MODEL_SCHEMA_VERSION,
+    COST_SENSITIVITY_BP as CLOSE_SLOT_COST_SENSITIVITY_BP,
+    DEFAULT_CLOSE_SLOT_DATASET_ROOT,
+    DEFAULT_SLOT_COUNT as CLOSE_SLOT_DEFAULT_SLOT_COUNT,
+    EXECUTION_REALISM as CLOSE_SLOT_EXECUTION_REALISM,
+    HOLD_CASH_ACTION as CLOSE_SLOT_HOLD_CASH_ACTION,
+    MAX_SLOT_COUNT as CLOSE_SLOT_MAX_SLOT_COUNT,
+    FILL_MODE as CLOSE_SLOT_FILL_MODE,
+    ROUND_TRIP_COST_BP as CLOSE_SLOT_ROUND_TRIP_COST_BP,
+    SELECTION_CARDINALITY as CLOSE_SLOT_SELECTION_CARDINALITY,
+    validate_close_slot_dataset_lineage,
+)
+from stom_rl.daily_close_slot_gate import (
+    DEFAULT_CLOSE_SLOT_GATE_ROOT,
+    REQUIRED_BASELINES as CLOSE_SLOT_REQUIRED_BASELINES,
+    REQUIRED_POLICY_SCORE_AUDIT_FIELDS,
+    validate_close_slot_gate,
+)
+from stom_rl.daily_close_slot_train import DEFAULT_CLOSE_SLOT_TRAIN_ROOT, POLICY_LINEAR_SCORE, PRIMARY_COST_SCENARIO_ID, TRAIN_REPLAY_MODE_ID
 
 SAFE_RUN_RE = re.compile(r"^[0-9A-Za-z_.-]+$")
 DEFAULT_SIGNAL_QUALITY_ROOT = Path("webui/rl_runs/daily_ohlcv_signal_quality")
@@ -65,6 +90,70 @@ MARKET_REGIME_REQUIRED_ARTIFACTS = {
     "stale_artifact_audit": "stale_artifact_audit.json",
 }
 MAX_LIMIT = 5000
+CLOSE_SLOT_DASHBOARD_FALSE_FLAGS = (
+    "promotion_allowed",
+    "model_build_allowed",
+    "paper_forward_allowed",
+    "live_broker_order_allowed",
+    "profitability_claim_allowed",
+    "go_summary_allowed",
+)
+
+_PROGRESS_CONDITION = threading.Condition()
+_PROGRESS_IN_FLIGHT = False
+_PROGRESS_GENERATION = 0
+_PROGRESS_RESULT: dict[str, Any] | None = None
+
+_PROGRESS_ARTIFACT_SOURCES = (
+    (DB_SUMMARY_ROOT, "db_summary.json"),
+    (DEFAULT_UNIVERSE_ROOT, "universe.json"),
+    (DEFAULT_DATASET_ROOT, "dataset_manifest.json"),
+    (DEFAULT_PREDICTION_ROOT, "prediction_manifest.json"),
+    (DEFAULT_PORTFOLIO_ROOT, "rl_manifest.json"),
+    (DEFAULT_WALK_FORWARD_ROOT, "walk_forward_manifest.json"),
+    (DEFAULT_DAILY_REGISTRY_ROOT, "registry_manifest.json"),
+)
+CLOSE_SLOT_DASHBOARD_READY_LOCK = "CLOSE_SLOT_READY_STATUS_BLOCKED_FOR_RESEARCH_ONLY_D0_D1"
+CLOSE_SLOT_COST_COMPONENT_FIELDS = (
+    "sell_tax_bp",
+    "buy_commission_bp",
+    "sell_commission_bp",
+    "buy_slippage_bp",
+    "sell_slippage_bp",
+)
+CLOSE_SLOT_EXPECTED_COST_SCENARIOS = {
+    "zero_control_0bp": {
+        "sell_tax_bp": 0.0,
+        "buy_commission_bp": 0.0,
+        "sell_commission_bp": 0.0,
+        "buy_slippage_bp": 0.0,
+        "sell_slippage_bp": 0.0,
+        "total_bp": 0.0,
+    },
+    "base_23bp": {
+        "sell_tax_bp": 20.0,
+        "buy_commission_bp": 1.5,
+        "sell_commission_bp": 1.5,
+        "buy_slippage_bp": 0.0,
+        "sell_slippage_bp": 0.0,
+        "total_bp": 23.0,
+    },
+    "stress_46bp": {
+        "sell_tax_bp": 20.0,
+        "buy_commission_bp": 1.5,
+        "sell_commission_bp": 1.5,
+        "buy_slippage_bp": 11.5,
+        "sell_slippage_bp": 11.5,
+        "total_bp": 46.0,
+    },
+}
+CLOSE_SLOT_NO_CLAIM_LABELS = [
+    "NO_LIVE_BROKER_ORDER_ACCOUNT_SURFACE",
+    "NO_PAPER_FORWARD_EXECUTION",
+    "NO_MODEL_BUILD_GO",
+    "NO_PROFITABILITY_CLAIM",
+    "RULE_OR_REPLAY_EVIDENCE_ONLY",
+]
 
 
 def _bounded_limit(value: Any, *, default: int = 100, maximum: int = MAX_LIMIT) -> int:
@@ -100,7 +189,32 @@ def _is_scenario_generated_run_dir(path: Path) -> bool:
     except (ValueError, OSError):
         return False
     return scenario_manifest.is_file()
+def _run_authority_sort_key(run_dir: Path, required_file: str) -> tuple[int, int, str, float]:
+    manifest = _load_json_if_exists(run_dir / required_file)
+    if not isinstance(manifest, dict):
+        manifest = {}
+    authority_block = manifest.get("authority")
+    if not isinstance(authority_block, dict):
+        authority_block = manifest.get("run_authority")
+    if not isinstance(authority_block, dict):
+        authority_block = {}
 
+    def _field(name: str) -> Any:
+        if name in authority_block:
+            return authority_block.get(name)
+        return manifest.get(name)
+
+    authoritative_rank = 1 if bool(_field("authoritative")) else 0
+    status = _field("status")
+    status = status.strip().lower() if isinstance(status, str) else ""
+    status_rank = {"done": 3, "running": 2, "queued": 1}.get(status, 0)
+    completed_at = _field("completed_at")
+    completed_at_key = completed_at if isinstance(completed_at, str) else ""
+    try:
+        mtime = (run_dir / required_file).stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return (authoritative_rank, status_rank, completed_at_key, mtime)
 
 def _latest_run_dir(root: Path, *, required_file: str, run_id: str | None = None) -> Path | None:
     root = root.resolve()
@@ -112,18 +226,24 @@ def _latest_run_dir(root: Path, *, required_file: str, run_id: str | None = None
         raise FileNotFoundError(run_id)
     if not root.exists():
         return None
-    candidates = [
-        path
-        for path in root.iterdir()
-        if path.is_dir() and (path / required_file).exists() and not _is_scenario_generated_run_dir(path)
-    ]
+    candidates: list[Path] = []
+    for path in root.iterdir():
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if not path.is_dir() or not _path_is_relative_to(resolved, root):
+            continue
+        if not (path / required_file).exists() or _is_scenario_generated_run_dir(path):
+            continue
+        candidates.append(path)
     if not candidates:
         return None
-    return max(candidates, key=lambda p: (p / required_file).stat().st_mtime)
+    return max(candidates, key=lambda p: _run_authority_sort_key(p, required_file))
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return artifact_cache.cached_load_json(path)
 
 
 def _latest_artifact_dir(root: Path, *, required_file: str) -> Path | None:
@@ -133,7 +253,7 @@ def _latest_artifact_dir(root: Path, *, required_file: str) -> Path | None:
     candidates = [path for path in root.iterdir() if path.is_dir() and (path / required_file).exists()]
     if not candidates:
         return None
-    return max(candidates, key=lambda p: (p / required_file).stat().st_mtime)
+    return max(candidates, key=lambda p: _run_authority_sort_key(p, required_file))
 
 
 def _load_json_if_exists(path: Path | None) -> dict[str, Any]:
@@ -186,6 +306,474 @@ def _fail_closed_latest_artifact(
     }
 
 
+def _close_slot_fail_closed(
+    *,
+    run_dir: Path | None,
+    errors: list[str],
+    source_run_ids: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    run_id = run_dir.name if run_dir is not None else None
+    return {
+        "surface": "daily_close_slot",
+        "status": "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT",
+        "readiness_status": "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT",
+        "run_id": run_id,
+        "artifact_status": "FAIL_CLOSED_INVALID_CLOSE_SLOT_ARTIFACT",
+        "artifact_dir": str(run_dir) if run_dir is not None else None,
+        "artifact_selection_status": "FAIL_CLOSED_LATEST_INVALID",
+        "artifact_selection_errors": sorted(set(errors)),
+        "latest_selection_policy": "newest_close_slot_gate_manifest_is_authoritative_no_fallback_to_older_runs",
+        "source_run_ids": source_run_ids or {},
+        "dashboard_validation_status": "BLOCK",
+        "lineage_validation_status": "BLOCK",
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "go_summary_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "read_only": True,
+        "guardrail": "Close-slot dashboard evidence fails closed on invalid lineage, hashes, row counts, locks, or D0/D1 injection; no model/paper/live/order/profit unlock.",
+    }
+
+
+def _close_slot_not_started() -> dict[str, Any]:
+    return {
+        "surface": "daily_close_slot",
+        "status": "NOT_STARTED",
+        "readiness_status": "NOT_STARTED",
+        "artifact_status": "NOT_STARTED",
+        "read_only": True,
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "go_summary_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "guardrail": "Daily close-slot generated artifacts are absent; no model/profit/live/order readiness claim.",
+    }
+
+
+def _close_slot_resolve_path(
+    value: Any,
+    *,
+    base_dir: Path,
+    allowed_root: Path,
+    errors: list[str],
+    error_prefix: str,
+) -> Path | None:
+    if not value:
+        errors.append(f"{error_prefix}_MISSING")
+        return None
+    raw_path = Path(str(value))
+    resolved = (base_dir / raw_path).resolve() if not raw_path.is_absolute() else raw_path.resolve()
+    allowed = allowed_root.resolve()
+    if not _path_is_relative_to(resolved, allowed):
+        errors.append(f"{error_prefix}_UNSAFE_PATH")
+        return None
+    return resolved
+
+
+def _close_slot_false_lock_errors(payload: dict[str, Any], *, prefix: str, require_present: bool = True) -> list[str]:
+    return [
+        f"{prefix}_LOCK_NOT_FALSE:{name}"
+        for name in CLOSE_SLOT_DASHBOARD_FALSE_FLAGS
+        if (require_present or name in payload) and payload.get(name) is not False
+    ]
+
+
+def _close_slot_current_d0_d1_contract() -> dict[str, Any]:
+    db, universe = _current_d0_d1_surfaces()
+    blockers: list[str] = []
+    if not _price_basis_verified(db):
+        blockers.append(D0_DATASET_UPSTREAM_BLOCKER)
+    if not _universe_official_or_manual_verified(universe):
+        blockers.append(D1_DATASET_UPSTREAM_BLOCKER)
+    return {
+        "price_basis": db.get("price_basis", PRICE_BASIS),
+        "price_basis_status": db.get("price_basis_status", PRICE_BASIS_STATUS),
+        "decision_grade_return_status": db.get("decision_grade_return_status", DECISION_GRADE_RETURN_STATUS),
+        "universe_verdict": universe.get("verdict", "WATCH_HEURISTIC_UNIVERSE"),
+        "universe_review_status": universe.get("universe_review_status") or universe.get("review_status") or universe.get("verdict"),
+        "official_metadata_status": universe.get("official_metadata_status", "MISSING"),
+        "official_metadata_coverage_status": universe.get("official_metadata_coverage_status", "MISSING"),
+        "universe_certification_status": universe.get("universe_certification_status", "BLOCKED_UNTIL_OFFICIAL_OR_MANUAL_REVIEW"),
+        "required_blockers": blockers,
+    }
+
+
+def _close_slot_limited_ledgers(date_ledgers: dict[str, Any], *, limit: int) -> dict[str, list[dict[str, Any]]]:
+    safe_limit = _bounded_limit(limit, default=25, maximum=500)
+    limited: dict[str, list[dict[str, Any]]] = {}
+    for policy, rows in date_ledgers.items():
+        if isinstance(rows, list):
+            limited[str(policy)] = [dict(row) for row in rows[:safe_limit]]
+    return limited
+
+
+class CloseSlotCsvFacts(NamedTuple):
+    resolved_path: str
+    mtime_ns: int
+    size: int
+    expected_sha256: str | None
+    row_count: int | None
+    fieldnames: tuple[str, ...]
+    sample_rows: tuple[tuple[tuple[str, str], ...], ...]
+    sample_rows_by_policy: tuple[tuple[str, tuple[tuple[tuple[str, str], ...], ...]], ...]
+    all_rows: tuple[tuple[tuple[str, str], ...], ...] | None
+    split_date_counts: tuple[tuple[str, int], ...]
+    date_split_map: tuple[tuple[str, str], ...]
+    distinct_values: tuple[tuple[str, tuple[str, ...]], ...]
+    extra_field_rows: tuple[int, ...]
+    blank_columns: tuple[tuple[int, tuple[str, ...]], ...]
+    error: str | None
+
+
+def _close_slot_csv_facts_identity(path: Path) -> tuple[str, int, int] | None:
+    try:
+        resolved = str(path.resolve())
+        st = path.stat()
+    except OSError:
+        return None
+    return resolved, st.st_mtime_ns, st.st_size
+
+
+def _close_slot_row_tuple(row: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    return tuple((str(key), "" if value is None else str(value)) for key, value in row.items() if key is not None)
+
+
+def _close_slot_rows_from_tuples(rows: tuple[tuple[tuple[str, str], ...], ...]) -> list[dict[str, Any]]:
+    return [{key: value for key, value in row} for row in rows]
+
+
+def _close_slot_facts_mapping(pairs: tuple[tuple[str, Any], ...]) -> dict[str, Any]:
+    return {key: value for key, value in pairs}
+
+
+def _close_slot_analyze_csv_facts(
+    path: Path,
+    *,
+    sample_limit: int,
+    retain_all_rows: bool,
+    audit_columns: tuple[str, ...] = (),
+    expected_sha256: str | None = None,
+) -> CloseSlotCsvFacts:
+    identity = _close_slot_csv_facts_identity(path)
+    if identity is None:
+        return CloseSlotCsvFacts(str(path), 0, 0, expected_sha256, None, (), (), (), () if retain_all_rows else None, (), (), (), (), (), "MISSING")
+    resolved, mtime_ns, size = identity
+    sample_rows: list[tuple[tuple[str, str], ...]] = []
+    sample_rows_by_policy: dict[str, list[tuple[tuple[str, str], ...]]] = {}
+    all_rows: list[tuple[tuple[str, str], ...]] | None = [] if retain_all_rows else None
+    split_dates: dict[str, set[str]] = {}
+    date_split: dict[str, str] = {}
+    distinct: dict[str, set[str]] = {column: set() for column in audit_columns}
+    extra_rows: list[int] = []
+    blank_columns: list[tuple[int, tuple[str, ...]]] = []
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = tuple(str(name) for name in (reader.fieldnames or ()))
+            row_count = 0
+            for index, row in enumerate(reader):
+                row_count += 1
+                if None in row:
+                    extra_rows.append(index)
+                blanks = tuple(str(column) for column in fieldnames if row.get(column) in (None, ""))
+                if blanks:
+                    blank_columns.append((index, blanks))
+                split = str(row.get("split") or "")
+                date = str(row.get("date") or "")
+                if split and date:
+                    split_dates.setdefault(split, set()).add(date)
+                    date_split[date] = split
+                for column in audit_columns:
+                    distinct.setdefault(column, set()).add(str(row.get(column, "")))
+                policy = str(row.get("policy") or "")
+                if len(sample_rows) < sample_limit or all_rows is not None or policy:
+                    row_tuple = _close_slot_row_tuple(row)
+                    if len(sample_rows) < sample_limit:
+                        sample_rows.append(row_tuple)
+                    if policy:
+                        policy_rows = sample_rows_by_policy.setdefault(policy, [])
+                        if len(policy_rows) < sample_limit:
+                            policy_rows.append(row_tuple)
+                    if all_rows is not None:
+                        all_rows.append(row_tuple)
+    except (OSError, UnicodeDecodeError, csv.Error):
+        return CloseSlotCsvFacts(resolved, mtime_ns, size, expected_sha256, None, (), (), (), () if retain_all_rows else None, (), (), (), (), (), "UNREADABLE_CSV")
+    return CloseSlotCsvFacts(
+        resolved,
+        mtime_ns,
+        size,
+        expected_sha256,
+        row_count,
+        fieldnames,
+        tuple(sample_rows),
+        tuple((policy, tuple(rows)) for policy, rows in sorted(sample_rows_by_policy.items())),
+        tuple(all_rows) if all_rows is not None else None,
+        tuple(sorted((split, len(dates)) for split, dates in split_dates.items())),
+        tuple(sorted(date_split.items())),
+        tuple(sorted((column, tuple(sorted(values))) for column, values in distinct.items())),
+        tuple(extra_rows),
+        tuple(blank_columns),
+        None,
+    )
+
+
+def _close_slot_cached_csv_facts(
+    path: Path,
+    *,
+    sample_limit: int,
+    retain_all_rows: bool,
+    audit_columns: tuple[str, ...] = (),
+    expected_sha256: str | None = None,
+) -> CloseSlotCsvFacts:
+    return artifact_cache.cached_by_stat_immutable(
+        path,
+        lambda: _close_slot_analyze_csv_facts(
+            path,
+            sample_limit=sample_limit,
+            retain_all_rows=retain_all_rows,
+            audit_columns=audit_columns,
+            expected_sha256=expected_sha256,
+        ),
+        extra=("close_slot_csv_facts_v3", int(sample_limit), bool(retain_all_rows), tuple(audit_columns), expected_sha256),
+    )
+
+
+def _close_slot_facts_schema_errors(
+    facts: CloseSlotCsvFacts,
+    *,
+    required_columns: set[str],
+    nonblank_columns: set[str],
+    error_prefix: str,
+) -> list[str]:
+    if facts.error is not None:
+        return [f"{error_prefix}_{facts.error}"]
+    errors: list[str] = []
+    fieldnames = set(facts.fieldnames)
+    missing = sorted(required_columns - fieldnames)
+    if missing:
+        errors.append(f"{error_prefix}_MISSING_COLUMNS:{','.join(missing)}")
+    if facts.row_count == 0:
+        errors.append(f"{error_prefix}_EMPTY")
+    for index in facts.extra_field_rows:
+        errors.append(f"{error_prefix}_EXTRA_FIELDS:{index}")
+    nonblank = set(nonblank_columns)
+    for index, blanks in facts.blank_columns:
+        relevant = sorted(nonblank & set(blanks))
+        if relevant:
+            errors.append(f"{error_prefix}_BLANK_COLUMNS:{index}:{','.join(relevant)}")
+    return errors
+
+
+def _close_slot_facts_for_gate(facts_by_key: dict[str, CloseSlotCsvFacts]) -> dict[str, CloseSlotCsvFacts]:
+    return dict(facts_by_key)
+def _close_slot_csv_row_count(path: Path) -> int:
+    with path.open(encoding="utf-8", newline="") as handle:
+        return sum(1 for _ in csv.DictReader(handle))
+
+
+def _close_slot_safe_csv_row_count(path: Path, *, errors: list[str], error_prefix: str) -> int | None:
+    if not path.is_file():
+        errors.append(f"{error_prefix}_MISSING")
+        return None
+    def _compute() -> tuple[int | None, str | None]:
+        try:
+            return (_close_slot_csv_row_count(path), None)
+        except (OSError, UnicodeDecodeError, csv.Error):
+            return (None, "UNREADABLE_CSV")
+
+    value, err = artifact_cache.cached_by_stat(path, _compute, extra="close_slot_csv_row_count")
+    if err is not None:
+        errors.append(f"{error_prefix}_{err}")
+    return value
+
+
+def _close_slot_safe_read_csv_rows(path: Path, limit: int, *, errors: list[str], error_prefix: str) -> list[dict[str, Any]]:
+    if not path.is_file():
+        errors.append(f"{error_prefix}_MISSING")
+        return []
+    try:
+        return _read_csv_rows(path, limit)
+    except (OSError, UnicodeDecodeError, csv.Error):
+        errors.append(f"{error_prefix}_UNREADABLE_CSV")
+        return []
+
+def _close_slot_safe_split_date_counts(path: Path, *, errors: list[str], error_prefix: str) -> dict[str, int]:
+    if not path.is_file():
+        errors.append(f"{error_prefix}_MISSING")
+        return {}
+    def _compute() -> tuple[dict[str, int], str | None]:
+        split_dates: dict[str, set[str]] = {}
+        try:
+            with path.open("r", encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    split = str(row.get("split") or "")
+                    date = str(row.get("date") or "")
+                    if split and date:
+                        split_dates.setdefault(split, set()).add(date)
+        except (OSError, UnicodeDecodeError, csv.Error):
+            return ({}, "UNREADABLE_CSV")
+        return ({split: len(dates) for split, dates in split_dates.items()}, None)
+
+    value, err = artifact_cache.cached_by_stat(path, _compute, extra="close_slot_split_date_counts")
+    if err is not None:
+        errors.append(f"{error_prefix}_{err}")
+    return value
+
+def _close_slot_safe_date_split_map(path: Path, *, errors: list[str], error_prefix: str) -> dict[str, str]:
+    if not path.is_file():
+        errors.append(f"{error_prefix}_MISSING")
+        return {}
+    def _compute() -> tuple[dict[str, str], str | None]:
+        date_split: dict[str, str] = {}
+        try:
+            with path.open("r", encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    split = str(row.get("split") or "")
+                    date = str(row.get("date") or "")
+                    if split and date:
+                        date_split[date] = split
+        except (OSError, UnicodeDecodeError, csv.Error):
+            return ({}, "UNREADABLE_CSV")
+        return (date_split, None)
+
+    value, err = artifact_cache.cached_by_stat(path, _compute, extra="close_slot_date_split_map")
+    if err is not None:
+        errors.append(f"{error_prefix}_{err}")
+    return value
+
+
+def _close_slot_manifest_mapping(manifest: dict[str, Any], key: str) -> dict[str, Any]:
+    value = manifest.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _close_slot_artifact_hashes(manifest: dict[str, Any]) -> dict[str, Any]:
+    return _close_slot_manifest_mapping(manifest, "artifact_hashes")
+
+
+def _close_slot_gate_manifest_expected_sha(manifest: dict[str, Any]) -> str:
+    return _json_hash(
+        {
+            "run_id": manifest.get("run_id"),
+            "train_manifest_sha": manifest.get("train_manifest_sha"),
+            "gate_report": _close_slot_artifact_hashes(manifest).get("gate_report"),
+        }
+    )
+
+
+def _close_slot_public_gate_report(report: dict[str, Any]) -> dict[str, Any]:
+    public_keys = {
+        "schema_version",
+        "lineage_schema_version",
+        "checked_at",
+        "artifact_kind",
+        "research_lane",
+        "gate_status",
+        "status",
+        "errors",
+        "train_run_id",
+        "train_manifest_sha",
+        "dataset_run_id",
+        "dataset_manifest_sha",
+        "dataset_lineage_status",
+        "required_baselines",
+        "present_baselines",
+        "round_trip_cost_bp",
+        "cost_sensitivity_bp",
+        "split_policy",
+        "train_only_fit",
+        "validation_test_no_retune",
+        "fit_summary",
+        "d3_comparator",
+        "upstream_gate_blockers",
+    }
+    return {key: report.get(key) for key in sorted(public_keys) if key in report}
+
+
+def _close_slot_csv_schema_errors(
+    rows: list[dict[str, Any]],
+    *,
+    required_columns: set[str],
+    nonblank_columns: set[str],
+    error_prefix: str,
+) -> list[str]:
+    if not rows:
+        return [f"{error_prefix}_EMPTY"]
+    errors: list[str] = []
+    for index, row in enumerate(rows):
+        if None in row:
+            errors.append(f"{error_prefix}_EXTRA_FIELDS:{index}")
+            continue
+        missing = sorted(required_columns - set(row))
+        if missing:
+            errors.append(f"{error_prefix}_MISSING_COLUMNS:{','.join(missing)}")
+            continue
+        blank = sorted(column for column in nonblank_columns if row.get(column) in (None, ""))
+        if blank:
+            errors.append(f"{error_prefix}_BLANK_COLUMNS:{index}:{','.join(blank)}")
+    return errors
+
+
+def _close_slot_csv_file_schema_errors(
+    path: Path,
+    *,
+    required_columns: set[str],
+    nonblank_columns: set[str],
+    error_prefix: str,
+) -> list[str]:
+    if not path.is_file():
+        return [f"{error_prefix}_MISSING"]
+    def _compute() -> list[str]:
+        errors: list[str] = []
+        try:
+            with path.open(encoding="utf-8", newline="") as handle:
+                reader = csv.DictReader(handle)
+                fieldnames = set(reader.fieldnames or [])
+                missing = sorted(required_columns - fieldnames)
+                if missing:
+                    errors.append(f"{error_prefix}_MISSING_COLUMNS:{','.join(missing)}")
+                row_count = 0
+                for index, row in enumerate(reader):
+                    row_count += 1
+                    if None in row:
+                        errors.append(f"{error_prefix}_EXTRA_FIELDS:{index}")
+                    blank = sorted(column for column in nonblank_columns if row.get(column) in (None, ""))
+                    if blank:
+                        errors.append(f"{error_prefix}_BLANK_COLUMNS:{index}:{','.join(blank)}")
+                if row_count == 0:
+                    errors.append(f"{error_prefix}_EMPTY")
+        except (OSError, UnicodeDecodeError, csv.Error):
+            return [f"{error_prefix}_UNREADABLE_CSV"]
+        return errors
+
+    return list(
+        artifact_cache.cached_by_stat(
+            path,
+            _compute,
+            extra=("close_slot_csv_schema", frozenset(required_columns), frozenset(nonblank_columns), error_prefix),
+        )
+    )
+
+
+def _close_slot_gate_manifest_summary_errors(manifest: dict[str, Any], run_dir: Path) -> list[str]:
+    errors: list[str] = []
+    if manifest.get("schema_version") != 1 or manifest.get("lineage_schema_version") != 1:
+        errors.append("CLOSE_SLOT_GATE_SCHEMA_INVALID")
+    if manifest.get("artifact_kind") != "daily_close_slot_gate" or manifest.get("research_lane") != "daily_close_slot":
+        errors.append("CLOSE_SLOT_GATE_KIND_INVALID")
+    if manifest.get("run_id") != run_dir.name:
+        errors.append("CLOSE_SLOT_GATE_RUN_ID_MISMATCH")
+    manifest_sha = manifest.get("manifest_sha")
+    if not _is_sha256(manifest_sha) or manifest_sha != _close_slot_gate_manifest_expected_sha(manifest):
+        errors.append("CLOSE_SLOT_GATE_MANIFEST_SHA_INVALID")
+    if "READY" in str(manifest.get("status") or "").upper() or "READY" in str(manifest.get("readiness_status") or "").upper():
+        errors.append(CLOSE_SLOT_DASHBOARD_READY_LOCK)
+    errors.extend(_close_slot_false_lock_errors(manifest, prefix="CLOSE_SLOT_GATE_MANIFEST"))
+    return errors
 def _path_text(path: Path | None) -> str | None:
     if path is None:
         return None
@@ -322,6 +910,232 @@ def _finite_int(value: Any) -> int | None:
     if parsed is None:
         return None
     return int(parsed)
+
+def _close_slot_false_locks() -> dict[str, bool]:
+    return {name: False for name in CLOSE_SLOT_DASHBOARD_FALSE_FLAGS}
+
+
+def _close_slot_cost_scenario_errors(scenarios: Any, *, prefix: str) -> list[str]:
+    if not isinstance(scenarios, dict):
+        return [f"{prefix}_MISSING"]
+    errors: list[str] = []
+    if set(scenarios) != set(CLOSE_SLOT_EXPECTED_COST_SCENARIOS):
+        errors.append(f"{prefix}_UNEXPECTED_IDS")
+    for scenario_id, expected in CLOSE_SLOT_EXPECTED_COST_SCENARIOS.items():
+        scenario = scenarios.get(scenario_id)
+        if not isinstance(scenario, dict):
+            errors.append(f"{prefix}_MISSING:{scenario_id}")
+            continue
+        for key in (*CLOSE_SLOT_COST_COMPONENT_FIELDS, "total_bp"):
+            actual = _finite_float(scenario.get(key))
+            if actual is None:
+                errors.append(f"{prefix}_COMPONENT_MISSING:{scenario_id}:{key}")
+            elif actual != expected[key]:
+                errors.append(f"{prefix}_COMPONENT_MISMATCH:{scenario_id}:{key}")
+    return errors
+
+
+def _close_slot_threshold_selection_errors(selection: Any) -> list[str]:
+    if not isinstance(selection, dict):
+        return ["CLOSE_SLOT_THRESHOLD_SELECTION_MISSING"]
+    errors: list[str] = []
+    if selection.get("policy") != POLICY_LINEAR_SCORE:
+        errors.append("CLOSE_SLOT_THRESHOLD_SELECTION_POLICY_INVALID")
+    if selection.get("split") != "train" or _finite_int(selection.get("oos_rows_used_for_fit")) != 0:
+        errors.append("CLOSE_SLOT_THRESHOLD_SELECTION_INVALID")
+    if selection.get("threshold_text") in (None, ""):
+        errors.append("CLOSE_SLOT_THRESHOLD_SELECTION_MISSING_THRESHOLD")
+    return errors
+
+
+def _close_slot_threshold_artifact_errors(rows: list[dict[str, Any]]) -> list[str]:
+    if not rows:
+        return ["CLOSE_SLOT_THRESHOLD_SEARCH_EMPTY"]
+    errors: list[str] = []
+    chosen_rows = [row for row in rows if str(row.get("chosen")).lower() == "true"]
+    if not chosen_rows:
+        errors.append("CLOSE_SLOT_THRESHOLD_SEARCH_CHOSEN_COUNT_INVALID")
+    chosen_by_window: dict[str, int] = {}
+    for row in chosen_rows:
+        window_id = str(row.get("window_id") or "primary_train_fit")
+        chosen_by_window[window_id] = chosen_by_window.get(window_id, 0) + 1
+    if any(count != 1 for count in chosen_by_window.values()):
+        errors.append("CLOSE_SLOT_THRESHOLD_SEARCH_CHOSEN_COUNT_INVALID")
+    for row in rows:
+        mean_selected_count = _finite_float(row.get("mean_selected_count"))
+        if mean_selected_count is None or mean_selected_count < 0 or mean_selected_count > CLOSE_SLOT_MAX_SLOT_COUNT:
+            errors.append("CLOSE_SLOT_THRESHOLD_SEARCH_SELECTED_COUNT_INVALID")
+            break
+    if any(str(row.get("split")) != "train" or _finite_int(row.get("oos_rows_used_for_fit")) != 0 for row in rows):
+        errors.append("CLOSE_SLOT_THRESHOLD_SEARCH_OOS_LEAKAGE")
+    return errors
+
+
+def _close_slot_walk_forward_errors(payload: dict[str, Any], expected_rows: int | None) -> list[str]:
+    windows = payload.get("windows")
+    errors: list[str] = []
+    if payload.get("mode_id") != TRAIN_REPLAY_MODE_ID:
+        errors.append("CLOSE_SLOT_WALK_FORWARD_MODE_INVALID")
+    if _finite_int(payload.get("oos_rows_used_for_fit")) != 0:
+        errors.append("CLOSE_SLOT_WALK_FORWARD_OOS_FIT_INVALID")
+    if not isinstance(payload.get("threshold_grid"), list) or not payload.get("threshold_grid"):
+        errors.append("CLOSE_SLOT_WALK_FORWARD_THRESHOLD_GRID_MISSING")
+    if not isinstance(windows, list) or not windows or any(not isinstance(row, dict) for row in windows):
+        errors.append("CLOSE_SLOT_WALK_FORWARD_WINDOWS_INVALID")
+        return errors
+    if expected_rows is None or len(windows) != expected_rows:
+        errors.append("CLOSE_SLOT_WALK_FORWARD_ROW_COUNT_MISMATCH")
+    held_out = [row for row in windows if row.get("feedback_source_split") == "none_frozen_held_out"]
+    if not any(
+        row.get("fit_split") == "train"
+        and _finite_int(row.get("oos_rows_used_for_fit")) == 0
+        and isinstance(row.get("held_out_replay_splits"), list)
+        and {"val", "test"} <= {str(split) for split in row.get("held_out_replay_splits", [])}
+        and bool(row.get("frozen_replay_start_date"))
+        and bool(row.get("frozen_replay_end_date"))
+        for row in held_out
+    ):
+        errors.append("CLOSE_SLOT_WALK_FORWARD_HELD_OUT_FREEZE_INVALID")
+    if any(_finite_int(row.get("oos_rows_used_for_fit")) != 0 for row in windows):
+        errors.append("CLOSE_SLOT_WALK_FORWARD_OOS_FIT_INVALID")
+    return errors
+
+
+def _close_slot_replay_errors(payload: dict[str, Any], expected_rows: int | None) -> list[str]:
+    episodes = payload.get("episodes")
+    errors: list[str] = []
+    if not isinstance(episodes, list) or not episodes or any(not isinstance(row, dict) for row in episodes):
+        return ["CLOSE_SLOT_REPLAY_EPISODES_INVALID"]
+    if expected_rows is None or len(episodes) != expected_rows:
+        errors.append("CLOSE_SLOT_REPLAY_ROW_COUNT_MISMATCH")
+    splits: set[str] = set()
+    for episode in episodes:
+        split = str(episode.get("replay_split") or "")
+        splits.add(split)
+        if _finite_int(episode.get("oos_rows_used_for_fit")) != 0:
+            errors.append("CLOSE_SLOT_REPLAY_OOS_FIT_INVALID")
+        feedback_rows = episode.get("slot_feedback")
+        if not isinstance(feedback_rows, list) or not feedback_rows or any(not isinstance(row, dict) for row in feedback_rows):
+            errors.append("CLOSE_SLOT_REPLAY_FEEDBACK_INVALID")
+            continue
+        if split in {"val", "test"} and any(row.get("feedback_used_for_fit") is not False for row in feedback_rows):
+            errors.append("CLOSE_SLOT_REPLAY_HELD_OUT_FEEDBACK_LEAK")
+    if not {"val", "test"} <= splits:
+        errors.append("CLOSE_SLOT_REPLAY_HELD_OUT_SPLITS_MISSING")
+    return errors
+
+
+def _close_slot_cost_summary_errors(rows: list[dict[str, Any]], *, split_date_counts: dict[str, int] | None = None) -> list[str]:
+    if not rows:
+        return ["CLOSE_SLOT_COST_SUMMARY_EMPTY"]
+    errors: list[str] = []
+    scenario_ids = {str(row.get("cost_scenario_id") or "") for row in rows}
+    if scenario_ids != set(CLOSE_SLOT_EXPECTED_COST_SCENARIOS):
+        errors.append("CLOSE_SLOT_COST_SUMMARY_SCENARIOS_UNEXPECTED")
+    for row in rows:
+        scenario_id = str(row.get("cost_scenario_id") or "")
+        expected = CLOSE_SLOT_EXPECTED_COST_SCENARIOS.get(scenario_id)
+        if expected is None:
+            continue
+        for key in CLOSE_SLOT_COST_COMPONENT_FIELDS:
+            actual = _finite_float(row.get(key))
+            if actual is None:
+                errors.append(f"CLOSE_SLOT_COST_SUMMARY_COMPONENT_MISSING:{scenario_id}:{key}")
+            elif actual != expected[key]:
+                errors.append(f"CLOSE_SLOT_COST_SUMMARY_COMPONENT_MISMATCH:{scenario_id}:{key}")
+        total = _finite_float(row.get("total_component_bp"))
+        if total is None:
+            errors.append(f"CLOSE_SLOT_COST_SUMMARY_COMPONENT_MISSING:{scenario_id}:total_component_bp")
+        elif total != expected["total_bp"]:
+            errors.append(f"CLOSE_SLOT_COST_SUMMARY_COMPONENT_MISMATCH:{scenario_id}:total_component_bp")
+        selected_count = _finite_int(row.get("selected_count"))
+        hold_cash_count = _finite_int(row.get("hold_cash_count"))
+        split = str(row.get("split") or "")
+        split_date_count = (split_date_counts or {}).get(split)
+        capacity = split_date_count * CLOSE_SLOT_MAX_SLOT_COUNT if split_date_count is not None else None
+        if selected_count is None or hold_cash_count is None or selected_count < 0 or hold_cash_count < 0:
+            errors.append("CLOSE_SLOT_COST_SUMMARY_SELECTED_HOLD_INVALID")
+        elif capacity is not None and selected_count > capacity:
+            errors.append("CLOSE_SLOT_COST_SUMMARY_SELECTED_HOLD_INVALID")
+    return errors
+
+
+def _close_slot_walk_forward_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    windows = payload.get("windows") if isinstance(payload.get("windows"), list) else []
+    held_out = [row for row in windows if isinstance(row, dict) and row.get("feedback_source_split") == "none_frozen_held_out"]
+    # F4/WP-R2: train-replay windows now carry per-round reward fields
+    # (replay_mean_reward_base_23bp/replay_cumulative_reward/mean_selected_count/
+    # date_count) so the live card can show "does the round-by-round replay
+    # reward improve" — train-replay only, not an OOS profitability claim (C3).
+    reward_rounds = [
+        row
+        for row in windows
+        if isinstance(row, dict) and row.get("replay_mean_reward_base_23bp") is not None
+    ]
+    return {
+        "mode_id": payload.get("mode_id"),
+        "window_count": len(windows),
+        "threshold_grid_count": len(payload.get("threshold_grid") or []) if isinstance(payload.get("threshold_grid"), list) else 0,
+        "oos_rows_used_for_fit": payload.get("oos_rows_used_for_fit"),
+        "held_out_replay_splits": sorted({str(split) for row in held_out for split in (row.get("held_out_replay_splits") or [])}),
+        "held_out_window_count": len(held_out),
+        "replay_reward_round_count": len(reward_rounds),
+        "replay_reward_rounds": [
+            {
+                "window_id": row.get("window_id"),
+                "replay_mean_reward_base_23bp": row.get("replay_mean_reward_base_23bp"),
+                "replay_cumulative_reward": row.get("replay_cumulative_reward"),
+                "mean_selected_count": row.get("mean_selected_count"),
+                "date_count": row.get("date_count"),
+            }
+            for row in reward_rounds
+        ],
+        "windows": windows,
+    }
+
+
+def _close_slot_replay_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    episodes = payload.get("episodes") if isinstance(payload.get("episodes"), list) else []
+    split_counts: dict[str, int] = {}
+    feedback_count = 0
+    leaked_feedback_count = 0
+    for episode in episodes:
+        if not isinstance(episode, dict):
+            continue
+        split = str(episode.get("replay_split") or "")
+        split_counts[split] = split_counts.get(split, 0) + 1
+        feedback_rows = episode.get("slot_feedback") if isinstance(episode.get("slot_feedback"), list) else []
+        feedback_count += len(feedback_rows)
+        if split in {"val", "test"}:
+            leaked_feedback_count += sum(1 for row in feedback_rows if isinstance(row, dict) and row.get("feedback_used_for_fit") is not False)
+    return {
+        "mode_id": payload.get("mode_id"),
+        "episode_count": len(episodes),
+        "split_counts": split_counts,
+        "slot_feedback_count": feedback_count,
+        "held_out_feedback_used_for_fit_count": leaked_feedback_count,
+    }
+
+
+def _close_slot_selected_hold_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "primary_cost_scenario_id": PRIMARY_COST_SCENARIO_ID,
+        "max_slot_count": CLOSE_SLOT_MAX_SLOT_COUNT,
+        "selection_cardinality": CLOSE_SLOT_SELECTION_CARDINALITY,
+        "hold_cash_action": CLOSE_SLOT_HOLD_CASH_ACTION,
+        "rows": [
+            {
+                "policy": row.get("policy"),
+                "split": row.get("split"),
+                "cost_scenario_id": row.get("cost_scenario_id"),
+                "selected_count": _finite_int(row.get("selected_count")),
+                "hold_cash_count": _finite_int(row.get("hold_cash_count")),
+                "total_component_bp": _finite_float(row.get("total_component_bp")),
+                "reward": _finite_float(row.get("reward")),
+            }
+            for row in rows
+        ],
+    }
 
 
 def _positive_number(value: Any) -> bool:
@@ -1117,6 +1931,908 @@ def list_dataset_artifacts(limit: int = 20) -> dict[str, Any]:
     return {"runs": runs, "read_only_dashboard_note": "Generated D2 dataset artifacts only; no writes from dashboard."}
 
 
+def _load_close_slot_context(*, run: str | None = None, sample_limit: int = 25) -> dict[str, Any]:
+    run_dir = _latest_run_dir(DEFAULT_CLOSE_SLOT_GATE_ROOT, required_file="close_slot_gate_manifest.json", run_id=run)
+    if run_dir is None:
+        return {"payload": _close_slot_not_started()}
+    safe_limit = _bounded_limit(sample_limit, default=25, maximum=500)
+    errors: list[str] = []
+    gate_manifest_path = run_dir / "close_slot_gate_manifest.json"
+    gate_manifest, manifest_errors = _safe_load_json_artifact(gate_manifest_path, error_prefix="CLOSE_SLOT_GATE_MANIFEST")
+    if manifest_errors:
+        return {"payload": _close_slot_fail_closed(run_dir=run_dir, errors=manifest_errors)}
+
+    if gate_manifest.get("schema_version") != 1 or gate_manifest.get("lineage_schema_version") != 1:
+        errors.append("CLOSE_SLOT_GATE_SCHEMA_INVALID")
+    if gate_manifest.get("artifact_kind") != "daily_close_slot_gate" or gate_manifest.get("research_lane") != "daily_close_slot":
+        errors.append("CLOSE_SLOT_GATE_KIND_INVALID")
+    if gate_manifest.get("run_id") != run_dir.name:
+        errors.append("CLOSE_SLOT_GATE_RUN_ID_MISMATCH")
+    errors.extend(_close_slot_false_lock_errors(gate_manifest, prefix="CLOSE_SLOT_GATE_MANIFEST"))
+    if "READY" in str(gate_manifest.get("status") or "").upper() or "READY" in str(gate_manifest.get("readiness_status") or "").upper():
+        errors.append(CLOSE_SLOT_DASHBOARD_READY_LOCK)
+    manifest_sha = gate_manifest.get("manifest_sha")
+    if not _is_sha256(manifest_sha) or manifest_sha != _close_slot_gate_manifest_expected_sha(gate_manifest):
+        errors.append("CLOSE_SLOT_GATE_MANIFEST_SHA_INVALID")
+
+    source_run_ids = gate_manifest.get("source_run_ids") if isinstance(gate_manifest.get("source_run_ids"), dict) else {}
+    gate_report_path = _close_slot_resolve_path(
+        _close_slot_manifest_mapping(gate_manifest, "artifacts").get("gate_report"),
+        base_dir=run_dir,
+        allowed_root=run_dir,
+        errors=errors,
+        error_prefix="CLOSE_SLOT_GATE_REPORT",
+    )
+    gate_report: dict[str, Any] = {}
+    if gate_report_path is not None:
+        gate_report, gate_report_errors = _safe_load_json_artifact(gate_report_path, error_prefix="CLOSE_SLOT_GATE_REPORT")
+        errors.extend(gate_report_errors)
+        errors.extend(_close_slot_false_lock_errors(gate_report, prefix="CLOSE_SLOT_GATE_REPORT", require_present=False))
+        expected_gate_hash = _close_slot_artifact_hashes(gate_manifest).get("gate_report")
+        if not expected_gate_hash or not _is_sha256(expected_gate_hash):
+            errors.append("CLOSE_SLOT_GATE_REPORT_HASH_MISSING")
+        elif gate_report_path.exists() and _file_sha256(gate_report_path) != expected_gate_hash:
+            errors.append("CLOSE_SLOT_GATE_REPORT_HASH_MISMATCH")
+
+    train_manifest_path = _close_slot_resolve_path(
+        gate_manifest.get("train_manifest_path"),
+        base_dir=run_dir,
+        allowed_root=DEFAULT_CLOSE_SLOT_TRAIN_ROOT,
+        errors=errors,
+        error_prefix="CLOSE_SLOT_TRAIN_MANIFEST",
+    )
+    train_manifest: dict[str, Any] = {}
+    if train_manifest_path is not None:
+        train_manifest, train_errors = _safe_load_json_artifact(train_manifest_path, error_prefix="CLOSE_SLOT_TRAIN_MANIFEST")
+        errors.extend(train_errors)
+    if train_manifest:
+        errors.extend(_close_slot_false_lock_errors(train_manifest, prefix="CLOSE_SLOT_TRAIN_MANIFEST"))
+        if train_manifest.get("run_id") != source_run_ids.get("train_run_id"):
+            errors.append("CLOSE_SLOT_TRAIN_RUN_ID_MISMATCH")
+        if train_manifest.get("manifest_sha") != gate_manifest.get("train_manifest_sha") or train_manifest.get("manifest_sha") != source_run_ids.get("train_manifest_sha"):
+            errors.append("CLOSE_SLOT_TRAIN_MANIFEST_SHA_MISMATCH")
+        if train_manifest.get("round_trip_cost_bp") != CLOSE_SLOT_ROUND_TRIP_COST_BP or sorted(train_manifest.get("cost_sensitivity_bp") or []) != sorted(CLOSE_SLOT_COST_SENSITIVITY_BP):
+            errors.append("CLOSE_SLOT_TRAIN_COST_LADDER_INVALID")
+        if train_manifest.get("schema_version") != 2:
+            errors.append("CLOSE_SLOT_TRAIN_SCHEMA_V2_INVALID")
+        if train_manifest.get("cost_model_schema_version") != CLOSE_SLOT_COST_MODEL_SCHEMA_VERSION:
+            errors.append("CLOSE_SLOT_TRAIN_COST_MODEL_SCHEMA_INVALID")
+        if train_manifest.get("primary_cost_scenario_id") != PRIMARY_COST_SCENARIO_ID:
+            errors.append("CLOSE_SLOT_TRAIN_PRIMARY_COST_SCENARIO_INVALID")
+        errors.extend(_close_slot_cost_scenario_errors(train_manifest.get("cost_scenarios"), prefix="CLOSE_SLOT_TRAIN_COST_SCENARIOS"))
+        errors.extend(_close_slot_threshold_selection_errors(train_manifest.get("threshold_selection")))
+        if train_manifest.get("slot_count") != CLOSE_SLOT_DEFAULT_SLOT_COUNT or train_manifest.get("integer_shares_primary") is not True:
+            errors.append("CLOSE_SLOT_TRAIN_SLOT_CONTRACT_INVALID")
+        if train_manifest.get("fill_mode") != CLOSE_SLOT_FILL_MODE or train_manifest.get("execution_realism") != CLOSE_SLOT_EXECUTION_REALISM:
+            errors.append("CLOSE_SLOT_TRAIN_LABEL_CONTRACT_INVALID")
+        if not train_manifest.get("train_only_fit") or not train_manifest.get("validation_test_no_retune"):
+            errors.append("CLOSE_SLOT_TRAIN_RETUNE_LOCK_INVALID")
+        if (train_manifest.get("fit_summary") or {}).get("oos_rows_used_for_fit") != 0:
+            errors.append("CLOSE_SLOT_TRAIN_OOS_FIT_INVALID")
+
+    train_artifacts: dict[str, Path] = {}
+    baseline_rows: list[dict[str, Any]] = []
+    policy_score_rows: list[dict[str, Any]] = []
+    policy_score_rows_by_policy: dict[str, list[dict[str, Any]]] = {}
+    date_ledgers: dict[str, Any] = {}
+    split_date_counts: dict[str, int] = {}
+    date_split_map: dict[str, str] = {}
+    threshold_rows: list[dict[str, Any]] = []
+    cost_scenario_rows: list[dict[str, Any]] = []
+    walk_forward_windows: dict[str, Any] = {}
+    replay_episode_ledgers: dict[str, Any] = {}
+    csv_facts_by_key: dict[str, CloseSlotCsvFacts] = {}
+    valid_train_artifact_hashes: dict[str, str] = {}
+    if train_manifest and train_manifest_path is not None:
+        train_artifact_hashes = _close_slot_artifact_hashes(train_manifest)
+        train_artifacts_manifest = _close_slot_manifest_mapping(train_manifest, "artifacts")
+        train_row_counts = _close_slot_manifest_mapping(train_manifest, "row_counts")
+        train_artifact_dir = Path(str(train_manifest.get("artifact_dir") or train_manifest_path.parent)).resolve()
+        if not _path_is_relative_to(train_artifact_dir, DEFAULT_CLOSE_SLOT_TRAIN_ROOT.resolve()):
+            errors.append("CLOSE_SLOT_TRAIN_ARTIFACT_DIR_UNSAFE")
+        else:
+            for key in [
+                "policy_scores",
+                "baseline_summary",
+                "date_ledgers",
+                "threshold_search",
+                "walk_forward_windows",
+                "replay_episode_ledgers",
+                "cost_scenario_summary",
+            ]:
+                artifact_path = _close_slot_resolve_path(
+                    train_artifacts_manifest.get(key),
+                    base_dir=train_manifest_path.parent,
+                    allowed_root=train_artifact_dir,
+                    errors=errors,
+                    error_prefix=f"CLOSE_SLOT_TRAIN_{key.upper()}",
+                )
+                if artifact_path is None:
+                    continue
+                train_artifacts[key] = artifact_path
+                expected_hash = train_artifact_hashes.get(key)
+                if not _is_sha256(expected_hash):
+                    errors.append(f"CLOSE_SLOT_TRAIN_{key.upper()}_HASH_MISSING")
+                else:
+                    valid_train_artifact_hashes[key] = expected_hash
+                    if artifact_path.exists() and _file_sha256(artifact_path) != expected_hash:
+                        errors.append(f"CLOSE_SLOT_TRAIN_{key.upper()}_HASH_MISMATCH")
+        if "policy_scores" in train_artifacts:
+            policy_facts = _close_slot_cached_csv_facts(
+                train_artifacts["policy_scores"],
+                sample_limit=safe_limit,
+                retain_all_rows=False,
+                audit_columns=tuple(sorted(REQUIRED_POLICY_SCORE_AUDIT_FIELDS)),
+                expected_sha256=valid_train_artifact_hashes.get("policy_scores"),
+            )
+            csv_facts_by_key["policy_scores"] = policy_facts
+            if policy_facts.error is not None:
+                errors.append(f"CLOSE_SLOT_TRAIN_POLICY_SCORES_{policy_facts.error}")
+            expected_policy_rows = _to_int(train_row_counts.get("policy_score_rows"))
+            observed_policy_rows = policy_facts.row_count
+            if expected_policy_rows is None or observed_policy_rows is None or expected_policy_rows != observed_policy_rows:
+                errors.append("CLOSE_SLOT_POLICY_SCORE_ROW_COUNT_MISMATCH")
+            policy_score_rows = _close_slot_rows_from_tuples(policy_facts.sample_rows)
+            policy_score_rows_by_policy = {
+                policy: _close_slot_rows_from_tuples(rows)
+                for policy, rows in policy_facts.sample_rows_by_policy
+            }
+            split_date_counts = dict(policy_facts.split_date_counts)
+            date_split_map = dict(policy_facts.date_split_map)
+            errors.extend(
+                _close_slot_facts_schema_errors(
+                    policy_facts,
+                    required_columns={
+                        "date",
+                        "split",
+                        "table",
+                        "code",
+                        "score",
+                        "policy",
+                        "dataset_run_id",
+                        "dataset_manifest_sha",
+                        "price_basis_status",
+                        "decision_grade_return_status",
+                        "fill_mode",
+                        "execution_realism",
+                        "round_trip_cost_bp",
+                        "upstream_gate_blockers",
+                    },
+                    nonblank_columns={
+                        "date",
+                        "table",
+                        "code",
+                        "score",
+                        "policy",
+                        "dataset_run_id",
+                        "dataset_manifest_sha",
+                        "price_basis_status",
+                        "decision_grade_return_status",
+                        "fill_mode",
+                        "execution_realism",
+                        "round_trip_cost_bp",
+                    },
+                    error_prefix="CLOSE_SLOT_POLICY_SCORE_CSV_SCHEMA",
+                )
+            )
+        if "baseline_summary" in train_artifacts:
+            baseline_facts = _close_slot_cached_csv_facts(
+                train_artifacts["baseline_summary"],
+                sample_limit=MAX_LIMIT,
+                retain_all_rows=True,
+                expected_sha256=valid_train_artifact_hashes.get("baseline_summary"),
+            )
+            csv_facts_by_key["baseline_summary"] = baseline_facts
+            if baseline_facts.error is not None:
+                errors.append(f"CLOSE_SLOT_TRAIN_BASELINE_SUMMARY_{baseline_facts.error}")
+            all_baseline_rows = _close_slot_rows_from_tuples(baseline_facts.all_rows or ())
+            errors.extend(
+                _close_slot_facts_schema_errors(
+                    baseline_facts,
+                    required_columns={
+                        "policy",
+                        "date_count",
+                        "filled_slots",
+                        "total_net_pnl_krw",
+                        "total_cost_krw",
+                        "mean_reward",
+                        "cumulative_reward",
+                    },
+                    nonblank_columns={
+                        "policy",
+                        "date_count",
+                        "filled_slots",
+                        "total_net_pnl_krw",
+                        "total_cost_krw",
+                        "mean_reward",
+                        "cumulative_reward",
+                    },
+                    error_prefix="CLOSE_SLOT_BASELINE_SUMMARY_CSV_SCHEMA",
+                )
+            )
+            expected_baseline_rows = _to_int(train_row_counts.get("baseline_summary_rows"))
+            observed_baseline_rows = baseline_facts.row_count
+            if expected_baseline_rows is None or observed_baseline_rows is None or expected_baseline_rows != observed_baseline_rows:
+                errors.append("CLOSE_SLOT_BASELINE_ROW_COUNT_MISMATCH")
+            baseline_rows = all_baseline_rows[:safe_limit]
+            policies = {str(row.get("policy")) for row in all_baseline_rows}
+            if not set(CLOSE_SLOT_REQUIRED_BASELINES) <= policies:
+                errors.append("CLOSE_SLOT_REQUIRED_BASELINE_MISSING")
+        if "date_ledgers" in train_artifacts:
+            date_ledgers, date_ledger_errors = _safe_load_json_artifact(train_artifacts["date_ledgers"], error_prefix="CLOSE_SLOT_DATE_LEDGERS")
+            errors.extend(date_ledger_errors)
+        if "threshold_search" in train_artifacts:
+            threshold_facts = _close_slot_cached_csv_facts(
+                train_artifacts["threshold_search"],
+                sample_limit=MAX_LIMIT,
+                retain_all_rows=True,
+                expected_sha256=valid_train_artifact_hashes.get("threshold_search"),
+            )
+            csv_facts_by_key["threshold_search"] = threshold_facts
+            if threshold_facts.error is not None:
+                errors.append(f"CLOSE_SLOT_THRESHOLD_SEARCH_{threshold_facts.error}")
+            expected_threshold_rows = _to_int(train_row_counts.get("threshold_search_rows"))
+            observed_threshold_rows = threshold_facts.row_count
+            if expected_threshold_rows is None or observed_threshold_rows is None or expected_threshold_rows != observed_threshold_rows:
+                errors.append("CLOSE_SLOT_THRESHOLD_SEARCH_ROW_COUNT_MISMATCH")
+            all_threshold_rows = _close_slot_rows_from_tuples(threshold_facts.all_rows or ())
+            errors.extend(
+                _close_slot_facts_schema_errors(
+                    threshold_facts,
+                    required_columns={
+                        "chosen",
+                        "mean_daily_reward_base_23bp",
+                        "mean_selected_count",
+                        "median_daily_reward_base_23bp",
+                        "oos_rows_used_for_fit",
+                        "split",
+                        "threshold",
+                        "threshold_source",
+                        "threshold_text",
+                    },
+                    nonblank_columns={"oos_rows_used_for_fit", "split", "threshold", "threshold_text"},
+                    error_prefix="CLOSE_SLOT_THRESHOLD_SEARCH_CSV_SCHEMA",
+                )
+            )
+            errors.extend(_close_slot_threshold_artifact_errors(all_threshold_rows))
+            threshold_rows = all_threshold_rows[:safe_limit]
+        if "walk_forward_windows" in train_artifacts:
+            walk_forward_windows, walk_errors = _safe_load_json_artifact(
+                train_artifacts["walk_forward_windows"],
+                error_prefix="CLOSE_SLOT_WALK_FORWARD_WINDOWS",
+            )
+            errors.extend(walk_errors)
+            if not walk_errors:
+                errors.extend(
+                    _close_slot_walk_forward_errors(
+                        walk_forward_windows,
+                        _to_int(train_row_counts.get("walk_forward_windows")),
+                    )
+                )
+        if "replay_episode_ledgers" in train_artifacts:
+            replay_episode_ledgers, replay_errors = _safe_load_json_artifact(
+                train_artifacts["replay_episode_ledgers"],
+                error_prefix="CLOSE_SLOT_REPLAY_EPISODE_LEDGERS",
+            )
+            errors.extend(replay_errors)
+            if not replay_errors:
+                errors.extend(
+                    _close_slot_replay_errors(
+                        replay_episode_ledgers,
+                        _to_int(train_row_counts.get("replay_episode_ledgers")),
+                    )
+                )
+        if "cost_scenario_summary" in train_artifacts:
+            cost_facts = _close_slot_cached_csv_facts(
+                train_artifacts["cost_scenario_summary"],
+                sample_limit=MAX_LIMIT,
+                retain_all_rows=True,
+                expected_sha256=valid_train_artifact_hashes.get("cost_scenario_summary"),
+            )
+            csv_facts_by_key["cost_scenario_summary"] = cost_facts
+            if cost_facts.error is not None:
+                errors.append(f"CLOSE_SLOT_COST_SCENARIO_SUMMARY_{cost_facts.error}")
+            expected_cost_rows = _to_int(train_row_counts.get("cost_scenario_summary_rows"))
+            observed_cost_rows = cost_facts.row_count
+            if expected_cost_rows is None or observed_cost_rows is None or expected_cost_rows != observed_cost_rows:
+                errors.append("CLOSE_SLOT_COST_SCENARIO_SUMMARY_ROW_COUNT_MISMATCH")
+            all_cost_rows = _close_slot_rows_from_tuples(cost_facts.all_rows or ())
+            errors.extend(
+                _close_slot_facts_schema_errors(
+                    cost_facts,
+                    required_columns={
+                        "buy_commission_bp",
+                        "buy_slippage_bp",
+                        "cost_scenario_id",
+                        "hold_cash_count",
+                        "policy",
+                        "reward",
+                        "selected_count",
+                        "sell_commission_bp",
+                        "sell_slippage_bp",
+                        "sell_tax_bp",
+                        "split",
+                        "total_component_bp",
+                        "total_cost_krw",
+                    },
+                    nonblank_columns={
+                        "cost_scenario_id",
+                        "hold_cash_count",
+                        "policy",
+                        "selected_count",
+                        "split",
+                        "total_component_bp",
+                    },
+                    error_prefix="CLOSE_SLOT_COST_SCENARIO_SUMMARY_CSV_SCHEMA",
+                )
+            )
+            errors.extend(_close_slot_cost_summary_errors(all_cost_rows, split_date_counts=split_date_counts))
+            cost_scenario_rows = all_cost_rows
+
+    dataset_manifest_path = _close_slot_resolve_path(
+        train_manifest.get("dataset_manifest_path") if train_manifest else None,
+        base_dir=train_manifest_path.parent if train_manifest_path is not None else run_dir,
+        allowed_root=DEFAULT_CLOSE_SLOT_DATASET_ROOT,
+        errors=errors,
+        error_prefix="CLOSE_SLOT_DATASET_MANIFEST",
+    )
+    dataset_manifest: dict[str, Any] = {}
+    dataset_lineage: dict[str, Any] = {}
+    if dataset_manifest_path is not None:
+        dataset_manifest, dataset_errors = _safe_load_json_artifact(dataset_manifest_path, error_prefix="CLOSE_SLOT_DATASET_MANIFEST")
+        errors.extend(dataset_errors)
+    if dataset_manifest:
+        errors.extend(_close_slot_false_lock_errors(dataset_manifest, prefix="CLOSE_SLOT_DATASET_MANIFEST"))
+        if dataset_manifest.get("run_id") != source_run_ids.get("dataset_run_id") or dataset_manifest.get("run_id") != train_manifest.get("dataset_run_id"):
+            errors.append("CLOSE_SLOT_DATASET_RUN_ID_MISMATCH")
+        if dataset_manifest.get("manifest_sha") != source_run_ids.get("dataset_manifest_sha") or dataset_manifest.get("manifest_sha") != train_manifest.get("dataset_manifest_sha"):
+            errors.append("CLOSE_SLOT_DATASET_MANIFEST_SHA_MISMATCH")
+        if dataset_manifest.get("lineage_validation_status") != "PASS":
+            errors.append("CLOSE_SLOT_DATASET_LINEAGE_NOT_PASS")
+        try:
+            dataset_lineage = validate_close_slot_dataset_lineage(dataset_manifest_path)
+        except (TypeError, ValueError, OSError, json.JSONDecodeError):
+            errors.append("CLOSE_SLOT_DATASET_LINEAGE_NOT_PASS")
+        else:
+            if dataset_lineage.get("status") != "PASS":
+                errors.append("CLOSE_SLOT_DATASET_LINEAGE_NOT_PASS")
+
+    current_d0_d1 = _close_slot_current_d0_d1_contract()
+    current_required = set(current_d0_d1.get("required_blockers") or [])
+    injected_blockers = set(
+        str(item)
+        for item in [
+            *(dataset_manifest.get("upstream_gate_blockers") or []),
+            *(train_manifest.get("upstream_gate_blockers") or []),
+            *(gate_report.get("upstream_gate_blockers") or []),
+        ]
+    )
+    if current_required and not current_required <= injected_blockers:
+        errors.append("CLOSE_SLOT_CURRENT_D0_D1_BLOCKERS_NOT_INJECTED")
+
+    if gate_report:
+        if gate_report.get("status") != "PASS":
+            errors.extend(str(error) for error in gate_report.get("errors") or ["CLOSE_SLOT_GATE_REPORT_NOT_PASS"])
+        if gate_report.get("gate_status") != gate_manifest.get("status"):
+            errors.append("CLOSE_SLOT_GATE_STATUS_MISMATCH")
+        if gate_report.get("train_run_id") != source_run_ids.get("train_run_id"):
+            errors.append("CLOSE_SLOT_GATE_TRAIN_RUN_ID_MISMATCH")
+        if gate_report.get("dataset_run_id") != source_run_ids.get("dataset_run_id"):
+            errors.append("CLOSE_SLOT_GATE_DATASET_RUN_ID_MISMATCH")
+        try:
+            # Todo 9: memoized by the train-manifest stat. Sound under the
+            # write-once-run invariant — a gate run's artifact_dir is immutable
+            # and any regeneration rewrites train_manifest.json (new stat ->
+            # invalidation); the manifest hash-pins its artifact closure, so no
+            # live re-validation of an out-of-band mutated-in-place artifact is
+            # expected here.
+            gate_csv_facts = _close_slot_facts_for_gate(csv_facts_by_key)
+            recomputed_gate = (
+                artifact_cache.cached_by_stat(
+                    train_manifest_path,
+                    lambda: validate_close_slot_gate(train_manifest_path, csv_facts=gate_csv_facts),
+                    extra=("validate_close_slot_gate", tuple(sorted((key, facts.resolved_path, facts.mtime_ns, facts.size, facts.expected_sha256) for key, facts in csv_facts_by_key.items()))),
+                )
+                if train_manifest_path is not None
+                else {}
+            )
+        except (TypeError, ValueError, OSError, json.JSONDecodeError):
+            errors.append("CLOSE_SLOT_GATE_RECOMPUTE_FAILED")
+        else:
+            for key in ["status", "errors", "gate_status", "train_run_id", "train_manifest_sha", "dataset_run_id", "dataset_manifest_sha"]:
+                if recomputed_gate.get(key) != gate_report.get(key):
+                    errors.append("CLOSE_SLOT_GATE_RECOMPUTE_MISMATCH")
+                    break
+
+    source_ids = {
+        "gate_run_id": gate_manifest.get("run_id"),
+        "gate_manifest_sha": gate_manifest.get("manifest_sha"),
+        "train_run_id": source_run_ids.get("train_run_id"),
+        "train_manifest_sha": source_run_ids.get("train_manifest_sha"),
+        "dataset_run_id": source_run_ids.get("dataset_run_id"),
+        "dataset_manifest_sha": source_run_ids.get("dataset_manifest_sha"),
+    }
+    if errors:
+        return {"payload": _close_slot_fail_closed(run_dir=run_dir, errors=errors, source_run_ids=source_ids)}
+
+    return {
+        "run_dir": run_dir,
+        "gate_manifest": gate_manifest,
+        "gate_report": gate_report,
+        "train_manifest": train_manifest,
+        "dataset_manifest": dataset_manifest,
+        "dataset_lineage": dataset_lineage,
+        "baseline_rows": baseline_rows,
+        "policy_score_rows": policy_score_rows,
+        "policy_score_rows_by_policy": policy_score_rows_by_policy,
+        "date_split_map": date_split_map,
+        "date_ledgers": date_ledgers,
+        "threshold_rows": threshold_rows,
+        "cost_scenario_rows": cost_scenario_rows,
+        "walk_forward_windows": walk_forward_windows,
+        "replay_episode_ledgers": replay_episode_ledgers,
+        "current_d0_d1": current_d0_d1,
+        "source_run_ids": source_ids,
+        "sample_limit": safe_limit,
+    }
+
+
+def _close_slot_labels(payload: dict[str, Any]) -> list[str]:
+    labels = [
+        "RESEARCH_ONLY",
+        "EXPERIMENTAL_ONLY",
+        str(payload.get("status") or "WATCH_RESEARCH_ONLY"),
+        CLOSE_SLOT_FILL_MODE,
+        CLOSE_SLOT_EXECUTION_REALISM,
+        f"price_basis {payload.get('price_basis', 'unknown')}",
+        f"universe {payload.get('universe_verdict', 'WATCH')}",
+        f"{CLOSE_SLOT_ROUND_TRIP_COST_BP}bp round trip cost",
+    ]
+    d3 = payload.get("d3_comparator") if isinstance(payload.get("d3_comparator"), dict) else {}
+    if d3.get("present"):
+        labels.append("D3 re-ledgered through close-slot accounting")
+    return labels
+
+
+def _close_slot_latest_data_date(date_ledgers: dict[str, Any]) -> str | None:
+    dates = [
+        str(row.get("date"))
+        for rows in (date_ledgers or {}).values()
+        if isinstance(rows, list)
+        for row in rows
+        if row.get("date")
+    ]
+    return max(dates) if dates else None
+
+
+def _close_slot_data_recency(date_ledgers: dict[str, Any]) -> dict[str, Any]:
+    latest_data_date = _close_slot_latest_data_date(date_ledgers)
+    configured_research_date = None
+    is_today = configured_research_date is not None and latest_data_date == configured_research_date
+    label = "today" if is_today else f"stored replay {latest_data_date}" if latest_data_date else "stored replay unknown"
+    return {
+        "latest_data_date": latest_data_date,
+        "configured_research_date": configured_research_date,
+        "is_today": is_today,
+        "label": label,
+    }
+
+
+def _close_slot_artifact_age_seconds(run_dir: Path) -> float | None:
+    manifest_path = run_dir / "close_slot_gate_manifest.json"
+    try:
+        mtime = manifest_path.stat().st_mtime
+    except OSError:
+        return None
+    return max(0.0, datetime.now(timezone.utc).timestamp() - mtime)
+
+
+def _close_slot_payload_from_context(context: dict[str, Any], *, sample_limit: int) -> dict[str, Any]:
+    gate_manifest = context["gate_manifest"]
+    gate_report = context["gate_report"]
+    train_manifest = context["train_manifest"]
+    dataset_manifest = context["dataset_manifest"]
+    current_d0_d1 = context["current_d0_d1"]
+    date_ledgers = context.get("date_ledgers") if isinstance(context.get("date_ledgers"), dict) else {}
+    selected_policy = POLICY_LINEAR_SCORE
+    if selected_policy not in date_ledgers:
+        linear_candidates = sorted(name for name in date_ledgers if "linear" in str(name).lower())
+        if linear_candidates:
+            selected_policy = linear_candidates[0]
+    train_row_counts = _close_slot_manifest_mapping(train_manifest, "row_counts")
+    payload = {
+        "surface": "daily_close_slot",
+        "status": gate_manifest.get("status"),
+        "readiness_status": gate_manifest.get("readiness_status"),
+        "artifact_status": "LOADED_GENERATED_ARTIFACT",
+        "dashboard_validation_status": "PASS",
+        "lineage_validation_status": "PASS",
+        "run_id": gate_manifest.get("run_id"),
+        "artifact_dir": gate_manifest.get("artifact_dir") or str(context["run_dir"]),
+        "read_only": True,
+        "read_only_dashboard_note": "GET-only daily close-slot research evidence; no training/order/live/profit action from dashboard.",
+        "guardrail": "EXPERIMENTAL_ONLY RESEARCH_ONLY; no live/broker/account/order/paper-forward/profitability claim.",
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "go_summary_allowed": False,
+        "schema_version": gate_manifest.get("schema_version"),
+        "lineage_schema_version": gate_manifest.get("lineage_schema_version"),
+        "train_schema_version": train_manifest.get("schema_version"),
+        "cost_model_schema_version": train_manifest.get("cost_model_schema_version"),
+        "primary_cost_scenario_id": train_manifest.get("primary_cost_scenario_id"),
+        "cost_components": list(CLOSE_SLOT_COST_COMPONENT_FIELDS),
+        "cost_scenarios": train_manifest.get("cost_scenarios") or {},
+        "max_slot_count": CLOSE_SLOT_MAX_SLOT_COUNT,
+        "selection_cardinality": CLOSE_SLOT_SELECTION_CARDINALITY,
+        "hold_cash_action": CLOSE_SLOT_HOLD_CASH_ACTION,
+        "artifact_kind": gate_manifest.get("artifact_kind"),
+        "research_lane": gate_manifest.get("research_lane"),
+        "source_run_ids": context["source_run_ids"],
+        "manifest_sha": gate_manifest.get("manifest_sha"),
+        "gate_validation_status": gate_manifest.get("gate_validation_status"),
+        "gate_validation_errors": gate_manifest.get("gate_validation_errors") or gate_report.get("errors") or [],
+        "gate_report": _close_slot_public_gate_report(gate_report),
+        "daily_db_access": dataset_manifest.get("daily_db_access") or {},
+        "dataset_db_access": train_manifest.get("dataset_db_access") or {},
+        "gate_report_dataset_db_access": gate_report.get("dataset_db_access") or {},
+        "gate_report_train_dataset_db_access": gate_report.get("train_dataset_db_access") or {},
+        "train_summary": train_manifest.get("summary") or [],
+        "fit_summary": train_manifest.get("fit_summary") or {},
+        "d3_comparator": train_manifest.get("d3_comparator") or {},
+        "required_baselines": sorted(CLOSE_SLOT_REQUIRED_BASELINES),
+        "present_baselines": gate_report.get("present_baselines") or [],
+        "round_trip_cost_bp": train_manifest.get("round_trip_cost_bp"),
+        "cost_sensitivity_bp": train_manifest.get("cost_sensitivity_bp"),
+        "slot_count": train_manifest.get("slot_count"),
+        "threshold_selection": {
+            **(train_manifest.get("threshold_selection") or {}),
+            "max_slot_count": CLOSE_SLOT_MAX_SLOT_COUNT,
+            "selection_cardinality": CLOSE_SLOT_SELECTION_CARDINALITY,
+            "hold_cash_action": CLOSE_SLOT_HOLD_CASH_ACTION,
+        },
+        "walk_forward_summary": _close_slot_walk_forward_summary(context.get("walk_forward_windows") or {}),
+        "replay_summary": _close_slot_replay_summary(context.get("replay_episode_ledgers") or {}),
+        "selected_hold_summary": _close_slot_selected_hold_summary(context.get("cost_scenario_rows") or []),
+        "false_locks": _close_slot_false_locks(),
+        "no_claim_labels": list(CLOSE_SLOT_NO_CLAIM_LABELS),
+        "total_capital_krw": train_manifest.get("total_capital_krw"),
+        "integer_shares_primary": train_manifest.get("integer_shares_primary"),
+        "fill_mode": train_manifest.get("fill_mode"),
+        "execution_realism": train_manifest.get("execution_realism"),
+        "price_basis": current_d0_d1.get("price_basis"),
+        "price_basis_status": current_d0_d1.get("price_basis_status"),
+        "decision_grade_return_status": current_d0_d1.get("decision_grade_return_status"),
+        "universe_verdict": current_d0_d1.get("universe_verdict"),
+        "universe_review_status": current_d0_d1.get("universe_review_status"),
+        "current_required_blockers": current_d0_d1.get("required_blockers") or [],
+        "upstream_gate_blockers": gate_report.get("upstream_gate_blockers") or train_manifest.get("upstream_gate_blockers") or dataset_manifest.get("upstream_gate_blockers") or [],
+        "chosen_is_no_trade_sentinel": (train_manifest.get("fit_summary") or {}).get("chosen_is_no_trade_sentinel"),
+        "artifact_age_seconds": _close_slot_artifact_age_seconds(context["run_dir"]),
+        "data_recency": _close_slot_data_recency(date_ledgers),
+        "dataset_lineage": context.get("dataset_lineage") or {},
+        "dataset_source_counts": dataset_manifest.get("source_counts") or {},
+        "bounded_research_scope": {
+            "max_symbols": (dataset_manifest.get("source_counts") or {}).get("max_symbols"),
+            "max_rows_per_symbol": (dataset_manifest.get("source_counts") or {}).get("max_rows_per_symbol"),
+            "scope_label": "bounded_latest_evidence_not_full_universe_or_decision_grade",
+        },
+        "row_counts": {
+            "policy_score_rows": train_row_counts.get("policy_score_rows"),
+            "baseline_summary_rows": train_row_counts.get("baseline_summary_rows"),
+            "dataset_close_slot_panel_rows": (dataset_manifest.get("row_counts") or {}).get("close_slot_panel_rows"),
+            "threshold_search_rows": train_row_counts.get("threshold_search_rows"),
+            "walk_forward_windows": train_row_counts.get("walk_forward_windows"),
+            "replay_episode_ledgers": train_row_counts.get("replay_episode_ledgers"),
+            "cost_scenario_summary_rows": train_row_counts.get("cost_scenario_summary_rows"),
+        },
+        "samples": {
+            "baseline_summary": context.get("baseline_rows") or [],
+            "policy_scores": context.get("policy_score_rows") or [],
+            "date_ledgers": _close_slot_limited_ledgers(date_ledgers, limit=sample_limit),
+            "threshold_search": (context.get("threshold_rows") or [])[:sample_limit],
+            "cost_scenario_summary": (context.get("cost_scenario_rows") or [])[:sample_limit],
+        },
+    }
+    payload["latest_selection"] = _close_slot_latest_selection(
+        date_ledgers=date_ledgers,
+        date_split_map=context.get("date_split_map") if isinstance(context.get("date_split_map"), dict) else {},
+        policy=selected_policy,
+        run_id=payload.get("run_id"),
+        artifact_age_seconds=payload.get("artifact_age_seconds"),
+    )
+    payload["labels"] = _close_slot_labels(payload)
+    payload["close_slot_blockers"] = _merge_string_lists(
+        payload["gate_validation_errors"],
+        payload["current_required_blockers"],
+        payload["upstream_gate_blockers"],
+    )
+    return payload
+
+
+def load_close_slot_latest(*, run: str | None = None, sample_limit: int = 25) -> dict[str, Any]:
+    context = _load_close_slot_context(run=run, sample_limit=sample_limit)
+    if "payload" in context:
+        return context["payload"]
+    return _close_slot_payload_from_context(context, sample_limit=context["sample_limit"])
+
+
+def load_close_slot_gate(*, run: str | None = None) -> dict[str, Any]:
+    payload = load_close_slot_latest(run=run, sample_limit=0)
+    if payload.get("artifact_status") != "LOADED_GENERATED_ARTIFACT":
+        return payload
+    return {
+        **payload,
+        "samples": {},
+        "surface": "daily_close_slot_gate",
+        "read_only_dashboard_note": "GET-only close-slot gate validation evidence; no mutation or trading action.",
+    }
+
+
+def list_close_slot_artifacts(limit: int = 20) -> dict[str, Any]:
+    root = DEFAULT_CLOSE_SLOT_GATE_ROOT.resolve()
+    safe_limit = _bounded_limit(limit, default=20, maximum=200)
+    runs: list[dict[str, Any]] = []
+    if root.exists():
+        for run_dir in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                resolved_run_dir = run_dir.resolve()
+            except OSError:
+                continue
+            manifest_path = run_dir / "close_slot_gate_manifest.json"
+            if not run_dir.is_dir() or not _path_is_relative_to(resolved_run_dir, root) or not manifest_path.exists():
+                continue
+
+            context = _load_close_slot_context(run=run_dir.name, sample_limit=0)
+            payload = context.get("payload") if "payload" in context else _close_slot_payload_from_context(context, sample_limit=0)
+            source_ids = payload.get("source_run_ids") if isinstance(payload.get("source_run_ids"), dict) else {}
+            common = {
+                "kind": "daily_close_slot_gate",
+                "run_id": run_dir.name,
+                "artifact_dir": str(run_dir),
+                "primary_file": str(manifest_path),
+                "modified_at": manifest_path.stat().st_mtime,
+                "promotion_allowed": False,
+                "model_build_allowed": False,
+                "paper_forward_allowed": False,
+                "live_broker_order_allowed": False,
+                "profitability_claim_allowed": False,
+                "go_summary_allowed": False,
+                "read_only": True,
+            }
+            if payload.get("artifact_status") != "LOADED_GENERATED_ARTIFACT" or payload.get("dashboard_validation_status") != "PASS":
+                runs.append(
+                    {
+                        **common,
+                        "status": "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT",
+                        "readiness_status": "BLOCKED_INVALID_CLOSE_SLOT_ARTIFACT",
+                        "gate_validation_status": "BLOCK",
+                        "artifact_selection_errors": sorted(set(payload.get("artifact_selection_errors") or ["CLOSE_SLOT_ARTIFACT_CONTEXT_INVALID"])),
+                        "train_run_id": source_ids.get("train_run_id"),
+                        "dataset_run_id": source_ids.get("dataset_run_id"),
+                        "manifest_sha": source_ids.get("gate_manifest_sha"),
+                    }
+                )
+            else:
+                runs.append(
+                    {
+                        **common,
+                        "status": payload.get("status"),
+                        "readiness_status": payload.get("readiness_status"),
+                        "gate_validation_status": payload.get("gate_validation_status"),
+                        "train_run_id": source_ids.get("train_run_id"),
+                        "dataset_run_id": source_ids.get("dataset_run_id"),
+                        "manifest_sha": payload.get("manifest_sha"),
+                    }
+                )
+            if len(runs) >= safe_limit:
+                break
+    return {
+        "runs": runs,
+        "read_only": True,
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "go_summary_allowed": False,
+        "read_only_dashboard_note": "Generated daily close-slot gate artifacts only; no writes from dashboard.",
+    }
+
+
+def load_close_slot_equity(*, run: str | None = None, policy: str | None = None) -> dict[str, Any]:
+    context = _load_close_slot_context(run=run, sample_limit=0)
+    if "payload" in context:
+        return context["payload"]
+    selected_policy = str(policy or POLICY_LINEAR_SCORE)
+    date_ledgers = context.get("date_ledgers") if isinstance(context.get("date_ledgers"), dict) else {}
+    series: list[dict[str, Any]] = []
+    for policy_name, rows in date_ledgers.items():
+        if selected_policy and str(policy_name) != selected_policy:
+            continue
+        cumulative_net = 0.0
+        cumulative_reward = 0.0
+        points: list[dict[str, Any]] = []
+        for row in sorted((dict(item) for item in rows), key=lambda item: str(item.get("date"))):
+            net = _to_float(row.get("net_pnl_krw"), 0.0) or 0.0
+            reward = _to_float(row.get("reward"), 0.0) or 0.0
+            cumulative_net += net
+            cumulative_reward += reward
+            points.append(
+                {
+                    "date": row.get("date"),
+                    "policy": policy_name,
+                    "filled_slots": row.get("filled_slots"),
+                    "net_pnl_krw": net,
+                    "cost_krw": _to_float(row.get("cost_krw"), 0.0) or 0.0,
+                    "reward": reward,
+                    "cumulative_net_pnl_krw": cumulative_net,
+                    "cumulative_reward": cumulative_reward,
+                    "research_only": True,
+                }
+            )
+        series.append({"policy": policy_name, "points": _sample_points(points, maximum=240)})
+    latest = _close_slot_payload_from_context(context, sample_limit=0)
+    return {
+        "surface": "daily_close_slot_equity",
+        "status": latest.get("status"),
+        "readiness_status": latest.get("readiness_status"),
+        "run_id": latest.get("run_id"),
+        "source_run_ids": latest.get("source_run_ids"),
+        "labels": latest.get("labels"),
+        "round_trip_cost_bp": latest.get("round_trip_cost_bp"),
+        "fill_mode": latest.get("fill_mode"),
+        "execution_realism": latest.get("execution_realism"),
+        "series": series,
+        "read_only": True,
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "go_summary_allowed": False,
+        "guardrail": "Research-only close-to-next-close PnL visualization; not a profit, live, broker, account, order, or paper-forward claim.",
+    }
+
+
+def _close_slot_ledger_dates_by_split(ledgers: list[dict[str, Any]], date_split_map: dict[str, str]) -> dict[str, list[str]]:
+    by_split: dict[str, list[str]] = {}
+    for row in ledgers:
+        date = row.get("date")
+        if not date:
+            continue
+        split = date_split_map.get(str(date), "")
+        by_split.setdefault(split, []).append(str(date))
+    return by_split
+
+
+def _close_slot_latest_selection(
+    *,
+    date_ledgers: dict[str, Any],
+    date_split_map: dict[str, str],
+    policy: str,
+    run_id: str | None,
+    artifact_age_seconds: float | None,
+) -> dict[str, Any]:
+    ledgers = date_ledgers.get(policy) if isinstance(date_ledgers.get(policy), list) else []
+    by_split = _close_slot_ledger_dates_by_split(ledgers, date_split_map)
+    test_dates = sorted(by_split.get("test") or [], reverse=True)
+    train_dates = sorted(by_split.get("train") or [], reverse=True)
+    val_dates = sorted(by_split.get("val") or [], reverse=True)
+    val_plus_test_dates = sorted((by_split.get("val") or []) + (by_split.get("test") or []), reverse=True)
+    primary_date = test_dates[0] if test_dates else None
+    return {
+        "policy": policy,
+        "date": primary_date,
+        "split": "test",
+        "cost_scenario_id": PRIMARY_COST_SCENARIO_ID,
+        "seed": None,
+        "source_run_id": run_id,
+        "artifact_age_seconds": artifact_age_seconds,
+        "label": "primary_oos_test_result",
+        "missing_test_split_evidence": primary_date is None,
+        "secondary": {
+            "train": {
+                "date": train_dates[0] if train_dates else None,
+                "split": "train",
+                "label": "secondary_in_sample_train_result",
+            },
+            "val": {
+                "date": val_dates[0] if val_dates else None,
+                "split": "val",
+                "label": "secondary_validation_result",
+            },
+            "val_plus_test": {
+                "date": val_plus_test_dates[0] if val_plus_test_dates else None,
+                "split": "val+test",
+                "label": "secondary_val_plus_test_combined_result",
+            },
+        },
+    }
+
+
+def load_close_slot_selection(*, run: str | None = None, policy: str | None = None, limit: int = 25) -> dict[str, Any]:
+    context = _load_close_slot_context(run=run, sample_limit=limit)
+    if "payload" in context:
+        return context["payload"]
+    selected_policy = str(policy or POLICY_LINEAR_SCORE)
+    safe_limit = _bounded_limit(limit, default=25, maximum=500)
+    date_ledgers = context.get("date_ledgers") if isinstance(context.get("date_ledgers"), dict) else {}
+    if selected_policy not in date_ledgers and selected_policy.lower() == "linear":
+        linear_candidates = sorted(name for name in date_ledgers if "linear" in str(name).lower())
+        if linear_candidates:
+            selected_policy = linear_candidates[0]
+    date_split_map = context.get("date_split_map") if isinstance(context.get("date_split_map"), dict) else {}
+    slot_rows: list[dict[str, Any]] = []
+    for ledger in (date_ledgers.get(selected_policy, []) if isinstance(date_ledgers.get(selected_policy), list) else []):
+        for slot in ledger.get("ledger") or []:
+            code = slot.get("code")
+            slot_rows.append(
+                {
+                    "date": ledger.get("date"),
+                    "policy": selected_policy,
+                    "action_label": ledger.get("action_label"),
+                    "slot": slot.get("slot"),
+                    "code": str(code).zfill(6) if code not in (None, "") else None,
+                    "status": slot.get("status"),
+                    "unfilled_reason": slot.get("unfilled_reason"),
+                    "shares": slot.get("shares"),
+                    "entry_close": slot.get("entry_close"),
+                    "next_close": slot.get("next_close"),
+                    "net_pnl_krw": slot.get("net_pnl_krw"),
+                    "cost_krw": slot.get("cost_krw"),
+                    "fill_mode": slot.get("fill_mode"),
+                    "research_only": True,
+                }
+            )
+            if len(slot_rows) >= safe_limit:
+                break
+        if len(slot_rows) >= safe_limit:
+            break
+    latest = _close_slot_payload_from_context(context, sample_limit=safe_limit)
+    latest_selection = _close_slot_latest_selection(
+        date_ledgers=date_ledgers,
+        date_split_map=date_split_map,
+        policy=selected_policy,
+        run_id=latest.get("run_id"),
+        artifact_age_seconds=latest.get("artifact_age_seconds"),
+    )
+    return {
+        "surface": "daily_close_slot_selection",
+        "status": latest.get("status"),
+        "readiness_status": latest.get("readiness_status"),
+        "run_id": latest.get("run_id"),
+        "source_run_ids": latest.get("source_run_ids"),
+        "labels": latest.get("labels"),
+        "policy": selected_policy,
+        "slot_count": latest.get("slot_count"),
+        "round_trip_cost_bp": latest.get("round_trip_cost_bp"),
+        "selection_rows": slot_rows,
+        "selection_rows_label": "sample_only_not_authoritative_latest",
+        "latest_selection": latest_selection,
+        "data_recency": latest.get("data_recency"),
+        "close_slot_blockers": latest.get("close_slot_blockers"),
+        "chosen_is_no_trade_sentinel": latest.get("chosen_is_no_trade_sentinel"),
+        "policy_score_sample": (context.get("policy_score_rows_by_policy") or {}).get(selected_policy, [])[:safe_limit],
+        "threshold_selection": latest.get("threshold_selection"),
+        "selected_hold_summary": latest.get("selected_hold_summary"),
+        "cost_scenarios": latest.get("cost_scenarios"),
+        "cost_components": latest.get("cost_components"),
+        "false_locks": latest.get("false_locks"),
+        "no_claim_labels": latest.get("no_claim_labels"),
+        "read_only": True,
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "go_summary_allowed": False,
+        "guardrail": "Research-only close-slot selected-code evidence; selected-code lists are replay adapters only and never a live/order surface.",
+    }
+
+
 def load_dataset_chart(*, run: str | None = None) -> dict[str, Any]:
     dataset = load_dataset_latest(run=run, sample_limit=0)
     if dataset.get("status") == "NOT_STARTED":
@@ -1499,18 +3215,26 @@ REGISTRY_REQUIRED_CSV_EVIDENCE = {
     "PAPER_SELECTED": (
         "paper_selected.csv",
         {"date", "code", "rank", "paper_weight", "paper_only_selected", "selection_status", "strategy", "reason"},
+        "paper_selected",
+        "paper_selected_rows",
     ),
     "REALIZED_RETURNS": (
         "realized_returns.csv",
         {"date", "split", "paper_nav", "realized_return", "policy_reward", "current_drawdown", "evidence_status", "numeric_error", "source"},
+        "realized_returns",
+        "realized_return_rows",
     ),
     "DRIFT": (
         "drift.csv",
         {"metric", "value", "reference", "status", "action"},
+        "drift",
+        "drift_rows",
     ),
     "DRAWDOWN": (
         "drawdown.csv",
         {"date", "split", "paper_nav", "paper_forward_drawdown", "computed_drawdown", "evidence_status", "numeric_error", "source"},
+        "drawdown",
+        "drawdown_rows",
     ),
 }
 
@@ -1527,17 +3251,18 @@ def _read_registry_json_artifact(path: Path, *, invalid_error: str, missing_erro
     return payload, []
 
 
-def _read_registry_decision_log(path: Path, limit: int) -> tuple[list[dict[str, Any]], list[str]]:
+def _read_registry_decision_log(path: Path, limit: int) -> tuple[list[dict[str, Any]], int | None, list[str]]:
     errors: list[str] = []
     rows: list[dict[str, Any]] = []
     if not path.exists():
-        return rows, ["REGISTRY_EVIDENCE_DECISION_LOG_MISSING"]
+        return rows, None, ["REGISTRY_EVIDENCE_DECISION_LOG_MISSING"]
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
-        return rows, ["REGISTRY_DECISION_LOG_JSONL_INVALID"]
+        return rows, None, ["REGISTRY_DECISION_LOG_JSONL_INVALID"]
     if not any(line.strip() for line in lines):
-        return rows, ["REGISTRY_EVIDENCE_DECISION_LOG_EMPTY"]
+        return rows, 0, ["REGISTRY_EVIDENCE_DECISION_LOG_EMPTY"]
+    row_count = sum(1 for line in lines if line.strip())
     for line in lines:
         if not line.strip():
             continue
@@ -1551,7 +3276,7 @@ def _read_registry_decision_log(path: Path, limit: int) -> tuple[list[dict[str, 
             continue
         if len(rows) < limit:
             rows.append(payload)
-    return rows, errors
+    return rows, row_count, errors
 
 
 def _safe_read_registry_csv_rows(path: Path, limit: int) -> list[dict[str, Any]]:
@@ -1561,10 +3286,66 @@ def _safe_read_registry_csv_rows(path: Path, limit: int) -> list[dict[str, Any]]
         return []
 
 
-
-def _registry_csv_evidence_errors(run_dir: Path) -> list[str]:
+def _registry_artifact_hash_errors(run_dir: Path, manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    for label, (filename, required_columns) in REGISTRY_REQUIRED_CSV_EVIDENCE.items():
+    artifact_hashes = manifest.get("artifact_hashes")
+    if not isinstance(artifact_hashes, dict):
+        artifact_hashes = {}
+    for key, filename in {
+        "candidate_registry": "candidate_registry.json",
+        "paper_selected": "paper_selected.csv",
+        "realized_returns": "realized_returns.csv",
+        "drift": "drift.csv",
+        "drawdown": "drawdown.csv",
+        "decision_log": "decision_log.jsonl",
+    }.items():
+        path = run_dir / filename
+        expected_hash = artifact_hashes.get(key)
+        if not _is_sha256(expected_hash):
+            errors.append(f"REGISTRY_EVIDENCE_{key.upper()}_HASH_MISSING")
+        elif not path.is_file():
+            errors.append(f"REGISTRY_EVIDENCE_{key.upper()}_MISSING")
+        else:
+            try:
+                actual_hash = _file_sha256(path)
+            except OSError:
+                errors.append(f"REGISTRY_EVIDENCE_{key.upper()}_UNREADABLE")
+            else:
+                if actual_hash != expected_hash:
+                    errors.append(f"REGISTRY_EVIDENCE_{key.upper()}_HASH_MISMATCH")
+    return errors
+
+
+def _registry_non_csv_row_count_errors(
+    manifest: dict[str, Any],
+    candidate_registry: dict[str, Any],
+    decision_row_count: int | None,
+) -> list[str]:
+    errors: list[str] = []
+    row_counts = manifest.get("row_counts")
+    if not isinstance(row_counts, dict):
+        row_counts = {}
+    candidates = candidate_registry.get("candidates")
+    candidate_row_count = len(candidates) if isinstance(candidates, list) else None
+    for label, expected_key, observed in (
+        ("CANDIDATE_REGISTRY", "candidate_registry_rows", candidate_row_count),
+        ("DECISION_LOG", "decision_log_rows", decision_row_count),
+    ):
+        expected = _to_int(row_counts.get(expected_key))
+        if expected is None:
+            errors.append(f"REGISTRY_EVIDENCE_{label}_ROW_COUNT_MISSING")
+        elif observed is not None and observed != expected:
+            errors.append(f"REGISTRY_EVIDENCE_{label}_ROW_COUNT_MISMATCH")
+    return errors
+
+
+
+def _registry_csv_evidence_errors(run_dir: Path, manifest: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    row_counts = manifest.get("row_counts")
+    if not isinstance(row_counts, dict):
+        row_counts = {}
+    for label, (filename, required_columns, _artifact_key, row_count_key) in REGISTRY_REQUIRED_CSV_EVIDENCE.items():
         path = run_dir / filename
         if not path.exists():
             errors.append(f"REGISTRY_EVIDENCE_{label}_MISSING")
@@ -1574,7 +3355,7 @@ def _registry_csv_evidence_errors(run_dir: Path) -> list[str]:
                 reader = csv.DictReader(handle)
                 columns = set(reader.fieldnames or [])
                 has_header = bool(columns)
-                has_row = any(True for _ in reader)
+                observed_row_count = sum(1 for _ in reader)
         except (csv.Error, OSError, UnicodeDecodeError):
             errors.append(f"REGISTRY_EVIDENCE_{label}_INVALID")
             continue
@@ -1582,8 +3363,13 @@ def _registry_csv_evidence_errors(run_dir: Path) -> list[str]:
             errors.append(f"REGISTRY_EVIDENCE_{label}_HEADER_MISSING")
         elif not required_columns.issubset(columns):
             errors.append(f"REGISTRY_EVIDENCE_{label}_COLUMNS_INVALID")
-        if not has_row:
+        if observed_row_count == 0:
             errors.append(f"REGISTRY_EVIDENCE_{label}_EMPTY")
+        expected_row_count = _to_int(row_counts.get(row_count_key))
+        if expected_row_count is None:
+            errors.append(f"REGISTRY_EVIDENCE_{label}_ROW_COUNT_MISSING")
+        elif observed_row_count != expected_row_count:
+            errors.append(f"REGISTRY_EVIDENCE_{label}_ROW_COUNT_MISMATCH")
     return errors
 
 def load_registry_latest(*, run: str | None = None, sample_limit: int = 25) -> dict[str, Any]:
@@ -1601,14 +3387,16 @@ def load_registry_latest(*, run: str | None = None, sample_limit: int = 25) -> d
         invalid_error="REGISTRY_CANDIDATE_REGISTRY_JSON_INVALID",
         missing_error="REGISTRY_CANDIDATE_REGISTRY_MISSING",
     )
-    decision_rows, decision_errors = _read_registry_decision_log(run_dir / "decision_log.jsonl", safe_limit)
+    decision_rows, decision_row_count, decision_errors = _read_registry_decision_log(run_dir / "decision_log.jsonl", safe_limit)
     invariant_errors = sorted(
         dict.fromkeys(
             [
                 *manifest_errors,
                 *candidate_errors,
                 *_registry_artifact_invariant_errors(manifest, candidate_registry),
-                *_registry_csv_evidence_errors(run_dir),
+                *_registry_artifact_hash_errors(run_dir, manifest),
+                *_registry_csv_evidence_errors(run_dir, manifest),
+                *_registry_non_csv_row_count_errors(manifest, candidate_registry, decision_row_count),
                 *decision_errors,
             ]
         )
@@ -1643,20 +3431,27 @@ def load_registry_latest(*, run: str | None = None, sample_limit: int = 25) -> d
                 ],
             }
         candidate_registry["invariant_errors"] = invariant_errors
+    evidence_safe = not invariant_errors
     return {
         **manifest,
         "status": manifest.get("status") or "RESEARCH_ONLY_BLOCKED",
-        "artifact_status": "LOADED_GENERATED_ARTIFACT",
+        "artifact_status": "LOADED_GENERATED_ARTIFACT" if evidence_safe else "BLOCKED_UNSAFE_REGISTRY_ARTIFACT",
         "artifact_dir": str(run_dir),
         "read_only": True,
+        "promotion_allowed": False,
+        "model_build_allowed": False,
+        "paper_forward_allowed": False,
+        "live_broker_order_allowed": False,
+        "profitability_claim_allowed": False,
+        "go_summary_allowed": False,
         "read_only_dashboard_note": "GET-only D8/D9 registry and paper-forward ledger evidence; no live/broker/order/profit action from dashboard.",
         "candidate_registry": candidate_registry,
         "samples": {
-            "paper_selected": _safe_read_registry_csv_rows(run_dir / "paper_selected.csv", safe_limit),
-            "realized_returns": _safe_read_registry_csv_rows(run_dir / "realized_returns.csv", safe_limit),
-            "drift": _safe_read_registry_csv_rows(run_dir / "drift.csv", safe_limit),
-            "drawdown": _safe_read_registry_csv_rows(run_dir / "drawdown.csv", safe_limit),
-            "decision_log": decision_rows,
+            "paper_selected": _safe_read_registry_csv_rows(run_dir / "paper_selected.csv", safe_limit) if evidence_safe else [],
+            "realized_returns": _safe_read_registry_csv_rows(run_dir / "realized_returns.csv", safe_limit) if evidence_safe else [],
+            "drift": _safe_read_registry_csv_rows(run_dir / "drift.csv", safe_limit) if evidence_safe else [],
+            "drawdown": _safe_read_registry_csv_rows(run_dir / "drawdown.csv", safe_limit) if evidence_safe else [],
+            "decision_log": decision_rows if evidence_safe else [],
         },
         "guardrail": safe_guardrail,
         "invariant_errors": invariant_errors,
@@ -5085,16 +6880,27 @@ def load_daily_artifacts(limit: int = 50) -> dict[str, Any]:
     }
 
 
-def load_daily_progress() -> dict[str, Any]:
-    db = load_daily_db_summary(table_limit=0, flag_limit=0, window_limit=0)
-    universe = load_universe_preview(limit=0)
-    dataset = load_dataset_latest(sample_limit=0)
-    prediction = load_prediction_latest(sample_limit=0)
-    portfolio = load_portfolio_latest(sample_limit=0)
-    gate = load_walk_forward_latest(sample_limit=0)
+def _compute_daily_progress() -> dict[str, Any]:
+    with ThreadPoolExecutor(max_workers=8, thread_name_prefix="daily-progress") as pool:
+        futures = {
+            "db": pool.submit(load_daily_db_summary, table_limit=0, flag_limit=0, window_limit=0),
+            "universe": pool.submit(load_universe_preview, limit=0),
+            "dataset": pool.submit(load_dataset_latest, sample_limit=0),
+            "prediction": pool.submit(load_prediction_latest, sample_limit=0),
+            "portfolio": pool.submit(load_portfolio_latest, sample_limit=0),
+            "gate": pool.submit(load_walk_forward_latest, sample_limit=0),
+            "registry": pool.submit(load_registry_latest, sample_limit=0),
+            "diagnostics": pool.submit(load_research_diagnostics_chart),
+        }
+        db = futures["db"].result()
+        universe = futures["universe"].result()
+        dataset = futures["dataset"].result()
+        prediction = futures["prediction"].result()
+        portfolio = futures["portfolio"].result()
+        gate = futures["gate"].result()
+        registry = futures["registry"].result()
+        diagnostics = futures["diagnostics"].result()
     gate_verdict = gate.get("verdict") or {}
-    registry = load_registry_latest(sample_limit=0)
-    diagnostics = load_research_diagnostics_chart()
     baseline_delta = prediction.get("baseline_delta_summary") or {}
     effective_gate = _effective_daily_model_gate(
         db=db,
@@ -5235,6 +7041,94 @@ def load_daily_progress() -> dict[str, Any]:
         "effective_gate_blockers": effective_gate["effective_gate_blockers"],
     }
 
+
+def _load_daily_progress_singleflight() -> dict[str, Any]:
+    """Coalesce only overlapping progress builds without cross-change caching."""
+
+    global _PROGRESS_GENERATION, _PROGRESS_IN_FLIGHT, _PROGRESS_RESULT
+
+    with _PROGRESS_CONDITION:
+        observed_generation = _PROGRESS_GENERATION
+        if _PROGRESS_IN_FLIGHT:
+            while _PROGRESS_IN_FLIGHT and _PROGRESS_GENERATION == observed_generation:
+                _PROGRESS_CONDITION.wait()
+            if _PROGRESS_GENERATION != observed_generation and _PROGRESS_RESULT is not None:
+                return deepcopy(_PROGRESS_RESULT)
+        _PROGRESS_IN_FLIGHT = True
+
+    try:
+        result = _compute_daily_progress()
+    except BaseException:
+        with _PROGRESS_CONDITION:
+            _PROGRESS_RESULT = None
+            _PROGRESS_GENERATION += 1
+            _PROGRESS_IN_FLIGHT = False
+            _PROGRESS_CONDITION.notify_all()
+        raise
+
+    with _PROGRESS_CONDITION:
+        _PROGRESS_RESULT = deepcopy(result)
+        _PROGRESS_GENERATION += 1
+        _PROGRESS_IN_FLIGHT = False
+        _PROGRESS_CONDITION.notify_all()
+    return result
+
+def _daily_progress_artifact_signature() -> tuple[Path, tuple[tuple[str, int, int], ...]] | None:
+    entries: list[tuple[str, int, int]] = []
+    primary_path: Path | None = None
+    for root, required_file in _PROGRESS_ARTIFACT_SOURCES:
+        run_dir = _latest_run_dir(root, required_file=required_file)
+        if run_dir is None:
+            return None
+        required_path = run_dir / required_file
+        if primary_path is None:
+            primary_path = required_path
+        paths = [root, *sorted(path for path in run_dir.rglob("*") if path.is_file())]
+        for path in paths:
+            try:
+                stat = path.stat()
+                entries.append((str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+            except OSError:
+                return None
+    if primary_path is None:
+        return None
+    return primary_path, tuple(entries)
+
+
+def _daily_progress_loader_identity() -> tuple[int, ...]:
+    """Keep in-process caches isolated when tests or adapters replace loaders."""
+
+    return tuple(
+        id(loader)
+        for loader in (
+            load_daily_db_summary,
+            load_universe_preview,
+            load_dataset_latest,
+            load_prediction_latest,
+            load_portfolio_latest,
+            load_walk_forward_latest,
+            load_registry_latest,
+            load_research_diagnostics_chart,
+        )
+    )
+
+
+def load_daily_progress() -> dict[str, Any]:
+    """Return stat-invalidated progress, coalescing overlapping rebuilds."""
+
+    for _ in range(2):
+        signature = _daily_progress_artifact_signature()
+        if signature is None:
+            return _load_daily_progress_singleflight()
+        primary_path, stat_entries = signature
+        result = artifact_cache.cached_by_stat(
+            primary_path,
+            _load_daily_progress_singleflight,
+            extra=("daily_progress.v1", stat_entries, _daily_progress_loader_identity()),
+        )
+        if _daily_progress_artifact_signature() == signature:
+            return result
+    return _load_daily_progress_singleflight()
 
 def load_coverage_chart() -> dict[str, Any]:
     db = load_daily_db_summary(table_limit=0, flag_limit=0, window_limit=0)

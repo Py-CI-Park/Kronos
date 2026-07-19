@@ -224,7 +224,7 @@
     </span>
   </div>
 
-  <EChartsRenderer {option} height="380px" />
+  <EChartsRenderer {option} height="380px" caption="학습 손실 곡선" />
 
   <div class="row spread" style="border-top:1px solid var(--border-faint);padding-top:12px;margin-top:8px">
     <div class="row" style="gap:18px;flex-wrap:wrap">

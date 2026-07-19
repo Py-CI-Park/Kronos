@@ -2,7 +2,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from stom_rl.portfolio_env import ACTION_HOLD, PortfolioEnv, PortfolioEnvConfig, synthetic_candidates
+from stom_rl.portfolio_env import (
+    ACTION_HOLD,
+    SB3_LEGACY_SCALAR_ACCOUNTING_HORIZON,
+    SB3_LEGACY_SYNTHETIC_ACCOUNTING_HORIZON,
+    PortfolioEnv,
+    PortfolioEnvConfig,
+    synthetic_candidates,
+)
+
 
 
 def _t1_candidates() -> pd.DataFrame:
@@ -72,7 +80,71 @@ def test_portfolio_env_nav_conserved_after_t1_change():
         prices = {symbol: env.last_prices[symbol] for symbol in env.account.positions}
         # NAV is cash + holdings by construction; assert_invariants enforces it.
         env.account.assert_invariants({**env.last_prices, **prices})
-        assert abs(info["nav"] - (info["cash"] + env.account.holdings_value(env.last_prices))) < 1e-6
+        assert abs(
+            info["nav"]
+            - (info["cash"] + env.account.holdings_value(env.last_prices))
+        ) < 1e-6
+
+
+def test_legacy_scalar_buy_sizing_reserves_rounded_buy_cost_boundary():
+    """Legacy scalar sizing must leave cash non-negative after rounded buy costs."""
+
+    base = pd.Timestamp("2025-07-10 09:00:00")
+    candidates = pd.DataFrame(
+        [
+            {
+                "timestamp": base.isoformat(),
+                "symbol": "A",
+                "condition_id": "legacy_scalar_boundary",
+                "passed": True,
+                "rank_score": 1.0,
+                "price": 100.0,
+                "fill_price": 100.0,
+                "fillable": True,
+                "feature_f": 0.0,
+            },
+            {
+                "timestamp": (base + pd.Timedelta(seconds=1)).isoformat(),
+                "symbol": "A",
+                "condition_id": "legacy_scalar_boundary",
+                "passed": True,
+                "rank_score": 1.0,
+                "price": 100.0,
+                "fill_price": np.nan,
+                "fillable": False,
+                "feature_f": 0.0,
+            },
+        ]
+    )
+    env = PortfolioEnv(
+        PortfolioEnvConfig(
+            top_k_candidates=1,
+            max_positions=1,
+            initial_cash=100.1248,
+            buy_fraction=1.0,
+            cost_bps=25.0,
+            legacy_scalar_cost_label="legacy_scalar_25bp_boundary",
+            accounting_horizon=SB3_LEGACY_SCALAR_ACCOUNTING_HORIZON,
+            seed=7,
+        ),
+        candidates=candidates,
+    )
+    _observation, reset_info = env.reset(seed=7)
+
+    assert reset_info["cost_scenario_id"] == "legacy_scalar_25bp_boundary"
+    assert reset_info["cost_model"] == "legacy_scalar_per_fill"
+    assert reset_info["action_mask"][1] == 1
+
+    _observation, _reward, _terminated, _truncated, info = env.step(1)
+    fill = env.trade_log[-1]
+
+    assert fill["cost_scenario_id"] == "legacy_scalar_25bp_boundary"
+    assert fill["cost_model"] == "legacy_scalar_per_fill"
+    assert fill["buy_commission_bp"] == pytest.approx(12.5)
+    assert fill["buy_slippage_bp"] == pytest.approx(0.0)
+    assert fill["gross_value"] + fill["total_cost_krw"] <= 100.1248 + 1e-8
+    assert info["cash"] >= -1e-8
+    assert info["cash"] < 1e-5
 
 
 def test_portfolio_env_unfillable_last_bar_cannot_buy():
@@ -95,16 +167,22 @@ def test_portfolio_env_unfillable_last_bar_cannot_buy():
     assert env._blocked_reason(1, candidates) == "unfillable_no_t1"
 
 
-def test_portfolio_env_missing_fill_price_falls_back_with_warning():
-    """Legacy CSVs without fill_price keep working (synthetic smoke path)."""
+def test_portfolio_env_missing_fill_price_falls_back_only_for_explicit_synthetic_legacy():
+    """Legacy same-bar fallback is opt-in and labelled as non-V5 synthetic."""
 
-    with pytest.warns(RuntimeWarning, match="fill_price"):
+    legacy = synthetic_candidates().drop(columns=["fill_price", "fillable"])
+    with pytest.warns(RuntimeWarning, match="synthetic legacy"):
         env = PortfolioEnv(
-            PortfolioEnvConfig(top_k_candidates=2, max_positions=1),
-            candidates=synthetic_candidates(),
+            PortfolioEnvConfig(
+                top_k_candidates=2,
+                max_positions=1,
+                accounting_horizon=SB3_LEGACY_SYNTHETIC_ACCOUNTING_HORIZON,
+                allow_legacy_same_bar_fill=True,
+            ),
+            candidates=legacy,
         )
     _, info = env.reset(seed=1)
-    # Fallback marks every positive-price row fillable, so a buy is still possible.
+    assert info["accounting_horizon"] == SB3_LEGACY_SYNTHETIC_ACCOUNTING_HORIZON
     assert info["action_mask"][1] == 1
     env.step(1)
     assert env.trade_log[-1]["price"] > 0

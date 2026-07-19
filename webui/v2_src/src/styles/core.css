@@ -3,6 +3,34 @@
    Human/Approachable + ML Operations
    ================================================================= */
 
+/* ---------- Self-hosted Web Fonts (no CDN — see webui/v2_src/public/fonts/) ---------- */
+@font-face {
+  font-family: 'Pretendard Variable';
+  src: url('/fonts/PretendardVariable.woff2') format('woff2-variations'),
+       url('/fonts/PretendardVariable.woff2') format('woff2');
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-latin.woff2') format('woff2-variations'),
+       url('/fonts/JetBrainsMono-latin.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-latin-ext.woff2') format('woff2-variations'),
+       url('/fonts/JetBrainsMono-latin-ext.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 /* ---------- Reset & Base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
 * { margin: 0; }
@@ -12,7 +40,11 @@ body {
   font-size: 14px;
   line-height: 1.55;
   color: var(--fg);
-  background: var(--bg);
+  background:
+    radial-gradient(1100px 520px at 88% -10%, color-mix(in oklab, var(--accent) 9%, transparent), transparent 62%),
+    radial-gradient(920px 480px at -8% 110%, color-mix(in oklab, var(--accent) 6%, transparent), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -43,12 +75,12 @@ ul, ol { list-style: none; padding: 0; }
   --fg:              oklch(22% 0.02 240);
   --fg-strong:       oklch(15% 0.025 240);
   --muted:           oklch(48% 0.018 240);
-  --dim:             oklch(62% 0.014 240);
+  --dim:             oklch(50% 0.016 240);
   --faint:           oklch(78% 0.01 240);
   --on-accent:       oklch(99% 0.005 170);
 
   /* Brand — mint/teal */
-  --accent:          oklch(56% 0.12 170);
+  --accent:          oklch(63% 0.115 176); /* #0E9E85 */
   --accent-strong:   oklch(48% 0.14 170);
   --accent-soft:     oklch(95% 0.04 170);
   --accent-tint:     oklch(91% 0.05 170);
@@ -59,13 +91,13 @@ ul, ol { list-style: none; padding: 0; }
   --warm-soft:       oklch(95% 0.04 35);
 
   /* Status */
-  --success:         oklch(58% 0.15 150);
+  --success:         oklch(48% 0.15 150);
   --success-soft:    oklch(94% 0.05 150);
-  --warn:            oklch(72% 0.16 75);
+  --warn:            oklch(52% 0.12 70);
   --warn-soft:       oklch(96% 0.06 75);
-  --danger:          oklch(58% 0.21 25);
+  --danger:          oklch(50% 0.19 25);
   --danger-soft:     oklch(96% 0.05 25);
-  --info:            oklch(60% 0.14 235);
+  --info:            oklch(50% 0.14 235);
   --info-soft:       oklch(96% 0.04 235);
 
   /* Chart palette */
@@ -95,18 +127,21 @@ ul, ol { list-style: none; padding: 0; }
   --t-display:    64px;
 
   /* Radii */
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
+  --r-sm: 9px;
+  --r-md: 13px;
+  --r-lg: 14px;
   --r-xl: 24px;
   --r-pill: 999px;
 
-  /* Shadows */
+  /* Shadows — premium command-center depth */
   --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.05);
-  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.05);
-  --shadow-md: 0 4px 8px rgb(15 23 42 / 0.04), 0 2px 4px rgb(15 23 42 / 0.04);
-  --shadow-lg: 0 12px 24px rgb(15 23 42 / 0.07), 0 4px 8px rgb(15 23 42 / 0.04);
-  --shadow-glow: 0 0 0 1px var(--accent-tint), 0 8px 32px var(--accent-glow);
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.05), 0 3px 8px -3px rgb(15 23 42 / 0.09);
+  --shadow-md: 0 2px 6px -1px rgb(15 23 42 / 0.06), 0 14px 28px -14px rgb(15 23 42 / 0.22);
+  --shadow-lg: 0 8px 18px -8px rgb(15 23 42 / 0.12), 0 24px 50px -20px rgb(15 23 42 / 0.30);
+  --shadow-glow: 0 0 0 1px var(--accent-tint), 0 10px 42px -12px var(--accent-glow);
+  /* Card surface highlight (rim light) + gradient overlay for depth */
+  --card-highlight: inset 0 1px 0 rgb(255 255 255 / 0.55);
+  --card-grad: linear-gradient(180deg, var(--surface) 0%, color-mix(in oklab, var(--surface) 92%, #000 8%) 100%);
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 0.8, 0.36, 1);
@@ -116,10 +151,23 @@ ul, ol { list-style: none; padding: 0; }
   --d-slow: 400ms;
 
   /* Layout */
-  --sidebar-w: 232px;
+  --sidebar-w: 210px;
   --sidebar-w-collapsed: 72px;
   --header-h: 64px;
   --content-max: 1480px;
+  --v5-content-max: 1480px;
+  --v5-content-max-wide: 1920px;
+  --v5-content-max-ultrawide: 2240px;
+  --v5-readable-measure: 80ch;
+  --v5-right-rail-w: clamp(400px, 24vw, 480px);
+  --v5-right-rail-collapsed-w: clamp(200px, 10vw, 240px);
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --v5-right-rail-w: clamp(480px, 22vw, 560px);
+    --v5-right-rail-collapsed-w: clamp(216px, 9vw, 260px);
+  }
 }
 
 /* ---------- Dark theme ---------- */
@@ -137,7 +185,7 @@ ul, ol { list-style: none; padding: 0; }
   --fg:              oklch(94% 0.005 240);
   --fg-strong:       oklch(98% 0.003 240);
   --muted:           oklch(72% 0.014 240);
-  --dim:             oklch(58% 0.018 240);
+  --dim:             oklch(66% 0.016 240);
   --faint:           oklch(40% 0.02 240);
   --on-accent:       oklch(15% 0.02 170);
 
@@ -150,16 +198,24 @@ ul, ol { list-style: none; padding: 0; }
   --warm:            oklch(72% 0.16 35);
   --warm-soft:       oklch(30% 0.08 35);
 
+  /* AA-compliant status foregrounds for dark surfaces (Todo 10 / B2):
+     the light-theme mid-tone status colors are too dark on dark bg, so
+     dark theme defines lighter variants instead of inheriting them. */
+  --success:         oklch(76% 0.15 152);
   --success-soft:    oklch(28% 0.08 150);
+  --warn:            oklch(82% 0.13 82);
   --warn-soft:       oklch(30% 0.10 75);
+  --danger:          oklch(72% 0.17 25);
   --danger-soft:     oklch(28% 0.10 25);
+  --info:            oklch(76% 0.13 235);
   --info-soft:       oklch(28% 0.08 235);
 
   --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.30);
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.30), 0 1px 3px rgb(0 0 0 / 0.30);
-  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.36);
-  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.45);
-  --shadow-glow: 0 0 0 1px var(--accent-tint), 0 0 32px var(--accent-glow);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 8px -3px rgb(0 0 0 / 0.45);
+  --shadow-md: 0 2px 6px -1px rgb(0 0 0 / 0.40), 0 16px 30px -14px rgb(0 0 0 / 0.55);
+  --shadow-lg: 0 10px 22px -8px rgb(0 0 0 / 0.50), 0 28px 56px -20px rgb(0 0 0 / 0.60);
+  --shadow-glow: 0 0 0 1px var(--accent-tint), 0 0 40px -8px var(--accent-glow);
+  --card-highlight: inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
 
 /* ---------- Pretendard fallback CSS variable substitution ---------- */

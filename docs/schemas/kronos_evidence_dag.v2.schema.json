@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_evidence_dag.v2.schema.json",
+  "oneOf": [
+    { "$ref": "#/$defs/claim" },
+    { "$ref": "#/$defs/previewMap" },
+    { "$ref": "#/$defs/preclosure" },
+    { "$ref": "#/$defs/candidateMap" },
+    { "$ref": "#/$defs/finalMap" }
+  ],
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "objectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "sha256", "byte_length", "schema"],
+      "properties": {
+        "uri": { "type": "string", "pattern": "^(?:agent://[^/\\s]+(?:/.+)?|kronos-run://[A-Za-z0-9_-]{43}/[^/\\\\\\u0000]+(?:/[^/\\\\\\u0000]+)*)$" },
+        "sha256": { "$ref": "#/$defs/sha" },
+        "byte_length": { "type": "integer", "minimum": 0 },
+        "schema": { "type": "string", "minLength": 1 }
+      }
+    },
+    "claimId": { "type": "string", "pattern": "^[A-Z][A-Z0-9.]{1,31}$" },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "claim_id", "evidence_refs"],
+      "properties": {
+        "schema": { "const": "kronos_evidence_claim.v2" },
+        "kind": { "enum": ["claim-99", "e3-runtime"] },
+        "claim_id": { "$ref": "#/$defs/claimId" },
+        "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/objectRef" } }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template_id", "claim_id", "schema"],
+      "properties": {
+        "template_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$" },
+        "claim_id": { "$ref": "#/$defs/claimId" },
+        "schema": { "type": "string", "minLength": 1 }
+      }
+    },
+    "previewMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "claims", "claim_refs", "claim_ids", "complete", "missing_claim_ids", "eligible_for_scoring"],
+      "properties": {
+        "schema": { "const": "kronos_preview_map.v2" },
+        "kind": { "const": "preview-99" },
+        "claims": { "type": "object", "minProperties": 99, "maxProperties": 99, "additionalProperties": { "$ref": "#/$defs/claim" } },
+        "claim_refs": { "type": "object", "minProperties": 99, "maxProperties": 99, "additionalProperties": { "$ref": "#/$defs/objectRef" } },
+        "claim_ids": { "type": "array", "minItems": 99, "maxItems": 99, "items": { "$ref": "#/$defs/claimId" }, "uniqueItems": true },
+        "complete": { "const": false },
+        "missing_claim_ids": { "const": ["E3.R"] },
+        "eligible_for_scoring": { "const": false }
+      }
+    },
+    "preclosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "required_dependencies", "post_preclosure_templates"],
+      "properties": {
+        "schema": { "const": "kronos_preclosure.v2" },
+        "kind": { "const": "preclosure" },
+        "required_dependencies": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["preview_99", "candidate_source", "scorecard", "capabilities"],
+          "properties": {
+            "preview_99": { "$ref": "#/$defs/objectRef" },
+            "candidate_source": { "$ref": "#/$defs/objectRef" },
+            "scorecard": { "$ref": "#/$defs/objectRef" },
+            "capabilities": { "$ref": "#/$defs/objectRef" }
+          }
+        },
+        "post_preclosure_templates": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/template" } }
+      }
+    },
+    "candidateRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "evidence_ref"],
+      "properties": {
+        "claim_id": { "$ref": "#/$defs/claimId" },
+        "evidence_ref": {
+          "allOf": [
+            { "$ref": "#/$defs/objectRef" },
+            { "properties": { "schema": { "const": "kronos_evidence_claim.v2" } } }
+          ]
+        }
+      }
+    },
+    "candidateCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "claim_ids"],
+      "properties": {
+        "schema": { "const": "kronos_candidate_capabilities.v2" },
+        "claim_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/claimId" }
+        }
+      }
+    },
+    "assuranceRef": {
+      "allOf": [
+        { "$ref": "#/$defs/objectRef" },
+        { "properties": { "schema": { "const": "kronos_gjc_validation_receipt.v2" } } }
+      ]
+    },
+    "candidateMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "complete", "candidate_source_ref", "scorecard_ref", "capabilities", "claims"],
+      "properties": {
+        "schema": { "const": "kronos_candidate_map.v2" },
+        "complete": { "const": true },
+        "candidate_source_ref": {
+          "allOf": [
+            { "$ref": "#/$defs/objectRef" },
+            { "properties": { "schema": { "const": "kronos_source_identity.v1" } } }
+          ]
+        },
+        "scorecard_ref": {
+          "allOf": [
+            { "$ref": "#/$defs/objectRef" },
+            { "properties": { "schema": { "const": "kronos_dashboard_v5_scorecard.v2" } } }
+          ]
+        },
+        "capabilities": { "$ref": "#/$defs/candidateCapabilities" },
+        "claims": {
+          "type": "array",
+          "minItems": 100,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/candidateRecord" }
+        }
+      }
+    },
+    "finalMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "candidate_map_ref", "assurance_refs"],
+      "properties": {
+        "schema": { "const": "kronos_final_map.v2" },
+        "kind": { "const": "final-map" },
+        "candidate_map_ref": { "$ref": "#/$defs/objectRef" },
+        "assurance_refs": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "$ref": "#/$defs/assuranceRef" } }
+      }
+    }
+  }
+}

@@ -233,6 +233,7 @@ def test_score_backtest_and_dashboard_artifact_loader(tmp_path, monkeypatch):
     chart = json.loads(stom_dashboard.qlib_backtest_chart_json(artifact))
     assert artifact["metrics"]["mode"] == "qlib_style_topk"
     assert chart["data"][0]["name"] == "Qlib Top-K equity"
+    assert chart["data"][0]["x"] == ["2026-01-02T09:05:00", "2026-01-03T09:05:00"]
 
 
 def test_qlib_env_check_and_dump_bin_dry_run(tmp_path):

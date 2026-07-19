@@ -1,0 +1,111 @@
+{
+  "schema": "kronos_daily_sb3_runner_state_fixture.v1",
+  "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+  "checkpoint_interval_steps": 10240,
+  "first_cell_uid": "kdp1-cell-eb8a5e156f99afa041f59b3daf61ed52",
+  "first_attempt_uid": "kdp1-attempt-27158adeb0097d9457b97e6ff1e8b462",
+  "stop_predicate_order": [
+    "MISSING_SESSION",
+    "LABEL_LEAKAGE_PAST_FIT",
+    "ALIAS_VARIANT",
+    "PROTOCOL_DRIFT",
+    "NONCANONICAL_CODE_OR_HASH",
+    "FRESH_OOS_ACCESS_REQUESTED",
+    "UNSUPPORTED_COMPUTE",
+    "D0_PRICE_BASIS_NOT_VERIFIED",
+    "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED",
+    "FRESH_OOS_NOT_RUN",
+    "NAN_OR_INF_METRIC",
+    "INVALID_ACTION_RATE_ABOVE_0_05"
+  ],
+  "exact_resume_snapshot": {
+    "schema": "kronos_daily_sb3_resume_snapshot.v1",
+    "model": {
+      "format": "synthetic-linear-policy",
+      "weights_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "optimizer": {
+      "format": "synthetic-adam",
+      "state_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "scheduler": {
+      "format": "constant",
+      "state_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "python_rng": {
+      "algorithm": "random.MT19937",
+      "state_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "numpy_rng": {
+      "bit_generator": "PCG64",
+      "state_sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "torch_rng": {
+      "cpu_state_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "cuda_states": []
+    },
+    "env": {
+      "env_id": "synthetic-daily-portfolio-v1",
+      "state_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "normalization": {
+      "method": "TRAIN_FOLD_ONLY_ZSCORE",
+      "state_sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+    },
+    "rollout": {
+      "midrollout": false,
+      "buffer_position": 0,
+      "pending_steps": 0,
+      "state_sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    "callback": {
+      "eval_callback_frequency_steps": 10000,
+      "state_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "eval": {
+      "last_eval_step": 0,
+      "state_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "deps": {
+      "sb3_imported": false,
+      "torch_version": "synthetic-not-imported",
+      "state_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "device": {
+      "kind": "cpu",
+      "torch_device": "cpu"
+    },
+    "config": {
+      "synthetic_verification_only": true,
+      "no_heavy_compute": true,
+      "steps_per_cell": 3
+    },
+    "protocol": {
+      "schema": "kronos_daily_sb3_protocol.v1",
+      "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc"
+    },
+    "event_seq": 4
+  },
+  "blocked_authority": {
+    "d0_status": "BLOCKED",
+    "d1_status": "OFFICIAL_OR_MANUAL_REVIEWED",
+    "custody_status": "FRESH_OOS_NOT_RUN",
+    "historical_secondary_read_allowed": true,
+    "capability_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "nonce_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "verified_authority": {
+    "d0_status": "VERIFIED",
+    "d1_status": "OFFICIAL_OR_MANUAL_REVIEWED",
+    "custody_status": "FRESH_OOS_NOT_RUN",
+    "historical_secondary_read_allowed": true,
+    "capability_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "nonce_sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "matrix_transitions": [
+    "MATRIX_READY",
+    "CELL_RUNNING",
+    "CELL_COMPLETED",
+    "COMPLETED"
+  ]
+}

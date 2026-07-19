@@ -1,0 +1,104 @@
+{
+  "profile": "kronos-jcs-profile-v1",
+  "encoding": "UTF-8",
+  "accepted": [
+    {
+      "id": "property-order-ascii",
+      "input_utf8": "{\"b\":2,\"a\":1}",
+      "canonical_utf8": "{\"a\":1,\"b\":2}",
+      "sha256": "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+    },
+    {
+      "id": "property-order-utf16-code-units",
+      "input_utf8": "{\"😀\":5,\"\":4,\"€\":3,\"ä\":2,\"Å\":1,\"z\":0,\"a\":6}",
+      "canonical_utf8": "{\"a\":6,\"z\":0,\"Å\":1,\"ä\":2,\"€\":3,\"😀\":5,\"\":4}",
+      "sha256": "2a4707818fbbc0c3db8a0f355f7ac6a5593dad2a55afa3615aba5a7455d7d717"
+    },
+    {
+      "id": "ecmascript-number-formatting",
+      "input_utf8": "{\"numbers\":[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001]}",
+      "canonical_utf8": "{\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27]}",
+      "sha256": "7c892d3452ad85ad65857a43e8dcac93b79475d2334fc3e85bac5c599142c158"
+    },
+    {
+      "id": "negative-zero",
+      "input_utf8": "{\"negativeZero\":-0}",
+      "canonical_utf8": "{\"negativeZero\":0}",
+      "sha256": "4b56f0ef8f7c714c60f377637eec1bcf07aabf03fd7bf20ea5ea57688b9fac18"
+    },
+    {
+      "id": "utf8-and-string-escaping",
+      "input_utf8": "{\"text\":\"€$\\u000f\\nA'B\\\"\\\\/\"}",
+      "canonical_utf8": "{\"text\":\"€$\\u000f\\nA'B\\\"\\\\/\"}",
+      "sha256": "2c80e9709c04f4c5620acc12416639381afeea4fc4ddf0dab14c0ef89fb265d9"
+    },
+    {
+      "id": "safe-integer-positive-endpoint",
+      "input_utf8": "{\"value\":9007199254740991}",
+      "canonical_utf8": "{\"value\":9007199254740991}",
+      "sha256": "16c63bddb910905c4ee8abf36273baa20dba53020dbaf265da5936013ded185d"
+    },
+    {
+      "id": "safe-integer-negative-endpoint",
+      "input_utf8": "{\"value\":-9007199254740991}",
+      "canonical_utf8": "{\"value\":-9007199254740991}",
+      "sha256": "4fcd1f34a0ba00a639b9a6a805c6952838e7f403c126290440bc71e64d01693a"
+    }
+  ],
+  "rejected": [
+    {
+      "id": "duplicate-member-name",
+      "input_utf8": "{\"key\":1,\"key\":2}",
+      "stage": "parse",
+      "rejection": "duplicate object member names"
+    },
+    {
+      "id": "utf8-bom",
+      "input_utf8": "﻿{\"value\":1}",
+      "stage": "parse",
+      "rejection": "UTF-8 BOM"
+    },
+    {
+      "id": "lone-surrogate",
+      "input_utf8": "{\"value\":\"\\ud800\"}",
+      "stage": "parse",
+      "rejection": "lone UTF-16 surrogate code points"
+    },
+    {
+      "id": "nan",
+      "input_utf8": "{\"value\":NaN}",
+      "stage": "parse",
+      "rejection": "non-finite numbers"
+    },
+    {
+      "id": "positive-infinity",
+      "input_utf8": "{\"value\":Infinity}",
+      "stage": "parse",
+      "rejection": "non-finite numbers"
+    },
+    {
+      "id": "negative-infinity",
+      "input_utf8": "{\"value\":-Infinity}",
+      "stage": "parse",
+      "rejection": "non-finite numbers"
+    },
+    {
+      "id": "exponent-overflow",
+      "input_utf8": "{\"value\":1e400}",
+      "stage": "parse",
+      "rejection": "non-finite numbers"
+    },
+    {
+      "id": "unsafe-integer",
+      "input_utf8": "{\"value\":9007199254740992}",
+      "stage": "parse",
+      "rejection": "integers outside the IEEE 754 safe integer range"
+    },
+    {
+      "id": "unsafe-negative-integer",
+      "input_utf8": "{\"value\":-9007199254740992}",
+      "stage": "parse",
+      "rejection": "integers outside the IEEE 754 safe integer range"
+    }
+  ]
+}

@@ -16,14 +16,14 @@ export function readinessVisual(level: ReadinessLevel | undefined): ReadinessVis
       return {
         dotClass: 'lit-green',
         bgClass: 'bg-success-bg',
-        textClass: 'text-[#dcfce7]',
+        textClass: 'text-success',
         shortLabel: '준비 완료',
       };
     case 'training':
       return {
         dotClass: 'lit-yellow',
         bgClass: 'bg-info-bg',
-        textClass: 'text-[#93c5fd]',
+        textClass: 'text-info',
         shortLabel: '학습 진행',
       };
     case 'waiting':
@@ -31,7 +31,7 @@ export function readinessVisual(level: ReadinessLevel | undefined): ReadinessVis
       return {
         dotClass: 'lit-red',
         bgClass: 'bg-warn-bg',
-        textClass: 'text-[#fde68a]',
+        textClass: 'text-warn',
         shortLabel: '대기',
       };
   }

@@ -1,0 +1,735 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_v51_research_api.v1.schema.json",
+  "title": "Kronos V5.1 Research API v1",
+  "description": "Closed additive read-only V5.1 research API contract for exact 15:20 KST proxy evidence and the secure research report catalog. It preserves V3/V5 defaults, internal bp identifiers, false locks, no live/broker/paper/profit claims, six-digit UTF-8 symbols, PyKRX-only benchmark overlays, and explicit BLOCKED/READY statuses.",
+  "oneOf": [
+    {"$ref": "#/$defs/sourceCoverageRoot"},
+    {"$ref": "#/$defs/causalPanelRoot"},
+    {"$ref": "#/$defs/accountingRoot"},
+    {"$ref": "#/$defs/evaluatorRoot"},
+    {"$ref": "#/$defs/benchmarkOverlayRoot"},
+    {"$ref": "#/$defs/reportListRoot"},
+    {"$ref": "#/$defs/reportReadRoot"},
+    {"$ref": "#/$defs/errorRoot"}
+  ],
+  "$defs": {
+    "routeId": {"enum": ["SOURCE_COVERAGE", "CAUSAL_PANEL", "ACCOUNTING", "EVALUATOR", "BENCHMARK_OVERLAY", "REPORTS", "REPORT_READ"]},
+    "researchRouteId": {"enum": ["SOURCE_COVERAGE", "CAUSAL_PANEL", "ACCOUNTING", "EVALUATOR", "BENCHMARK_OVERLAY"]},
+    "reportRouteId": {"enum": ["REPORTS", "REPORT_READ"]},
+    "routeDescriptors": {
+      "const": {
+        "SOURCE_COVERAGE": {"method": "GET", "path": "/api/daily-close-v51/source-coverage", "root": "sourceCoverageRoot", "path_bindings": [], "query": ["run_id", "artifact_id", "revision"]},
+        "CAUSAL_PANEL": {"method": "GET", "path": "/api/daily-close-v51/causal-panel", "root": "causalPanelRoot", "path_bindings": [], "query": ["run_id", "artifact_id", "revision"]},
+        "ACCOUNTING": {"method": "GET", "path": "/api/daily-close-v51/accounting", "root": "accountingRoot", "path_bindings": [], "query": ["run_id", "artifact_id", "revision"]},
+        "EVALUATOR": {"method": "GET", "path": "/api/daily-close-v51/evaluator", "root": "evaluatorRoot", "path_bindings": [], "query": ["run_id", "artifact_id", "revision"]},
+        "BENCHMARK_OVERLAY": {"method": "GET", "path": "/api/daily-close-v51/benchmark-overlay", "root": "benchmarkOverlayRoot", "path_bindings": [], "query": ["run_id", "artifact_id", "revision"]},
+        "REPORTS": {"method": "GET", "path": "/api/daily-close-v51/reports", "root": "reportListRoot", "path_bindings": [], "query": []},
+        "REPORT_READ": {"method": "GET", "path": "/api/daily-close-v51/reports/{report_id}", "root": "reportReadRoot", "path_bindings": ["report_id"], "query": []}
+      }
+    },
+    "status": {"enum": ["READY", "BLOCKED"]},
+    "statusReason": {"enum": ["READY", "BLOCKED_SOURCE_CONTRACT", "BLOCKED_ARTIFACT_UNAVAILABLE", "BLOCKED_SCHEMA_INVALID", "BLOCKED_INDEX_SERIES_SOURCE", "BLOCKED_PYKRX_ARTIFACT_MISSING", "BLOCKED_REPORT_NOT_FOUND"]},
+    "errorCode": {"enum": ["BAD_REQUEST", "CONFLICT", "VALIDATION_ERROR", "METHOD_NOT_ALLOWED", "INTERNAL_ERROR"]},
+    "errorStatusCode": {"enum": [400, 409, 413, 405, 503]},
+    "errorCodeStatusCoherence": {
+      "allOf": [
+        {"if": {"properties": {"code": {"const": "BAD_REQUEST"}}, "required": ["code"]}, "then": {"properties": {"status_code": {"const": 400}}}},
+        {"if": {"properties": {"code": {"const": "CONFLICT"}}, "required": ["code"]}, "then": {"properties": {"status_code": {"const": 409}}}},
+        {"if": {"properties": {"code": {"const": "VALIDATION_ERROR"}}, "required": ["code"]}, "then": {"properties": {"status_code": {"const": 413}}}},
+        {"if": {"properties": {"code": {"const": "METHOD_NOT_ALLOWED"}}, "required": ["code"]}, "then": {"properties": {"status_code": {"const": 405}}}},
+        {"if": {"properties": {"code": {"const": "INTERNAL_ERROR"}}, "required": ["code"]}, "then": {"properties": {"status_code": {"const": 503}}}}
+      ]
+    },
+    "errorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "status_code"],
+      "properties": {
+        "code": {"$ref": "#/$defs/errorCode"},
+        "message": {"type": "string", "minLength": 1, "maxLength": 240},
+        "status_code": {"$ref": "#/$defs/errorStatusCode"}
+      },
+      "allOf": [{"$ref": "#/$defs/errorCodeStatusCoherence"}]
+    },
+    "statusReasonCoherence": {
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"status_reason": {"const": "READY"}}}},
+        {"if": {"properties": {"status": {"const": "BLOCKED"}}, "required": ["status"]}, "then": {"properties": {"status_reason": {"type": "string", "pattern": "^BLOCKED_"}}}}
+      ]
+    },
+    "sourceCoverageStatusCoherence": {
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"source_coverage": {"properties": {"coverage_status": {"const": "READY"}}, "required": ["coverage_status"]}}}},
+        {"if": {"properties": {"status": {"const": "BLOCKED"}}, "required": ["status"]}, "then": {"properties": {"source_coverage": {"properties": {"coverage_status": {"const": "BLOCKED"}}, "required": ["coverage_status"]}}}}
+      ]
+    },
+    "accountingStatusCoherence": {
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"accounting": {"properties": {"accounting_status": {"const": "READY"}}, "required": ["accounting_status"]}}}},
+        {"if": {"properties": {"status": {"const": "BLOCKED"}}, "required": ["status"]}, "then": {"properties": {"accounting": {"properties": {"accounting_status": {"const": "BLOCKED"}}, "required": ["accounting_status"]}}}}
+      ]
+    },
+    "evaluatorStatusCoherence": {
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"evaluator": {"properties": {"evaluation_status": {"const": "READY"}}, "required": ["evaluation_status"]}}}},
+        {"if": {"properties": {"status": {"const": "BLOCKED"}}, "required": ["status"]}, "then": {"properties": {"evaluator": {"properties": {"evaluation_status": {"const": "BLOCKED"}}, "required": ["evaluation_status"]}}}}
+      ]
+    },
+    "benchmarkOverlayStatusCoherence": {
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"benchmark_overlay": {"properties": {"overlay_status": {"const": "READY"}}, "required": ["overlay_status"]}}}},
+        {"if": {"properties": {"status": {"const": "BLOCKED"}}, "required": ["status"]}, "then": {"properties": {"benchmark_overlay": {"properties": {"overlay_status": {"const": "BLOCKED"}}, "required": ["overlay_status"]}}}}
+      ]
+    },
+    "overlaySeriesStatusCoherence": {
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"source_state": {"const": "READY"}}}},
+        {"if": {"properties": {"status": {"const": "BLOCKED"}}, "required": ["status"]}, "then": {"properties": {"source_state": {"type": "string", "pattern": "^BLOCKED_"}}}}
+      ]
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonZeroSha256": {"allOf": [{"$ref": "#/$defs/sha256"}, {"not": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}}]},
+    "rfc3339Utc": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"},
+    "nonEpochRfc3339Utc": {"allOf": [{"$ref": "#/$defs/rfc3339Utc"}, {"not": {"const": "1970-01-01T00:00:00Z"}}]},
+    "readyResearchIdentityCoherence": {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"required": ["source", "run", "artifact"], "properties": {"source": {"required": ["source_sha256", "source_db_sha256", "generated_at"], "properties": {"source_sha256": {"$ref": "#/$defs/nonZeroSha256"}, "source_db_sha256": {"$ref": "#/$defs/nonZeroSha256"}, "generated_at": {"$ref": "#/$defs/nonEpochRfc3339Utc"}}}, "run": {"required": ["source_sha256", "protocol_sha256"], "properties": {"source_sha256": {"$ref": "#/$defs/nonZeroSha256"}, "protocol_sha256": {"$ref": "#/$defs/nonZeroSha256"}}}, "artifact": {"required": ["sha256"], "properties": {"sha256": {"$ref": "#/$defs/nonZeroSha256"}}}}}},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "nullableDate": {"oneOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+    "timestamp1520": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T15:20:00\\+09:00$"},
+    "compactTimestamp1520": {"type": "string", "pattern": "^\\d{8}1520$"},
+    "symbol": {"type": "string", "pattern": "^[0-9]{6}$"},
+    "artifactId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "runId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "safeInt": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "positiveInt": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "finiteNumber": {"type": "number"},
+    "nonNegativeNumber": {"type": "number", "minimum": 0, "maximum": 9007199254740991},
+    "returnRatio": {"type": "number", "minimum": -1},
+    "displayPercent": {"type": "string", "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d{2,6})?%$"},
+    "exactCostPercent": {"enum": ["0.00%", "0.23%", "0.46%"]},
+    "falseResearchLocks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promotion_allowed", "model_build_allowed", "paper_forward_allowed", "live_broker_order_allowed", "profitability_claim_allowed", "go_summary_allowed"],
+      "properties": {
+        "promotion_allowed": {"const": false},
+        "model_build_allowed": {"const": false},
+        "paper_forward_allowed": {"const": false},
+        "live_broker_order_allowed": {"const": false},
+        "profitability_claim_allowed": {"const": false},
+        "go_summary_allowed": {"const": false}
+      }
+    },
+    "noClaimFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["official_close_claim", "paper_forward_claim", "live_trading_claim", "broker_integration_claim", "profitability_claim", "go_readiness_claim"],
+      "properties": {
+        "official_close_claim": {"const": false},
+        "paper_forward_claim": {"const": false},
+        "live_trading_claim": {"const": false},
+        "broker_integration_claim": {"const": false},
+        "profitability_claim": {"const": false},
+        "go_readiness_claim": {"const": false}
+      }
+    },
+    "accountingContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initial_capital_krw", "slot_count", "slot_budget_krw", "max_invested_krw", "reserve_cash_krw", "reserve_cash_display_percent", "max_target_investment_display_percent", "shorting_allowed", "leverage_allowed", "duplicate_symbol_slots_allowed"],
+      "properties": {
+        "initial_capital_krw": {"const": 60000000},
+        "slot_count": {"const": 10},
+        "slot_budget_krw": {"const": 5000000},
+        "max_invested_krw": {"const": 50000000},
+        "reserve_cash_krw": {"const": 10000000},
+        "reserve_cash_display_percent": {"const": "16.6667%"},
+        "max_target_investment_display_percent": {"const": "83.3333%"},
+        "shorting_allowed": {"const": false},
+        "leverage_allowed": {"const": false},
+        "duplicate_symbol_slots_allowed": {"const": false}
+      }
+    },
+    "costSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary", "zero_cost_control", "stress_control"],
+      "properties": {
+        "primary": {"$ref": "#/$defs/primaryCost"},
+        "zero_cost_control": {"$ref": "#/$defs/zeroCost"},
+        "stress_control": {"$ref": "#/$defs/stressCost"}
+      }
+    },
+    "primaryCost": {"$ref": "#/$defs/primaryCostBody"},
+    "zeroCost": {"$ref": "#/$defs/zeroCostBody"},
+    "stressCost": {"$ref": "#/$defs/stressCostBody"},
+    "costBody": {"oneOf": [{"$ref": "#/$defs/primaryCostBody"}, {"$ref": "#/$defs/zeroCostBody"}, {"$ref": "#/$defs/stressCostBody"}]},
+    "primaryCostBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["internal_id", "round_trip_cost_bp", "display_percent"],
+      "properties": {
+        "internal_id": {"const": "base_23bp"},
+        "round_trip_cost_bp": {"const": 23},
+        "display_percent": {"const": "0.23%"}
+      }
+    },
+    "zeroCostBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["internal_id", "round_trip_cost_bp", "display_percent"],
+      "properties": {
+        "internal_id": {"const": "zero_control_0bp"},
+        "round_trip_cost_bp": {"const": 0},
+        "display_percent": {"const": "0.00%"}
+      }
+    },
+    "stressCostBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["internal_id", "round_trip_cost_bp", "display_percent"],
+      "properties": {
+        "internal_id": {"const": "stress_46bp"},
+        "round_trip_cost_bp": {"const": 46},
+        "display_percent": {"const": "0.46%"}
+      }
+    },
+    "evaluationMetricCostPair": {
+      "oneOf": [
+        {"properties": {"internal_cost_id": {"const": "base_23bp"}, "display_cost_percent": {"const": "0.23%"}}, "required": ["internal_cost_id", "display_cost_percent"]},
+        {"properties": {"internal_cost_id": {"const": "zero_control_0bp"}, "display_cost_percent": {"const": "0.00%"}}, "required": ["internal_cost_id", "display_cost_percent"]},
+        {"properties": {"internal_cost_id": {"const": "stress_46bp"}, "display_cost_percent": {"const": "0.46%"}}, "required": ["internal_cost_id", "display_cost_percent"]}
+      ]
+    },
+    "horizonContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary_horizon", "validation_horizons", "label_columns"],
+      "properties": {
+        "primary_horizon": {"const": "H1"},
+        "validation_horizons": {"const": ["H3", "H5"]},
+        "label_columns": {"const": ["future_return_h1_1520_proxy", "future_return_h3_1520_proxy", "future_return_h5_1520_proxy"]}
+      }
+    },
+    "sourcePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["daily_1520_source_schema", "causal_panel_schema", "causal_cutoff_kst", "price_basis", "official_close", "nearest_fallback_allowed", "full_day_daily_ohlcv_allowed", "price_volume_amount_approximation_allowed", "pykrx_offline_only", "naver_fallback_allowed", "network_required"],
+      "properties": {
+        "daily_1520_source_schema": {"const": "kronos_daily_1520_source.v1"},
+        "causal_panel_schema": {"const": "kronos_daily_v51_causal_panel.v1"},
+        "causal_cutoff_kst": {"const": "15:20:00"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false},
+        "nearest_fallback_allowed": {"const": false},
+        "full_day_daily_ohlcv_allowed": {"const": false},
+        "price_volume_amount_approximation_allowed": {"const": false},
+        "pykrx_offline_only": {"const": true},
+        "naver_fallback_allowed": {"const": false},
+        "network_required": {"const": false}
+      }
+    },
+    "overlayPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_index_provider", "offline_artifact_required", "naver_fallback_allowed", "forbidden_provider", "missing_index_state"],
+      "properties": {
+        "allowed_index_provider": {"const": "PYKRX"},
+        "offline_artifact_required": {"const": true},
+        "naver_fallback_allowed": {"const": false},
+        "forbidden_provider": {"const": "NAVER"},
+        "missing_index_state": {"const": "BLOCKED_INDEX_SERIES_SOURCE"}
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "api_version", "method", "read_only", "route_id", "route_path", "causal_cutoff_kst", "price_basis", "official_close", "accounting", "cost_schedule", "horizon", "source_policy", "overlay_policy"],
+      "properties": {
+        "schema_version": {"const": "kronos_v51_research_api.v1"},
+        "api_version": {"const": "v5.1"},
+        "method": {"const": "GET"},
+        "read_only": {"const": true},
+        "route_id": {"$ref": "#/$defs/routeId"},
+        "route_path": {"type": "string", "pattern": "^/api/daily-close-v51/(?:source-coverage|causal-panel|accounting|evaluator|benchmark-overlay|reports(?:/\\{report_id\\})?)$"},
+        "causal_cutoff_kst": {"const": "15:20:00"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false},
+        "accounting": {"$ref": "#/$defs/accountingContract"},
+        "cost_schedule": {"$ref": "#/$defs/costSchedule"},
+        "horizon": {"$ref": "#/$defs/horizonContract"},
+        "source_policy": {"$ref": "#/$defs/sourcePolicy"},
+        "overlay_policy": {"$ref": "#/$defs/overlayPolicy"}
+      }
+    },
+    "sourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_protocol", "source_artifact_id", "source_sha256", "source_db_sha256", "generated_at", "causal_cutoff_kst", "price_basis", "official_close"],
+      "properties": {
+        "source_protocol": {"const": "kronos_daily_1520_source.v1"},
+        "source_artifact_id": {"$ref": "#/$defs/artifactId"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "source_db_sha256": {"$ref": "#/$defs/sha256"},
+        "generated_at": {"$ref": "#/$defs/rfc3339Utc"},
+        "causal_cutoff_kst": {"const": "15:20:00"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false}
+      }
+    },
+    "runIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "run_revision", "run_artifact_id", "source_sha256", "protocol_sha256", "stable_artifact_ids"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/runId"},
+        "run_revision": {"$ref": "#/$defs/positiveInt"},
+        "run_artifact_id": {"$ref": "#/$defs/artifactId"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "protocol_sha256": {"$ref": "#/$defs/sha256"},
+        "stable_artifact_ids": {"$ref": "#/$defs/stableArtifactIds"}
+      }
+    },
+    "stableArtifactIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_coverage", "causal_panel", "accounting", "evaluator", "benchmark_overlay"],
+      "properties": {
+        "source_coverage": {"const": "daily-close-v51-source-coverage"},
+        "causal_panel": {"const": "daily-close-v51-causal-panel"},
+        "accounting": {"const": "daily-close-v51-accounting"},
+        "evaluator": {"const": "daily-close-v51-evaluator"},
+        "benchmark_overlay": {"const": "daily-close-v51-benchmark-overlay"}
+      }
+    },
+    "artifactIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "artifact_kind", "media_type", "byte_length", "sha256", "stable_id"],
+      "properties": {
+        "artifact_id": {"$ref": "#/$defs/artifactId"},
+        "artifact_kind": {"enum": ["source_coverage", "causal_panel", "accounting", "evaluator", "benchmark_overlay", "report_catalog", "report_content"]},
+        "media_type": {"const": "application/json; charset=utf-8"},
+        "byte_length": {"$ref": "#/$defs/safeInt"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "stable_id": {"const": true}
+      }
+    },
+    "sourceCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage_status", "exact_1520_row_count", "symbol_count", "session_count", "first_valid_date", "last_valid_date", "sample_symbol", "sample_timestamp_yyyymmddhhmm", "volume_to_1520_status", "amount_to_1520_status", "missing_policy"],
+      "properties": {
+        "coverage_status": {"$ref": "#/$defs/status"},
+        "exact_1520_row_count": {"$ref": "#/$defs/safeInt"},
+        "symbol_count": {"$ref": "#/$defs/safeInt"},
+        "session_count": {"$ref": "#/$defs/safeInt"},
+        "first_valid_date": {"$ref": "#/$defs/nullableDate"},
+        "last_valid_date": {"$ref": "#/$defs/nullableDate"},
+        "sample_symbol": {"$ref": "#/$defs/symbol"},
+        "sample_timestamp_yyyymmddhhmm": {"$ref": "#/$defs/compactTimestamp1520"},
+        "volume_to_1520_status": {"const": "NOT_AVAILABLE_SOURCE_HAS_SINGLE_5MIN_BAR_VOLUME_ONLY"},
+        "amount_to_1520_status": {"const": "NOT_AVAILABLE_5MIN_DB_HAS_NO_AMOUNT_COLUMN_DO_NOT_APPROXIMATE_PRICE_X_VOLUME"},
+        "missing_policy": {"const": "MISSING_1520_BAR_BLOCKS_ROW_NO_NEAREST_FALLBACK"}
+      }
+    },
+    "causalPanelSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["panel_schema", "row_count", "price_basis", "official_close", "primary_horizon", "validation_horizons", "label_columns", "rows_preview"],
+      "properties": {
+        "panel_schema": {"const": "kronos_daily_v51_causal_panel.v1"},
+        "row_count": {"$ref": "#/$defs/safeInt"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false},
+        "primary_horizon": {"const": "H1"},
+        "validation_horizons": {"const": ["H3", "H5"]},
+        "label_columns": {"const": ["future_return_h1_1520_proxy", "future_return_h3_1520_proxy", "future_return_h5_1520_proxy"]},
+        "rows_preview": {"type": "array", "items": {"$ref": "#/$defs/panelPreviewRow"}, "maxItems": 20}
+      }
+    },
+    "panelPreviewRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "session_date", "timestamp_kst", "price_basis", "official_close", "entry_status", "h1_status", "h3_status", "h5_status"],
+      "properties": {
+        "symbol": {"$ref": "#/$defs/symbol"},
+        "session_date": {"$ref": "#/$defs/date"},
+        "timestamp_kst": {"$ref": "#/$defs/timestamp1520"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false},
+        "entry_status": {"$ref": "#/$defs/status"},
+        "h1_status": {"$ref": "#/$defs/status"},
+        "h3_status": {"$ref": "#/$defs/status"},
+        "h5_status": {"$ref": "#/$defs/status"}
+      }
+    },
+    "accountingSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accounting_status", "contract", "cost_schedule", "economic_nav_krw", "cash_reserve_krw", "slots_used", "max_slots", "internal_cost_id", "display_cost_percent"],
+      "properties": {
+        "accounting_status": {"$ref": "#/$defs/status"},
+        "contract": {"$ref": "#/$defs/accountingContract"},
+        "cost_schedule": {"$ref": "#/$defs/costSchedule"},
+        "economic_nav_krw": {"$ref": "#/$defs/nonNegativeNumber"},
+        "cash_reserve_krw": {"$ref": "#/$defs/nonNegativeNumber"},
+        "slots_used": {"type": "integer", "minimum": 0, "maximum": 10},
+        "max_slots": {"const": 10},
+        "internal_cost_id": {"const": "base_23bp"},
+        "display_cost_percent": {"const": "0.23%"}
+      }
+    },
+    "evaluatorSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluation_status", "primary_horizon", "validation_horizons", "cost_schedule", "split_statuses", "metrics"],
+      "properties": {
+        "evaluation_status": {"$ref": "#/$defs/status"},
+        "primary_horizon": {"const": "H1"},
+        "validation_horizons": {"const": ["H3", "H5"]},
+        "cost_schedule": {"$ref": "#/$defs/costSchedule"},
+        "split_statuses": {"$ref": "#/$defs/splitStatuses"},
+        "metrics": {"type": "array", "items": {"$ref": "#/$defs/evaluationMetric"}}
+      }
+    },
+    "splitStatuses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["train", "validation", "test"],
+      "properties": {
+        "train": {"$ref": "#/$defs/status"},
+        "validation": {"$ref": "#/$defs/status"},
+        "test": {"$ref": "#/$defs/status"}
+      }
+    },
+    "evaluationMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric_id", "split", "horizon", "internal_cost_id", "display_cost_percent", "value", "display_percent"],
+      "properties": {
+        "metric_id": {"enum": ["cumulative_return", "max_drawdown", "turnover", "trade_count"]},
+        "split": {"enum": ["train", "validation", "test"]},
+        "horizon": {"enum": ["H1", "H3", "H5"]},
+        "internal_cost_id": {"enum": ["base_23bp", "zero_control_0bp", "stress_46bp"]},
+        "display_cost_percent": {"$ref": "#/$defs/exactCostPercent"},
+        "value": {"$ref": "#/$defs/finiteNumber"},
+        "display_percent": {"$ref": "#/$defs/displayPercent"}
+      },
+      "allOf": [{"$ref": "#/$defs/evaluationMetricCostPair"}]
+    },
+    "benchmarkOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overlay_status", "provider_policy", "common_start_index", "series"],
+      "properties": {
+        "overlay_status": {"$ref": "#/$defs/status"},
+        "provider_policy": {"$ref": "#/$defs/overlayPolicy"},
+        "common_start_index": {"const": 100},
+        "series": {"type": "array", "minItems": 3, "maxItems": 3, "prefixItems": [{"allOf": [{"$ref": "#/$defs/overlayIndexSeries"}, {"properties": {"series_id": {"const": "KOSPI"}}}]}, {"allOf": [{"$ref": "#/$defs/overlayIndexSeries"}, {"properties": {"series_id": {"const": "KOSDAQ"}}}]}, {"$ref": "#/$defs/overlayPortfolioSeries"}], "items": false, "uniqueItems": true}
+      }
+    },
+    "overlaySeries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["series_id", "status", "source_state", "provider", "naver_used", "index_100", "cumulative_return_display_percent"],
+      "properties": {
+        "series_id": {"enum": ["KOSPI", "KOSDAQ", "RL_PORTFOLIO"]},
+        "status": {"$ref": "#/$defs/status"},
+        "source_state": {"enum": ["READY", "BLOCKED_INDEX_SERIES_SOURCE", "BLOCKED_PYKRX_ARTIFACT_MISSING"]},
+        "provider": {"oneOf": [{"const": "PYKRX"}, {"type": "null"}]},
+        "naver_used": {"const": false},
+        "index_100": {"oneOf": [{"$ref": "#/$defs/nonNegativeNumber"}, {"type": "null"}]},
+        "cumulative_return_display_percent": {"oneOf": [{"$ref": "#/$defs/displayPercent"}, {"type": "null"}]}
+      },
+      "allOf": [{"$ref": "#/$defs/overlaySeriesStatusCoherence"}]
+    },
+    "overlayIndexSeries": {
+      "allOf": [
+        {"$ref": "#/$defs/overlaySeries"},
+        {"allOf": [
+          {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"provider": {"const": "PYKRX"}}}},
+          {"if": {"properties": {"status": {"const": "BLOCKED"}}, "required": ["status"]}, "then": {"properties": {"provider": {"type": "null"}}}}
+        ]}
+      ]
+    },
+    "overlayPortfolioSeries": {
+      "allOf": [
+        {"$ref": "#/$defs/overlaySeries"},
+        {"properties": {"series_id": {"const": "RL_PORTFOLIO"}, "provider": {"type": "null"}}}
+      ]
+    },
+    "reportSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_id", "title", "relative_path", "root_id", "media_type", "byte_length", "sha256", "updated_at", "source_protocol", "price_basis", "official_close"],
+      "properties": {
+        "report_id": {"$ref": "#/$defs/artifactId"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "relative_path": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?![a-z]:)(?!/)(?!.*[\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))[a-z0-9._/-]+\\.(?:md|html)$"},
+        "root_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"},
+        "media_type": {"enum": ["text/markdown; charset=utf-8", "text/html; charset=utf-8"]},
+        "byte_length": {"$ref": "#/$defs/safeInt"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "updated_at": {"$ref": "#/$defs/rfc3339Utc"},
+        "source_protocol": {"const": "kronos_v51_report_catalog.v1"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false}
+      }
+    },
+    "reportContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_text", "safe_html"],
+      "properties": {
+        "raw_text": {"type": "string"},
+        "safe_html": {"type": "string", "pattern": "^<article data-kronos-report-html=\"escaped-pre\"><pre>(?:(?![Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]\\s*:)[^<])*</pre></article>$"}
+      }
+    },
+    "reportSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_protocol", "catalog_artifact_id", "catalog_sha256", "generated_at", "price_basis", "official_close"],
+      "properties": {
+        "source_protocol": {"const": "kronos_v51_report_catalog.v1"},
+        "catalog_artifact_id": {"$ref": "#/$defs/artifactId"},
+        "catalog_sha256": {"$ref": "#/$defs/sha256"},
+        "generated_at": {"$ref": "#/$defs/rfc3339Utc"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false}
+      }
+    },
+    "errorRoot": {
+      "oneOf": [
+        {"$ref": "#/$defs/sourceCoverageErrorRoot"},
+        {"$ref": "#/$defs/causalPanelErrorRoot"},
+        {"$ref": "#/$defs/accountingErrorRoot"},
+        {"$ref": "#/$defs/evaluatorErrorRoot"},
+        {"$ref": "#/$defs/benchmarkOverlayErrorRoot"},
+        {"$ref": "#/$defs/reportListErrorRoot"},
+        {"$ref": "#/$defs/reportReadErrorRoot"}
+      ]
+    },
+    "sourceCoverageErrorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "protocol", "source", "locks", "claims", "error"],
+      "properties": {
+        "route_id": {"const": "SOURCE_COVERAGE"},
+        "status": {"const": "ERROR"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "SOURCE_COVERAGE"}, "route_path": {"const": "/api/daily-close-v51/source-coverage"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-source-coverage"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "error": {"$ref": "#/$defs/errorBody"}
+      }
+    },
+    "causalPanelErrorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "protocol", "source", "locks", "claims", "error"],
+      "properties": {
+        "route_id": {"const": "CAUSAL_PANEL"},
+        "status": {"const": "ERROR"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "CAUSAL_PANEL"}, "route_path": {"const": "/api/daily-close-v51/causal-panel"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-causal-panel"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "error": {"$ref": "#/$defs/errorBody"}
+      }
+    },
+    "accountingErrorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "protocol", "source", "locks", "claims", "error"],
+      "properties": {
+        "route_id": {"const": "ACCOUNTING"},
+        "status": {"const": "ERROR"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "ACCOUNTING"}, "route_path": {"const": "/api/daily-close-v51/accounting"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-accounting"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "error": {"$ref": "#/$defs/errorBody"}
+      }
+    },
+    "evaluatorErrorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "protocol", "source", "locks", "claims", "error"],
+      "properties": {
+        "route_id": {"const": "EVALUATOR"},
+        "status": {"const": "ERROR"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "EVALUATOR"}, "route_path": {"const": "/api/daily-close-v51/evaluator"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-evaluator"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "error": {"$ref": "#/$defs/errorBody"}
+      }
+    },
+    "benchmarkOverlayErrorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "protocol", "source", "locks", "claims", "error"],
+      "properties": {
+        "route_id": {"const": "BENCHMARK_OVERLAY"},
+        "status": {"const": "ERROR"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "BENCHMARK_OVERLAY"}, "route_path": {"const": "/api/daily-close-v51/benchmark-overlay"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-benchmark-overlay"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "error": {"$ref": "#/$defs/errorBody"}
+      }
+    },
+    "reportListErrorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "protocol", "source", "locks", "claims", "error"],
+      "properties": {
+        "route_id": {"const": "REPORTS"},
+        "status": {"const": "ERROR"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "REPORTS"}, "route_path": {"const": "/api/daily-close-v51/reports"}}}]},
+        "source": {"$ref": "#/$defs/reportSource"},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "error": {"$ref": "#/$defs/errorBody"}
+      }
+    },
+    "reportReadErrorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "protocol", "source", "locks", "claims", "error"],
+      "properties": {
+        "route_id": {"const": "REPORT_READ"},
+        "status": {"const": "ERROR"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "REPORT_READ"}, "route_path": {"const": "/api/daily-close-v51/reports/{report_id}"}}}]},
+        "source": {"$ref": "#/$defs/reportSource"},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "error": {"$ref": "#/$defs/errorBody"}
+      }
+    },
+    "sourceCoverageRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "status_reason", "protocol", "source", "run", "artifact", "locks", "claims", "source_coverage"],
+      "properties": {
+        "route_id": {"const": "SOURCE_COVERAGE"},
+        "status": {"$ref": "#/$defs/status"},
+        "status_reason": {"$ref": "#/$defs/statusReason"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "SOURCE_COVERAGE"}, "route_path": {"const": "/api/daily-close-v51/source-coverage"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-source-coverage"}}}]},
+        "run": {"$ref": "#/$defs/runIdentity"},
+        "artifact": {"allOf": [{"$ref": "#/$defs/artifactIdentity"}, {"properties": {"artifact_id": {"const": "daily-close-v51-source-coverage"}, "artifact_kind": {"const": "source_coverage"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "source_coverage": {"$ref": "#/$defs/sourceCoverage"}
+      },
+      "allOf": [{"$ref": "#/$defs/statusReasonCoherence"}, {"$ref": "#/$defs/sourceCoverageStatusCoherence"}, {"$ref": "#/$defs/readyResearchIdentityCoherence"}]
+    },
+    "causalPanelRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "status_reason", "protocol", "source", "run", "artifact", "locks", "claims", "causal_panel"],
+      "properties": {
+        "route_id": {"const": "CAUSAL_PANEL"},
+        "status": {"$ref": "#/$defs/status"},
+        "status_reason": {"$ref": "#/$defs/statusReason"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "CAUSAL_PANEL"}, "route_path": {"const": "/api/daily-close-v51/causal-panel"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-causal-panel"}}}]},
+        "run": {"$ref": "#/$defs/runIdentity"},
+        "artifact": {"allOf": [{"$ref": "#/$defs/artifactIdentity"}, {"properties": {"artifact_id": {"const": "daily-close-v51-causal-panel"}, "artifact_kind": {"const": "causal_panel"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "causal_panel": {"$ref": "#/$defs/causalPanelSummary"}
+      },
+      "allOf": [{"$ref": "#/$defs/statusReasonCoherence"}, {"$ref": "#/$defs/readyResearchIdentityCoherence"}]
+    },
+    "accountingRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "status_reason", "protocol", "source", "run", "artifact", "locks", "claims", "accounting"],
+      "properties": {
+        "route_id": {"const": "ACCOUNTING"},
+        "status": {"$ref": "#/$defs/status"},
+        "status_reason": {"$ref": "#/$defs/statusReason"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "ACCOUNTING"}, "route_path": {"const": "/api/daily-close-v51/accounting"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-accounting"}}}]},
+        "run": {"$ref": "#/$defs/runIdentity"},
+        "artifact": {"allOf": [{"$ref": "#/$defs/artifactIdentity"}, {"properties": {"artifact_id": {"const": "daily-close-v51-accounting"}, "artifact_kind": {"const": "accounting"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "accounting": {"$ref": "#/$defs/accountingSummary"}
+      },
+      "allOf": [{"$ref": "#/$defs/statusReasonCoherence"}, {"$ref": "#/$defs/accountingStatusCoherence"}, {"$ref": "#/$defs/readyResearchIdentityCoherence"}]
+    },
+    "evaluatorRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "status_reason", "protocol", "source", "run", "artifact", "locks", "claims", "evaluator"],
+      "properties": {
+        "route_id": {"const": "EVALUATOR"},
+        "status": {"$ref": "#/$defs/status"},
+        "status_reason": {"$ref": "#/$defs/statusReason"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "EVALUATOR"}, "route_path": {"const": "/api/daily-close-v51/evaluator"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-evaluator"}}}]},
+        "run": {"$ref": "#/$defs/runIdentity"},
+        "artifact": {"allOf": [{"$ref": "#/$defs/artifactIdentity"}, {"properties": {"artifact_id": {"const": "daily-close-v51-evaluator"}, "artifact_kind": {"const": "evaluator"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "evaluator": {"$ref": "#/$defs/evaluatorSummary"}
+      },
+      "allOf": [{"$ref": "#/$defs/statusReasonCoherence"}, {"$ref": "#/$defs/evaluatorStatusCoherence"}, {"$ref": "#/$defs/readyResearchIdentityCoherence"}]
+    },
+    "benchmarkOverlayRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "status_reason", "protocol", "source", "run", "artifact", "locks", "claims", "benchmark_overlay"],
+      "properties": {
+        "route_id": {"const": "BENCHMARK_OVERLAY"},
+        "status": {"$ref": "#/$defs/status"},
+        "status_reason": {"$ref": "#/$defs/statusReason"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "BENCHMARK_OVERLAY"}, "route_path": {"const": "/api/daily-close-v51/benchmark-overlay"}}}]},
+        "source": {"allOf": [{"$ref": "#/$defs/sourceIdentity"}, {"properties": {"source_artifact_id": {"const": "daily-close-v51-benchmark-overlay"}}}]},
+        "run": {"$ref": "#/$defs/runIdentity"},
+        "artifact": {"allOf": [{"$ref": "#/$defs/artifactIdentity"}, {"properties": {"artifact_id": {"const": "daily-close-v51-benchmark-overlay"}, "artifact_kind": {"const": "benchmark_overlay"}}}]},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "benchmark_overlay": {"$ref": "#/$defs/benchmarkOverlay"}
+      },
+      "allOf": [{"$ref": "#/$defs/statusReasonCoherence"}, {"$ref": "#/$defs/benchmarkOverlayStatusCoherence"}, {"$ref": "#/$defs/readyResearchIdentityCoherence"}]
+    },
+    "reportListRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "status_reason", "protocol", "source", "locks", "claims", "reports"],
+      "properties": {
+        "route_id": {"const": "REPORTS"},
+        "status": {"$ref": "#/$defs/status"},
+        "status_reason": {"$ref": "#/$defs/statusReason"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "REPORTS"}, "route_path": {"const": "/api/daily-close-v51/reports"}}}]},
+        "source": {"$ref": "#/$defs/reportSource"},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "reports": {"type": "array", "items": {"$ref": "#/$defs/reportSummary"}}
+      },
+      "allOf": [{"$ref": "#/$defs/statusReasonCoherence"}]
+    },
+    "reportReadRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "status", "status_reason", "protocol", "source", "locks", "claims", "report", "content"],
+      "properties": {
+        "route_id": {"const": "REPORT_READ"},
+        "status": {"$ref": "#/$defs/status"},
+        "status_reason": {"$ref": "#/$defs/statusReason"},
+        "protocol": {"allOf": [{"$ref": "#/$defs/protocol"}, {"properties": {"route_id": {"const": "REPORT_READ"}, "route_path": {"const": "/api/daily-close-v51/reports/{report_id}"}}}]},
+        "source": {"$ref": "#/$defs/reportSource"},
+        "locks": {"$ref": "#/$defs/falseResearchLocks"},
+        "claims": {"$ref": "#/$defs/noClaimFlags"},
+        "report": {"$ref": "#/$defs/reportSummary"},
+        "content": {"$ref": "#/$defs/reportContent"}
+      },
+      "allOf": [{"$ref": "#/$defs/statusReasonCoherence"}]
+    }
+  }
+}

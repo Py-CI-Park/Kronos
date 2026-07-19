@@ -10,12 +10,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
+import math
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .daily_ohlcv_db import REPO_ROOT
 from .daily_scenario_runner import RESEARCH_GUARDRAIL, _validate_run_id, run_daily_model_scenario
+from .daily_prediction import ROUND_TRIP_COST_BP
+from .daily_rl_train import DEFAULT_PORTFOLIO_ROOT, SCORE_COLUMN, run_and_write_daily_rl
+from .factory import run_registry
 
 DEFAULT_SCENARIO_BATCH_ROOT = REPO_ROOT / "webui" / "rl_runs" / "daily_ohlcv_scenario_batches"
 RUNNER_DEFAULTS: dict[str, Any] = {
@@ -43,6 +49,22 @@ SCENARIO_PARAM_KEYS = set(RUNNER_DEFAULTS)
 MIN_REQUIRED_FOLDS = 5
 MIN_REQUIRED_PURGE_DAYS = 5
 MIN_REQUIRED_EMBARGO_DAYS = 5
+D4_STABILITY_SEEDS = (7, 17, 29, 41, 53)
+D4_STABILITY_EPISODES = (8, 32, 128)
+D4_STABILITY_PREREG_DOC = REPO_ROOT / "docs" / "stom_daily_d4_stability_prereg_2026-07-12.md"
+D4_STABILITY_SUMMARY_NAME = "stability_summary.json"
+D4_STABILITY_PREREG_SHA256 = "fb53fe5b312996a58bc082ea8f864181a3d1fbc2ef07c54e61feeabd716a25ed"
+D4_STABILITY_PREDICTION_MANIFEST_SHA256 = "b1d4b26d8561444dd826c66bb1fdc092200f52d0dd1d05a0ab6f24b4c0439936"
+D4_STABILITY_FIXED_CONFIG: dict[str, Any] = {
+    "score_column": SCORE_COLUMN,
+    "candidate_limit": 20,
+    "max_positions": 5,
+    "observation_mode": "v1",
+    "action_prior_mode": "none",
+    "action_prior_strength": 0.0,
+    "action_filter_mode": "none",
+    "val_eval_every": 1,
+}
 
 
 def _utc_now() -> str:
@@ -187,6 +209,421 @@ def _status_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_head_sha() -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    value = completed.stdout.strip().lower()
+    if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
+        raise ValueError("invalid_git_head_sha")
+    return value
+
+
+def _stable_json(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _parse_int_grid(raw: str | list[int] | tuple[int, ...] | None, *, name: str, expected: tuple[int, ...]) -> tuple[int, ...]:
+    if raw is None:
+        values = expected
+    elif isinstance(raw, str):
+        values = tuple(int(part.strip()) for part in raw.split(",") if part.strip())
+    else:
+        values = tuple(int(value) for value in raw)
+    if len(values) != len(set(values)):
+        raise ValueError(f"{name} contains duplicate values")
+    if set(values) != set(expected):
+        raise ValueError(f"{name} must exactly equal {expected}")
+    return tuple(sorted(values))
+
+
+def build_d4_stability_cells(
+    *,
+    seeds: str | list[int] | tuple[int, ...] | None = None,
+    episodes: str | list[int] | tuple[int, ...] | None = None,
+) -> list[dict[str, Any]]:
+    resolved_seeds = _parse_int_grid(seeds, name="sweep_seeds", expected=D4_STABILITY_SEEDS)
+    resolved_episodes = _parse_int_grid(episodes, name="sweep_episodes", expected=D4_STABILITY_EPISODES)
+    return [
+        {
+            "seed": seed,
+            "episodes": episode_count,
+            "stage": "full" if episode_count == 128 else "smoke",
+            "run_id": f"daily_d4_stability_2026_07_12_seed{seed}_ep{episode_count}",
+            "config": {**D4_STABILITY_FIXED_CONFIG, "seed": seed, "episodes": episode_count},
+        }
+        for episode_count in resolved_episodes
+        for seed in resolved_seeds
+    ]
+
+
+def _metric_by_split(result: dict[str, Any], split: str) -> dict[str, Any] | None:
+    metrics = ((result.get("result") or {}).get("policy_metrics") or {}).get("metrics")
+    if metrics is None:
+        metrics = (result.get("policy_metrics") or {}).get("metrics")
+    if not isinstance(metrics, list):
+        return None
+    for row in metrics:
+        if isinstance(row, dict) and row.get("split") == split:
+            return row
+    return None
+
+
+def _finite_float(value: Any, *, field: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"missing_or_nonfinite_metric:{field}") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"missing_or_nonfinite_metric:{field}")
+    return number
+
+
+def _split_metric_payload(metrics: dict[str, Any], *, split: str) -> dict[str, Any]:
+    total_net_return = _finite_float(metrics.get("total_net_return"), field=f"{split}.total_net_return")
+    max_drawdown = _finite_float(metrics.get("max_drawdown"), field=f"{split}.max_drawdown")
+    if "trade_count" not in metrics:
+        raise ValueError(f"missing_or_nonfinite_metric:{split}.trade_count")
+    if "never_trade" not in metrics or not isinstance(metrics["never_trade"], bool):
+        raise ValueError(f"missing_or_invalid_metric:{split}.never_trade")
+    trade_count = int(_finite_float(metrics["trade_count"], field=f"{split}.trade_count"))
+    never_trade = metrics["never_trade"]
+    return {
+        "total_net_return": total_net_return,
+        "trade_count": trade_count,
+        "never_trade": never_trade,
+        "max_drawdown": max_drawdown,
+    }
+
+
+def _baseline_deltas(result_payload: dict[str, Any], *, val_test_return: float) -> dict[str, Any]:
+    baseline = result_payload.get("baseline_comparison") or {}
+    best = baseline.get("best_d3_total_net_return")
+    equal_weight = baseline.get("equal_weight_topk_total_net_return")
+    no_trade = baseline.get("no_trade_cash_total_net_return")
+    return {
+        "test_oos_primary": {
+            "vs_no_trade_cash": None,
+            "vs_equal_weight_topk_momentum": None,
+            "vs_best_frozen_rule": None,
+            "reason": "UNAVAILABLE_BASELINE_SCOPE_IS_VAL_TEST_SECONDARY_NOT_TEST_OOS",
+        },
+        "source_val_test_secondary_reference": {
+            "vs_no_trade_cash": None if no_trade is None else val_test_return - _finite_float(no_trade, field="baseline.no_trade_cash_total_net_return"),
+            "vs_equal_weight_topk_momentum": None if equal_weight is None else val_test_return - _finite_float(equal_weight, field="baseline.equal_weight_topk_total_net_return"),
+            "vs_best_frozen_rule": None if best is None else val_test_return - _finite_float(best, field="baseline.best_d3_total_net_return"),
+            "reason": "ARITHMETIC_REFERENCE_ONLY_BASELINES_SOURCED_FROM_VAL_TEST_COMPARISON",
+        },
+    }
+
+
+def _artifact_hashes_from_written(written: dict[str, Any]) -> dict[str, str]:
+    hashes = written.get("artifact_hashes")
+    if isinstance(hashes, dict):
+        return {str(key): str(value) for key, value in sorted(hashes.items())}
+    return {}
+
+
+def _artifact_total_bytes(run_dir: str | None) -> int:
+    if not run_dir:
+        return 0
+    root = Path(run_dir)
+    if not root.exists():
+        return 0
+    if root.is_file():
+        return root.stat().st_size
+    return sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+
+
+
+
+def _source_hashes_from_result(result_payload: dict[str, Any]) -> dict[str, str]:
+    source_hashes = result_payload.get("source_hashes") or (result_payload.get("manifest") or {}).get("source_hashes") or {}
+    if isinstance(source_hashes, dict):
+        return {str(key): str(value) for key, value in sorted(source_hashes.items())}
+    return {}
+
+
+def _readiness_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+    fields = ("checkpoint_readiness", "environment_readiness", "model_ready")
+    if any(not isinstance(manifest.get(field), bool) for field in fields):
+        raise ValueError("missing_or_invalid_readiness_contract")
+    return {
+        "checkpoint_readiness": manifest["checkpoint_readiness"],
+        "environment_readiness": manifest["environment_readiness"],
+        "model_ready": manifest["model_ready"],
+        "readiness_status": manifest.get("readiness_status"),
+    }
+
+
+def _cell_success_payload(cell: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    result_payload = result.get("result") or result
+    manifest = result_payload.get("manifest") or {}
+    metrics_by_split: dict[str, Any] = {}
+    for split in ("val", "test", "val+test"):
+        row = _metric_by_split(result, split)
+        if row is None:
+            raise ValueError(f"missing_metric_split:{split}")
+        metrics_by_split[split] = _split_metric_payload(row, split=split)
+    artifact_hashes = _artifact_hashes_from_written(result.get("written") or {})
+    return {
+        "seed": cell["seed"],
+        "episodes": cell["episodes"],
+        "stage": cell["stage"],
+        "run_id": cell["run_id"],
+        "status": "done",
+        "config": cell["config"],
+        "config_hash": _sha256_text(_stable_json(cell["config"])),
+        "metrics": metrics_by_split,
+        "test_oos_primary": metrics_by_split["test"],
+        "val_test_secondary": metrics_by_split["val+test"],
+        "baseline_deltas_23bp": _baseline_deltas(result_payload, val_test_return=metrics_by_split["val+test"]["total_net_return"]),
+        "source_hashes": _source_hashes_from_result(result_payload),
+        "artifact_hashes": artifact_hashes,
+        "readiness": _readiness_payload(manifest),
+        "parent_training_run": manifest.get("parent_training_run"),
+        "blockers": (result_payload.get("verdict") or {}).get("reasons", []),
+        "run_dir": (result.get("written") or {}).get("artifact_dir") or manifest.get("artifact_dir"),
+    }
+
+
+def _cell_failure_payload(cell: dict[str, Any], exc: Exception) -> dict[str, Any]:
+    return {
+        "seed": cell["seed"],
+        "episodes": cell["episodes"],
+        "stage": cell["stage"],
+        "run_id": cell["run_id"],
+        "status": "failed",
+        "config": cell["config"],
+        "config_hash": _sha256_text(_stable_json(cell["config"])),
+        "error": str(exc),
+        "metrics": {},
+        "test_oos_primary": None,
+        "val_test_secondary": None,
+        "baseline_deltas_23bp": {},
+        "source_hashes": {},
+        "artifact_hashes": {},
+        "readiness": {
+            "checkpoint_readiness": False,
+            "environment_readiness": False,
+            "model_ready": False,
+            "readiness_status": "D4_STABILITY_CELL_FAILED",
+        },
+        "blockers": ["CELL_FAILED", str(exc)],
+        "run_dir": None,
+    }
+
+
+def _stability_decision(cells: list[dict[str, Any]]) -> str:
+    if len(cells) != len(D4_STABILITY_SEEDS) * len(D4_STABILITY_EPISODES):
+        return "INCONCLUSIVE"
+    if any(cell.get("status") != "done" for cell in cells):
+        return "INCONCLUSIVE"
+    try:
+        for cell in cells:
+            test = cell["metrics"]["test"]
+            _finite_float(test["total_net_return"], field="test.total_net_return")
+            _finite_float(test["max_drawdown"], field="test.max_drawdown")
+            int(test["trade_count"])
+    except Exception:
+        return "INCONCLUSIVE"
+    for episode_count in D4_STABILITY_EPISODES:
+        cohort = [cell for cell in cells if cell["episodes"] == episode_count]
+        signs = {0 if cell["metrics"]["test"]["total_net_return"] == 0 else (1 if cell["metrics"]["test"]["total_net_return"] > 0 else -1) for cell in cohort}
+        never_trade = {bool(cell["metrics"]["test"]["never_trade"]) for cell in cohort}
+        if len(signs) > 1 or len(never_trade) > 1:
+            return "SEED_NOISE_NO_GO"
+    return "STABLE_NO_GO"
+
+
+def build_d4_stability_summary(
+    *,
+    summary_cells: list[dict[str, Any]],
+    prereg_path: Path,
+    prereg_hash: str,
+    source_git_sha: str,
+    prediction_dir: Path,
+    prediction_manifest_hash: str,
+    registry_events: list[dict[str, Any]],
+    root: Path,
+    dry_run: bool,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    decision = "INCONCLUSIVE" if dry_run else _stability_decision(summary_cells)
+    deterministic_payload = {
+        "schema_version": 1,
+        "mode": "daily_d4_stability_sweep",
+        "prereg_doc": str(prereg_path),
+        "prereg_sha256": prereg_hash,
+        "source_git_sha": source_git_sha,
+        "prediction_run_dir": str(prediction_dir),
+        "prediction_manifest_sha256": prediction_manifest_hash,
+        "fixed_grid": {"seeds": list(D4_STABILITY_SEEDS), "episodes": list(D4_STABILITY_EPISODES)},
+        "fixed_config": D4_STABILITY_FIXED_CONFIG,
+        "cost_round_trip_bp": ROUND_TRIP_COST_BP,
+        "cell_order": "(episodes, seed)",
+        "dry_run": dry_run,
+        "cell_count": len(summary_cells),
+        "expected_cell_count": len(D4_STABILITY_SEEDS) * len(D4_STABILITY_EPISODES),
+        "complete_grid": len(summary_cells) == len(D4_STABILITY_SEEDS) * len(D4_STABILITY_EPISODES),
+        "decision": decision,
+        "research_locks": {
+            "model_build_allowed": False,
+            "go_summary_allowed": False,
+            "paper_forward_allowed": False,
+            "live_broker_order_allowed": False,
+            "test_oos_primary": True,
+            "val_test_secondary_only": True,
+            "aliases_excluded": True,
+        },
+        "blockers": sorted({reason for cell in summary_cells for reason in cell.get("blockers", [])}),
+        "cells": summary_cells,
+        "registry_events": registry_events,
+    }
+    return {
+        **deterministic_payload,
+        "generated_at": generated_at or _utc_now(),
+        "deterministic_content_hash": _sha256_text(_stable_json(deterministic_payload)),
+        "artifact_paths": {"stability_summary": str(root / D4_STABILITY_SUMMARY_NAME)},
+    }
+
+
+def run_d4_stability_sweep(
+    *,
+    sweep_seeds: str | list[int] | tuple[int, ...] | None = None,
+    sweep_episodes: str | list[int] | tuple[int, ...] | None = None,
+    prediction_run_dir: Path | str,
+    stability_root: Path | str | None = None,
+    registry_path: Path | str | None = None,
+    prereg_doc: Path | str | None = None,
+    source_git_sha: str | None = None,
+    overwrite: bool = False,
+    dry_run: bool = False,
+    stop_on_error: bool = False,
+) -> dict[str, Any]:
+    cells = build_d4_stability_cells(seeds=sweep_seeds, episodes=sweep_episodes)
+    prediction_dir = Path(prediction_run_dir).resolve()
+    prereg_path = Path(prereg_doc or D4_STABILITY_PREREG_DOC)
+    if not prereg_path.is_file():
+        raise FileNotFoundError(f"missing_prereg_doc:{prereg_path}")
+    prereg_hash = _sha256_file(prereg_path)
+    if prereg_hash != D4_STABILITY_PREREG_SHA256:
+        raise ValueError(f"prereg_hash_mismatch:{prereg_hash}")
+    prediction_manifest_path = prediction_dir / "prediction_manifest.json"
+    if not prediction_manifest_path.is_file():
+        raise FileNotFoundError(f"missing_prediction_manifest:{prediction_manifest_path}")
+    prediction_manifest_hash = _sha256_file(prediction_manifest_path)
+    if prediction_manifest_hash != D4_STABILITY_PREDICTION_MANIFEST_SHA256:
+        raise ValueError(f"prediction_manifest_hash_mismatch:{prediction_manifest_hash}")
+    actual_git_sha = _git_head_sha()
+    declared_git_sha = str(source_git_sha or "").strip().lower()
+    if not dry_run and not declared_git_sha:
+        raise ValueError("source_git_sha is required for real D4 stability sweep runs")
+    if declared_git_sha and declared_git_sha != actual_git_sha:
+        raise ValueError(f"source_git_sha_mismatch:{declared_git_sha}!={actual_git_sha}")
+    source_git_sha = actual_git_sha
+    root = Path(
+        stability_root
+        or DEFAULT_PORTFOLIO_ROOT / "_scenario_runs" / "daily_d4_stability_2026_07_12"
+    ).resolve()
+    portfolio_root = DEFAULT_PORTFOLIO_ROOT.resolve()
+    try:
+        root.relative_to(portfolio_root)
+    except ValueError as exc:
+        raise ValueError("D4 stability artifacts must stay under daily_ohlcv_portfolio") from exc
+    root.mkdir(parents=True, exist_ok=True)
+    split_hash = prediction_manifest_hash
+    summary_cells: list[dict[str, Any]] = []
+    registry_events: list[dict[str, Any]] = []
+
+    for cell in cells:
+        run_dir = str((root / cell["run_id"]).resolve())
+        if dry_run:
+            summary_cells.append({**cell, "status": "dry_run", "run_dir": run_dir})
+            continue
+        registered = False
+        try:
+            if registry_path is not None:
+                run_registry.register_run(
+                    registry_path,
+                    run_id=cell["run_id"],
+                    split_hash=split_hash,
+                    cost_bps=ROUND_TRIP_COST_BP,
+                    seed=cell["seed"],
+                    stage=cell["stage"],
+                    prereg_doc=str(prereg_path),
+                    parent_run=prediction_dir.name,
+                    source_git_sha=source_git_sha,
+                    run_dir=run_dir,
+                    artifact_hashes=None,
+                )
+                registered = True
+                registry_events.append({"run_id": cell["run_id"], "transition": "queued"})
+                run_registry.set_status(registry_path, cell["run_id"], "running")
+                registry_events.append({"run_id": cell["run_id"], "transition": "running"})
+            result = run_and_write_daily_rl(
+                run_id=cell["run_id"],
+                artifact_root=root,
+                overwrite=overwrite,
+                enable_live_events=False,
+                prediction_run_dir=prediction_dir,
+                **cell["config"],
+            )
+            payload = _cell_success_payload(cell, result)
+            if registry_path is not None and registered:
+                run_registry.update_run_artifacts(
+                    registry_path,
+                    cell["run_id"],
+                    run_dir=payload.get("run_dir") or run_dir,
+                    artifact_hashes=payload["artifact_hashes"],
+                    total_bytes=_artifact_total_bytes(payload.get("run_dir") or run_dir),
+                )
+                registry_events.append({"run_id": cell["run_id"], "transition": "artifacts_updated"})
+            summary_cells.append(payload)
+            if registry_path is not None and registered:
+                run_registry.set_status(registry_path, cell["run_id"], "done", verdict="RESEARCH_ONLY")
+                registry_events.append({"run_id": cell["run_id"], "transition": "done"})
+        except Exception as exc:
+            failure = _cell_failure_payload(cell, exc)
+            summary_cells.append(failure)
+            if registry_path is not None and registered:
+                try:
+                    run_registry.set_status(registry_path, cell["run_id"], "failed", verdict="INCONCLUSIVE")
+                    registry_events.append({"run_id": cell["run_id"], "transition": "failed"})
+                except Exception as registry_exc:
+                    failure["registry_error"] = str(registry_exc)
+
+    summary = build_d4_stability_summary(
+        summary_cells=summary_cells,
+        prereg_path=prereg_path,
+        prereg_hash=prereg_hash,
+        source_git_sha=source_git_sha,
+        prediction_dir=prediction_dir,
+        prediction_manifest_hash=prediction_manifest_hash,
+        registry_events=registry_events,
+        root=root,
+        dry_run=dry_run,
+    )
+    _write_json(root / D4_STABILITY_SUMMARY_NAME, summary)
+    return summary
+
+
 def run_daily_scenario_batch(
     *,
     plan: dict[str, Any] | None = None,
@@ -320,6 +757,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stop-on-error", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--emit-template", action="store_true", help="Print a small JSON batch plan template and exit")
+    parser.add_argument("--sweep-seeds", help="Comma-separated D4 stability seeds; must exactly be 7,17,29,41,53")
+    parser.add_argument("--sweep-episodes", help="Comma-separated D4 stability episodes; must exactly be 8,32,128")
+    parser.add_argument("--prediction-run-dir", type=Path, help="Explicit frozen prediction run directory for D4 stability sweep")
+    parser.add_argument("--stability-root", type=Path, help="Artifact root for D4 stability sweep outputs")
+    parser.add_argument("--registry-path", type=Path, help="Optional factory run registry SQLite path")
+    parser.add_argument("--prereg-doc", type=Path, help="D4 stability preregistration document path")
+    parser.add_argument("--source-git-sha", help="Source Git SHA recorded in optional registry metadata")
     return parser
 
 
@@ -328,13 +772,29 @@ def main(argv: list[str] | None = None) -> int:
     if args.emit_template:
         print(json.dumps(default_batch_plan(batch_id=args.batch_id or "scenario_batch_smoke_001"), ensure_ascii=False, indent=2))
         return 0
-    payload = run_daily_scenario_batch(
-        plan_path=args.plan,
-        batch_id=args.batch_id,
-        overwrite=args.overwrite,
-        stop_on_error=args.stop_on_error,
-        dry_run=args.dry_run,
-    )
+    if args.sweep_seeds is not None or args.sweep_episodes is not None or args.prediction_run_dir is not None or args.stability_root is not None:
+        if args.prediction_run_dir is None:
+            raise ValueError("--prediction-run-dir is required for --sweep-* D4 stability runs")
+        payload = run_d4_stability_sweep(
+            sweep_seeds=args.sweep_seeds,
+            sweep_episodes=args.sweep_episodes,
+            prediction_run_dir=args.prediction_run_dir,
+            stability_root=args.stability_root,
+            registry_path=args.registry_path,
+            prereg_doc=args.prereg_doc,
+            source_git_sha=args.source_git_sha,
+            overwrite=args.overwrite,
+            dry_run=args.dry_run,
+            stop_on_error=args.stop_on_error,
+        )
+    else:
+        payload = run_daily_scenario_batch(
+            plan_path=args.plan,
+            batch_id=args.batch_id,
+            overwrite=args.overwrite,
+            stop_on_error=args.stop_on_error,
+            dry_run=args.dry_run,
+        )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
@@ -346,9 +806,14 @@ if __name__ == "__main__":
 __all__ = [
     "DEFAULT_SCENARIO_BATCH_ROOT",
     "RUNNER_DEFAULTS",
+    "D4_STABILITY_EPISODES",
+    "D4_STABILITY_FIXED_CONFIG",
+    "D4_STABILITY_SEEDS",
     "build_arg_parser",
     "default_batch_plan",
+    "build_d4_stability_cells",
     "load_batch_plan",
     "main",
     "run_daily_scenario_batch",
+    "run_d4_stability_sweep",
 ]

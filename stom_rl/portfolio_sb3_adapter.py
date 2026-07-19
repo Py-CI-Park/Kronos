@@ -47,9 +47,10 @@ class PortfolioSb3GymEnv(gym.Env):
             raise ValueError("Pass either config or keyword overrides, not both.")
         self.raw_env = PortfolioEnv(config, candidates=candidates, **overrides)
         self.action_space = spaces.Discrete(self.raw_env.action_space.n)
+        finite_bound = np.finfo(np.float32).max
         self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
+            low=-finite_bound,
+            high=finite_bound,
             shape=self.raw_env.observation_space.shape,
             dtype=np.float32,
         )
@@ -103,10 +104,17 @@ def make_portfolio_sb3_env(
     max_positions: int = 2,
     initial_cash: float = 1_000_000.0,
     buy_fraction: float = 0.25,
-    cost_bps: float = 25.0,
+    cost_bps: float = 23.0,
     slippage_bps: float = 0.0,
     invalid_action_penalty: float = 0.001,
-    turnover_penalty_lambda: float = 0.0,
+    turnover_penalty_lambda: float = 0.001,
+    reward_mode: str = "shaped",
+    terminal_liquidation: bool = True,
+    cost_scenario_id: Optional[str] = None,
+    legacy_scalar_cost_label: Optional[str] = None,
+    accounting_horizon: str = "SB3_T_DECIDE_T1_FILL_STATEFUL_V1",
+    allow_legacy_same_bar_fill: bool = False,
+
     seed: int = 100,
     feature_columns: Optional[Tuple[str, ...]] = None,
 ) -> PortfolioSb3GymEnv:
@@ -128,6 +136,12 @@ def make_portfolio_sb3_env(
             slippage_bps=slippage_bps,
             invalid_action_penalty=invalid_action_penalty,
             turnover_penalty_lambda=turnover_penalty_lambda,
+            reward_mode=reward_mode,
+            terminal_liquidation=terminal_liquidation,
+            cost_scenario_id=cost_scenario_id,
+            legacy_scalar_cost_label=legacy_scalar_cost_label,
+            accounting_horizon=accounting_horizon,
+            allow_legacy_same_bar_fill=allow_legacy_same_bar_fill,
             seed=seed,
             feature_columns=feature_columns,
         ),

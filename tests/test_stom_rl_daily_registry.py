@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -435,6 +436,17 @@ def test_daily_registry_writer_creates_expected_artifacts_and_rejects_unsafe_pat
     manifest = json.loads((out_dir / "registry_manifest.json").read_text(encoding="utf-8"))
     assert manifest["run_id"] == "registry_000250"
     assert manifest["row_counts"]["decision_log_rows"] == 3
+    artifact_hashes = manifest["artifact_hashes"]
+    for key, filename in {
+        "candidate_registry": "candidate_registry.json",
+        "paper_selected": "paper_selected.csv",
+        "realized_returns": "realized_returns.csv",
+        "drift": "drift.csv",
+        "drawdown": "drawdown.csv",
+        "decision_log": "decision_log.jsonl",
+    }.items():
+        assert artifact_hashes[key] == hashlib.sha256((out_dir / filename).read_bytes()).hexdigest()
+        assert manifest["artifact_sizes_bytes"][key] == (out_dir / filename).stat().st_size
 
     with pytest.raises(FileExistsError):
         daily_registry.write_registry_artifacts(result, run_id="registry_000250", overwrite=False)

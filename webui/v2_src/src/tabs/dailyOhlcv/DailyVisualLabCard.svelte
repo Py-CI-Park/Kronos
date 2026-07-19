@@ -25,56 +25,64 @@
     const numeric = finiteNumber(value);
     return numeric === null ? '—' : `${(numeric * 100).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}%`;
   };
+  const bpCost = (value: unknown) => {
+    const numeric = finiteNumber(value);
+    return numeric === null ? '—' : `${(numeric / 100).toFixed(2)}% (${numeric.toLocaleString('ko-KR', { maximumFractionDigits: 0 })} bp)`;
+  };
   const cellText = (value: unknown) => Array.isArray(value) ? value.join(';') : (value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—'));
   const list = (value: unknown): readonly Record<string, unknown>[] => Array.isArray(value) ? value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object') : [];
   const D7_FALLBACK_DIAGNOSTICS: readonly Record<string, unknown>[] = [
     {
       id: 'D7_FEATURE_DIAGNOSTICS',
       label: 'Feature diagnostics',
-      status: 'PLACEHOLDER_READY',
+      status: 'MISSING_ARTIFACT',
       summary: 'feature/regime/correlation/failure diagnostics require explicit read-only artifacts before claims.',
       next_artifact: 'feature_importance_by_fold.csv',
+      next_action: 'Generate or attach feature_importance_by_fold.csv before using feature diagnostics.',
       guardrail: 'feature importance is explanatory only; no profit/live/broker/order claim.',
       allowed_use: 'feature별 fold 기여도와 drift를 비교해 D3/D4 실패 원인을 설명합니다.',
       blocked_use: 'feature 중요도를 종목 선택, 수익 주장, live signal로 사용하지 않습니다.',
       how_to_read_ko: 'fold마다 같은 feature가 반복되는지와 price_basis unknown 민감도를 먼저 봅니다.',
-      current_gap: 'feature_importance_by_fold.csv가 생성되기 전까지 PLACEHOLDER_READY입니다.',
+      current_gap: 'MISSING_ARTIFACT · feature_importance_by_fold.csv has not been attached; claims stay blocked.',
     },
     {
       id: 'D7_REGIME_DIAGNOSTICS',
       label: 'Regime diagnostics',
-      status: 'PLACEHOLDER_READY',
+      status: 'NOT_STARTED',
       summary: 'regime buckets must be forward-only and cannot retune OOS folds.',
       next_artifact: 'regime_bucket_metrics.csv',
+      next_action: 'Generate regime_bucket_metrics.csv with forward-only rules before comparing regimes.',
       guardrail: 'regime labels are research diagnostics only.',
       allowed_use: '추세·변동성·유동성 regime별 baseline/RL 실패 구간을 찾습니다.',
       blocked_use: 'OOS fold를 보고 regime 정의를 재튜닝하지 않습니다.',
       how_to_read_ko: 'forward-only regime 규칙으로 한 구간 좋은 결과를 전체 성과처럼 말하지 않습니다.',
-      current_gap: 'regime_bucket_metrics.csv가 생성되기 전까지 PLACEHOLDER_READY입니다.',
+      current_gap: 'NOT_STARTED · regime_bucket_metrics.csv has not been generated; regime claims stay unavailable.',
     },
     {
       id: 'D7_CORRELATION_RISK',
       label: 'Correlation and concentration',
-      status: 'PLACEHOLDER_READY',
+      status: 'MISSING_ARTIFACT',
       summary: 'correlation/concentration diagnostics prevent single-theme exposure from being hidden.',
       next_artifact: 'correlation_cluster_summary.csv',
+      next_action: 'Generate correlation_cluster_summary.csv before interpreting concentration risk.',
       guardrail: 'correlation views are risk diagnostics, not selection proof.',
       allowed_use: '상관·집중도·테마 쏠림을 보며 포트폴리오 리스크를 설명합니다.',
       blocked_use: '상관 클러스터를 종목 추천이나 배포 가능한 allocation으로 사용하지 않습니다.',
       how_to_read_ko: '손실 fold와 고상관 cluster가 겹치는지 확인하고 penalty 가설로만 사용합니다.',
-      current_gap: 'correlation_cluster_summary.csv가 생성되기 전까지 PLACEHOLDER_READY입니다.',
+      current_gap: 'MISSING_ARTIFACT · correlation_cluster_summary.csv has not been attached; allocation claims stay blocked.',
     },
     {
       id: 'D7_FAILURE_ANALYSIS',
       label: 'Failure analysis',
-      status: 'PLACEHOLDER_READY',
+      status: 'BLOCKED',
       summary: 'NO-GO reasons, invalid actions, drawdown spikes, and fold failures stay visible.',
       next_artifact: 'failure_reason_attribution.csv',
+      next_action: 'Generate failure_reason_attribution.csv and keep NO-GO causes visible before next hypotheses.',
       guardrail: 'failure visibility is mandatory; weak or flat RL outcomes must not be hidden.',
       allowed_use: 'NO-GO reason, invalid action, drawdown spike, fold failure를 다음 실험 가설로 묶습니다.',
       blocked_use: '실패 fold를 숨기거나 성공 fold만 골라 GO처럼 표현하지 않습니다.',
       how_to_read_ko: 'D0/D1/D3/D5 blocker를 먼저 확인하고 reward/action 변경은 사전등록합니다.',
-      current_gap: 'failure_reason_attribution.csv가 생성되기 전까지 PLACEHOLDER_READY입니다.',
+      current_gap: 'BLOCKED · failure_reason_attribution.csv is missing, so success-only summaries are forbidden.',
     },
   ];
   const mergeD7DiagnosticCard = (fallback: Record<string, unknown>, card: Record<string, unknown> | undefined) => {
@@ -87,6 +95,7 @@
       how_to_read_ko: card.how_to_read_ko || fallback.how_to_read_ko,
       current_gap: card.current_gap || fallback.current_gap,
       next_artifact: card.next_artifact || fallback.next_artifact,
+      next_action: card.next_action || fallback.next_action,
       guardrail: card.guardrail || fallback.guardrail,
       summary: card.summary || fallback.summary,
     };
@@ -124,10 +133,18 @@
   const maxEntry = (record: Readonly<Record<string, number>> | undefined) => Math.max(1, ...Object.values(record ?? {}).map((value) => Math.abs(value)));
 
   function tone(value: unknown): string {
-    const status = String(value ?? '');
+    const status = String(value ?? '').toUpperCase();
     if (status === 'PASS') return 'success';
-    if (status === 'WATCH' || status === 'RESEARCH_ONLY' || status === 'REFERENCE_ONLY') return 'warn';
-    if (status === 'NO-GO' || status === 'BLOCKED' || status === 'LOCKED') return 'danger';
+    if (status === 'NO-GO' || status === 'BLOCKED' || status === 'LOCKED' || status.includes('ERROR')) return 'danger';
+    if (
+      status === 'WATCH' ||
+      status === 'RESEARCH_ONLY' ||
+      status === 'REFERENCE_ONLY' ||
+      status === 'MISSING_ARTIFACT' ||
+      status === 'NOT_STARTED' ||
+      status.includes('MISSING') ||
+      status.includes('INCOMPLETE')
+    ) return 'warn';
     return '';
   }
 
@@ -243,11 +260,12 @@
       <p class="text-muted">{String(researchDiagnostics?.summary?.korean ?? 'D7 연구 진단은 feature/regime/correlation/failure 원인 분석을 위한 읽기 전용 확장 영역입니다.')}</p>
       <div class="term-grid" style="margin-top:12px">
         {#each rows(d7DiagnosticCards(), 8) as item}
-          <div class="term-card">
+          <div class="term-card {tone(item.status)}">
             <strong>{item.id}</strong>
             <span>{item.label} · {item.status}</span>
             <small>{item.summary}</small>
             <small>next: {item.next_artifact}</small>
+            <small>next action: {item.next_action}</small>
             <small>{item.guardrail}</small>
             <small>allowed: {item.allowed_use}</small>
             <small>blocked: {item.blocked_use}</small>
@@ -299,7 +317,7 @@
       </div>
       <div class="cost-strip">
         {#each rows(heatmap?.cost_series, 12) as cost}
-          <span>{cost.fold_id}:{formatNumber(cost.cost_bp, 0)}bp {pct(cost.total_net_return)}</span>
+          <span>{cost.fold_id}:{bpCost(cost.cost_bp)} {pct(cost.total_net_return)}</span>
         {/each}
       </div>
     </div>
@@ -450,7 +468,7 @@
   .visual-box { border:1px solid var(--border); border-radius:var(--r-lg); padding:14px; background:var(--surface); min-height:220px; }
   .visual-box.wide { grid-column: span 2; }
   .box-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:12px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
-  .box-head strong { color:var(--text); font-family:var(--font-mono); }
+  .box-head strong { color:var(--fg); font-family:var(--font-mono); }
   .decision-cards, .term-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:8px; }
   .usage-guide { border:1px solid var(--border); border-radius:var(--r-lg); padding:12px; margin-top:14px; background:var(--surface); }
   .guide-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:8px; margin-top:8px; }
@@ -463,9 +481,12 @@
   .decision-card.watch, .heat-cell.watch { border-color:rgba(217,119,6,.5); background:rgba(217,119,6,.08); }
   .decision-card.block, .blocker.block, .heat-cell.block { border-color:rgba(220,38,38,.55); background:rgba(220,38,38,.08); }
   .blocker-list { display:grid; gap:8px; margin-top:10px; }
-  .blocker span, .term-card span { color:var(--text); font-size:12px; }
+  .blocker span, .term-card span { color:var(--fg); font-size:12px; }
   .blocker small, .term-card small, .decision-card small { color:var(--muted); font-size:11px; }
   .term-card strong, .term-card span, .term-card small { overflow-wrap:anywhere; word-break:break-word; }
+  .term-card.success { border-color:rgba(22,163,74,.5); background:rgba(22,163,74,.08); }
+  .term-card.warn { border-color:rgba(217,119,6,.5); background:rgba(217,119,6,.08); }
+  .term-card.danger { border-color:rgba(220,38,38,.55); background:rgba(220,38,38,.08); }
   .flow-row { display:flex; align-items:stretch; gap:8px; overflow:auto; padding-bottom:4px; }
   .flow-node { min-width:92px; border:1px solid var(--border-faint); border-radius:14px; padding:10px; text-align:center; display:flex; flex-direction:column; gap:3px; }
   .flow-node.pass { background:rgba(22,163,74,.08); }
@@ -484,10 +505,10 @@
   .cost-strip { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; color:var(--muted); font-family:var(--font-mono); font-size:11px; }
   .scatter-plot { position:relative; height:220px; border:1px solid var(--border-faint); border-radius:14px; background:radial-gradient(circle at 70% 25%, rgba(16,185,129,.12), transparent 30%), linear-gradient(90deg, rgba(220,38,38,.08), transparent); overflow:hidden; }
   .scatter-point { position:absolute; width:11px; height:11px; border-radius:999px; background:var(--accent); transform:translate(-50%, -50%); box-shadow:0 0 0 3px rgba(16,185,129,.12); }
-  .scatter-point.danger { background:#dc2626; }
-  .scatter-point.warn { background:#d97706; }
-  .scatter-point.success { background:#16a34a; }
-  .scatter-point.incomplete { background:#64748b; box-shadow:0 0 0 3px rgba(100,116,139,.18); left:50%; top:50%; }
+  .scatter-point.danger { background:var(--danger); }
+  .scatter-point.warn { background:var(--warn); }
+  .scatter-point.success { background:var(--success); }
+  .scatter-point.incomplete { background:var(--muted); box-shadow:0 0 0 3px rgba(100,116,139,.18); left:50%; top:50%; }
   .axis { position:absolute; color:var(--muted); font-size:11px; }
   .axis.x { left:10px; bottom:8px; }
   .axis.y { left:10px; top:8px; }

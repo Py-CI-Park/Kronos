@@ -1,0 +1,562 @@
+{
+  "schema": "kronos_v5_registry_fixture.v1",
+  "cursor_key_id": "fixture-cursor-key-v1",
+  "cursor_key_hex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+  "created_utc": "2026-07-15T00:00:00Z",
+  "later_utc": "2026-07-15T00:20:01Z",
+  "locks": {
+    "promotion_allowed": false,
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "profitability_claim_allowed": false,
+    "go_summary_allowed": false
+  },
+  "snapshots": {
+    "alpha_r1": {
+      "schema_version": "kronos_rl_run_state.v2",
+      "run_uid": "run-alpha",
+      "run_revision": 1,
+      "display": {
+        "name": "Alpha fixture run",
+        "display_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "protocol": {
+        "protocol_id": "daily-sb3-v5-fixture",
+        "protocol_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "source": {
+        "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "git_commit_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "data": {
+        "data_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split": "validation"
+      },
+      "phase": "QUEUED",
+      "terminal": null,
+      "liveness": "UNKNOWN",
+      "attempts": [],
+      "cells": [
+        {
+          "cell_uid": "cell-alpha-1",
+          "attempt_uid": null,
+          "status": "PENDING",
+          "step": 0
+        }
+      ],
+      "progress": {
+        "step": 0,
+        "total_steps": 100
+      },
+      "heartbeat": null,
+      "blockers": [],
+      "matrix": {
+        "dimensions": {
+          "seeds": ["seed-01"],
+          "folds": ["fold-01"],
+          "variants": ["cost-23bp"]
+        },
+        "cells": [
+          {
+            "cell_uid": "cell-alpha-1",
+            "seed": "seed-01",
+            "fold": "fold-01",
+            "variant": "cost-23bp",
+            "state": "PENDING"
+          }
+        ],
+        "missing_cell_ids": [],
+        "summary": {
+          "total_cells": 1,
+          "completed": 0,
+          "failed": 0,
+          "pending": 1
+        },
+        "terminal": false
+      },
+      "artifacts": [
+        {
+          "artifact_id": "alpha-config",
+          "created_utc": "2026-07-15T00:00:00Z",
+          "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "byte_length": 2,
+          "filename": "alpha_config.json"
+        }
+      ],
+      "locks": {
+        "promotion_allowed": false,
+        "model_build_allowed": false,
+        "paper_forward_allowed": false,
+        "live_broker_order_allowed": false,
+        "profitability_claim_allowed": false,
+        "go_summary_allowed": false
+      },
+      "created_utc": "2026-07-15T00:00:00Z",
+      "updated_utc": "2026-07-15T00:00:00Z"
+    },
+    "alpha_r2": {
+      "schema_version": "kronos_rl_run_state.v2",
+      "run_uid": "run-alpha",
+      "run_revision": 2,
+      "display": {
+        "name": "Alpha fixture run",
+        "display_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "protocol": {
+        "protocol_id": "daily-sb3-v5-fixture",
+        "protocol_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "source": {
+        "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "git_commit_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "data": {
+        "data_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split": "validation"
+      },
+      "phase": "CELL_RUNNING",
+      "terminal": null,
+      "liveness": "ADVANCING",
+      "attempts": [
+        {
+          "attempt_uid": "attempt-alpha-1",
+          "status": "RUNNING",
+          "started_utc": "2026-07-15T00:00:10Z"
+        }
+      ],
+      "cells": [
+        {
+          "cell_uid": "cell-alpha-1",
+          "attempt_uid": "attempt-alpha-1",
+          "status": "RUNNING",
+          "step": 10
+        }
+      ],
+      "progress": {
+        "step": 10,
+        "total_steps": 100
+      },
+      "heartbeat": {
+        "last_heartbeat_utc": "2026-07-15T00:00:20Z"
+      },
+      "blockers": [],
+      "matrix": {
+        "dimensions": {
+          "seeds": ["seed-01"],
+          "folds": ["fold-01"],
+          "variants": ["cost-23bp"]
+        },
+        "cells": [
+          {
+            "cell_uid": "cell-alpha-1",
+            "seed": "seed-01",
+            "fold": "fold-01",
+            "variant": "cost-23bp",
+            "state": "RUNNING"
+          }
+        ],
+        "missing_cell_ids": [],
+        "summary": {
+          "total_cells": 1,
+          "completed": 0,
+          "failed": 0,
+          "pending": 1
+        },
+        "terminal": false
+      },
+      "artifacts": [
+        {
+          "artifact_id": "alpha-config",
+          "created_utc": "2026-07-15T00:00:00Z",
+          "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "byte_length": 2,
+          "filename": "alpha_config.json"
+        },
+        {
+          "artifact_id": "alpha-metrics",
+          "created_utc": "2026-07-15T00:00:20Z",
+          "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "byte_length": 8,
+          "filename": "alpha_metrics.json"
+        }
+      ],
+      "locks": {
+        "promotion_allowed": false,
+        "model_build_allowed": false,
+        "paper_forward_allowed": false,
+        "live_broker_order_allowed": false,
+        "profitability_claim_allowed": false,
+        "go_summary_allowed": false
+      },
+      "created_utc": "2026-07-15T00:00:00Z",
+      "updated_utc": "2026-07-15T00:00:20Z"
+    },
+    "alpha_r2_stalled": {
+      "schema_version": "kronos_rl_run_state.v2",
+      "run_uid": "run-alpha",
+      "run_revision": 2,
+      "display": {
+        "name": "Alpha fixture run",
+        "display_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "protocol": {
+        "protocol_id": "daily-sb3-v5-fixture",
+        "protocol_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "source": {
+        "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "git_commit_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "data": {
+        "data_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split": "validation"
+      },
+      "phase": "CELL_RUNNING",
+      "terminal": null,
+      "liveness": "STALLED",
+      "attempts": [
+        {
+          "attempt_uid": "attempt-alpha-1",
+          "status": "RUNNING",
+          "started_utc": "2026-07-15T00:00:10Z"
+        }
+      ],
+      "cells": [
+        {
+          "cell_uid": "cell-alpha-1",
+          "attempt_uid": "attempt-alpha-1",
+          "status": "RUNNING",
+          "step": 0
+        }
+      ],
+      "progress": {
+        "step": 0,
+        "total_steps": 100
+      },
+      "heartbeat": {
+        "last_heartbeat_utc": "2026-07-15T00:00:20Z"
+      },
+      "blockers": [],
+      "matrix": {
+        "dimensions": {
+          "seeds": ["seed-01"],
+          "folds": ["fold-01"],
+          "variants": ["cost-23bp"]
+        },
+        "cells": [
+          {
+            "cell_uid": "cell-alpha-1",
+            "seed": "seed-01",
+            "fold": "fold-01",
+            "variant": "cost-23bp",
+            "state": "RUNNING"
+          }
+        ],
+        "missing_cell_ids": [],
+        "summary": {
+          "total_cells": 1,
+          "completed": 0,
+          "failed": 0,
+          "pending": 1
+        },
+        "terminal": false
+      },
+      "artifacts": [
+        {
+          "artifact_id": "alpha-config",
+          "created_utc": "2026-07-15T00:00:00Z",
+          "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "byte_length": 2,
+          "filename": "alpha_config.json"
+        }
+      ],
+      "locks": {
+        "promotion_allowed": false,
+        "model_build_allowed": false,
+        "paper_forward_allowed": false,
+        "live_broker_order_allowed": false,
+        "profitability_claim_allowed": false,
+        "go_summary_allowed": false
+      },
+      "created_utc": "2026-07-15T00:00:00Z",
+      "updated_utc": "2026-07-15T00:00:20Z"
+    },
+    "alpha_r3": {
+      "schema_version": "kronos_rl_run_state.v2",
+      "run_uid": "run-alpha",
+      "run_revision": 3,
+      "display": {
+        "name": "Alpha fixture run",
+        "display_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "protocol": {
+        "protocol_id": "daily-sb3-v5-fixture",
+        "protocol_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "source": {
+        "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "git_commit_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "data": {
+        "data_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "split": "validation"
+      },
+      "phase": "RUN_TERMINAL",
+      "terminal": "COMPLETED",
+      "liveness": "TERMINAL",
+      "attempts": [
+        {
+          "attempt_uid": "attempt-alpha-1",
+          "status": "COMPLETED",
+          "started_utc": "2026-07-15T00:00:10Z",
+          "finished_utc": "2026-07-15T00:01:00Z"
+        }
+      ],
+      "cells": [
+        {
+          "cell_uid": "cell-alpha-1",
+          "attempt_uid": "attempt-alpha-1",
+          "status": "COMPLETED",
+          "step": 100
+        }
+      ],
+      "progress": {
+        "step": 100,
+        "total_steps": 100
+      },
+      "heartbeat": {
+        "last_heartbeat_utc": "2026-07-15T00:01:00Z"
+      },
+      "blockers": [],
+      "matrix": {
+        "dimensions": {
+          "seeds": ["seed-01"],
+          "folds": ["fold-01"],
+          "variants": ["cost-23bp"]
+        },
+        "cells": [
+          {
+            "cell_uid": "cell-alpha-1",
+            "seed": "seed-01",
+            "fold": "fold-01",
+            "variant": "cost-23bp",
+            "state": "COMPLETED"
+          }
+        ],
+        "missing_cell_ids": [],
+        "summary": {
+          "total_cells": 1,
+          "completed": 1,
+          "failed": 0,
+          "pending": 0
+        },
+        "terminal": true
+      },
+      "artifacts": [
+        {
+          "artifact_id": "alpha-config",
+          "created_utc": "2026-07-15T00:00:00Z",
+          "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "byte_length": 2,
+          "filename": "alpha_config.json"
+        },
+        {
+          "artifact_id": "alpha-metrics",
+          "created_utc": "2026-07-15T00:00:20Z",
+          "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "byte_length": 8,
+          "filename": "alpha_metrics.json"
+        },
+        {
+          "artifact_id": "alpha-terminal",
+          "created_utc": "2026-07-15T00:01:00Z",
+          "sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "byte_length": 16,
+          "filename": "alpha_terminal.json"
+        }
+      ],
+      "locks": {
+        "promotion_allowed": false,
+        "model_build_allowed": false,
+        "paper_forward_allowed": false,
+        "live_broker_order_allowed": false,
+        "profitability_claim_allowed": false,
+        "go_summary_allowed": false
+      },
+      "created_utc": "2026-07-15T00:00:00Z",
+      "updated_utc": "2026-07-15T00:01:00Z"
+    },
+    "beta_r1": {
+      "schema_version": "kronos_rl_run_state.v2",
+      "run_uid": "run-beta",
+      "run_revision": 1,
+      "display": {
+        "name": "Beta fixture run",
+        "display_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "protocol": {
+        "protocol_id": "daily-sb3-v5-fixture",
+        "protocol_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "source": {
+        "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "data": {
+        "data_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "phase": "QUEUED",
+      "terminal": null,
+      "liveness": "UNKNOWN",
+      "attempts": [],
+      "cells": [],
+      "progress": {
+        "step": 0,
+        "total_steps": 10
+      },
+      "heartbeat": null,
+      "blockers": [],
+      "matrix": {
+        "dimensions": {
+          "seeds": ["seed-02"],
+          "folds": ["fold-01"],
+          "variants": ["cost-23bp"]
+        },
+        "cells": [],
+        "missing_cell_ids": [],
+        "summary": {
+          "total_cells": 0,
+          "completed": 0,
+          "failed": 0,
+          "pending": 0
+        },
+        "terminal": false
+      },
+      "artifacts": [],
+      "locks": {
+        "promotion_allowed": false,
+        "model_build_allowed": false,
+        "paper_forward_allowed": false,
+        "live_broker_order_allowed": false,
+        "profitability_claim_allowed": false,
+        "go_summary_allowed": false
+      },
+      "created_utc": "2026-07-15T00:02:00Z",
+      "updated_utc": "2026-07-15T00:02:00Z"
+    },
+    "gamma_r1": {
+      "schema_version": "kronos_rl_run_state.v2",
+      "run_uid": "run-gamma",
+      "run_revision": 1,
+      "display": {
+        "name": "Gamma fixture run",
+        "display_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "protocol": {
+        "protocol_id": "daily-sb3-v5-fixture",
+        "protocol_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "source": {
+        "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "data": {
+        "data_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "phase": "QUEUED",
+      "terminal": null,
+      "liveness": "UNKNOWN",
+      "attempts": [],
+      "cells": [],
+      "progress": {
+        "step": 0,
+        "total_steps": 10
+      },
+      "heartbeat": null,
+      "blockers": [],
+      "matrix": {
+        "dimensions": {
+          "seeds": ["seed-03"],
+          "folds": ["fold-01"],
+          "variants": ["cost-23bp"]
+        },
+        "cells": [],
+        "missing_cell_ids": [],
+        "summary": {
+          "total_cells": 0,
+          "completed": 0,
+          "failed": 0,
+          "pending": 0
+        },
+        "terminal": false
+      },
+      "artifacts": [],
+      "locks": {
+        "promotion_allowed": false,
+        "model_build_allowed": false,
+        "paper_forward_allowed": false,
+        "live_broker_order_allowed": false,
+        "profitability_claim_allowed": false,
+        "go_summary_allowed": false
+      },
+      "created_utc": "2026-07-15T00:03:00Z",
+      "updated_utc": "2026-07-15T00:03:00Z"
+    },
+    "delta_r1": {
+      "schema_version": "kronos_rl_run_state.v2",
+      "run_uid": "run-delta",
+      "run_revision": 1,
+      "display": {
+        "name": "Delta fixture run",
+        "display_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "protocol": {
+        "protocol_id": "daily-sb3-v5-fixture",
+        "protocol_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "source": {
+        "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "data": {
+        "data_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "phase": "QUEUED",
+      "terminal": null,
+      "liveness": "UNKNOWN",
+      "attempts": [],
+      "cells": [],
+      "progress": {
+        "step": 0,
+        "total_steps": 10
+      },
+      "heartbeat": null,
+      "blockers": [],
+      "matrix": {
+        "dimensions": {
+          "seeds": ["seed-04"],
+          "folds": ["fold-01"],
+          "variants": ["cost-23bp"]
+        },
+        "cells": [],
+        "missing_cell_ids": [],
+        "summary": {
+          "total_cells": 0,
+          "completed": 0,
+          "failed": 0,
+          "pending": 0
+        },
+        "terminal": false
+      },
+      "artifacts": [],
+      "locks": {
+        "promotion_allowed": false,
+        "model_build_allowed": false,
+        "paper_forward_allowed": false,
+        "live_broker_order_allowed": false,
+        "profitability_claim_allowed": false,
+        "go_summary_allowed": false
+      },
+      "created_utc": "2026-07-15T00:04:00Z",
+      "updated_utc": "2026-07-15T00:04:00Z"
+    }
+  }
+}

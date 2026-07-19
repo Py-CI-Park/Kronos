@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pickle
 import random
 import sys
@@ -64,11 +65,50 @@ def _to_prediction_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return out[["timestamps", "open", "high", "low", "close", "volume", "amount"]]
 
 
+_PICKLE_TRUST_ENV = "KRONOS_TRUST_PICKLE"
+
+
+def _assert_trusted_pickle(path: Path) -> Path:
+    """Guard pickle deserialization (arbitrary-code-execution risk).
+
+    ``pickle.load`` executes arbitrary code embedded in the file. This loader is
+    for TRUSTED, locally-generated STOM/Qlib dataset pickles ONLY — never point it
+    at a pickle of unknown provenance (downloaded, shared, or attacker-influenced).
+
+    Refuses symlinks and non-regular files, and refuses any path that resolves
+    OUTSIDE the project tree unless the operator explicitly confirms the unknown
+    provenance via ``KRONOS_TRUST_PICKLE=1``.
+    """
+    if path.is_symlink():
+        raise PermissionError(
+            f"Refusing to unpickle via a symlink (untrusted provenance): {path}"
+        )
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Pickle is not a regular file: {resolved}")
+    trusted_root = PROJECT_ROOT.resolve()
+    within_project = trusted_root == resolved or trusted_root in resolved.parents
+    if not within_project and os.environ.get(_PICKLE_TRUST_ENV, "").lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        raise PermissionError(
+            "Refusing to unpickle a file of unknown provenance outside the project "
+            f"tree: {resolved}. pickle executes arbitrary code; set "
+            f"{_PICKLE_TRUST_ENV}=1 only if you fully trust this file's source."
+        )
+    return resolved
+
+
 def load_pickle_dataset(dataset_path: Path, split: str = "test") -> Dict[str, pd.DataFrame]:
     path = dataset_path / f"{split}_data.pkl"
     if not path.exists():
         raise FileNotFoundError(f"Dataset split pickle not found: {path}")
+    path = _assert_trusted_pickle(path)
     with path.open("rb") as f:
+        # Trusted-local dataset only; provenance guarded by _assert_trusted_pickle.
         data = pickle.load(f)
     if not isinstance(data, dict):
         raise ValueError(f"Expected dict pickle at {path}")
@@ -364,11 +404,26 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--modes", default="kronos,persistence,random")
     parser.add_argument("--seed", type=int, default=100)
+    parser.add_argument(
+        "--sample-count",
+        type=int,
+        default=5,
+        help="Kronos decoding sample count (matches config.py inference_sample_count).",
+    )
+    parser.add_argument("--temperature", type=float, default=0.6, help="Kronos decoding temperature (T).")
+    parser.add_argument("--top-p", type=float, default=0.9, help="Kronos decoding nucleus sampling top_p.")
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
+    np.random.seed(args.seed)
+    try:
+        import torch
+
+        torch.manual_seed(args.seed)
+    except ImportError:
+        pass
     data = load_pickle_dataset(Path(args.dataset_path), split="test")
     windows = select_aligned_windows(
         data,
@@ -389,6 +444,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             device=args.device,
             predict_window=args.predict_window,
             batch_size=args.batch_size,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            sample_count=args.sample_count,
         )
         frames["kronos"] = rows_from_predictions(windows, kronos, mode="kronos")
     if "persistence" in modes:
@@ -404,6 +462,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result["tokenizer_path"] = args.tokenizer_path
     result["lookback_window"] = args.lookback_window
     result["predict_window"] = args.predict_window
+    result["sample_count"] = args.sample_count
+    result["temperature"] = args.temperature
+    result["top_p"] = args.top_p
+    result["seed"] = args.seed
     result["selected_windows"] = len(windows)
     result["asof_timestamps"] = sorted({window.history["timestamps"].iloc[-1].isoformat() for window in windows})
     comparison_path = Path(result["comparison_path"])

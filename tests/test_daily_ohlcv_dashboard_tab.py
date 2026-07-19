@@ -13,9 +13,10 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     guide = (SRC / 'tabs' / 'DailyRlGuideTab.svelte').read_text(encoding='utf-8')
     routes = (SRC / 'lib' / 'routes.ts').read_text(encoding='utf-8')
     status_shell = (SRC / 'tabs' / 'ResearchStatusShell.svelte').read_text(encoding='utf-8')
+    gate_ladder = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyGateLadder.svelte').read_text(encoding='utf-8')
 
     assert "DailyOhlcvTab" in app
-    assert "'/daily-ohlcv'" in app
+    assert "'/daily-ohlcv'" in routes
     assert "Trading Command Center" in sidebar
     assert "Daily OHLCV" in header
     assert "data-daily-ohlcv-tab" in tab
@@ -43,14 +44,21 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "/api/daily-ohlcv/charts/run-scatter" in api
     assert "/api/daily-ohlcv/charts/universe-breakdown" in api
     assert "/api/daily-ohlcv/charts/symbol/" in api
-    assert "'/daily-rl-guide'" in app
-    assert "'/daily-ohlcv/rl-guide'" in app
+    assert "/api/daily-ohlcv/close-slot/latest" in api
+    assert "/api/daily-ohlcv/close-slot/artifacts" in api
+    assert "/api/daily-ohlcv/close-slot/gate/latest" in api
+    assert "/api/daily-ohlcv/charts/close-slot-equity" in api
+    assert "/api/daily-ohlcv/charts/close-slot-selection" in api
+    assert "'/daily-rl-guide'" in routes
+    assert "'/daily-ohlcv/rl-guide'" in routes
     assert "DailyModelResultsCard" in tab
     assert "DailyVisualLabCard" in tab
+    assert "DailyCloseSlotCard" in tab
     assert "DailyScenarioLabCard" in tab
     assert "DailyScenarioRunLedgerCard" in tab
     assert "DailyRlGuideTab" in app
     assert "Trading Command Center" in sidebar
+    assert "Daily OHLCV" in sidebar
     assert "일봉 RL 설명서" in header
     assert "NO-GO/RESEARCH_ONLY" in tab
     assert "data-daily-api-error" in tab
@@ -64,10 +72,9 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "history.pushState" in routes
     assert "history.replaceState" in routes
     assert "popstate" in app
-    assert "navigateToTab(id)" in sidebar
-    assert "routeLabel(tab)" in header
-    assert "path: '/rl'" in routes
-    assert "aliases: ['/daily-ohlcv', '/daily', '/daily-rl-guide', '/daily-ohlcv/rl-guide', '/rl-lab', '/v2/rl-trading', '/v2/rl-lab']" in routes
+    assert "navigateToTab(routeId)" in sidebar
+    assert "routeLabelForShell(tab, shell)" in header
+    assert "id: 'rl'" in routes  # A consolidation: rl is a query-tab route (path '/'), no longer '/rl'
     assert "'daily-rl-guide'" in routes
     assert "ResearchStatusShell" in tab
     assert "ResearchStatusShell" in guide
@@ -88,15 +95,50 @@ def test_daily_ohlcv_tab_and_navigation_markers_present():
     assert "data-daily-rl-replay-controls" in guide
     assert "replayPaused = $state(true)" in guide
     assert "prefers-reduced-motion" in guide
-    assert "data-daily-ohlcv-command-cockpit" in tab
-    assert "data-daily-ohlcv-d0-d9-cockpit" in tab
-    assert "dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']" in tab
+    # Consolidation G1: the D0-D9 command cockpit is now DailyGateLadder — the gate
+    # ladder replaces the redundant duplicate D0-D9 card grid (relocation, not
+    # weakening: same literals, new owner — DailyGateLadder is the real cockpit).
+    assert "data-daily-ohlcv-command-cockpit" in gate_ladder
+    assert "data-daily-ohlcv-d0-d9-cockpit" in gate_ladder
+    assert "dailyCockpitStages = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']" in gate_ladder
     assert "API_UNAVAILABLE" in tab
     assert "NOT_STARTED" in tab
     assert "000250 string preserved" in tab
     assert "NO-GO / model_build_allowed=false" in tab
     assert "live/model/paper/profit" in tab
 
+
+def test_daily_critical_cards_fail_closed_on_refresh_and_auxiliary_timeouts():
+    tab = (SRC / 'tabs' / 'DailyOhlcvTab.svelte').read_text(encoding='utf-8')
+    agent_screen = (SRC / 'tabs' / 'dailyOhlcv' / 'CloseSlotAgentScreen.svelte').read_text(encoding='utf-8')
+
+    assert "if (result === 'TIMEOUT')" in tab
+    assert "progress = null;" in tab
+    assert "data-daily-progress-card-error" in tab
+    assert "primaryFailures" in tab
+    assert "close-slot primary request unavailable" in tab
+    assert "auxiliaryFailures" in tab
+    assert "close-slot auxiliary request unavailable" in tab
+    assert "data-daily-close-slot-card-error" in tab
+    assert "selection?.latest_selection ?? latest?.latest_selection ?? null" in agent_screen
+    assert "latest_selection 없음 · PRIMARY OOS 결과 미확인 (fail-closed)." in agent_screen
+    assert "latest?.artifact_selection_errors" in agent_screen
+    assert "gate?.artifact_selection_errors" in agent_screen
+    assert "selection?.artifact_selection_errors" in agent_screen
+
+
+def test_daily_secondary_cards_use_abortable_independent_state_and_retry():
+    tab = (SRC / 'tabs' / 'DailyOhlcvTab.svelte').read_text(encoding='utf-8')
+    api = (SRC / 'lib' / 'dailyOhlcvApi.ts').read_text(encoding='utf-8')
+    manager = (SRC / 'lib' / 'cardRequest.ts').read_text(encoding='utf-8')
+
+    assert "createCardRequestManager(CARD_TIMEOUT_MS)" in tab
+    assert "secondaryCardStates" in tab
+    assert "data-daily-card-error={endpoint}" in tab
+    assert "retrySecondaryCard(endpoint)" in tab
+    assert "AbortSignal" in api
+    assert "new AbortController()" in manager
+    assert "controllers.get(key)?.abort()" in manager
 
 def test_daily_ohlcv_cards_expose_guardrail_markers():
     progress = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyProgressTimeline.svelte').read_text(encoding='utf-8')
@@ -109,6 +151,7 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     visual_card = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyVisualLabCard.svelte').read_text(encoding='utf-8')
     scenario_card = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyScenarioLabCard.svelte').read_text(encoding='utf-8')
     scenario_run_card = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyScenarioRunLedgerCard.svelte').read_text(encoding='utf-8')
+    close_slot_card = (SRC / 'tabs' / 'dailyOhlcv' / 'DailyCloseSlotCard.svelte').read_text(encoding='utf-8')
     progress_without_comments = progress.replace("<!-- Status vocabulary marker: NOT_STARTED RUNNING PASS WATCH RESEARCH_ONLY NO-GO BLOCKED -->", "")
 
     assert "data-daily-ohlcv-progress" in progress
@@ -253,6 +296,82 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "purge/embargo" in model_card
     assert "0/23/46bp sensitivity" in model_card
     assert "data-daily-scenario-lab-card" in scenario_card
+    assert "data-daily-close-slot-card" in close_slot_card
+    assert "data-daily-close-slot-contract" in close_slot_card
+    assert "data-daily-close-slot-locks" in close_slot_card
+    assert "data-daily-close-slot-lineage" in close_slot_card
+    assert "data-daily-close-slot-labels" in close_slot_card
+    assert "data-daily-close-slot-policy-scores" in close_slot_card
+    assert "data-daily-close-slot-selection" in close_slot_card
+    assert "data-daily-close-slot-equity" in close_slot_card
+    assert "data-daily-close-slot-artifacts" in close_slot_card
+    assert "data-daily-close-slot-v2-evidence" in close_slot_card
+    assert "data-daily-close-slot-threshold-contract" in close_slot_card
+    assert "data-daily-close-slot-cost-components" in close_slot_card
+    assert "data-daily-close-slot-replay-walk-forward" in close_slot_card
+    assert "data-daily-close-slot-source-scope" in close_slot_card
+    assert "data-daily-close-slot-db-access" in close_slot_card
+    assert "bounded_latest_evidence_not_full_universe_or_decision_grade" in close_slot_card
+    assert "stom_rl.daily_ohlcv_db.connect_readonly" in close_slot_card
+    assert "data-daily-close-slot-selected-hold" in close_slot_card
+    assert "data-daily-close-slot-no-claims" in close_slot_card
+    assert "threshold_selected_0_to_10" in close_slot_card
+    assert "hold_cash_action" in close_slot_card
+    assert "zero_control_0bp" in close_slot_card
+    assert "base_23bp" in close_slot_card
+    assert "stress_46bp" in close_slot_card
+    assert "sell_tax_bp" in close_slot_card
+    assert "buy_commission_bp" in close_slot_card
+    assert "sell_slippage_bp" in close_slot_card
+    assert "sell_commission_bp" in close_slot_card
+    assert "buy_slippage_bp" in close_slot_card
+    assert "total_bp" in close_slot_card
+    assert "train-only replay / frozen validation-test" in close_slot_card
+    assert "held_out_feedback_used_for_fit_count" in close_slot_card
+    assert "window_count" in close_slot_card
+    assert "threshold_grid_count" in close_slot_card
+    assert "episode_count" in close_slot_card
+    assert "split_counts" in close_slot_card
+    assert "selected / hold-cash counts" in close_slot_card
+    assert "selected_count" in close_slot_card
+    assert "hold_cash_count" in close_slot_card
+    assert "NO_LIVE_BROKER_ORDER_ACCOUNT_SURFACE" in close_slot_card
+    assert "NO_MODEL_BUILD_GO" in close_slot_card
+    assert "NO_PAPER_FORWARD_EXECUTION" in close_slot_card
+    assert "NO_PROFITABILITY_CLAIM" in close_slot_card
+    assert "000250" in close_slot_card
+    assert "never coerce to int" in close_slot_card
+    assert "RESEARCH_ONLY" in close_slot_card
+    assert "EXPERIMENTAL_ONLY" in close_slot_card
+    assert "NO-GO_RESEARCH_ONLY/WATCH_RESEARCH_ONLY" in close_slot_card
+    assert "close_to_next_close_research_label" in close_slot_card
+    assert "non_executable upper bound" in close_slot_card
+    assert "price_basis unknown" in close_slot_card
+    assert "universe WATCH" in close_slot_card
+    assert "23bp round trip cost" in close_slot_card
+    assert "D3 re-ledgered when applicable" in close_slot_card
+    assert "no live/broker/account/order/paper-forward/profitability/model-build/GO claim" in close_slot_card
+    assert "promotion_allowed" in close_slot_card
+    assert "model_build_allowed" in close_slot_card
+    assert "paper_forward_allowed" in close_slot_card
+    assert "live_broker_order_allowed" in close_slot_card
+    assert "profitability_claim_allowed" in close_slot_card
+    assert "go_summary_allowed" in close_slot_card
+    assert "DailyCloseSlotLatestResponse" in api
+    assert "closeSlotLatest" in api
+    assert "closeSlotGate" in api
+    assert "closeSlotEquity" in api
+    assert "closeSlotSelection" in api
+    assert "DailyCloseSlotCostScenario" in api
+    assert "DailyCloseSlotThresholdSelection" in api
+    assert "DailyCloseSlotSelectedHoldSummary" in api
+    assert "DailyCloseSlotPolicyScoreRow" in api
+    assert "DailyCloseSlotSelectionRow" in api
+    assert "DailyCloseSlotSamples" in api
+    assert "threshold_selection" in api
+    assert "selected_hold_summary" in api
+    assert "walk_forward_summary" in api
+    assert "replay_summary" in api
     assert "SCENARIO_GENERATOR_MVP" in scenario_card
     assert "model_run_generation_available" in scenario_card
     assert "data-daily-scenario-grid" in scenario_card
@@ -271,7 +390,8 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "model_run_generation_available" in scenario_run_card
     assert "no live/broker/orders" in scenario_run_card
     assert "data-daily-rl-guide-tab" in guide
-    assert "RL_ENV_VISUAL_GUIDE_MVP" in guide
+    assert "RESEARCH_ONLY_GUIDE" in guide
+    assert "RL_ENV_VISUAL_GUIDE_MVP" not in guide
     assert "data-daily-rl-env-visual-map" in guide
     assert "data-daily-rl-loop-diagram" in guide
     assert "data-daily-rl-process-storyboard" in guide
@@ -297,7 +417,9 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "data-daily-rl-workflow-picker" in guide
     assert "data-daily-rl-workflow-inspector" in guide
     assert "data-daily-rl-workflow-safe-config-preview" in guide
-    assert "APPROVAL_GATED_INTENT_RECORD_ONLY" in guide
+    assert "READ_ONLY_WORKFLOW_CATALOG" in guide
+    assert "UNAVAILABLE_FROM_READ_ONLY_DASHBOARD" in guide
+    assert "APPROVAL_GATED_INTENT_RECORD_ONLY" not in guide
     assert "data-daily-rl-approval-trigger-surface" in guide
     assert "data-daily-rl-intent-ledger" in guide
     assert "researchJobIntents" in api
@@ -344,7 +466,9 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "position_count" in guide
     assert "top_score_bucket" in guide
     assert "hold · buy · add · sell · reduce" in guide
-    assert "future_return_1d" in guide
+    assert "future_return_h1_1520_proxy" in guide
+    assert "future_return_h3_1520_proxy" in guide
+    assert "future_return_h5_1520_proxy" in guide
     assert "no live/broker/orders" in guide
     assert "data-daily-visual-lab-card" in visual_card
     assert "data-daily-d6-d7-usage-guide" in visual_card
@@ -360,7 +484,10 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "D7_REGIME_DIAGNOSTICS" in visual_card
     assert "D7_CORRELATION_RISK" in visual_card
     assert "D7_FAILURE_ANALYSIS" in visual_card
-    assert "PLACEHOLDER_READY" in visual_card
+    assert "PLACEHOLDER_READY" not in visual_card
+    assert "MISSING_ARTIFACT" in visual_card
+    assert "NOT_STARTED" in visual_card
+    assert "BLOCKED" in visual_card
     assert "D7_FALLBACK_DIAGNOSTICS" in visual_card
     assert "feature_importance_by_fold.csv" in visual_card
     assert "failure_reason_attribution.csv" in visual_card
@@ -370,7 +497,7 @@ def test_daily_ohlcv_cards_expose_guardrail_markers():
     assert "current_gap" in visual_card
     assert "feature별 fold 기여도와 drift" in visual_card
     assert "실패 fold를 숨기거나 성공 fold만 골라" in visual_card
-    assert "correlation_cluster_summary.csv가 생성되기 전까지 PLACEHOLDER_READY" in visual_card
+    assert "correlation_cluster_summary.csv has not been attached" in visual_card
     assert "mergeD7DiagnosticCard" in visual_card
     assert "allowed_use: card.allowed_use || fallback.allowed_use" in visual_card
     assert "blocked_use: card.blocked_use || fallback.blocked_use" in visual_card

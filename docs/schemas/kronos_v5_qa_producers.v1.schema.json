@@ -1,0 +1,687 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_v5_qa_producers.v1.schema.json",
+  "title": "Kronos V5 deterministic QA producer contracts",
+  "description": "Closed producer wire contracts. Semantic validation additionally checks JCS bytes, ordered arrays, hashes, PNG structure, and referenced artifact bytes.",
+  "oneOf": [
+    {"$ref": "#/$defs/fixtureDescriptor"},
+    {"$ref": "#/$defs/screenshotArtifact"},
+    {"$ref": "#/$defs/transcriptArtifact"},
+    {"$ref": "#/$defs/captureArtifact"},
+    {"$ref": "#/$defs/performanceResult"},
+    {"$ref": "#/$defs/securityResult"},
+    {"$ref": "#/$defs/bundleManifest"},
+    {"$ref": "#/$defs/sourceManifest"},
+    {"$ref": "#/$defs/distManifest"},
+    {"$ref": "#/$defs/machineTaskScore"},
+    {"$ref": "#/$defs/baselineReceipt"}
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "scenarioId": {
+      "type": "string",
+      "pattern": "^S-(?:BASE-(?:mission-control|forecast|stom|daily-ohlcv|daily-rl-guide|rl|live-training|system-health|artifacts|history|settings|docs)-(?:light|dark)-(?:375|768|1280)|LIFE-(?:ADVANCING|STALLED|RESUMED|RESTARTED_NON_EXACT|STOPPED|FAILED|COMPLETED|CONFLICT_BLOCKED|NOT_RUN)-(?:light|dark)|GOV-(?:D0_BLOCKED|D1_BLOCKED|FRESH_OOS_SEALED|FRESH_OOS_NOT_AVAILABLE|MISSING_CELL)-(?:light|dark)|ASYNC-(?:ISOLATED_TIMEOUT_RETRY|LATE_LIST_DETAIL_RACE|ALLOWED_DOWNLOAD|DENIED_DOWNLOAD)-(?:light|dark)|KBD-(?:mission-control|rl|daily-ohlcv|live-training))$"
+    },
+    "uri": {
+      "type": "string",
+      "pattern": "^(?:agent://[^/\\s]+(?:/[^\\s]+)*|kronos-run://[A-Za-z0-9_-]{43}/[^/\\\\\\u0000]+(?:/[^/\\\\\\u0000]+)*)$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000]+$"
+    },
+    "uriRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "sha256", "byte_length", "schema"],
+      "properties": {
+        "uri": {"$ref": "#/$defs/uri"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "schema": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    },
+    "relativeObjectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "byte_length", "media_type"],
+      "properties": {
+        "relative_path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "media_type": {"type": "string", "minLength": 1, "maxLength": 128},
+        "schema_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "captured_at": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "evidenceRef": {
+      "oneOf": [
+        {"$ref": "#/$defs/uriRef"},
+        {"$ref": "#/$defs/relativeObjectRef"}
+      ]
+    },
+    "captureKind": {
+      "const": "synthetic_fixture_evidence"
+    },
+    "liveBrowserExecution": {
+      "const": false
+    },
+    "operatorIndex": {
+      "enum": ["A", "B"]
+    },
+    "taskId": {
+      "enum": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10"]
+    },
+    "utcSecond": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "failureCode": {
+      "enum": ["TIMEOUT", "WRONG_RUN", "SOURCE_INSPECTION", "PRODUCER_HELP", "ACTION_LIMIT", "MISSING_TRACE", "INVALID_ASSIGNMENT", "RELOAD_NOT_REQUESTED", "OBJECTIVE_MISMATCH"]
+    },
+    "taskTraceFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "detail"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "detail": {"type": "string", "minLength": 1}
+      }
+    },
+    "taskTraceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "capture_kind", "live_browser_execution", "operator_index", "task_id", "started_at", "completed_at", "actions", "submitted_facts", "objective_valid", "failure_codes"],
+      "properties": {
+        "schema": {"const": "kronos_task_trace.v2"},
+        "capture_kind": {"$ref": "#/$defs/captureKind"},
+        "live_browser_execution": {"$ref": "#/$defs/liveBrowserExecution"},
+        "operator_index": {"$ref": "#/$defs/operatorIndex"},
+        "task_id": {"$ref": "#/$defs/taskId"},
+        "started_at": {"$ref": "#/$defs/utcSecond"},
+        "completed_at": {"$ref": "#/$defs/utcSecond"},
+        "actions": {"type": "array", "items": {"type": "string"}},
+        "submitted_facts": {"type": "array", "items": {"$ref": "#/$defs/taskTraceFact"}},
+        "objective_valid": {"type": "boolean"},
+        "failure_codes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/failureCode"}}
+      }
+    },
+    "falseLocks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promotion_allowed", "model_build_allowed", "paper_forward_allowed", "live_broker_order_allowed", "profitability_claim_allowed", "go_summary_allowed"],
+      "properties": {
+        "promotion_allowed": {"const": false},
+        "model_build_allowed": {"const": false},
+        "paper_forward_allowed": {"const": false},
+        "live_broker_order_allowed": {"const": false},
+        "profitability_claim_allowed": {"const": false},
+        "go_summary_allowed": {"const": false}
+      }
+    },
+    "fixtureDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "nonce", "pid", "host", "port", "source_sha256", "fixture_sha256", "registry_root", "artifact_root", "job_intent_root", "readiness_path", "readiness_timestamp_utc", "cleanup_status"],
+      "properties": {
+        "schema": {"const": "kronos_fixture.v2"},
+        "nonce": {"$ref": "#/$defs/sha256"},
+        "pid": {"type": "integer", "minimum": 1},
+        "host": {"const": "127.0.0.1"},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "fixture_sha256": {"$ref": "#/$defs/sha256"},
+        "registry_root": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "artifact_root": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "job_intent_root": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "readiness_path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "readiness_timestamp_utc": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"},
+        "cleanup_status": {"enum": ["RUNNING", "GRACEFUL", "FORCED"]}
+      }
+    },
+    "screenshotArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "scenario_id", "sequence", "png_ref", "width", "height", "non_uniform", "sha256"],
+      "properties": {
+        "schema": {"const": "kronos_qa_screenshot.v1"},
+        "scenario_id": {"$ref": "#/$defs/scenarioId"},
+        "sequence": {"type": "integer", "minimum": 1},
+        "png_ref": {"$ref": "#/$defs/evidenceRef"},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "non_uniform": {"const": true},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "transcriptArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "scenario_id", "sequence", "transcript_ref", "sha256"],
+      "properties": {
+        "schema": {"const": "kronos_qa_transcript.v1"},
+        "scenario_id": {"$ref": "#/$defs/scenarioId"},
+        "sequence": {"type": "integer", "minimum": 1},
+        "transcript_ref": {"$ref": "#/$defs/evidenceRef"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "emptyErrorList": {
+      "type": "array",
+      "maxItems": 0,
+      "items": {"type": "string"}
+    },
+    "scenarioEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "status", "screenshot_ref", "screenshot", "transcript_ref", "console_errors", "page_errors", "network_errors", "overflow", "focus", "keyboard", "a11y", "chart_table_semantics"],
+      "properties": {
+        "scenario_id": {"$ref": "#/$defs/scenarioId"},
+        "status": {"const": "passed"},
+        "screenshot_ref": {"$ref": "#/$defs/relativeObjectRef"},
+        "screenshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": {"type": "integer", "minimum": 1},
+            "height": {"type": "integer", "minimum": 1}
+          }
+        },
+        "transcript_ref": {"$ref": "#/$defs/relativeObjectRef"},
+        "console_errors": {"$ref": "#/$defs/emptyErrorList"},
+        "page_errors": {"$ref": "#/$defs/emptyErrorList"},
+        "network_errors": {"$ref": "#/$defs/emptyErrorList"},
+        "overflow": {"const": false},
+        "focus": {"const": "passed"},
+        "keyboard": {"const": "passed"},
+        "a11y": {"const": "passed"},
+        "chart_table_semantics": {"const": "passed"}
+      }
+    },
+    "frozenScenarioIds": {
+      "type": "array",
+      "minItems": 112,
+      "maxItems": 112,
+      "uniqueItems": true,
+      "prefixItems": [
+        {"const": "S-BASE-mission-control-light-375"},
+        {"const": "S-BASE-mission-control-light-768"},
+        {"const": "S-BASE-mission-control-light-1280"},
+        {"const": "S-BASE-mission-control-dark-375"},
+        {"const": "S-BASE-mission-control-dark-768"},
+        {"const": "S-BASE-mission-control-dark-1280"},
+        {"const": "S-BASE-forecast-light-375"},
+        {"const": "S-BASE-forecast-light-768"},
+        {"const": "S-BASE-forecast-light-1280"},
+        {"const": "S-BASE-forecast-dark-375"},
+        {"const": "S-BASE-forecast-dark-768"},
+        {"const": "S-BASE-forecast-dark-1280"},
+        {"const": "S-BASE-stom-light-375"},
+        {"const": "S-BASE-stom-light-768"},
+        {"const": "S-BASE-stom-light-1280"},
+        {"const": "S-BASE-stom-dark-375"},
+        {"const": "S-BASE-stom-dark-768"},
+        {"const": "S-BASE-stom-dark-1280"},
+        {"const": "S-BASE-daily-ohlcv-light-375"},
+        {"const": "S-BASE-daily-ohlcv-light-768"},
+        {"const": "S-BASE-daily-ohlcv-light-1280"},
+        {"const": "S-BASE-daily-ohlcv-dark-375"},
+        {"const": "S-BASE-daily-ohlcv-dark-768"},
+        {"const": "S-BASE-daily-ohlcv-dark-1280"},
+        {"const": "S-BASE-daily-rl-guide-light-375"},
+        {"const": "S-BASE-daily-rl-guide-light-768"},
+        {"const": "S-BASE-daily-rl-guide-light-1280"},
+        {"const": "S-BASE-daily-rl-guide-dark-375"},
+        {"const": "S-BASE-daily-rl-guide-dark-768"},
+        {"const": "S-BASE-daily-rl-guide-dark-1280"},
+        {"const": "S-BASE-rl-light-375"},
+        {"const": "S-BASE-rl-light-768"},
+        {"const": "S-BASE-rl-light-1280"},
+        {"const": "S-BASE-rl-dark-375"},
+        {"const": "S-BASE-rl-dark-768"},
+        {"const": "S-BASE-rl-dark-1280"},
+        {"const": "S-BASE-live-training-light-375"},
+        {"const": "S-BASE-live-training-light-768"},
+        {"const": "S-BASE-live-training-light-1280"},
+        {"const": "S-BASE-live-training-dark-375"},
+        {"const": "S-BASE-live-training-dark-768"},
+        {"const": "S-BASE-live-training-dark-1280"},
+        {"const": "S-BASE-system-health-light-375"},
+        {"const": "S-BASE-system-health-light-768"},
+        {"const": "S-BASE-system-health-light-1280"},
+        {"const": "S-BASE-system-health-dark-375"},
+        {"const": "S-BASE-system-health-dark-768"},
+        {"const": "S-BASE-system-health-dark-1280"},
+        {"const": "S-BASE-artifacts-light-375"},
+        {"const": "S-BASE-artifacts-light-768"},
+        {"const": "S-BASE-artifacts-light-1280"},
+        {"const": "S-BASE-artifacts-dark-375"},
+        {"const": "S-BASE-artifacts-dark-768"},
+        {"const": "S-BASE-artifacts-dark-1280"},
+        {"const": "S-BASE-history-light-375"},
+        {"const": "S-BASE-history-light-768"},
+        {"const": "S-BASE-history-light-1280"},
+        {"const": "S-BASE-history-dark-375"},
+        {"const": "S-BASE-history-dark-768"},
+        {"const": "S-BASE-history-dark-1280"},
+        {"const": "S-BASE-settings-light-375"},
+        {"const": "S-BASE-settings-light-768"},
+        {"const": "S-BASE-settings-light-1280"},
+        {"const": "S-BASE-settings-dark-375"},
+        {"const": "S-BASE-settings-dark-768"},
+        {"const": "S-BASE-settings-dark-1280"},
+        {"const": "S-BASE-docs-light-375"},
+        {"const": "S-BASE-docs-light-768"},
+        {"const": "S-BASE-docs-light-1280"},
+        {"const": "S-BASE-docs-dark-375"},
+        {"const": "S-BASE-docs-dark-768"},
+        {"const": "S-BASE-docs-dark-1280"},
+        {"const": "S-LIFE-ADVANCING-light"},
+        {"const": "S-LIFE-ADVANCING-dark"},
+        {"const": "S-LIFE-STALLED-light"},
+        {"const": "S-LIFE-STALLED-dark"},
+        {"const": "S-LIFE-RESUMED-light"},
+        {"const": "S-LIFE-RESUMED-dark"},
+        {"const": "S-LIFE-RESTARTED_NON_EXACT-light"},
+        {"const": "S-LIFE-RESTARTED_NON_EXACT-dark"},
+        {"const": "S-LIFE-STOPPED-light"},
+        {"const": "S-LIFE-STOPPED-dark"},
+        {"const": "S-LIFE-FAILED-light"},
+        {"const": "S-LIFE-FAILED-dark"},
+        {"const": "S-LIFE-COMPLETED-light"},
+        {"const": "S-LIFE-COMPLETED-dark"},
+        {"const": "S-LIFE-CONFLICT_BLOCKED-light"},
+        {"const": "S-LIFE-CONFLICT_BLOCKED-dark"},
+        {"const": "S-LIFE-NOT_RUN-light"},
+        {"const": "S-LIFE-NOT_RUN-dark"},
+        {"const": "S-GOV-D0_BLOCKED-light"},
+        {"const": "S-GOV-D0_BLOCKED-dark"},
+        {"const": "S-GOV-D1_BLOCKED-light"},
+        {"const": "S-GOV-D1_BLOCKED-dark"},
+        {"const": "S-GOV-FRESH_OOS_SEALED-light"},
+        {"const": "S-GOV-FRESH_OOS_SEALED-dark"},
+        {"const": "S-GOV-FRESH_OOS_NOT_AVAILABLE-light"},
+        {"const": "S-GOV-FRESH_OOS_NOT_AVAILABLE-dark"},
+        {"const": "S-GOV-MISSING_CELL-light"},
+        {"const": "S-GOV-MISSING_CELL-dark"},
+        {"const": "S-ASYNC-ISOLATED_TIMEOUT_RETRY-light"},
+        {"const": "S-ASYNC-ISOLATED_TIMEOUT_RETRY-dark"},
+        {"const": "S-ASYNC-LATE_LIST_DETAIL_RACE-light"},
+        {"const": "S-ASYNC-LATE_LIST_DETAIL_RACE-dark"},
+        {"const": "S-ASYNC-ALLOWED_DOWNLOAD-light"},
+        {"const": "S-ASYNC-ALLOWED_DOWNLOAD-dark"},
+        {"const": "S-ASYNC-DENIED_DOWNLOAD-light"},
+        {"const": "S-ASYNC-DENIED_DOWNLOAD-dark"},
+        {"const": "S-KBD-mission-control"},
+        {"const": "S-KBD-rl"},
+        {"const": "S-KBD-daily-ohlcv"},
+        {"const": "S-KBD-live-training"}
+      ],
+      "items": false
+    },
+    "frozenScenarioEvidenceRows": {
+      "type": "array",
+      "minItems": 112,
+      "maxItems": 112,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-mission-control-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-mission-control-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-mission-control-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-mission-control-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-mission-control-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-mission-control-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-forecast-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-forecast-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-forecast-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-forecast-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-forecast-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-forecast-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-stom-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-stom-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-stom-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-stom-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-stom-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-stom-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-ohlcv-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-ohlcv-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-ohlcv-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-ohlcv-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-ohlcv-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-ohlcv-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-rl-guide-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-rl-guide-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-rl-guide-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-rl-guide-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-rl-guide-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-daily-rl-guide-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-rl-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-rl-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-rl-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-rl-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-rl-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-rl-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-live-training-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-live-training-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-live-training-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-live-training-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-live-training-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-live-training-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-system-health-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-system-health-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-system-health-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-system-health-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-system-health-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-system-health-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-artifacts-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-artifacts-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-artifacts-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-artifacts-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-artifacts-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-artifacts-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-history-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-history-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-history-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-history-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-history-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-history-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-settings-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-settings-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-settings-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-settings-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-settings-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-settings-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-docs-light-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-docs-light-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-docs-light-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-docs-dark-375"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-docs-dark-768"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-BASE-docs-dark-1280"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-ADVANCING-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-ADVANCING-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-STALLED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-STALLED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-RESUMED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-RESUMED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-RESTARTED_NON_EXACT-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-RESTARTED_NON_EXACT-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-STOPPED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-STOPPED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-FAILED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-FAILED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-COMPLETED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-COMPLETED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-CONFLICT_BLOCKED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-CONFLICT_BLOCKED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-NOT_RUN-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-LIFE-NOT_RUN-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-D0_BLOCKED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-D0_BLOCKED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-D1_BLOCKED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-D1_BLOCKED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-FRESH_OOS_SEALED-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-FRESH_OOS_SEALED-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-FRESH_OOS_NOT_AVAILABLE-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-FRESH_OOS_NOT_AVAILABLE-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-MISSING_CELL-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-GOV-MISSING_CELL-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-ASYNC-ISOLATED_TIMEOUT_RETRY-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-ASYNC-ISOLATED_TIMEOUT_RETRY-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-ASYNC-LATE_LIST_DETAIL_RACE-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-ASYNC-LATE_LIST_DETAIL_RACE-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-ASYNC-ALLOWED_DOWNLOAD-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-ASYNC-ALLOWED_DOWNLOAD-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-ASYNC-DENIED_DOWNLOAD-light"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-ASYNC-DENIED_DOWNLOAD-dark"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-KBD-mission-control"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-KBD-rl"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-KBD-daily-ohlcv"}}}]},
+        {"allOf": [{"$ref": "#/$defs/scenarioEvidence"}, {"properties": {"scenario_id": {"const": "S-KBD-live-training"}}}]}
+      ],
+      "items": false
+    },
+    "captureArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "capture_kind", "live_browser_execution", "nonce", "browser_pid", "fixture_ref", "source_ref", "scenario_ids", "scenario_count", "scenarios", "false_locks", "capture_sha256"],
+      "properties": {
+        "schema": {"const": "kronos_v5_browser_capture.v1"},
+        "capture_kind": {"const": "synthetic_fixture_evidence"},
+        "live_browser_execution": {"const": false},
+        "nonce": {"$ref": "#/$defs/sha256"},
+        "browser_pid": {"type": "integer", "minimum": 1},
+        "fixture_ref": {"$ref": "#/$defs/relativeObjectRef"},
+        "source_ref": {"$ref": "#/$defs/relativeObjectRef"},
+        "scenario_ids": {"$ref": "#/$defs/frozenScenarioIds"},
+        "scenario_count": {"const": 112},
+        "scenarios": {"$ref": "#/$defs/frozenScenarioEvidenceRows"},
+        "false_locks": {"$ref": "#/$defs/falseLocks"},
+        "capture_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "sampleContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cold_contexts", "warm_samples_after_discarded_warmup", "endpoint_calls_after_discarded_warmup", "percentile"],
+      "properties": {
+        "cold_contexts": {"const": 5},
+        "warm_samples_after_discarded_warmup": {"const": 10},
+        "endpoint_calls_after_discarded_warmup": {"const": 10},
+        "percentile": {"const": "nearest-rank-p95"}
+      }
+    },
+    "budgetsMs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_critical_cold_ms", "first_critical_warm_ms", "full_hydration_cold_ms", "full_hydration_warm_ms", "api_cold_ms", "api_warm_ms", "isolated_timeout_ms", "palette_ms", "filter_1000_ms"],
+      "properties": {
+        "first_critical_cold_ms": {"const": 3000},
+        "first_critical_warm_ms": {"const": 1500},
+        "full_hydration_cold_ms": {"const": 10000},
+        "full_hydration_warm_ms": {"const": 6000},
+        "api_cold_ms": {"const": 5000},
+        "api_warm_ms": {"const": 2000},
+        "isolated_timeout_ms": {"const": 20500},
+        "palette_ms": {"const": 100},
+        "filter_1000_ms": {"const": 150}
+      }
+    },
+    "p95Ms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_critical_cold_ms", "first_critical_warm_ms", "full_hydration_cold_ms", "full_hydration_warm_ms", "api_cold_ms", "api_warm_ms", "isolated_timeout_ms", "palette_ms", "filter_1000_ms"],
+      "properties": {
+        "first_critical_cold_ms": {"type": "integer", "minimum": 0, "maximum": 3000},
+        "first_critical_warm_ms": {"type": "integer", "minimum": 0, "maximum": 1500},
+        "full_hydration_cold_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "full_hydration_warm_ms": {"type": "integer", "minimum": 0, "maximum": 6000},
+        "api_cold_ms": {"type": "integer", "minimum": 0, "maximum": 5000},
+        "api_warm_ms": {"type": "integer", "minimum": 0, "maximum": 2000},
+        "isolated_timeout_ms": {"type": "integer", "minimum": 0, "maximum": 20500},
+        "palette_ms": {"type": "integer", "minimum": 0, "maximum": 100},
+        "filter_1000_ms": {"type": "integer", "minimum": 0, "maximum": 150}
+      }
+    },
+    "performanceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "capture_kind", "live_browser_execution", "nonce", "fixture_sha256", "source_sha256", "measurement_sha256", "sample_contract", "budgets_ms", "p95_ms", "retry_visible", "status", "result_sha256"],
+      "properties": {
+        "schema": {"const": "kronos_v5_performance_result.v1"},
+        "capture_kind": {"const": "synthetic_fixture_evidence"},
+        "live_browser_execution": {"const": false},
+        "nonce": {"$ref": "#/$defs/sha256"},
+        "fixture_sha256": {"$ref": "#/$defs/sha256"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "measurement_sha256": {"$ref": "#/$defs/sha256"},
+        "sample_contract": {"$ref": "#/$defs/sampleContract"},
+        "budgets_ms": {"$ref": "#/$defs/budgetsMs"},
+        "p95_ms": {"$ref": "#/$defs/p95Ms"},
+        "retry_visible": {"const": true},
+        "status": {"const": "passed"},
+        "result_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "securityResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "capture_kind", "live_browser_execution", "nonce", "fixture_ref", "source_ref", "probe_sha256", "allowed_downloads", "denied_downloads", "denied_probe_kinds", "v5_mutation_methods_rejected", "status", "false_locks", "result_sha256"],
+      "properties": {
+        "schema": {"const": "kronos_v5_security_result.v1"},
+        "capture_kind": {"const": "synthetic_fixture_evidence"},
+        "live_browser_execution": {"const": false},
+        "nonce": {"$ref": "#/$defs/sha256"},
+        "fixture_ref": {"$ref": "#/$defs/relativeObjectRef"},
+        "source_ref": {"$ref": "#/$defs/relativeObjectRef"},
+        "probe_sha256": {"$ref": "#/$defs/sha256"},
+        "allowed_downloads": {"type": "integer", "minimum": 1},
+        "denied_downloads": {"type": "integer", "minimum": 1},
+        "denied_probe_kinds": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {"enum": ["oos", "reparse", "traversal"]}
+        },
+        "v5_mutation_methods_rejected": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {"enum": ["DELETE", "PATCH", "POST", "PUT"]}
+        },
+        "status": {"const": "passed"},
+        "false_locks": {"$ref": "#/$defs/falseLocks"},
+        "result_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "manifestFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "byte_length", "gzip9_byte_length", "browser_transfer_byte_length"],
+      "properties": {
+        "path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "gzip9_byte_length": {"type": "integer", "minimum": 0},
+        "browser_transfer_byte_length": {"type": "integer", "minimum": 0}
+      }
+    },
+    "bundleManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "entries", "manifest_sha256", "raw_byte_length", "gzip9_byte_length", "browser_transfer_byte_length"],
+      "properties": {
+        "schema": {"const": "kronos_bundle_manifest.v1"},
+        "entries": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/manifestFile"}},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "raw_byte_length": {"type": "integer", "minimum": 0},
+        "gzip9_byte_length": {"type": "integer", "minimum": 0},
+        "browser_transfer_byte_length": {"type": "integer", "minimum": 0}
+      }
+    },
+    "sourceManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "entries", "manifest_sha256", "raw_byte_length", "gzip9_byte_length", "browser_transfer_byte_length"],
+      "properties": {
+        "schema": {"const": "kronos_source_manifest.v1"},
+        "entries": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/manifestFile"}},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "raw_byte_length": {"type": "integer", "minimum": 0},
+        "gzip9_byte_length": {"type": "integer", "minimum": 0},
+        "browser_transfer_byte_length": {"type": "integer", "minimum": 0}
+      }
+    },
+    "distManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "entries", "manifest_sha256", "raw_byte_length", "gzip9_byte_length", "browser_transfer_byte_length"],
+      "properties": {
+        "schema": {"const": "kronos_dist_manifest.v1"},
+        "entries": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/manifestFile"}},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "raw_byte_length": {"type": "integer", "minimum": 0},
+        "gzip9_byte_length": {"type": "integer", "minimum": 0},
+        "browser_transfer_byte_length": {"type": "integer", "minimum": 0}
+      }
+    },
+    "bitmap": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {"type": "boolean"}
+    },
+    "machineTaskScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "operator_index", "bitmaps"],
+      "properties": {
+        "schema": {"const": "kronos_machine_task_score.v2"},
+        "operator_index": {"enum": ["A", "B"]},
+        "bitmaps": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["U", "L", "J"],
+          "properties": {
+            "U": {"$ref": "#/$defs/bitmap"},
+            "L": {"$ref": "#/$defs/bitmap"},
+            "J": {"$ref": "#/$defs/bitmap"}
+          }
+        }
+      }
+    },
+    "frozenHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer_sha256", "schema_sha256", "instrument_sha256", "fixture_sha256"],
+      "properties": {
+        "producer_sha256": {"$ref": "#/$defs/sha256"},
+        "schema_sha256": {"$ref": "#/$defs/sha256"},
+        "instrument_sha256": {"$ref": "#/$defs/sha256"},
+        "fixture_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "manifestHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "bundle", "dist"],
+      "properties": {
+        "source": {"$ref": "#/$defs/sha256"},
+        "bundle": {"$ref": "#/$defs/sha256"},
+        "dist": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "evidenceLocations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["screenshot", "metadata"],
+      "properties": {
+        "screenshot": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "metadata": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "baselineReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "six_locks_false", "frozen_hashes", "manifest_sha256", "evidence_refs", "evidence_locations", "status"],
+      "properties": {
+        "schema": {"const": "kronos_qa_baseline_receipt.v1"},
+        "kind": {"const": "SYNTHETIC_ENGINEERING_BASELINE"},
+        "six_locks_false": {"$ref": "#/$defs/falseLocks"},
+        "frozen_hashes": {"$ref": "#/$defs/frozenHashes"},
+        "manifest_sha256": {"$ref": "#/$defs/manifestHashes"},
+        "evidence_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/uriRef"}},
+        "evidence_locations": {"$ref": "#/$defs/evidenceLocations"},
+        "status": {"const": "SYNTHETIC_NOT_GO"},
+        "receipt_ref": {"$ref": "#/$defs/uriRef"},
+        "receipt_location": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    }
+  }
+}

@@ -58,6 +58,9 @@ Desktop.ini
 *.parquet
 *.h5
 *.hdf5
+
+# Self-host MLflow file store (opt-in experiment tracking, no egress)
+artifacts/mlruns/
 _database/
 finetune_csv/data/stom_*.csv
 finetune_csv/data/stom_*.json
@@ -106,3 +109,9 @@ venv.bak/
 temp/
 tmp/
 .python-version
+
+# Generated research / gate evidence (large & reproducible; 97MB+ of run
+# receipts, JSON, and PNGs from OMC gate pipelines). All of artifacts/ is
+# generated output — version a specific file intentionally with
+# `git add -f <path>` if it must be tracked.
+artifacts/

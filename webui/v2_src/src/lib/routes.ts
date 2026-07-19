@@ -1,4 +1,6 @@
+import { preserveShellQuery, type DashboardShell } from './shellMode';
 import { activeTab } from './stores';
+import type { IconName } from './icons';
 
 export interface DashboardRoute {
   id: string;
@@ -9,15 +11,24 @@ export interface DashboardRoute {
 }
 
 export const DASHBOARD_ROUTES: readonly DashboardRoute[] = [
+  { id: 'mission-control', label: 'Mission Control', path: '/', queryTabs: ['mission-control', 'mission', 'home'] },
   { id: 'live-training', label: '실시간 학습', path: '/', aliases: ['/training', '/dashboard'], queryTabs: ['live-training', 'training'] },
   { id: 'forecast', label: '예측 워크벤치', path: '/', queryTabs: ['forecast'] },
   { id: 'stom', label: '예측 진단', path: '/', queryTabs: ['stom'] },
+  { id: 'daily-ohlcv', label: 'Daily OHLCV', path: '/', aliases: ['/daily-ohlcv'], queryTabs: ['daily-ohlcv', 'daily-ohlcv-panel'] },
+  {
+    id: 'daily-rl-guide',
+    label: '일봉 RL 가이드',
+    path: '/',
+    aliases: ['/daily-rl-guide', '/daily-ohlcv/rl-guide'],
+    queryTabs: ['daily-rl-guide', 'daily-ohlcv-rl-guide'],
+  },
   {
     id: 'rl',
     label: 'Trading Command Center',
-    path: '/rl',
-    aliases: ['/daily-ohlcv', '/daily', '/daily-rl-guide', '/daily-ohlcv/rl-guide', '/rl-lab', '/v2/rl-trading', '/v2/rl-lab'],
-    queryTabs: ['rl', 'rl-lab', 'rl-trading', 'daily-ohlcv', 'daily', 'daily-rl-guide', 'daily-ohlcv-rl-guide'],
+    path: '/',
+    aliases: ['/rl'],
+    queryTabs: ['rl', 'rl-lab', 'rl-trading'],
   },
   { id: 'artifacts', label: '아티팩트 & 모델', path: '/', queryTabs: ['artifacts'] },
   { id: 'history', label: '기록 & 런', path: '/', queryTabs: ['history'] },
@@ -25,6 +36,117 @@ export const DASHBOARD_ROUTES: readonly DashboardRoute[] = [
   { id: 'settings', label: '설정', path: '/', queryTabs: ['settings'] },
   { id: 'docs', label: '문서 · Wiki', path: '/', queryTabs: ['docs'] },
 ] as const;
+
+export interface V51NavItem {
+  readonly id?: string;
+  readonly routeId?: string;
+  readonly activeRouteIds?: readonly string[];
+  readonly action?: 'version-history';
+  readonly label: string;
+  readonly icon: IconName;
+  readonly badge?: string | null;
+  readonly status?: 'live' | 'warn' | null;
+  readonly children?: readonly V51NavItem[];
+}
+
+export interface V51NavGroup {
+  readonly label: string;
+  readonly items: readonly V51NavItem[];
+}
+
+export interface V51VersionHistoryEntry {
+  readonly version: 'V5' | 'V5.1';
+  readonly date: string;
+  readonly commitSha: string;
+  readonly releaseTag: string;
+  readonly changes: string;
+  readonly validation: string;
+  readonly defaultUi: string;
+  readonly rollbackTarget: string;
+}
+
+export const V51_SHELL_BRAND = {
+  name: 'AI Quant Reinforcement Learning',
+  subtitle: 'Research & Operations',
+  version: 'v5.1',
+  updateDate: '2026-07-19',
+  displayVersion: 'v5.1 · Updated 2026-07-19',
+} as const;
+
+export const V51_DEFAULT_POLICY = 'V3 기본 유지 · V5 기본 전환은 미승인·미실행';
+
+export const V51_VERSION_HISTORY = [
+  {
+    version: 'V5.1',
+    date: '2026-07-19',
+    commitSha: '11268cb',
+    releaseTag: 'not released',
+    changes: 'Consolidated Kronos, RL, and training/system workspaces; widened the Evidence & Safety rail; enlarged the V5.1 title; and replaced the cramped history panel with an accessible dialog.',
+    validation: 'Commit 11268cb passed 353 frontend tests, Svelte check across 409 files with zero errors/warnings, dashboard regression tests, V3 contract tests, production build, and live Chromium checks at 3440x1440 and 2160x3840. Read-only evidence only; no release-default, live-readiness, GO, profit, broker, or order claim.',
+    defaultUi: V51_DEFAULT_POLICY,
+    rollbackTarget: 'V3 shell and existing V3 route bookmarks',
+  },
+  {
+    version: 'V5',
+    date: '2026-07-16',
+    commitSha: '59fb74c',
+    releaseTag: 'fork-v1.3.0-dashboard-v5-research-preview',
+    changes: 'Learning evidence shell, 12-tab restoration, read-only V5 routes, and research-preview governance.',
+    validation: 'V5 engineering result recorded as 98/100; no model, profit, live-trading, release, or GO claim.',
+    defaultUi: V51_DEFAULT_POLICY,
+    rollbackTarget: 'V3 shell and existing V3 route bookmarks',
+  },
+] as const satisfies readonly V51VersionHistoryEntry[];
+
+export const V51_NAV_GROUPS = [
+  {
+    label: 'COMMAND',
+    items: [
+      { routeId: 'mission-control', label: 'Mission Control', icon: 'pulse', badge: null },
+    ],
+  },
+  {
+    label: 'KRONOS',
+    items: [
+      { routeId: 'forecast', activeRouteIds: ['forecast', 'stom'], label: 'Kronos Research', icon: 'wand', badge: null },
+    ],
+  },
+  {
+    label: 'REINFORCEMENT LEARNING',
+    items: [
+      { routeId: 'rl', activeRouteIds: ['rl', 'daily-ohlcv', 'daily-rl-guide'], label: 'RL Research & Evidence', icon: 'rocket', badge: 'RL' },
+    ],
+  },
+  {
+    label: 'OPERATIONS',
+    items: [
+      { routeId: 'live-training', activeRouteIds: ['live-training', 'system-health'], label: 'Training & System', icon: 'activity', badge: 'LIVE', status: 'live' },
+      { routeId: 'history', label: 'Runs & Reports', icon: 'history', badge: null },
+      { routeId: 'artifacts', label: 'Artifacts & Models', icon: 'package', badge: null },
+    ],
+  },
+  {
+    label: 'KNOWLEDGE',
+    items: [
+      { routeId: 'docs', label: 'Research Reports & Wiki', icon: 'file', badge: null },
+      { action: 'version-history', label: 'Version History', icon: 'history', badge: 'v5.1' },
+      { routeId: 'settings', label: 'Settings', icon: 'settings', badge: null },
+    ],
+  },
+] as const satisfies readonly V51NavGroup[];
+
+function v51ItemMatchesRoute(item: V51NavItem, tabId: string): boolean {
+  return item.routeId === tabId || item.activeRouteIds?.includes(tabId) === true;
+}
+
+function v51RouteLabel(tabId: string): string | null {
+  for (const group of V51_NAV_GROUPS) {
+    for (const item of group.items) {
+      if (v51ItemMatchesRoute(item, tabId)) return item.label;
+    }
+  }
+  return null;
+}
 
 const ROUTE_BY_ID = new Map(DASHBOARD_ROUTES.map((route) => [route.id, route]));
 
@@ -42,21 +164,17 @@ function routeFromPath(pathname: string): DashboardRoute | null {
   const path = normalizePath(pathname);
   return DASHBOARD_ROUTES.find((route) => route.path === path || route.aliases?.includes(path)) ?? null;
 }
-
 const RL_SECTIONS = new Set(['daily-gates', 'workflow', 'evidence']);
 
-function canonicalUrlForRoute(route: DashboardRoute, locationLike: Location = window.location): string {
+
+function canonicalUrlForRoute(route: DashboardRoute, locationLike: Pick<Location, 'pathname' | 'search'>): string {
   if (route.id === 'rl' && normalizePath(locationLike.pathname) === '/rl') {
     const section = new URLSearchParams(locationLike.search).get('section');
     if (section && RL_SECTIONS.has(section)) {
-      return `/rl?section=${encodeURIComponent(section)}`;
+      return preserveShellQuery(`/rl?section=${encodeURIComponent(section)}`, locationLike.search);
     }
   }
-  return routeUrl(route.id);
-}
-
-function shouldHardNavigate(route: DashboardRoute): boolean {
-  return route.id === 'rl' && route.path !== '/';
+  return routeUrl(route.id, { currentSearch: locationLike.search });
 }
 
 export function routeForTab(tabId: string): DashboardRoute | null {
@@ -67,27 +185,31 @@ export function routeLabel(tabId: string): string {
   return routeForTab(tabId)?.label ?? tabId;
 }
 
-export function routeUrl(tabId: string): string {
-  const route = routeForTab(tabId);
-  if (!route) return '/';
-  if (route.path !== '/') return route.path;
-  return route.id === 'live-training' ? '/' : `/?tab=${encodeURIComponent(route.id)}`;
+export function routeLabelForShell(tabId: string, shell: DashboardShell): string {
+  if (shell === 'v5') return v51RouteLabel(tabId) ?? routeLabel(tabId);
+  return routeLabel(tabId);
 }
 
-export function resolveRoute(locationLike: Location = window.location): DashboardRoute | null {
-  const requested = new URLSearchParams(locationLike.search).get('tab');
-  return routeFromQuery(requested) ?? routeFromPath(locationLike.pathname);
+export function routeUrl(tabId: string, options: { currentSearch?: string } = {}): string {
+  const currentSearch = options.currentSearch ?? (typeof window === 'undefined' ? '' : window.location.search);
+  const route = routeForTab(tabId);
+  if (!route) return preserveShellQuery('/', currentSearch);
+  const baseUrl = route.path !== '/' ? route.path : route.id === 'mission-control' ? '/' : `/?tab=${encodeURIComponent(route.id)}`;
+  return preserveShellQuery(baseUrl, currentSearch);
+}
+
+export function resolveRoute(locationLike?: Pick<Location, 'pathname' | 'search'>): DashboardRoute | null {
+  const currentLocation = locationLike ?? (typeof window === 'undefined' ? null : window.location);
+  if (!currentLocation) return null;
+  const requested = new URLSearchParams(currentLocation.search).get('tab');
+  return routeFromQuery(requested) ?? routeFromPath(currentLocation.pathname);
 }
 
 export function syncTabFromLocation(options: { replaceAlias?: boolean } = {}): string {
-  if (typeof window === 'undefined') return 'live-training';
-  const route = resolveRoute(window.location) ?? routeForTab('live-training')!;
-  const canonical = canonicalUrlForRoute(route);
+  if (typeof window === 'undefined') return 'mission-control';
+  const route = resolveRoute(window.location) ?? routeForTab('mission-control')!;
+  const canonical = canonicalUrlForRoute(route, window.location);
   const current = `${window.location.pathname}${window.location.search}`;
-  if (shouldHardNavigate(route) && current !== canonical) {
-    window.location.replace(canonical);
-    return route.id;
-  }
   activeTab.set(route.id);
   if (options.replaceAlias) {
     if (current !== canonical) {
@@ -102,11 +224,6 @@ export function navigateToTab(tabId: string, options: { replace?: boolean } = {}
   if (typeof window === 'undefined') return;
   const nextUrl = routeUrl(tabId);
   const current = `${window.location.pathname}${window.location.search}`;
-  const route = routeForTab(tabId);
-  if (route && shouldHardNavigate(route) && current !== nextUrl) {
-    window.location.assign(nextUrl);
-    return;
-  }
   const state = { tab: tabId };
   if (options.replace || current === nextUrl) {
     window.history.replaceState(state, '', nextUrl);

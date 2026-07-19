@@ -118,7 +118,7 @@
   .filter-toggle button {
     border: 1px solid var(--border);
     border-radius: 999px;
-    background: var(--card);
+    background: var(--surface);
     padding: 4px 12px;
     font: 600 11px/1 var(--font-display);
     cursor: pointer;

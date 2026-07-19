@@ -10,11 +10,52 @@ export const artifacts: Writable<ArtifactsResponse | null> = writable(null);
 export const gpuStatus: Writable<GpuResponse | null> = writable(null);
 export const systemStatus: Writable<SystemResponse | null> = writable(null);
 
-// 사용자 설정 — refresh 주기, 활성 탭, 사이드바 collapse 상태
+// 사용자 설정 — refresh 주기, 활성 탭, 사이드바/우측 상세 rail collapse 상태
 export const refreshSeconds: Writable<number> = writable(5);
-export const activeTab: Writable<string> = writable('live-training');
+export const activeTab: Writable<string> = writable('mission-control');
 export const sidebarCollapsed: Writable<boolean> = writable(false);
 export const sidebarMobileOpen: Writable<boolean> = writable(false);
+
+// V5.1 우측 상세 rail — 좌측 sidebarCollapsed 와 독립이며 storage 실패 시 기본 확장 상태로 fail-closed.
+export const RIGHT_DETAIL_RAIL_COLLAPSED_KEY = 'kronos-right-detail-rail-collapsed';
+
+function getSafeLocalStorage(): Storage | null {
+  try {
+    if (typeof globalThis === 'undefined') return null;
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readInitialRightDetailRailCollapsed(): boolean {
+  const storage = getSafeLocalStorage();
+  if (!storage) return false;
+  try {
+    const value = storage.getItem(RIGHT_DETAIL_RAIL_COLLAPSED_KEY);
+    return value === 'true' || value === '1';
+  } catch {
+    return false;
+  }
+}
+
+export const rightDetailRailCollapsed: Writable<boolean> = writable<boolean>(readInitialRightDetailRailCollapsed());
+
+export function toggleRightDetailRailCollapsed(): void {
+  rightDetailRailCollapsed.update((value) => !value);
+}
+
+if (typeof document !== 'undefined') {
+  rightDetailRailCollapsed.subscribe((value) => {
+    const storage = getSafeLocalStorage();
+    if (!storage) return;
+    try {
+      storage.setItem(RIGHT_DETAIL_RAIL_COLLAPSED_KEY, value ? 'true' : 'false');
+    } catch {
+      // Collapse preference is UI-only; storage failures must not block dashboard load.
+    }
+  });
+}
 
 // ── 테마 (light/dark) — 공식 대시보드 디자인 시스템 ────────────────────
 const THEME_KEY = 'kronos-theme';

@@ -1,0 +1,36 @@
+{
+  "constraints": {
+    "conditional_costs_bp": [
+      0,
+      23,
+      46
+    ],
+    "conditional_primary_cost_bp": 23,
+    "no_data_export_launched": true,
+    "no_f14_training_job_launched": true,
+    "research_mode": "supervised forecast work, not RL/trading alpha"
+  },
+  "date": "2026-07-12",
+  "evidence": {
+    "report_path": "docs/stom_kronos_attribution_result_2026-07-12.md",
+    "report_sha256": "5977c57fa74b640f740f21fca510b87afb85ceb0423c5441aab9b160a8e69a28",
+    "result_commit": "fe38d303fe756e2f97f155d2ff4f5c7b54f15d4b",
+    "summary_path": ".omo/evidence/task-13-r5-attribution/evidence_summary.json",
+    "summary_sha256": "a62d4ea1d45888b70e7d2c7994e2750acc806017815ec93318202d37f1436df3"
+  },
+  "f14_status": "Not launched; blocked by TUNING_HARMFUL supervised forecast attribution evidence.",
+  "gate": {
+    "action": "Freeze F14 and prioritize data/tokenizer repair.",
+    "blocked": true,
+    "decision": "TUNING_HARMFUL",
+    "f14_execution_allowed": false,
+    "f14_prereg_allowed": false,
+    "inconclusive_rerun_allowed": false,
+    "model_label": "supervised forecast (not RL/trading alpha)",
+    "reason": "TUNING_HARMFUL",
+    "runnable_command": null
+  },
+  "schema": "stom_kronos_f14_decision.v1",
+  "source_task": "G014",
+  "upstream_task": "G013"
+}

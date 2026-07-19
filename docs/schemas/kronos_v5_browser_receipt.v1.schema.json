@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_v5_browser_receipt.v1.schema.json",
+  "title": "Kronos V5 live browser receipt contract",
+  "description": "Wire shape for externally captured real-browser V5 matrix receipts. The verifier additionally checks PNG bytes, object-ref hashes, frozen ordering, categories, route markers, source/dist/fixture hash binding, timing budgets, and required rollback/download/retry proofs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "capture_kind", "live_browser_execution", "nonce", "captured_at", "browser", "browser_sha256", "fixture_ref", "source_ref", "dist_manifest_ref", "fixture_sha256", "source_sha256", "dist_manifest_sha256", "scenario_ids", "scenario_count", "scenarios", "timing_budgets_ms", "security_checks", "false_locks"],
+  "properties": {
+    "schema": {"const": "kronos_v5_browser_receipt.v1"},
+    "capture_kind": {"const": "live_browser_execution"},
+    "live_browser_execution": {"const": true},
+    "nonce": {"$ref": "#/$defs/sha256"},
+    "captured_at": {"$ref": "#/$defs/utcSecond"},
+    "browser": {"$ref": "#/$defs/browser"},
+    "browser_sha256": {"$ref": "#/$defs/sha256"},
+    "fixture_ref": {"$ref": "#/$defs/objectRef"},
+    "source_ref": {"$ref": "#/$defs/objectRef"},
+    "dist_manifest_ref": {"$ref": "#/$defs/objectRef"},
+    "fixture_sha256": {"$ref": "#/$defs/sha256"},
+    "source_sha256": {"$ref": "#/$defs/sha256"},
+    "dist_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "scenario_ids": {"$ref": "#/$defs/scenarioIds"},
+    "scenario_count": {"const": 112},
+    "scenarios": {"type": "array", "minItems": 112, "maxItems": 112, "items": {"$ref": "#/$defs/scenarioEvidence"}},
+    "timing_budgets_ms": {"$ref": "#/$defs/timingBudgetsMs"},
+    "security_checks": {"$ref": "#/$defs/securityChecks"},
+    "false_locks": {"$ref": "#/$defs/falseLocks"}
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "utcSecond": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000]+$"
+    },
+    "objectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "byte_length", "media_type"],
+      "properties": {
+        "relative_path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "media_type": {"type": "string", "minLength": 1, "maxLength": 128},
+        "schema_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "captured_at": {"$ref": "#/$defs/utcSecond"}
+      }
+    },
+    "browser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "user_agent", "executable_sha256"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 64},
+        "version": {"type": "string", "pattern": "[0-9]", "maxLength": 128},
+        "user_agent": {"type": "string", "minLength": 1, "maxLength": 512},
+        "executable_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "falseLocks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promotion_allowed", "model_build_allowed", "paper_forward_allowed", "live_broker_order_allowed", "profitability_claim_allowed", "go_summary_allowed"],
+      "properties": {
+        "promotion_allowed": {"const": false},
+        "model_build_allowed": {"const": false},
+        "paper_forward_allowed": {"const": false},
+        "live_broker_order_allowed": {"const": false},
+        "profitability_claim_allowed": {"const": false},
+        "go_summary_allowed": {"const": false}
+      }
+    },
+    "scenarioId": {
+      "type": "string",
+      "pattern": "^S-(?:BASE-(?:mission-control|forecast|stom|daily-ohlcv|daily-rl-guide|rl|live-training|system-health|artifacts|history|settings|docs)-(?:light|dark)-(?:375|768|1280)|LIFE-(?:ADVANCING|STALLED|RESUMED|RESTARTED_NON_EXACT|STOPPED|FAILED|COMPLETED|CONFLICT_BLOCKED|NOT_RUN)-(?:light|dark)|GOV-(?:D0_BLOCKED|D1_BLOCKED|FRESH_OOS_SEALED|FRESH_OOS_NOT_AVAILABLE|MISSING_CELL)-(?:light|dark)|ASYNC-(?:ISOLATED_TIMEOUT_RETRY|LATE_LIST_DETAIL_RACE|ALLOWED_DOWNLOAD|DENIED_DOWNLOAD)-(?:light|dark)|KBD-(?:mission-control|rl|daily-ohlcv|live-training))$"
+    },
+    "scenarioIds": {
+      "type": "array",
+      "minItems": 112,
+      "maxItems": 112,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/scenarioId"}
+    },
+    "category": {
+      "enum": ["base", "lifecycle", "governance", "async_security", "keyboard"]
+    },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "device_scale_factor", "is_mobile"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 320},
+        "height": {"type": "integer", "minimum": 240},
+        "device_scale_factor": {"type": "integer", "minimum": 1, "maximum": 4},
+        "is_mobile": {"type": "boolean"}
+      }
+    },
+    "routeMarkers": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 256},
+      "contains": {"const": "kronos-v5-dashboard"}
+    },
+    "emptyErrors": {
+      "type": "array",
+      "maxItems": 0,
+      "items": {"type": "string"}
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_critical_ms", "full_hydration_ms", "api_ms", "isolated_timeout_ms", "palette_ms", "filter_1000_ms"],
+      "properties": {
+        "first_critical_ms": {"type": "integer", "minimum": 0, "maximum": 3000},
+        "full_hydration_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "api_ms": {"type": "integer", "minimum": 0, "maximum": 5000},
+        "isolated_timeout_ms": {"type": "integer", "minimum": 0, "maximum": 20500},
+        "palette_ms": {"type": "integer", "minimum": 0, "maximum": 100},
+        "filter_1000_ms": {"type": "integer", "minimum": 0, "maximum": 150}
+      }
+    },
+    "timingBudgetsMs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_critical_cold_ms", "first_critical_warm_ms", "full_hydration_cold_ms", "full_hydration_warm_ms", "api_cold_ms", "api_warm_ms", "isolated_timeout_ms", "palette_ms", "filter_1000_ms"],
+      "properties": {
+        "first_critical_cold_ms": {"const": 3000},
+        "first_critical_warm_ms": {"const": 1500},
+        "full_hydration_cold_ms": {"const": 10000},
+        "full_hydration_warm_ms": {"const": 6000},
+        "api_cold_ms": {"const": 5000},
+        "api_warm_ms": {"const": 2000},
+        "isolated_timeout_ms": {"const": 20500},
+        "palette_ms": {"const": 100},
+        "filter_1000_ms": {"const": 150}
+      }
+    },
+    "securityChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v3_rollback", "denied_download", "retry_visible"],
+      "properties": {
+        "v3_rollback": {"const": true},
+        "denied_download": {"const": true},
+        "retry_visible": {"const": true}
+      }
+    },
+    "rowChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v3_rollback", "denied_download", "retry_visible"],
+      "properties": {
+        "v3_rollback": {"type": "boolean"},
+        "denied_download": {"type": "boolean"},
+        "retry_visible": {"type": "boolean"}
+      }
+    },
+    "scenarioEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "sequence", "category", "status", "browser_version", "url", "viewport", "route_markers", "dom_ref", "screenshot_ref", "console_errors", "page_errors", "network_errors", "a11y_errors", "overflow", "focus", "keyboard", "chart_table_semantics", "timing", "checks"],
+      "properties": {
+        "scenario_id": {"$ref": "#/$defs/scenarioId"},
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 112},
+        "category": {"$ref": "#/$defs/category"},
+        "status": {"const": "passed"},
+        "browser_version": {"type": "string", "pattern": "[0-9]", "maxLength": 128},
+        "url": {"type": "string", "pattern": "^https?://"},
+        "viewport": {"$ref": "#/$defs/viewport"},
+        "route_markers": {"$ref": "#/$defs/routeMarkers"},
+        "dom_ref": {"$ref": "#/$defs/objectRef"},
+        "screenshot_ref": {"$ref": "#/$defs/objectRef"},
+        "console_errors": {"$ref": "#/$defs/emptyErrors"},
+        "page_errors": {"$ref": "#/$defs/emptyErrors"},
+        "network_errors": {"$ref": "#/$defs/emptyErrors"},
+        "a11y_errors": {"$ref": "#/$defs/emptyErrors"},
+        "overflow": {"const": false},
+        "focus": {"const": "passed"},
+        "keyboard": {"const": "passed"},
+        "chart_table_semantics": {"const": "passed"},
+        "timing": {"$ref": "#/$defs/timing"},
+        "checks": {"$ref": "#/$defs/rowChecks"}
+      }
+    }
+  }
+}

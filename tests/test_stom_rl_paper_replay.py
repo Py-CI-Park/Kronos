@@ -161,7 +161,8 @@ def test_paper_replay_honors_t1_fill_price(tmp_path):
         )
     )
 
-    decisions = list(csv.DictReader((out_dir / "decisions.csv").open(encoding="utf-8-sig")))
+    with (out_dir / "decisions.csv").open(encoding="utf-8-sig") as handle:
+        decisions = list(csv.DictReader(handle))
     buys = [d for d in decisions if d["action_type"] == "buy" and d["blocked"] == "False"]
     assert buys, "expected at least one executed buy"
 

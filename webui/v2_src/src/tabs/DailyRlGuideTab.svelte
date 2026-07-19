@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { dailyOhlcvApi, type DailyRlEnvGuideResponse } from '$lib/dailyOhlcvApi';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
+  import Disclosure from '$lib/Disclosure.svelte';
 
   let guide = $state<DailyRlEnvGuideResponse | null>(null);
   let loading = $state(false);
@@ -29,6 +30,18 @@
   const listText = (value: unknown): string => Array.isArray(value) ? value.join(' · ') : String(value ?? '—');
   const stringItems = (value: unknown): string[] => Array.isArray(value) ? value.map((item) => String(item)) : [];
   const safeJson = (value: unknown): string => JSON.stringify(value ?? {}, null, 2);
+  const H1520_PROXY_LABEL = 'H1: D 15:20 → D+1 exact 15:20 · future_return_h1_1520_proxy / H3: D 15:20 → D+3 exact 15:20 · future_return_h3_1520_proxy / H5: D 15:20 → D+5 exact 15:20 · future_return_h5_1520_proxy';
+  const H1520_PROXY_DETAIL = 'exact 15:20 proxy labels; H1 primary · H3/H5 validation · price_basis=15:20_bar_close_proxy';
+  const V51_CONTRACT_INITIAL_CAPITAL_KRW = 60000000;
+  const MISSING_ACTION_EVIDENCE = 'MISSING_ACTION_EVIDENCE';
+  const LEGACY_FUTURE_RETURN_LABEL = 'future_return_' + '1d';
+  const publicGuideText = (value: unknown): string => String(value ?? '—')
+    .replace(new RegExp(LEGACY_FUTURE_RETURN_LABEL, 'g'), `${H1520_PROXY_LABEL} (${H1520_PROXY_DETAIL})`)
+    .replace(new RegExp('0/23/46' + 'bp', 'g'), '0.00% / 0.23% / 0.46% (0/23/46 bp)')
+    .replace(new RegExp('23' + 'bp', 'g'), '0.23% (23 bp)');
+  const publicListText = (value: unknown): string => Array.isArray(value)
+    ? value.map(publicGuideText).join(' · ')
+    : publicGuideText(value);
   const boolText = (value: unknown): string => value === true ? 'true' : value === false ? 'false' : '—';
   const asRecord = (value: unknown): Record<string, unknown> => (
     value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -36,7 +49,11 @@
   const field = (value: unknown, key: string): unknown => asRecord(value)[key];
   const nestedRecord = (value: unknown, key: string): Record<string, unknown> => asRecord(field(value, key));
   const numberValue = (value: unknown): number | null => {
-    const numeric = Number(value);
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (trimmed === '') return null;
+    const numeric = Number(trimmed);
     return Number.isFinite(numeric) ? numeric : null;
   };
   const formatPercent = (value: unknown, digits = 2): string => {
@@ -44,6 +61,15 @@
     if (numeric === null) return '—';
     const prefix = numeric > 0 ? '+' : '';
     return `${prefix}${numeric.toFixed(digits)}%`;
+  };
+  const formatCostBp = (value: unknown): string => {
+    const numeric = numberValue(value);
+    return numeric === null ? '—' : `${(numeric / 100).toFixed(2)}% (${numeric.toFixed(0)} bp)`;
+  };
+  const formatCostBpList = (value: unknown): string => {
+    const values = Array.isArray(value) ? value : [value];
+    const labels = values.map(formatCostBp).filter((label) => label !== '—');
+    return labels.length > 0 ? labels.join(' / ') : '—';
   };
   const formatKrw = (value: unknown): string => {
     const numeric = numberValue(value);
@@ -89,6 +115,23 @@
   const frameReward = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'reward');
   const frameLearning = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'learning');
   const frameNav = (): Record<string, unknown> => nestedRecord(currentReplayFrame(), 'nav');
+  const frameActionExecuted = (): string => {
+    const executed = field(frameAction(), 'executed');
+    const action = String(executed ?? '').trim();
+    return action === '' ? MISSING_ACTION_EVIDENCE : action;
+  };
+  const signedMetricTone = (value: unknown): string => {
+    const numeric = numberValue(value);
+    if (numeric === null) return 'warn';
+    return numeric < 0 ? 'danger' : 'pass';
+  };
+  const performanceCardTone = (card: Record<string, unknown>): string => signedMetricTone(field(card, 'total_return_pct'));
+  const frameRewardPenaltiesTotal = (): number | null => {
+    const penaltyKeys = ['drawdown_penalty', 'concentration_penalty', 'invalid_action_penalty', 'churn_penalty'];
+    const parts = penaltyKeys.map((key) => numberValue(field(frameReward(), key)));
+    if (parts.some((value) => value === null)) return null;
+    return parts.reduce((sum, value) => sum + (value ?? 0), 0);
+  };
   const actionDistributionRows = (): readonly Record<string, unknown>[] => rows(field(guide?.active_replay, 'action_distribution'));
   const activeActionDistributionRows = (): readonly Record<string, unknown>[] => {
     const currentAction = String(field(frameAction(), 'executed') ?? '');
@@ -96,7 +139,7 @@
     const matching = allRows.filter((row) => String(field(row, 'action')) === currentAction);
     return matching.length > 0 ? matching : allRows.slice(0, 5);
   };
-  const listRecordItems = (value: unknown, key: string): string[] => stringItems(field(value, key));
+  const listRecordItems = (value: unknown, key: string): string[] => stringItems(field(value, key)).map(publicGuideText);
   const selectedLaneJson = (): string => safeJson(field(selectedResearchLane(), 'ai_guidance_format'));
   const scenarioTemplateRows = (): readonly Record<string, unknown>[] => rows(field(guide?.scenario_generator, 'templates'));
   const selectedScenarioTemplate = (): Record<string, unknown> => {
@@ -129,11 +172,45 @@
   };
   const selectedWorkflowBlockers = (): string[] => stringItems(field(selectedResearchWorkflow(), 'blocked_by'));
   const selectedWorkflowArtifacts = (): string[] => stringItems(field(selectedResearchWorkflow(), 'artifact_dependencies'));
+
+  // WP-S4(B) — workflow/scenario 섹션이 공유하는 raw JSON payload 접근자.
+  // 원위치에는 사람이 읽는 key-value 요약만 남기고, 동일 payload의 원본 JSON은
+  // raw checks 섹션(6. Raw checks · isGuideSection('raw'))으로만 옮긴다. 데이터 원천은 그대로다.
+  const selectedLaneGuidance = (): Record<string, unknown> => asRecord(field(selectedResearchLane(), 'ai_guidance_format'));
+  const selectedScenarioPlan = (): Record<string, unknown> => asRecord(field(selectedScenarioTemplate(), 'plan_json_draft'));
+  const marketRegimeGuidance = (): Record<string, unknown> => asRecord(field(guide?.market_regime_audit_readiness, 'ai_guidance_format'));
+  const improvementQueueGuidance = (): Record<string, unknown> => asRecord(field(guide?.improvement_queue, 'ai_guidance_format'));
+  const safeConfigPreview = (): Record<string, unknown> => ({
+    workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
+    default_cost_bp: field(selectedResearchWorkflow(), 'default_cost_bp') ?? 23,
+    cost_sensitivity_bp: field(selectedResearchWorkflow(), 'cost_sensitivity_bp') ?? [0, 23, 46],
+    approval_required: field(selectedResearchWorkflow(), 'approval_required') ?? true,
+    execution_allowed_from_browser: field(selectedResearchWorkflow(), 'execution_allowed_from_browser') ?? false,
+    forbidden_fields: field(guide?.research_workflow_catalog, 'forbidden_fields'),
+  });
+  const dashboardIntentAvailability = (): Record<string, unknown> => ({
+    status: 'UNAVAILABLE_FROM_READ_ONLY_DASHBOARD',
+    request_method: 'not exposed',
+    writes_allowed_from_dashboard: false,
+    approval_template_status: 'not rendered',
+    workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
+    required_external_process: 'operator preregistration outside dashboard',
+    fail_closed_reason: 'read-only dashboard cannot create job intents, spawn workers, build models, or place orders',
+  });
   const tone = (status: unknown): string => {
     const normalized = String(status ?? '').toUpperCase();
-    if (normalized === 'PASS' || normalized === 'INPUT') return 'pass';
-    if (normalized.includes('NO-GO') || normalized.includes('FAIL') || normalized.includes('BLOCK')) return 'danger';
-    if (normalized.includes('WATCH') || normalized.includes('RESEARCH')) return 'warn';
+    if (normalized === 'PASS') return 'pass';
+    if (normalized.includes('NO-GO') || normalized.includes('FAIL') || normalized.includes('BLOCK') || normalized.includes('ERROR')) return 'danger';
+    if (
+      normalized === 'INPUT' ||
+      normalized.includes('WATCH') ||
+      normalized.includes('RESEARCH') ||
+      normalized.includes('REFERENCE') ||
+      normalized.includes('MISSING') ||
+      normalized.includes('INCOMPLETE') ||
+      normalized.includes('NOT_STARTED') ||
+      normalized.includes('LOADING')
+    ) return 'warn';
     return 'neutral';
   };
 
@@ -143,7 +220,7 @@
     { label: 'paper forward', value: 'false', tone: 'danger' },
     { label: 'model build allowed', value: 'false', tone: 'danger' },
     { label: 'profit readiness', value: 'false', tone: 'danger' },
-    { label: 'cost model', value: '23bp', tone: 'warn' },
+    { label: 'cost model', value: '0.23% (23 bp)', tone: 'warn' },
   ] as const;
   const guideStatusBlockers = [
     '환경 설명서는 학습 구조를 보여주는 guide이며 D5 통과나 profit evidence가 아닙니다.',
@@ -184,7 +261,7 @@
     {
       no: '05',
       title: 'Reward 계산',
-      detail: '다음날 연구용 future_return_1d에서 23bp 비용과 위험 벌점을 뺍니다.',
+      detail: `H1은 D+1 exact 15:20, H3는 D+3 exact 15:20, H5는 D+5 exact 15:20 연구 라벨(${H1520_PROXY_LABEL})에서 0.23% (23 bp) 비용과 위험 벌점을 뺍니다.`,
       tone: 'warn',
     },
     {
@@ -219,7 +296,7 @@
 <section class="page-hero" data-daily-rl-guide-tab>
   <div class="row" style="gap:10px; flex-wrap:wrap">
     <span class="text-eyebrow">Daily RL Environment Guide</span>
-    <span class="pill warn"><span class="dot"></span>RL_ENV_VISUAL_GUIDE_MVP</span>
+    <span class="pill warn"><span class="dot"></span>RESEARCH_ONLY_GUIDE</span>
     <span class="pill"><span class="dot"></span>read-only · no live/broker/orders</span>
   </div>
   <h1 class="text-h2" style="margin-top:8px">일봉 강화학습 환경 설명서</h1>
@@ -227,7 +304,7 @@
     강화학습을 모르는 상태에서도 “무엇을 보고(state), 무엇을 할 수 있고(action), 어떤 점수를 받는지(reward), 왜 아직 실거래가 아닌지”를 한 화면에서 이미지처럼 읽도록 만든 설명서입니다.
   </p>
   <p class="text-muted" style="margin-top:6px">
-    핵심 상태 필드 marker: position_count · top_score_bucket. 행동 marker: hold · buy · add · sell · reduce. 보상 label marker: future_return_1d.
+    핵심 상태 필드 marker: position_count · top_score_bucket. 행동 marker: hold · buy · add · sell · reduce. 보상 label marker: {H1520_PROXY_LABEL} ({H1520_PROXY_DETAIL}).
   </p>
   <div style="margin-top:12px">
     <button type="button" class="btn" onclick={() => void loadGuide()} disabled={loading}>{loading ? '갱신 중…' : '새로고침'}</button>
@@ -259,6 +336,7 @@
         type="button"
         class="guide-section-button"
         data-active={activeGuideSection === section.id ? 'true' : 'false'}
+        aria-pressed={activeGuideSection === section.id}
         data-guide-section={section.id}
         onclick={() => (activeGuideSection = section.id)}
       >
@@ -281,12 +359,13 @@
   <p class="text-muted" style="margin-top:8px">{guide?.plain_language_verdict ?? '환경 상태를 불러오는 중입니다.'}</p>
   <div class="grid-4-kpi" style="margin-top:16px">
     <div class="metric"><div class="metric-label">environment_built</div><div class="metric-value">{boolText(guide?.environment_built)}</div></div>
-    <div class="metric"><div class="metric-label">cost</div><div class="metric-value tnum">{guide?.cost_round_trip_bp ?? 23}bp</div></div>
+    <div class="metric"><div class="metric-label">cost</div><div class="metric-value tnum">{formatCostBp(guide?.cost_round_trip_bp ?? 23)}</div></div>
     <div class="metric"><div class="metric-label">state shape</div><div class="metric-value">{listText(guide?.state_contract?.shape)}</div></div>
     <div class="metric"><div class="metric-label">status</div><div class="metric-value">{guide?.status ?? 'RESEARCH_ONLY'}</div></div>
   </div>
 </section>
 
+<div class="text-eyebrow" style="margin-top:16px">오늘의 순환 구조 · 실데이터 상시 노출</div>
 <section class="panel visual-panel" data-daily-rl-loop-diagram>
   <div class="panel-head">
     <div>
@@ -322,17 +401,18 @@
       <text class="svg-title" x="78" y="166">D2/D3 데이터</text>
       <text class="svg-body" x="78" y="192">feature · split · rank</text>
 
-      <rect class="svg-card state-card" x="320" y="78" width="200" height="145" rx="20" />
+      <rect class="svg-card state-card" x="320" y="78" width="200" height="162" rx="20" />
       <text class="svg-kicker" x="346" y="116">STATE</text>
       <text class="svg-title" x="346" y="145">현재 관측</text>
-      <text class="svg-body" x="346" y="174">position_count</text>
-      <text class="svg-body" x="346" y="198">top_score_bucket</text>
+      <text class="svg-body" x="346" y="168">position_count {String(field(frameState(), 'position_count') ?? '—')}</text>
+      <text class="svg-body" x="346" y="190">top_score_bucket {String(field(frameState(), 'top_score_bucket') ?? '—')}</text>
+      <text class="svg-body" x="346" y="212">top_candidate_code {String(field(frameState(), 'top_candidate_code') ?? '—')}</text>
 
       <rect class="svg-card agent-card" x="610" y="78" width="230" height="145" rx="20" />
       <text class="svg-kicker" x="638" y="116">AGENT / POLICY</text>
       <text class="svg-title" x="638" y="145">행동 선택</text>
-      <text class="svg-body" x="638" y="174">hold · buy · add</text>
-      <text class="svg-body" x="638" y="198">sell · reduce</text>
+      <text class="svg-body" x="638" y="174"><tspan class={frameActionExecuted() === 'hold' ? 'svg-action-active' : ''}>hold</tspan> · <tspan class={frameActionExecuted() === 'buy' ? 'svg-action-active' : ''}>buy</tspan> · <tspan class={frameActionExecuted() === 'add' ? 'svg-action-active' : ''}>add</tspan></text>
+      <text class="svg-body" x="638" y="198"><tspan class={frameActionExecuted() === 'sell' ? 'svg-action-active' : ''}>sell</tspan> · <tspan class={frameActionExecuted() === 'reduce' ? 'svg-action-active' : ''}>reduce</tspan></text>
 
       <rect class="svg-card mask-card" x="610" y="290" width="230" height="135" rx="20" />
       <text class="svg-kicker" x="638" y="328">ENVIRONMENT</text>
@@ -342,8 +422,8 @@
       <rect class="svg-card reward-card" x="320" y="292" width="230" height="135" rx="20" />
       <text class="svg-kicker" x="348" y="330">REWARD</text>
       <text class="svg-title" x="348" y="359">점수 계산</text>
-      <text class="svg-body" x="348" y="388">future_return_1d</text>
-      <text class="svg-body" x="348" y="412">- 23bp - penalties</text>
+      <text class="svg-body" x="348" y="388">{formatNumber(field(frameReward(), 'net_return_after_cost'), 3)} − {formatNumber(field(frameReward(), 'turnover_cost'), 3)} − {formatNumber(frameRewardPenaltiesTotal(), 3)}</text>
+      <text class="svg-body" x="348" y="412">= reward {formatNumber(field(frameReward(), 'reward'), 3)}</text>
 
       <rect class="svg-card gate-card" x="55" y="292" width="180" height="135" rx="20" />
       <text class="svg-kicker" x="78" y="330">D5 GATE</text>
@@ -356,18 +436,20 @@
       <path class="svg-arrow warn" d="M725 223 C725 250 725 263 725 290" marker-end="url(#rlArrow)" />
       <path class="svg-arrow warn" d="M610 360 C590 360 570 360 550 360" marker-end="url(#rlArrow)" />
       <path class="svg-arrow" d="M320 360 C280 360 260 360 235 360" marker-end="url(#rlArrow)" />
-      <path class="svg-arrow loop" d="M435 292 C435 250 420 245 420 223" marker-end="url(#rlArrow)" />
+      <path class="svg-arrow loop" d="M435 292 C435 265 420 250 420 240" marker-end="url(#rlArrow)" />
       <path class="svg-arrow loop" d="M550 330 C585 265 595 235 625 205" marker-end="url(#rlArrow)" />
 
       <text class="svg-annotation" x="560" y="276">mask 적용 후 체결/보유 상태 갱신</text>
       <text class="svg-annotation" x="452" y="265">보상은 다음 state 학습 신호</text>
+      <text class="svg-callout" x="330" y="452">{formatCostBp(guide?.cost_round_trip_bp ?? 23)} 왕복 비용</text>
       <text class="svg-footer" x="55" y="470">실거래 주문이 아니라, 연구용 일봉 데이터로 “상태 → 행동 → 보상 → 검증”을 반복하는 폐쇄 루프입니다.</text>
     </svg>
   </div>
 
   <div class="process-strip" data-daily-rl-process-storyboard aria-label="일봉 RL 프로세스 스토리보드">
+    <a class="scroll-region-focus" href="#daily-rl-process-1">첫 단계부터 키보드로 탐색</a>
     {#each processSteps as step, index}
-      <article class="process-step" data-step-tone={step.tone}>
+      <article class="process-step" id={`daily-rl-process-${index + 1}`} data-step-tone={step.tone}>
         <div class="step-badge">{step.no}</div>
         <h3>{step.title}</h3>
         <p>{step.detail}</p>
@@ -377,10 +459,38 @@
       {/if}
     {/each}
   </div>
+
+  <div class="today-cycle-strip" data-daily-rl-today-cycle>
+    <div class="today-cycle-head">
+      <span class="text-eyebrow">오늘의 한 사이클 · 최신 active_replay frame</span>
+      <span class="pill warn"><span class="dot"></span>{String(field(guide?.active_replay, 'status') ?? 'MISSING_REPLAY_ARTIFACT')}</span>
+    </div>
+    <div class="today-cycle-grid">
+      <article class="today-cycle-card" data-cycle-role="state">
+        <div class="step-badge">S</div>
+        <h3>state 피처</h3>
+        <p>position_count {String(field(frameState(), 'position_count') ?? '—')}</p>
+        <p>top_score_bucket {String(field(frameState(), 'top_score_bucket') ?? '—')}</p>
+      </article>
+      <div class="process-connector" aria-hidden="true">→</div>
+      <article class="today-cycle-card" data-cycle-role="action">
+        <div class="step-badge">A</div>
+        <h3>{frameActionExecuted()}</h3>
+        <p>{frameActionExecuted() === MISSING_ACTION_EVIDENCE ? MISSING_ACTION_EVIDENCE : frameActionExecuted() === 'hold' ? '포지션 유지 (hold)' : `선택 종목 ${String(field(frameState(), 'top_candidate_code') ?? '—')}`}</p>
+      </article>
+      <div class="process-connector" aria-hidden="true">→</div>
+      <article class="today-cycle-card" data-cycle-role="reward">
+        <div class="step-badge">R</div>
+        <h3>{formatNumber(field(frameReward(), 'reward'), 4)}</h3>
+        <p>H1 D+1 exact 15:20 label future_return_h1_1520_proxy {formatNumber(field(frameReward(), 'net_return_after_cost'), 4)} − {formatCostBp(guide?.cost_round_trip_bp ?? 23)} cost</p>
+      </article>
+    </div>
+  </div>
 </section>
 {/if}
 
 {#if isGuideSection('workflow')}
+<Disclosure summary="연구 프로세스 선택 · 한계·개선 방향" meta="RESEARCH_ONLY">
 <section class="panel process-selector-panel" data-daily-rl-research-process-selector>
   <div class="panel-head">
     <div>
@@ -399,6 +509,7 @@
         type="button"
         class="lane-select-card"
         data-active={String(field(lane, 'id')) === String(field(selectedResearchLane(), 'id'))}
+        aria-pressed={String(field(lane, 'id')) === String(field(selectedResearchLane(), 'id'))}
         onclick={() => { selectedLaneId = String(field(lane, 'id') ?? 'D4_RL_RISK_OVERLAY'); }}
       >
         <span>{String(field(lane, 'stage') ?? 'stage')}</span>
@@ -459,21 +570,26 @@
     <div class="mini-chart-card">
       <div class="text-eyebrow">AI-readable / AI 개선 지시 고정 포맷</div>
       <p class="text-muted" style="margin-bottom:8px">선택한 연구 lane의 한계·개선 방향을 AI Agent가 그대로 읽고 다음 실험 계획으로 사용할 수 있는 고정 JSON입니다.</p>
-      <pre class="ai-format-box">{selectedLaneJson()}</pre>
+      <div class="kv-row"><span>lane / status</span><b>{String(field(selectedLaneGuidance(), 'lane_id') ?? '—')} · {String(field(selectedLaneGuidance(), 'status') ?? '—')}</b></div>
+      <div class="kv-row"><span>research question</span><b>{String(field(selectedLaneGuidance(), 'research_question') ?? '—')}</b></div>
+      <div class="kv-row"><span>metrics to watch</span><b>{listText(field(selectedLaneGuidance(), 'metrics_to_watch'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </div>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="연구 workflow 센터 · blocker 확인" meta="INTENT_ONLY">
 <section class="panel workflow-center-panel" data-daily-rl-workflow-center>
   <div class="panel-head">
     <div>
       <div class="text-eyebrow">Research Workflow Center · dashboard-first</div>
       <h2 class="text-h3">CLI 대신 대시보드에서 연구 workflow와 blocker를 확인</h2>
     </div>
-    <span class="pill warn"><span class="dot"></span>{String(field(guide?.research_workflow_catalog, 'job_intent_mode') ?? 'APPROVAL_GATED_INTENT_RECORD_ONLY')}</span>
+    <span class="pill warn"><span class="dot"></span>READ_ONLY_WORKFLOW_CATALOG</span>
   </div>
   <p class="text-muted" style="margin-top:8px">
-    이 영역은 연구 workflow를 보고·검사하고·설정 초안을 준비하기 위한 화면입니다. 브라우저 실행은 막혀 있으며 실거래/브로커/주문/모델빌드/수익 주장으로 이어지지 않습니다.
+    이 영역은 연구 workflow를 보고·검사하고·설정 요구사항을 읽기 전용으로 확인하기 위한 화면입니다. 브라우저 실행은 막혀 있으며 실거래/브로커/주문/모델빌드/수익 주장으로 이어지지 않습니다.
   </p>
   <p class="text-muted" style="margin-top:6px">
     Workflow markers: D0_D1_DATA_GOVERNANCE_REVIEW · D3_D4_SIGNAL_QUALITY_AUDIT · PAST_ONLY_MARKET_REGIME_AUDIT · D4_RL_OVERLAY_ABLATION · SCENARIO_BATCH_RESEARCH_ONLY · HYPOTHESIS_REJECTION_AUDIT.
@@ -483,7 +599,7 @@
     <div class="metric"><div class="metric-label">workflows</div><div class="metric-value tnum">{String(field(guide?.research_workflow_catalog, 'workflow_count') ?? '—')}</div></div>
     <div class="metric"><div class="metric-label">completion</div><div class="metric-value tnum">{formatScore(field(guide?.research_workflow_catalog, 'completion_pct'))}</div></div>
     <div class="metric"><div class="metric-label">browser execution</div><div class="metric-value">{boolText(field(guide?.research_workflow_catalog, 'execution_allowed_from_browser'))}</div></div>
-    <div class="metric"><div class="metric-label">default cost</div><div class="metric-value tnum">23bp</div></div>
+    <div class="metric"><div class="metric-label">default cost</div><div class="metric-value tnum">{formatCostBp(23)}</div></div>
   </div>
 
   <div class="scenario-template-grid" data-daily-rl-workflow-picker>
@@ -492,6 +608,7 @@
         type="button"
         class="template-card"
         data-active={String(field(workflow, 'workflow_id')) === String(field(selectedResearchWorkflow(), 'workflow_id'))}
+        aria-pressed={String(field(workflow, 'workflow_id')) === String(field(selectedResearchWorkflow(), 'workflow_id'))}
         onclick={() => { selectedWorkflowId = String(field(workflow, 'workflow_id') ?? 'PAST_ONLY_MARKET_REGIME_AUDIT'); }}
       >
         <span>{String(field(workflow, 'stage') ?? 'stage')}</span>
@@ -505,66 +622,54 @@
     <article class="selected-process-main">
       <div class="text-eyebrow">{String(field(selectedResearchWorkflow(), 'workflow_id') ?? 'MISSING_WORKFLOW')}</div>
       <h3>{String(field(selectedResearchWorkflow(), 'title_ko') ?? 'Research workflow')}</h3>
-      <p>{String(field(selectedResearchWorkflow(), 'next_allowed_action') ?? '승인된 연구 의도 기록 전 blocker와 artifact를 확인합니다.')}</p>
+      <p>읽기 전용 대시보드는 blocker, artifact dependency, source status만 표시하며 intent 생성이나 실행 요청을 만들지 않습니다.</p>
       <div style="margin-top:10px">
-        <span class="chip">{String(field(selectedResearchWorkflow(), 'approval_status') ?? 'APPROVAL_REQUIRED')}</span>
-        <span class="chip">{String(field(selectedResearchWorkflow(), 'trigger_status') ?? 'INTENT_ONLY_NOT_EXECUTED_BY_BROWSER')}</span>
+        <span class="chip">approval status: source-only</span>
+        <span class="chip">trigger surface: dashboard unavailable</span>
         <span class="chip">no live/broker/orders</span>
       </div>
       <div class="triple-detail-grid" style="margin-top:14px">
         <div><h4>Blockers</h4>{#each selectedWorkflowBlockers() as item}<p>{item}</p>{/each}</div>
         <div><h4>Artifacts</h4>{#each selectedWorkflowArtifacts().slice(0, 6) as item}<p>{item}</p>{/each}</div>
-        <div><h4>Guardrail</h4><p>{String(field(selectedResearchWorkflow(), 'guardrail') ?? 'research-only intent surface')}</p></div>
+        <div><h4>Dashboard boundary</h4><p>read-only evidence only; no dashboard intent creation or execution.</p></div>
       </div>
     </article>
     <aside class="selected-process-side" data-daily-rl-workflow-safe-config-preview>
-      <h3>Safe config preview</h3>
-      <pre class="ai-format-box">{safeJson({
-        workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
-        default_cost_bp: field(selectedResearchWorkflow(), 'default_cost_bp') ?? 23,
-        cost_sensitivity_bp: field(selectedResearchWorkflow(), 'cost_sensitivity_bp') ?? [0, 23, 46],
-        approval_required: field(selectedResearchWorkflow(), 'approval_required') ?? true,
-        execution_allowed_from_browser: field(selectedResearchWorkflow(), 'execution_allowed_from_browser') ?? false,
-        forbidden_fields: field(guide?.research_workflow_catalog, 'forbidden_fields')
-      })}</pre>
+      <h3>Read-only config facts</h3>
+      <div class="kv-row"><span>workflow / cost</span><b>{String(field(safeConfigPreview(), 'workflow_id') ?? '—')} · {formatCostBp(field(safeConfigPreview(), 'default_cost_bp') ?? 23)}</b></div>
+      <div class="kv-row"><span>approval / browser 실행</span><b>{boolText(field(safeConfigPreview(), 'approval_required'))} · {boolText(field(safeConfigPreview(), 'execution_allowed_from_browser'))}</b></div>
+      <div class="kv-row"><span>forbidden fields</span><b>{listText(field(safeConfigPreview(), 'forbidden_fields'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 read-only provenance로 확인합니다.</p>
     </aside>
   </div>
 
   <div class="selected-process-grid" style="margin-top:14px" data-daily-rl-approval-trigger-surface>
     <article class="selected-process-main">
-      <div class="text-eyebrow">Approval-aware trigger surface · intent record only</div>
-      <h3>승인된 연구 의도만 기록하고 실행은 하지 않음</h3>
+      <div class="text-eyebrow">Dashboard request surface · unavailable</div>
+      <h3>대시보드에서는 job intent 생성, POST, 승인 template을 제공하지 않음</h3>
       <p>
-        POST /api/daily-ohlcv/research-workflows/{String(field(selectedResearchWorkflow(), 'workflow_id') ?? '{workflow_id}')}/job-intents 는
-        approval_ref, approval_ref_sha256, approval_status, idempotency_key를 검증한 뒤 immutable intent.json만 생성합니다.
+        이 read-only 화면은 workflow blocker와 artifact dependency만 보여줍니다. intent 생성, worker spawn, model build, paper/live 실행은 대시보드에서 unavailable이며 요청 표면은 fail-closed입니다.
       </p>
       <div style="margin-top:10px">
-        <span class="chip">APPROVAL_GATED_INTENT_RECORD_ONLY</span>
-        <span class="chip">no shell / no worker spawn</span>
+        <span class="chip">DASHBOARD_POST_UNAVAILABLE</span>
+        <span class="chip">read-only evidence only</span>
         <span class="chip">model·paper·live locks false</span>
       </div>
     </article>
     <aside class="selected-process-side">
-      <h3>Rejected request fields</h3>
+      <h3>Unavailable request surface</h3>
       <p class="text-muted">command · shell · argv · env · cwd · broker · account · order · live · paper_forward · model_build · model_build_allowed · paper_forward_allowed · live_broker_order_allowed · arbitrary_path</p>
-      <pre class="ai-format-box">{safeJson({
-        schema_version: 'daily_ohlcv_research_job_intent.v1',
-        approval_status: 'APPROVED_FOR_RESEARCH_INTENT',
-        idempotency_key: 'safe-operator-key',
-        config: {
-          workflow_id: field(selectedResearchWorkflow(), 'workflow_id'),
-          default_cost_bp: 23,
-          cost_sensitivity_bp: [0, 23, 46],
-          controls: ['no_trade', 'shuffle_control', 'frozen_d3_baseline']
-        }
-      })}</pre>
+      <div class="kv-row"><span>status</span><b>{String(field(dashboardIntentAvailability(), 'status'))}</b></div>
+      <div class="kv-row"><span>request method</span><b>{String(field(dashboardIntentAvailability(), 'request_method'))}</b></div>
+      <div class="kv-row"><span>dashboard writes</span><b>{boolText(field(dashboardIntentAvailability(), 'writes_allowed_from_dashboard'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">Unavailable/fail-closed 상태의 원본 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
   </div>
 
   <div class="table-card" style="margin-top:14px" data-daily-rl-intent-ledger>
-    <div class="text-eyebrow">Job / artifact ledger · immutable research intents</div>
+    <div class="text-eyebrow">Artifact ledger · read-only intent snapshot</div>
     <h3>연구 intent ledger</h3>
-    <p class="text-muted">{String(field(guide?.research_job_intent_ledger, 'guardrail') ?? 'Intent ledger records approval-gated research requests only.')}</p>
+    <p class="text-muted">Intent ledger is a read-only artifact snapshot; dashboard cannot create or update intents.</p>
     <div class="grid-4-kpi" style="margin-top:12px">
       <div class="metric"><div class="metric-label">ledger status</div><div class="metric-value">{String(field(guide?.research_job_intent_ledger, 'status') ?? 'EMPTY')}</div></div>
       <div class="metric"><div class="metric-label">intent count</div><div class="metric-value tnum">{String(field(guide?.research_job_intent_ledger, 'count') ?? 0)}</div></div>
@@ -574,14 +679,14 @@
     {#if researchIntentRows().length > 0}
       <div class="compact-table-wrap" style="margin-top:12px">
         <table class="compact-table">
-          <thead><tr><th>intent</th><th>workflow</th><th>status</th><th>approval</th><th>hash</th></tr></thead>
+          <thead><tr><th>intent</th><th>workflow</th><th>status</th><th>dashboard access</th><th>hash</th></tr></thead>
           <tbody>
             {#each researchIntentRows().slice(0, 6) as intent}
               <tr>
                 <td>{String(field(intent, 'intent_id') ?? '—')}</td>
                 <td>{String(field(intent, 'workflow_id') ?? '—')}</td>
                 <td>{String(field(intent, 'status') ?? '—')}</td>
-                <td>{String(field(intent, 'approval_status') ?? '—')}</td>
+                <td>read-only</td>
                 <td class="tnum">{String(field(intent, 'config_hash') ?? '—').slice(0, 12)}</td>
               </tr>
             {/each}
@@ -589,14 +694,16 @@
         </table>
       </div>
     {:else}
-      <p class="text-muted" style="margin-top:12px">아직 기록된 intent가 없습니다. 유효한 승인과 SHA가 없으면 생성 요청은 fail-closed 됩니다.</p>
+      <p class="text-muted" style="margin-top:12px">아직 기록된 intent가 없습니다. 이 대시보드에서는 intent 생성 요청을 만들 수 없으며 누락 evidence는 unavailable/fail-closed로 표시합니다.</p>
     {/if}
   </div>
-  <p class="text-muted" style="margin-top:8px">{String(field(guide?.research_workflow_catalog, 'guardrail') ?? 'workflow catalog is read-only')}</p>
+  <p class="text-muted" style="margin-top:8px">Workflow catalog is read-only; dashboard write/request surfaces remain unavailable.</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('rejection')}
+<Disclosure summary="가설 탈락 · 조기 dropout 검토" meta="REVIEW_ONLY">
 <section class="panel rejection-analytics-panel" data-daily-rl-rejection-analytics>
   <div class="panel-head">
     <div>
@@ -661,13 +768,15 @@
     </div>
   </div>
 </section>
+</Disclosure>
+<Disclosure summary="비실거래 연구 플랫폼 완료 성과 · 남은 lock" meta="NON_LIVE_ONLY">
 <section class="panel final-completion-panel" data-daily-rl-final-completion-report>
   <div class="panel-head">
     <div>
       <div class="text-eyebrow">Completion report · dashboard-first research platform</div>
       <h2 class="text-h3">비실거래 연구 플랫폼 완료 성과와 남은 lock</h2>
     </div>
-    <span class="pill pass"><span class="dot"></span>{String(field(guide?.dashboard_first_completion_report, 'status') ?? 'NON_LIVE_RESEARCH_PLATFORM_INCOMPLETE')}</span>
+    <span class="pill {tone(field(guide?.dashboard_first_completion_report, 'status') ?? 'INCOMPLETE')}"><span class="dot"></span>{String(field(guide?.dashboard_first_completion_report, 'status') ?? 'NON_LIVE_RESEARCH_PLATFORM_INCOMPLETE')}</span>
   </div>
   <p class="text-muted" style="margin-top:8px">
     {String(field(guide?.dashboard_first_completion_report, 'guardrail') ?? 'Non-live research/dashboard completion can be 100%; live/model/paper readiness remains 0%.')}
@@ -713,12 +822,14 @@
     </aside>
   </div>
   <p class="text-muted" style="margin-top:8px">
-    이 완료율은 workflow center, inspector, safe config builder, intent ledger, rejection analytics, 문서/검증 표면에만 적용됩니다. 실거래·브로커 주문·페이퍼 포워드·모델 빌드·수익성 주장은 계속 0%/blocked입니다.
+    이 완료율은 workflow center, inspector, read-only config facts, intent ledger, rejection analytics, 문서/검증 표면에만 적용됩니다. 실거래·브로커 주문·페이퍼 포워드·모델 빌드·수익성 주장은 계속 0%/blocked입니다.
   </p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('scenario')}
+<Disclosure summary="시나리오 생성 · JSON 초안" meta="READ_ONLY">
 <section class="panel scenario-generator-panel" data-daily-rl-scenario-generator>
   <div class="panel-head">
     <div>
@@ -736,7 +847,7 @@
 
   <div class="grid-4-kpi" style="margin-top:16px">
     <div class="metric"><div class="metric-label">templates</div><div class="metric-value tnum">{String(field(guide?.scenario_generator, 'template_count') ?? '—')}</div></div>
-    <div class="metric"><div class="metric-label">default cost</div><div class="metric-value tnum">23bp</div></div>
+    <div class="metric"><div class="metric-label">default cost</div><div class="metric-value tnum">{formatCostBp(23)}</div></div>
     <div class="metric"><div class="metric-label">execution</div><div class="metric-value">{boolText(field(guide?.scenario_generator, 'execution_allowed'))}</div></div>
     <div class="metric"><div class="metric-label">export</div><div class="metric-value">JSON</div></div>
   </div>
@@ -747,6 +858,7 @@
         type="button"
         class="template-card"
         data-active={String(field(template, 'template_id')) === String(field(selectedScenarioTemplate(), 'template_id'))}
+        aria-pressed={String(field(template, 'template_id')) === String(field(selectedScenarioTemplate(), 'template_id'))}
         onclick={() => { selectedTemplateId = String(field(template, 'template_id') ?? 'D3_D4_SIGNAL_QUALITY_AUDIT'); }}
       >
         <span>{String(field(template, 'lane_id') ?? 'lane')}</span>
@@ -773,12 +885,17 @@
     </article>
     <aside class="selected-process-side">
       <h3>Fixed plan JSON draft</h3>
-      <pre class="ai-format-box">{selectedScenarioPlanJson()}</pre>
+      <div class="kv-row"><span>template / cost</span><b>{String(field(selectedScenarioPlan(), 'template_id') ?? '—')} · {formatCostBp(field(selectedScenarioPlan(), 'default_cost_bp') ?? 23)}</b></div>
+      <div class="kv-row"><span>scenarios</span><b>{rows(field(selectedScenarioPlan(), 'scenarios')).length}개 draft</b></div>
+      <div class="kv-row"><span>guardrails</span><b>{listText(field(selectedScenarioPlan(), 'guardrails'))}</b></div>
+      <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
     </aside>
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.scenario_generator, 'guardrail') ?? 'read-only scenario generator')}</p>
 </section>
+</Disclosure>
 
+<Disclosure summary="최신 신호 품질 결과 · 시나리오 비교" meta="WATCH">
 <section class="panel" data-daily-rl-signal-quality-integration>
   <div class="panel-head">
     <div>
@@ -804,7 +921,7 @@
       {#each stringItems(field(guide?.signal_quality_audit_summary, 'baseline_controls')) as control}
         <span class="chip">{control}</span>
       {/each}
-      <p class="text-muted" style="margin-top:8px">cost sensitivity: {listText(field(guide?.signal_quality_audit_summary, 'cost_sensitivity_bp'))}bp</p>
+      <p class="text-muted" style="margin-top:8px">cost sensitivity: {formatCostBpList(field(guide?.signal_quality_audit_summary, 'cost_sensitivity_bp') ?? [0, 23, 46])}</p>
     </article>
     <article class="mini-chart-card">
       <div class="text-eyebrow">Artifact links</div>
@@ -829,7 +946,9 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.scenario_comparison, 'guardrail') ?? 'WATCH/NO-GO diagnostics only')}</p>
 </section>
+</Disclosure>
 
+<Disclosure summary="Past-only 시장 국면 감사 준비도" meta="WATCH">
 <section class="panel" data-daily-rl-market-regime-readiness>
   <div class="panel-head">
     <div>
@@ -889,10 +1008,15 @@
   </div>
   <div class="mini-chart-card" style="margin-top:12px">
     <div class="text-eyebrow">AI-readable next-action guidance</div>
-    <pre class="ai-format-box">{safeJson(field(guide?.market_regime_audit_readiness, 'ai_guidance_format'))}</pre>
+    <div class="kv-row"><span>next lane</span><b>{String(field(marketRegimeGuidance(), 'next_research_lane') ?? '—')}</b></div>
+    <div class="kv-row"><span>objective</span><b>{String(field(marketRegimeGuidance(), 'objective') ?? '—')}</b></div>
+    <div class="kv-row"><span>acceptance gate</span><b>{String(field(marketRegimeGuidance(), 'acceptance_gate') ?? '—')}</b></div>
+    <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="개선 큐 · 한계→행동→산출물→gate" meta="AI_READABLE">
 <section class="panel" data-daily-rl-improvement-queue>
   <div class="panel-head">
     <div>
@@ -913,9 +1037,14 @@
       </article>
     {/each}
   </div>
-  <pre class="ai-format-box" style="margin-top:12px">{safeJson(field(guide?.improvement_queue, 'ai_guidance_format'))}</pre>
+  <div class="kv-row" style="margin-top:12px"><span>queue policy</span><b>{String(field(improvementQueueGuidance(), 'queue_policy') ?? '—')}</b></div>
+  <div class="kv-row"><span>allowed next action</span><b>{String(field(improvementQueueGuidance(), 'allowed_next_action') ?? '—')}</b></div>
+  <div class="kv-row"><span>blocked actions</span><b>{listText(field(improvementQueueGuidance(), 'blocked_actions'))}</b></div>
+  <p class="text-muted" style="margin-top:8px">원본 고정 JSON은 6. Raw checks 섹션에서 확인합니다.</p>
 </section>
+</Disclosure>
 
+<Disclosure summary="전체 페이지 성숙도 · 연구 준비도" meta="WATCH">
 <section class="panel" data-daily-rl-page-maturity-report>
   <div class="panel-head">
     <div>
@@ -958,10 +1087,12 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{String(field(guide?.page_maturity_report, 'guardrail') ?? 'page maturity is not trading readiness')}</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('replay')}
 
+<Disclosure summary="저장된 산출물 RL 리플레이" meta="RESEARCH_ONLY">
 <section class="panel live-visualizer-panel" data-daily-rl-realtime-visualizer>
   <div class="panel-head">
     <div>
@@ -1009,7 +1140,7 @@
           <div class="q-arrow">→</div>
           <div class="q-cell">Q-table<br />artifact telemetry</div>
           <div class="q-arrow">→</div>
-          <div class="q-cell active">action<br />{String(field(frameAction(), 'executed') ?? 'hold')}</div>
+          <div class="q-cell active">action<br />{frameActionExecuted()}</div>
         </div>
       </div>
       <div class="action-probabilities" data-daily-rl-action-probability-bars>
@@ -1030,7 +1161,7 @@
 
     <article class="live-reward-card">
       <div class="text-eyebrow">Action · reward feedback</div>
-      <h3>{String(field(frameAction(), 'executed') ?? 'hold')}</h3>
+      <h3>{frameActionExecuted()}</h3>
       <div class="selected-action-pill">requested: {String(field(frameAction(), 'requested') ?? '—')}</div>
       <dl>
         <div><dt>Action Mask</dt><dd>{String(field(frameAction(), 'mask') ?? '—')}</dd></div>
@@ -1044,7 +1175,9 @@
     </article>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="학습 성과 예시 · 수익금·수익률·리스크" meta="RESEARCH_ONLY">
 <section class="panel performance-panel" data-daily-rl-performance-example>
   <div class="panel-head">
     <div>
@@ -1054,8 +1187,8 @@
     <span class="pill warn"><span class="dot"></span>{String(field(guide?.learning_performance, 'status') ?? 'RESEARCH_ONLY_PERFORMANCE_DIAGNOSTIC')}</span>
   </div>
   <p class="text-muted" style="margin-top:8px">
-    아래 금액은 실거래 수익이 아니라 <b>가정 원금 {formatKrw(field(guide?.learning_performance, 'display_capital_krw') ?? 10000000)}</b>에
-    연구용 평가 수익률을 곱해 이해하기 쉽게 환산한 모의 성과입니다.
+    아래 금액은 실거래 수익이 아니라 <b>V5.1 계약 원금 {formatKrw(field(guide?.learning_performance, 'display_capital_krw') ?? V51_CONTRACT_INITIAL_CAPITAL_KRW)}</b>에
+    연구용 평가 수익률을 곱해 이해하기 쉽게 환산한 모의 성과입니다. API 원금 evidence가 없으면 ₩60,000,000 계약값을 사용하며 다른 원금으로 대체하지 않습니다.
   </p>
 
   <div class="performance-grid" data-daily-rl-performance-pnl>
@@ -1064,7 +1197,7 @@
       nestedRecord(guide?.learning_performance, 'best_d3_baseline'),
       nestedRecord(guide?.learning_performance, 'delta_vs_best_d3'),
     ] as card}
-      <article class="performance-card" data-card-tone={numberValue(field(card, 'total_return_pct')) !== null && Number(field(card, 'total_return_pct')) < 0 ? 'danger' : 'pass'}>
+      <article class="performance-card" data-card-tone={performanceCardTone(card)}>
         <div class="text-eyebrow">{String(field(card, 'split') ?? '—')}</div>
         <h3>{String(field(card, 'label') ?? '—')}</h3>
         <div class="performance-main">
@@ -1089,7 +1222,7 @@
       <div class="text-eyebrow">Training curve preview</div>
       <h3>episode별 reward / final equity</h3>
       {#each rows(field(guide?.learning_performance, 'learning_curve_preview')) as row}
-        <div class="mini-bar-row" data-tone={numberValue(field(row, 'total_reward')) !== null && Number(field(row, 'total_reward')) < 0 ? 'danger' : 'pass'}>
+        <div class="mini-bar-row" data-tone={signedMetricTone(field(row, 'total_reward'))}>
           <span>EP {String(field(row, 'episode') ?? '—')}</span>
           <div class="mini-bar-track"><div class="mini-bar-fill" style={barWidthStyle(field(row, 'final_equity'), 100)}></div></div>
           <b>{formatNumber(field(row, 'total_reward'), 3)}</b>
@@ -1112,10 +1245,12 @@
 
   <p class="text-muted" style="margin-top:10px">{String(field(guide?.learning_performance, 'guardrail') ?? 'no profit guarantee, no live/broker/orders')}</p>
 </section>
+</Disclosure>
 {/if}
 
 {#if isGuideSection('raw')}
 
+<Disclosure summary="D2 → D5 일봉 RL 흐름">
 <section class="panel" data-daily-rl-env-visual-map>
   <div class="panel-head">
     <div>
@@ -1129,7 +1264,7 @@
       <div class="flow-node" data-tone={tone(node.status)}>
         <div class="node-id">{node.id}</div>
         <div class="node-label">{node.label}</div>
-        <div class="node-summary">{node.summary}</div>
+        <div class="node-summary">{publicGuideText(node.summary)}</div>
         <div class="node-status">{node.status}</div>
       </div>
       {#if index < rows(guide?.visual_flow).length - 1}
@@ -1138,7 +1273,9 @@
     {/each}
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="RL 구성 요소 · Agent·State·Action·Reward">
 <section class="panel" data-daily-rl-env-elements>
   <div class="panel-head">
     <div>
@@ -1150,12 +1287,14 @@
     {#each recordEntries(guide?.what_rl_means_here) as [key, text]}
       <article class="explain-card">
         <div class="text-eyebrow">{key}</div>
-        <p>{text}</p>
+        <p>{publicGuideText(text)}</p>
       </article>
     {/each}
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="상태·행동·보상 공식">
 <section class="panel" data-daily-rl-state-action-reward>
   <div class="panel-head">
     <div>
@@ -1166,8 +1305,8 @@
   <div class="contract-grid">
     <div class="contract-box">
       <h3>State 관측</h3>
-      <p>fields: {listText(guide?.state_contract?.fields)}</p>
-      <p>{String(guide?.state_contract?.lookahead_policy ?? 'future_return_1d는 관측에 넣지 않습니다.')}</p>
+      <p>fields: {publicListText(guide?.state_contract?.fields)}</p>
+      <p>{String(guide?.state_contract?.lookahead_policy ?? 'legacy future_return_1d is forbidden in state observations; reward labels are H1: D 15:20 → D+1 exact 15:20 · future_return_h1_1520_proxy / H3: D 15:20 → D+3 exact 15:20 · future_return_h3_1520_proxy / H5: D 15:20 → D+5 exact 15:20 · future_return_h5_1520_proxy only.')}</p>
     </div>
     <div class="contract-box">
       <h3>Action space</h3>
@@ -1183,13 +1322,15 @@
     </div>
     <div class="contract-box">
       <h3>Reward</h3>
-      <p class="mono">{guide?.reward_formula ?? 'net_return_after_cost - penalties'}</p>
-      <p>components: {listText(guide?.reward_components)}</p>
-      <p>fill: {guide?.fill_assumption ?? 'daily research label only'}</p>
+      <p class="mono">{publicGuideText(guide?.reward_formula ?? 'net_return_after_cost - penalties')}</p>
+      <p>components: {publicListText(guide?.reward_components)}</p>
+      <p>fill: {publicGuideText(guide?.fill_assumption ?? 'daily research label only')}</p>
     </div>
   </div>
 </section>
+</Disclosure>
 
+<Disclosure summary="PASS/WATCH 체크리스트">
 <section class="panel" data-daily-rl-env-checks>
   <div class="panel-head">
     <div>
@@ -1205,7 +1346,7 @@
           <tr class={tone(check.status)}>
             <td class="mono">{check.check}</td>
             <td>{check.status}</td>
-            <td>{check.meaning_ko}</td>
+            <td>{publicGuideText(check.meaning_ko)}</td>
           </tr>
         {/each}
       </tbody>
@@ -1217,19 +1358,59 @@
   </div>
   <p class="text-muted" style="margin-top:8px">{guide?.guardrail ?? 'no profit guarantee, no live/broker/orders'}</p>
 </section>
+</Disclosure>
+
+<Disclosure summary="Workflow · scenario AI-guidance 원본 JSON" meta="RAW_JSON_PROVENANCE">
+<section class="panel" data-daily-rl-raw-ai-guidance-json>
+  <div class="panel-head">
+    <div>
+      <div class="text-eyebrow">Raw JSON provenance</div>
+      <h2 class="text-h3">workflow · scenario 섹션 원본 JSON</h2>
+    </div>
+    <span class="pill"><span class="dot"></span>audit trail only</span>
+  </div>
+  <p class="text-muted" style="margin-top:8px">
+    2. Workflow · 4. Scenario 섹션은 사람이 읽는 key-value 요약만 보여줍니다. 아래는 같은 payload의 고정 JSON 원본이며 audit trail 확인용입니다 (실행 버튼 아님).
+  </p>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">연구 lane · AI 개선 지시 고정 포맷</div>
+    <pre class="ai-format-box">{selectedLaneJson()}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Workflow read-only config facts</div>
+    <pre class="ai-format-box">{safeJson(safeConfigPreview())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Dashboard request unavailable JSON</div>
+    <pre class="ai-format-box">{safeJson(dashboardIntentAvailability())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Scenario fixed plan JSON draft</div>
+    <pre class="ai-format-box">{selectedScenarioPlanJson()}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Market-regime readiness · next-action guidance</div>
+    <pre class="ai-format-box">{safeJson(marketRegimeGuidance())}</pre>
+  </div>
+  <div class="mini-chart-card" style="margin-top:14px">
+    <div class="text-eyebrow">Improvement queue · AI guidance format</div>
+    <pre class="ai-format-box">{safeJson(improvementQueueGuidance())}</pre>
+  </div>
+</section>
+</Disclosure>
 {/if}
 
 <style>
   .guide-section-control { position:sticky; top:12px; z-index:2; }
   .guide-section-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
-  .guide-section-button { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
+  .guide-section-button { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--fg); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
   .guide-section-button[data-active='true'] { border-color:rgba(20,184,166,0.68); background:linear-gradient(180deg, rgba(20,184,166,0.14), var(--surface)); }
   .guide-section-button span { color:var(--muted); font-size:12px; line-height:1.45; }
   .replay-controls { margin-top:14px; display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:12px; border:1px solid var(--border-faint); border-radius:16px; background:var(--surface-sunken); }
   .visual-panel { overflow:hidden; }
   .rl-loop-figure { margin-top:16px; border:1px solid var(--border-faint); border-radius:24px; background:radial-gradient(circle at 22% 28%, rgba(20,184,166,0.16), transparent 34%), radial-gradient(circle at 78% 20%, rgba(59,130,246,0.13), transparent 32%), linear-gradient(135deg, rgba(15,23,42,0.02), rgba(245,158,11,0.05)); overflow:auto; }
   .rl-loop-svg { display:block; width:100%; min-width:900px; height:auto; }
-  .svg-backdrop { fill:rgba(255,255,255,0.64); stroke:var(--border-faint); }
+  .svg-backdrop { fill:var(--surface); stroke:var(--border-faint); }
   .svg-card { fill:var(--surface); stroke:var(--border-faint); stroke-width:1.5; filter:drop-shadow(0 14px 22px rgba(15,23,42,0.10)); }
   .state-card { fill:url(#stateGlow); stroke:rgba(20,184,166,0.50); }
   .agent-card { stroke:rgba(59,130,246,0.48); }
@@ -1239,16 +1420,20 @@
   .svg-section-label, .svg-kicker, .svg-status, .svg-footer { font-family:var(--font-mono); letter-spacing:0.03em; }
   .svg-section-label { fill:var(--muted); font-size:13px; font-weight:700; }
   .svg-kicker { fill:var(--muted); font-size:12px; font-weight:700; }
-  .svg-title { fill:var(--text); font-size:20px; font-weight:800; }
+  .svg-title { fill:var(--fg); font-size:20px; font-weight:800; }
   .svg-body { fill:var(--muted); font-size:15px; }
   .svg-status { fill:rgb(185,28,28); font-size:13px; font-weight:800; }
   .svg-annotation { fill:var(--muted); font-size:13px; }
-  .svg-footer { fill:var(--text); font-size:14px; font-weight:700; }
+  .svg-footer { fill:var(--fg); font-size:14px; font-weight:700; }
   .svg-arrow { fill:none; stroke:rgba(20,184,166,0.78); stroke-width:4; stroke-linecap:round; }
   .svg-arrow.warn { stroke:rgba(245,158,11,0.86); }
   .svg-arrow.loop { stroke:rgba(59,130,246,0.78); stroke-dasharray:8 8; }
   .svg-arrow-head { fill:rgba(20,184,166,0.86); }
+  .svg-action-active { fill:rgb(29,78,216); font-weight:900; }
+  .svg-callout { fill:rgb(180,83,9); font-family:var(--font-mono); font-size:12px; font-weight:800; letter-spacing:0.02em; }
   .process-strip { margin-top:16px; display:flex; align-items:stretch; gap:8px; overflow-x:auto; padding:4px 0 2px; }
+  .scroll-region-focus:focus-visible { outline:2px solid var(--accent-strong); outline-offset:2px; }
+  .scroll-region-focus { min-width:max-content; align-self:center; color:var(--accent-strong); font-size:12px; font-weight:700; }
   .process-step { min-width:180px; flex:1; border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:var(--surface); box-shadow:var(--shadow-sm); position:relative; }
   .process-step[data-step-tone='pass'] { border-color:rgba(34,197,94,0.42); background:linear-gradient(180deg, rgba(34,197,94,0.08), var(--surface)); }
   .process-step[data-step-tone='warn'] { border-color:rgba(245,158,11,0.42); background:linear-gradient(180deg, rgba(245,158,11,0.08), var(--surface)); }
@@ -1258,9 +1443,19 @@
   .process-step h3 { margin:0 0 6px; font-size:15px; }
   .process-step p { margin:0; color:var(--muted); font-size:12px; line-height:1.55; }
   .process-connector { align-self:center; color:var(--muted); font-size:24px; font-weight:900; padding:0 2px; }
+  .today-cycle-strip { margin-top:18px; }
+  .today-cycle-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .today-cycle-grid { margin-top:10px; display:flex; align-items:stretch; gap:8px; overflow-x:auto; padding:4px 0 2px; }
+  .today-cycle-card { min-width:200px; flex:1; border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:var(--surface); box-shadow:var(--shadow-sm); }
+  .today-cycle-card[data-cycle-role='state'] { border-color:rgba(20,184,166,0.42); background:linear-gradient(180deg, rgba(20,184,166,0.08), var(--surface)); }
+  .today-cycle-card[data-cycle-role='action'] { border-color:rgba(59,130,246,0.42); background:linear-gradient(180deg, rgba(59,130,246,0.08), var(--surface)); }
+  .today-cycle-card[data-cycle-role='reward'] { border-color:rgba(245,158,11,0.42); background:linear-gradient(180deg, rgba(245,158,11,0.08), var(--surface)); }
+  .today-cycle-card h3 { margin:4px 0 6px; font-size:17px; font-family:var(--font-mono); }
+  .today-cycle-card p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.5; }
   .performance-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:12px; }
   .performance-card { border:1px solid var(--border-faint); border-radius:18px; padding:16px; background:var(--surface); box-shadow:var(--shadow-sm); }
   .performance-card[data-card-tone='pass'] { border-color:rgba(34,197,94,0.40); }
+  .performance-card[data-card-tone='warn'] { border-color:rgba(245,158,11,0.42); background:linear-gradient(180deg, rgba(245,158,11,0.07), var(--surface)); }
   .performance-card[data-card-tone='danger'] { border-color:rgba(239,68,68,0.45); background:linear-gradient(180deg, rgba(239,68,68,0.07), var(--surface)); }
   .performance-card h3 { margin:4px 0 12px; font-size:16px; }
   .performance-main { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
@@ -1268,7 +1463,7 @@
   .performance-main small { color:var(--muted); font-size:12px; }
   .process-selector-panel { overflow:hidden; }
   .process-selector-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:10px; }
-  .lane-select-card { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
+  .lane-select-card { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--fg); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
   .lane-select-card[data-active='true'] { border-color:rgba(20,184,166,0.62); background:linear-gradient(180deg, rgba(20,184,166,0.12), var(--surface)); }
   .lane-select-card span, .lane-select-card small { color:var(--muted); font-family:var(--font-mono); font-size:11px; }
   .lane-select-card b { font-size:14px; }
@@ -1288,8 +1483,8 @@
   .triple-detail-grid div { border:1px solid var(--border-faint); border-radius:14px; padding:12px; background:var(--surface-sunken); }
   .triple-detail-grid h4 { margin:0 0 8px; font-size:13px; }
   .triple-detail-grid p, .limitation-item, .improvement-item { margin:6px 0; font-size:12px; }
-  .limitation-item { padding:8px 10px; border-radius:12px; background:rgba(239,68,68,0.07); color:var(--text); }
-  .improvement-item { padding:8px 10px; border-radius:12px; background:rgba(20,184,166,0.08); color:var(--text); }
+  .limitation-item { padding:8px 10px; border-radius:12px; background:rgba(239,68,68,0.07); color:var(--fg); }
+  .improvement-item { padding:8px 10px; border-radius:12px; background:rgba(20,184,166,0.08); color:var(--fg); }
   .ai-format-box { max-height:320px; overflow:auto; white-space:pre-wrap; font-family:var(--font-mono); font-size:11px; line-height:1.45; border:1px solid var(--border-faint); border-radius:14px; padding:12px; background:var(--surface-sunken); }
   .tabular-policy-visual { min-height:190px; display:grid; gap:12px; padding:16px; border-radius:18px; background:linear-gradient(135deg, rgba(15,23,42,0.03), rgba(20,184,166,0.06)); }
   .policy-status-pill { display:inline-flex; width:max-content; max-width:100%; padding:7px 10px; border-radius:999px; background:rgba(20,184,166,0.10); color:rgb(15,118,110); font-family:var(--font-mono); font-size:11px; font-weight:800; }
@@ -1305,7 +1500,7 @@
   .performance-card dl div { display:flex; justify-content:space-between; gap:12px; border-top:1px solid var(--border-faint); padding-top:7px; }
   .performance-card dt { color:var(--muted); font-size:12px; }
   .performance-card dd { margin:0; font-weight:800; font-family:var(--font-mono); font-size:12px; text-align:right; }
-  .outcome-note { margin-top:14px; padding:12px 14px; border-radius:14px; border:1px solid rgba(245,158,11,0.38); background:rgba(245,158,11,0.08); color:var(--text); font-weight:700; line-height:1.55; }
+  .outcome-note { margin-top:14px; padding:12px 14px; border-radius:14px; border:1px solid rgba(245,158,11,0.38); background:rgba(245,158,11,0.08); color:var(--fg); font-weight:700; line-height:1.55; }
   .learning-visual-grid { margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; }
   .mini-chart-card { border:1px solid var(--border-faint); border-radius:18px; padding:14px; background:linear-gradient(180deg, rgba(15,23,42,0.02), var(--surface)); }
   .mini-chart-card h3 { margin:4px 0 12px; font-size:15px; }
@@ -1319,7 +1514,7 @@
   .mini-bar-row[data-tone='pass'] .mini-bar-fill { background:linear-gradient(90deg, rgba(34,197,94,0.85), rgba(20,184,166,0.72)); }
   .flow-canvas { margin-top:16px; display:flex; align-items:stretch; gap:10px; overflow-x:auto; padding:14px; border:1px solid var(--border-faint); border-radius:18px; background:linear-gradient(135deg, rgba(56,189,248,0.06), rgba(167,139,250,0.06)); }
   .scenario-template-grid, .signal-grid, .scenario-comparison-grid, .readiness-grid, .improvement-grid, .maturity-kpi-grid { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:12px; }
-  .template-card { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
+  .template-card { text-align:left; border:1px solid var(--border-faint); border-radius:16px; padding:14px; background:var(--surface); color:var(--fg); cursor:pointer; box-shadow:var(--shadow-sm); display:grid; gap:6px; }
   .template-card[data-active='true'] { border-color:rgba(59,130,246,0.58); background:linear-gradient(180deg, rgba(59,130,246,0.10), var(--surface)); }
   .template-card span, .template-card small { color:var(--muted); font-family:var(--font-mono); font-size:11px; }
   .template-card b { font-size:14px; }
@@ -1345,7 +1540,7 @@
   .live-state-card h3, .live-reward-card h3 { margin:6px 0 12px; font-size:18px; }
   .live-state-card p { margin:12px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
   .state-meter-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0; }
-  .state-meter-grid div { border:1px solid var(--border-faint); border-radius:12px; padding:10px; background:rgba(255,255,255,0.55); }
+  .state-meter-grid div { border:1px solid var(--border-faint); border-radius:12px; padding:10px; background:var(--surface-raised); }
   .state-meter-grid dt, .live-reward-card dt { color:var(--muted); font-size:11px; font-family:var(--font-mono); }
   .state-meter-grid dd, .live-reward-card dd { margin:4px 0 0; font-weight:900; font-family:var(--font-mono); }
   .action-probabilities { margin-top:12px; display:grid; gap:7px; }

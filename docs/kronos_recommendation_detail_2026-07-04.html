@@ -1,0 +1,173 @@
+<style>
+  /* ===== Kronos real tokens — from webui/v2_src/src/lib/theme.ts (design_spec §3). Dark-only by design. ===== */
+  :root {
+    --bg:#0f172a; --card:#111827; --card-raised:#0b1120;
+    --border:#243244; --border-muted:#1e293b;
+    --text:#e2e8f0; --text-muted:#94a3b8; --text-dim:#64748b; --text-faint:#475569;
+    --accent:#38bdf8; --accent-subtle:#bfdbfe; --accent-dim:rgba(56,189,248,.12); --accent-hover:rgba(56,189,248,.08);
+    --success:#22c55e; --warn:#f59e0b; --danger:#ef4444; --info:#93c5fd;
+    --sans:"Segoe UI","Malgun Gothic","맑은 고딕",sans-serif;
+    --mono:"Consolas","D2Coding",ui-monospace,monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    font-family: var(--sans); background: var(--bg); color: var(--text);
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; padding: 34px 26px 80px;
+    background-image: radial-gradient(1100px 560px at 84% -12%, var(--accent-dim), transparent 62%);
+  }
+  .col { max-width: 1000px; margin: 0 auto; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .kick { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: .05em;
+          border: 1px solid var(--accent-dim); background: var(--accent-hover); border-radius: 5px; padding: 3px 10px; display: inline-block; }
+  h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.015em; margin: 14px 0 8px; line-height: 1.25; text-wrap: balance; }
+  .lede { color: var(--text-muted); font-size: 15px; max-width: 760px; }
+  .lede b { color: var(--text); }
+
+  .tldr { display: flex; gap: 13px; align-items: flex-start; margin: 20px 0 4px; padding: 15px 18px; border-radius: 10px;
+          background: var(--accent-hover); border: 1px solid var(--accent-dim); }
+  .tldr .ic { font-size: 18px; }
+  .tldr .t { font-size: 14px; color: var(--text); } .tldr .t b { color: var(--accent); }
+
+  h2.sec { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted);
+           margin: 36px 0 6px; display: flex; align-items: center; gap: 9px; }
+  h2.sec::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .hint { font-size: 12.5px; color: var(--text-dim); margin: 0 0 12px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--card);
+          border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase;
+       color: var(--text-muted); padding: 10px 13px; background: var(--card-raised); border-bottom: 1px solid var(--border); }
+  td { padding: 11px 13px; border-bottom: 1px solid var(--border-muted); color: var(--text-muted); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td b, td strong { color: var(--text); font-weight: 600; }
+  .c-accent { color: var(--accent); } .c-ok { color: var(--success); } .c-warn { color: var(--warn); } .c-bad { color: var(--danger); }
+  .yes::before { content: "✅ "; } .no::before { content: "❌ "; } .rec::before { content: "⭐ "; }
+
+  .pill { display: inline-block; font-family: var(--mono); font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
+          border: 1px solid var(--border); color: var(--text-muted); }
+  .pill.now { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+  .pill.opt { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .pill.gate { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+  .sw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap: 8px; }
+  .sw { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); }
+  .sw .chip { height: 32px; }
+  .sw .m { padding: 6px 9px; } .sw .v { font-family: var(--mono); font-size: 11px; color: var(--text); } .sw .r { font-size: 10.5px; color: var(--text-dim); }
+
+  .note { font-size: 12.5px; color: var(--text-muted); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 13px 16px; margin-top: 12px; }
+  .note b { color: var(--text); }
+  .analogy { border-left: 3px solid var(--accent); padding: 4px 0 4px 13px; margin: 14px 0; color: var(--text-muted); font-size: 13px; }
+  .analogy b { color: var(--accent-subtle); }
+</style>
+
+<div class="wrap"><div class="col">
+
+  <span class="kick">KRONOS · 추천 상세 안내 · 2026-07-04</span>
+  <h1>Kronos 대시보드 리모델링 — 추천 상세</h1>
+  <p class="lede">전체 대화를 정리한 실행 추천입니다. 팔레트는 이번엔 <b>Kronos 자신의 토큰(slate/sky, <span class="mono">theme.ts</span>)</b>으로 렌더했습니다 — STOM V4가 아닙니다.</p>
+
+  <div class="tldr">
+    <span class="ic">🎯</span>
+    <div class="t"><b>(A) 원칙을 코드에 지금 적용</b>하고, <b>(B) Kronos 디자인 시스템(claude.ai/design)은 파일럿 성공 후 선택</b>. 통합은 <b>Svelte로 수렴, React 은퇴</b>.</div>
+  </div>
+
+  <div class="analogy">비유: <b>(A)는 집을 고치는 일</b>, <b>(B)는 고친 집을 전시장에 등록하는 일</b>. 고치는 게 먼저고, 전시는 원할 때. 그리고 <b>설계도 원본은 코드(theme.ts)</b> 한 곳 — claude.ai는 사본입니다.</div>
+
+  <!-- 1 -->
+  <h2 class="sec">01 · 무엇을 · 언제 (한 장 요약)</h2>
+  <p class="hint">각 항목이 "지금 할 일"인지 "나중 선택"인지 한눈에.</p>
+  <table>
+    <thead><tr><th>구분</th><th>내용</th><th>Claude Design</th><th>시점</th></tr></thead>
+    <tbody>
+      <tr><td><b>통합</b></td><td>두 앱 → Svelte 하나. React(Next.js) 은퇴</td><td>—</td><td><span class="pill gate">승인 게이트</span></td></tr>
+      <tr><td><b>토큰 정리</b></td><td><span class="mono">theme.ts</span> slate/sky를 공용 CSS로</td><td>(A) 원칙</td><td><span class="pill now">지금</span></td></tr>
+      <tr><td><b>카드 리모델</b></td><td>close-slot 과밀 해소 (마커 보존)</td><td>(A) 원칙</td><td><span class="pill now">지금</span></td></tr>
+      <tr><td><b>디자인 갤러리</b></td><td>Kronos Design System을 claude.ai에 생성</td><td>(B) 시스템</td><td><span class="pill opt">파일럿 후 선택</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- 2 -->
+  <h2 class="sec">02 · Claude Design (A) vs (B)</h2>
+  <p class="hint">둘은 택일이 아니라 "본체(A) + 얹는 옵션(B)".</p>
+  <table>
+    <thead><tr><th>기준</th><th>(A) 원칙만 (코드에 직접)</th><th>(A)+(B) 디자인 시스템까지</th></tr></thead>
+    <tbody>
+      <tr><td>대시보드 가독성</td><td class="yes c-ok">충분</td><td class="yes">동일 (더 나아지진 않음)</td></tr>
+      <tr><td>소스 오브 트루스</td><td><b>theme.ts 1곳</b></td><td>여전히 theme.ts (claude.ai는 사본)</td></tr>
+      <tr><td>팀 공유 갤러리</td><td class="no">없음</td><td class="yes">claude.ai 호스팅</td></tr>
+      <tr><td>유지보수</td><td class="c-ok">낮음</td><td class="c-warn">동기화 1스텝 + 드리프트 위험</td></tr>
+      <tr><td>외부 발행</td><td>없음</td><td>있음 (승인 필요)</td></tr>
+      <tr><td>지금 필요?</td><td class="rec"><b>예 — 본체</b></td><td>목표에 따라 선택</td></tr>
+    </tbody>
+  </table>
+
+  <!-- 3 -->
+  <h2 class="sec">03 · (B)는 언제 추가하나 (결정 규칙)</h2>
+  <p class="hint">"원하는 것"에 따라 답이 갈립니다.</p>
+  <table>
+    <thead><tr><th>당신의 목표가...</th><th>추천</th></tr></thead>
+    <tbody>
+      <tr><td>과밀한 대시보드를 고치고 싶다</td><td class="c-ok"><b>(A)만</b> — (B) 불필요</td></tr>
+      <tr><td>STOM처럼 claude.ai에 정식 레퍼런스를 두고 싶다</td><td><b>(A)+(B)</b></td></tr>
+      <tr><td>나중에 팀과 컴포넌트를 공유할 수 있다</td><td><b>(A) 먼저, (B)는 그때</b></td></tr>
+    </tbody>
+  </table>
+
+  <!-- 4 -->
+  <h2 class="sec">04 · Kronos 진짜 정체성 (slate / sky)</h2>
+  <p class="hint">STOM V4(quant-terminal)와 다름. 아래가 <span class="mono">theme.ts</span>의 실제 토큰.</p>
+  <div class="sw-grid">
+    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="m"><div class="v">--accent</div><div class="r">sky · 강조/차트 primary</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--success)"></div><div class="m"><div class="v">--success</div><div class="r">통과 · gains</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--warn)"></div><div class="m"><div class="v">--warn</div><div class="r">WATCH · 주의</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--danger)"></div><div class="m"><div class="v">--danger</div><div class="r">blocker · 리스크</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--info)"></div><div class="m"><div class="v">--info</div><div class="r">info accent</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg);border:1px solid var(--border)"></div><div class="m"><div class="v">--bg</div><div class="r">slate-900 앱 배경</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--card);border:1px solid var(--border)"></div><div class="m"><div class="v">--card</div><div class="r">패널</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--text)"></div><div class="m"><div class="v">--text</div><div class="r">primary 텍스트</div></div></div>
+  </div>
+  <div class="note"><b>폰트</b> Segoe UI · Malgun Gothic / mono Consolas · D2Coding · <b>차트</b> ECharts·Plotly가 theme.ts 토큰을 공유 · <b>테마</b> dark-only(설계상).</div>
+
+  <!-- 5 -->
+  <h2 class="sec">05 · 실행 순서 (지금부터)</h2>
+  <p class="hint">저위험 → 고위험(승인) 순. 파일럿 1개로 방식 검증 후 확장.</p>
+  <table>
+    <thead><tr><th>#</th><th>작업</th><th>산출/검증</th><th>시점</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1</td><td><span class="mono">theme.ts</span> 토큰을 Svelte 공용 CSS로 정리</td><td>디자인 토큰 1벌</td><td><span class="pill now">지금</span></td></tr>
+      <tr><td class="mono">2</td><td><span class="mono">DailyCloseSlotCard.svelte</span> 리모델 (Kronos 토큰)</td><td>과밀 해소 · 마커 19종 보존</td><td><span class="pill now">지금</span></td></tr>
+      <tr><td class="mono">3</td><td>검증</td><td><span class="mono">npm run build</span> + pytest 회귀</td><td><span class="pill now">지금</span></td></tr>
+      <tr><td class="mono">4</td><td>브라우저 스크린샷 증거</td><td>실제 렌더 확인</td><td><span class="pill now">지금</span></td></tr>
+      <tr><td class="mono">5</td><td><b>판단</b>: 갤러리 필요 시 Kronos Design System 생성·push</td><td>claude.ai 컴포넌트</td><td><span class="pill opt">선택</span></td></tr>
+      <tr><td class="mono">6</td><td>나머지 탭 순차 리모델</td><td>12탭 일관</td><td>이후</td></tr>
+      <tr><td class="mono">7</td><td>Trading 탭 흡수 → Next.js 은퇴</td><td>통합 완료</td><td><span class="pill gate">승인</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- 6 -->
+  <h2 class="sec">06 · 보존 계약 (변경 금지)</h2>
+  <p class="hint">리모델은 "표현만" 바꾸고 아래 사실·훅은 유지.</p>
+  <table>
+    <thead><tr><th>종류</th><th>대상</th><th>규칙</th></tr></thead>
+    <tbody>
+      <tr><td>테스트 마커</td><td class="mono">data-daily-close-slot-* (19종)</td><td>시각만 변경, 유지</td></tr>
+      <tr><td>가드레일</td><td>WATCH · D0/D1 blocker · false-lock 6종</td><td class="c-bad">삭제 금지</td></tr>
+      <tr><td>데이터</td><td>read-only DB · <span class="mono">000250</span> 문자열</td><td>보존</td></tr>
+      <tr><td>경로</td><td class="mono">webui/v2 · v2_src · static/v2/dist</td><td>이름 변경 금지</td></tr>
+    </tbody>
+  </table>
+
+  <!-- 7 -->
+  <h2 class="sec">07 · 지금 시작할까요</h2>
+  <table>
+    <thead><tr><th>선택</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td class="mono c-ok">①</td><td class="rec"><b>1~2번 착수</b>: theme.ts 토큰 정리 + close-slot 카드 리모델 (저위험, 파괴적 아님)</td></tr>
+      <tr><td class="mono">②</td><td>먼저 <b>Kronos 토큰으로 목업만</b> 다시 렌더해 정확한 모습 확인 후 진행</td></tr>
+      <tr><td class="mono">③</td><td><b>(B) 먼저</b>: Kronos Design System을 claude.ai에 생성부터</td></tr>
+    </tbody>
+  </table>
+
+</div></div>

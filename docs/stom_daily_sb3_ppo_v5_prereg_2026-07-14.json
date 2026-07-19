@@ -1,0 +1,374 @@
+{
+  "schema": "kronos_daily_sb3_prereg.v1",
+  "state": "FROZEN",
+  "identity": {
+    "prereg_uid": "kdp1-prereg-7a17c173b350f6861fb7f64d8c22029d",
+    "statement_sha256": "7a17c173b350f6861fb7f64d8c22029d992a4617976c4ac2109d09bc300aea88",
+    "frozen_sha256": "a216ade7ce0e7c5399fe2de1a767f6247ed008183b272ea4156579b49d9118a0",
+    "identity_algorithm": "SHA256_RFC8785_PREREG_FREEZE_V1"
+  },
+  "statement": {
+    "schema": "kronos_daily_sb3_prereg.v1.statement",
+    "created_at": "2026-07-14T00:00:00Z",
+    "bound_at": "2026-07-15T00:00:00Z",
+    "label": "Kronos daily Portfolio SB3 PPO V5 preregistration mechanics",
+    "research_label": "portfolio RL research preregistration",
+    "claim_boundary": {
+      "result_claim_status": "NOT_RUN",
+      "profitability_claim_status": "NOT_RUN",
+      "go_claim_status": "NOT_RUN",
+      "no_result_profit_or_go_claims": true
+    },
+    "protocol_binding": {
+      "protocol_schema": "kronos_daily_sb3_protocol.v1",
+      "protocol_schema_id": "https://kronos.local/schemas/kronos_daily_sb3_protocol.v1.schema.json",
+      "protocol_version": "2026-07-15.g008.immutable.v1",
+      "protocol_created_at": "2026-07-15T00:00:00Z",
+      "protocol_uid": "kdp1-0bab93ddaaebe0f3b5aaa6d0f538b5a7",
+      "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+      "identity_algorithm": "SHA256_RFC8785_STATEMENT_V1",
+      "cell_identity_algorithm": "SHA256_RFC8785_CELL_BASIS_V1"
+    },
+    "file_bindings": {
+      "schemas": [
+        {
+          "path": "docs/schemas/kronos_daily_sb3_protocol.v1.schema.json",
+          "role": "protocol_json_schema",
+          "sha256": "40f2dfde19142b5fb0df094e5e3e4ae8eb2ffa31679fc758cbe06a6fff39911e",
+          "byte_length": 20066
+        },
+        {
+          "path": "docs/schemas/kronos_daily_sb3_prereg.v1.schema.json",
+          "role": "prereg_json_schema",
+          "sha256": "8f07eba79e7384faefd2f516adb55d6246731e1ebffd5ad308ff9351db8d4bba",
+          "byte_length": 18970
+        }
+      ],
+      "code": [
+        {
+          "path": "stom_rl/daily_portfolio_sb3_protocol.py",
+          "role": "protocol_authority_code",
+          "sha256": "92973288b88e7c2b8476ea26ff5a1c1f93e2f06575dfcb3affb2a597a58ee196",
+          "byte_length": 44060
+        },
+        {
+          "path": "stom_rl/daily_portfolio_sb3_prereg.py",
+          "role": "prereg_validator_code",
+          "sha256": "df4ed109259b449996173a638eeefd200777c04dd336791e0a7182c7123adb2d",
+          "byte_length": 29133
+        }
+      ]
+    },
+    "command_manifest_binding": {
+      "schema": "kronos_daily_sb3_prereg_command_manifest_binding.v1",
+      "path": "docs/kronos_dashboard_v5_runner_command_manifest_v1.json",
+      "sha256": "f6f022ad8d80b9202b955eb6035dcfec385776f1b547d4a9d5db562eaf9a0128",
+      "byte_length": 2702,
+      "command_id_policy": "EXACT_APPROVED_COMMAND_ID_AND_ARGV_ONLY",
+      "forbidden_token_policy": "CASE_INSENSITIVE_SUBSTRING_REJECT",
+      "forbidden_argv_tokens": [
+        "--train",
+        "--fit-model",
+        "learn",
+        "ppo-learn",
+        "stable-baselines3",
+        "fresh-oos",
+        "oos-release",
+        "--execute"
+      ],
+      "pass_receipt_commands_sha256": "ee03d22e74bb3056243a82b945c469665d075631bd2657bf7eb851753ce17183",
+      "pass_receipt_commands": [
+        {
+          "component": "protocol",
+          "command_id": "not-run-protocol-synthetic-receipt",
+          "argv": [
+            "NOT_RUN_SYNTHETIC_RECEIPT",
+            "protocol"
+          ],
+          "not_run_synthetic_receipt": true,
+          "synthetic_only": true,
+          "heavy_compute_run": false,
+          "fresh_oos_accessed": false,
+          "full_ppo_status": "NOT_RUN",
+          "fresh_oos_status": "NOT_RUN"
+        },
+        {
+          "component": "runner",
+          "command_id": "not-run-runner-synthetic-receipt",
+          "argv": [
+            "NOT_RUN_SYNTHETIC_RECEIPT",
+            "runner"
+          ],
+          "not_run_synthetic_receipt": true,
+          "synthetic_only": true,
+          "heavy_compute_run": false,
+          "fresh_oos_accessed": false,
+          "full_ppo_status": "NOT_RUN",
+          "fresh_oos_status": "NOT_RUN"
+        },
+        {
+          "component": "evaluator",
+          "command_id": "not-run-evaluator-synthetic-receipt",
+          "argv": [
+            "NOT_RUN_SYNTHETIC_RECEIPT",
+            "evaluator"
+          ],
+          "not_run_synthetic_receipt": true,
+          "synthetic_only": true,
+          "heavy_compute_run": false,
+          "fresh_oos_accessed": false,
+          "full_ppo_status": "NOT_RUN",
+          "fresh_oos_status": "NOT_RUN"
+        }
+      ]
+    },
+    "bound_hashes": {
+      "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+      "canonical_protocol_json_sha256": "f25f0e2077789cbb81488aca3bf0184473ff4758c2904d2a7e485d3ab267318c",
+      "protocol_schema_sha256": "40f2dfde19142b5fb0df094e5e3e4ae8eb2ffa31679fc758cbe06a6fff39911e",
+      "prereg_schema_sha256": "8f07eba79e7384faefd2f516adb55d6246731e1ebffd5ad308ff9351db8d4bba",
+      "protocol_code_sha256": "92973288b88e7c2b8476ea26ff5a1c1f93e2f06575dfcb3affb2a597a58ee196",
+      "prereg_code_sha256": "df4ed109259b449996173a638eeefd200777c04dd336791e0a7182c7123adb2d",
+      "command_manifest_sha256": "f6f022ad8d80b9202b955eb6035dcfec385776f1b547d4a9d5db562eaf9a0128",
+      "dependency_list_sha256": "be7caf527fb61282704cf054fadf357b83facacd91c50bb889d420dc28b84149",
+      "device_policy_sha256": "893adfc7e1e08088d55ad1327d7f783317e713dd527bf272285d1631f2e911dc",
+      "available_session_list_sha256": "0429830edd9fe4b3512b81b6ee535fde87e0f142049380b07a44708b9312a8c1",
+      "fold_session_lists_sha256": "11a3ab39caa6b7fee49f2bfca6eaaf7b9a6b3a4245a3517f1850733be7e375f0",
+      "historical_session_list_sha256": "ceb1a9bbecdc53e72dd17295cd5e017abe0ce09f5a8aba00b7872447f3ef98a4",
+      "ppo_config_sha256": "c3a4791a28605c90fd9239aa653a97828c14f4530dc1518df8d1161c7ac409d8",
+      "matrix_cells_sha256": "8b6837b49271df4117b30aea60b1905cbf69f0a702f5a6dbeead43da5aff4b17",
+      "pass_receipt_commands_sha256": "ee03d22e74bb3056243a82b945c469665d075631bd2657bf7eb851753ce17183"
+    },
+    "dependency_binding": {
+      "dependency_count": 3,
+      "dependency_list_sha256": "be7caf527fb61282704cf054fadf357b83facacd91c50bb889d420dc28b84149",
+      "dependencies": [
+        {
+          "name": "kronos_v5_daily_accounting_adr",
+          "uri": "docs/kronos_v5_daily_accounting_adr_2026-07-14.md",
+          "sha256": "75f3f8b3fa8262e778b45fcf4c7794aa7cc335fc3153727dd555570516f31d93",
+          "byte_length": 3029,
+          "role": "accounting_cost_horizon_authority"
+        },
+        {
+          "name": "stom_daily_sb3_prior_stop_result",
+          "uri": "docs/stom_daily_sb3_ppo_result_2026-07-12.md",
+          "sha256": "6311e97a3561a7b55ff09925999cd75babfcacbbba08011c3b9474bf34191045",
+          "byte_length": 5840,
+          "role": "prior_protocol_gap_and_stop_authority"
+        },
+        {
+          "name": "kronos_research_runbook",
+          "uri": "docs/kronos_research_runbook_2026-07-10.md",
+          "sha256": "155e85c0ecec209b2c3ba61f7964f040991942a55bf5e7e00cdcc997a942e6ff",
+          "byte_length": 8243,
+          "role": "research_boundary_and_seed_source"
+        }
+      ]
+    },
+    "session_binding": {
+      "schema": "kronos_daily_sb3_prereg_session_binding.v1",
+      "synthetic_session_id": "kdp1-prereg-session-c1f42924f6d12f0d2ec0d444",
+      "available_session_count": 260,
+      "available_session_list_sha256": "0429830edd9fe4b3512b81b6ee535fde87e0f142049380b07a44708b9312a8c1",
+      "fold_session_lists_sha256": "11a3ab39caa6b7fee49f2bfca6eaaf7b9a6b3a4245a3517f1850733be7e375f0",
+      "fold_order": [
+        "fold-01",
+        "fold-02"
+      ]
+    },
+    "historical_binding": {
+      "schema": "kronos_daily_sb3_prereg_historical_binding.v1",
+      "window_id": "historical-secondary-only-2026-04-03-2026-06-12",
+      "status": "NOT_RUN",
+      "fresh_oos_access_allowed": false,
+      "fresh_oos_consumed": false,
+      "historical_session_list_sha256": "ceb1a9bbecdc53e72dd17295cd5e017abe0ce09f5a8aba00b7872447f3ef98a4"
+    },
+    "matrix_binding": {
+      "cell_count": 50,
+      "order": "seed-major/fold/variant",
+      "first_cell_uid": "kdp1-cell-eb8a5e156f99afa041f59b3daf61ed52",
+      "last_cell_uid": "kdp1-cell-aa14a486e992d376fcd58c5fe48ee4dc",
+      "matrix_cells_sha256": "8b6837b49271df4117b30aea60b1905cbf69f0a702f5a6dbeead43da5aff4b17"
+    },
+    "ppo_binding": {
+      "algorithm": "ppo",
+      "stable_baselines_family": "PPO",
+      "full_ppo_status": "NOT_RUN",
+      "ppo_config_sha256": "c3a4791a28605c90fd9239aa653a97828c14f4530dc1518df8d1161c7ac409d8"
+    },
+    "device_binding": {
+      "policy": {
+        "schema": "kronos_daily_sb3_prereg_device_policy.v1",
+        "device_requested": "auto",
+        "runtime_device_used": "NOT_RUN",
+        "device_claim_status": "NOT_RUN",
+        "cuda_required": false,
+        "heavy_compute_allowed": false,
+        "sb3_learn_allowed": false
+      },
+      "device_policy_sha256": "893adfc7e1e08088d55ad1327d7f783317e713dd527bf272285d1631f2e911dc"
+    },
+    "no_heavy_compute_state": {
+      "schema": "kronos_daily_sb3_prereg_no_heavy_compute_state.v1",
+      "approval_state": "APPROVED_NO_HEAVY_COMPUTE_SYNTHETIC_ONLY",
+      "compute_mode": "synthetic_verification_only",
+      "no_heavy_compute_marker": "NO_TRAINING_NO_SB3_LEARN_NO_FRESH_OOS_READ",
+      "full_ppo_status": "NOT_RUN",
+      "fresh_oos_status": "NOT_RUN",
+      "compute_locks": {
+        "full_ppo_training_allowed": false,
+        "sb3_learn_allowed": false,
+        "fresh_oos_access_allowed": false
+      },
+      "promotion_locks": {
+        "model_build_allowed": false,
+        "promotion_allowed": false,
+        "paper_forward_allowed": false,
+        "live_broker_order_allowed": false,
+        "profitability_claim_allowed": false,
+        "go_summary_allowed": false
+      }
+    },
+    "receipt_gate": {
+      "schema": "kronos_daily_sb3_prereg_receipt_gate.v1",
+      "required_receipt_components": [
+        "protocol",
+        "runner",
+        "evaluator"
+      ],
+      "required_status": "PASS",
+      "required_session_id": "kdp1-prereg-session-c1f42924f6d12f0d2ec0d444",
+      "required_protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+      "required_command_manifest_sha256": "f6f022ad8d80b9202b955eb6035dcfec385776f1b547d4a9d5db562eaf9a0128",
+      "receipt_command_policy": "EXACT_APPROVED_COMMAND_ID_AND_ARGV_ONLY",
+      "required_forbidden_token_policy": "CASE_INSENSITIVE_SUBSTRING_REJECT",
+      "not_run_synthetic_receipt_allowed": true,
+      "exact_receipt_order_required": true,
+      "heavy_compute_run_allowed": false,
+      "fresh_oos_access_allowed": false,
+      "missing_receipt_policy": "REJECT",
+      "missing_session_policy": "REJECT"
+    }
+  },
+  "freeze_receipts": [
+    {
+      "schema": "kronos_daily_sb3_prereg_test_receipt.v1",
+      "component": "protocol",
+      "status": "PASS",
+      "session_id": "kdp1-prereg-session-c1f42924f6d12f0d2ec0d444",
+      "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+      "scope": "protocol_synthetic_mechanics",
+      "command": "NOT_RUN_SYNTHETIC_RECEIPT",
+      "command_manifest_sha256": "f6f022ad8d80b9202b955eb6035dcfec385776f1b547d4a9d5db562eaf9a0128",
+      "approved_command_id": "not-run-protocol-synthetic-receipt",
+      "approved_argv": [
+        "NOT_RUN_SYNTHETIC_RECEIPT",
+        "protocol"
+      ],
+      "forbidden_argv_tokens": [
+        "--train",
+        "--fit-model",
+        "learn",
+        "ppo-learn",
+        "stable-baselines3",
+        "fresh-oos",
+        "oos-release",
+        "--execute"
+      ],
+      "forbidden_token_policy": "CASE_INSENSITIVE_SUBSTRING_REJECT",
+      "not_run_synthetic_receipt": true,
+      "synthetic_only": true,
+      "heavy_compute_run": false,
+      "fresh_oos_accessed": false,
+      "full_ppo_status": "NOT_RUN",
+      "fresh_oos_status": "NOT_RUN",
+      "receipt_sha256": "7f095d2e784e49a4666887e3c10e594b39399d74150117f2d5d39f9bac1e91a6"
+    },
+    {
+      "schema": "kronos_daily_sb3_prereg_test_receipt.v1",
+      "component": "runner",
+      "status": "PASS",
+      "session_id": "kdp1-prereg-session-c1f42924f6d12f0d2ec0d444",
+      "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+      "scope": "runner_synthetic_mechanics",
+      "command": "NOT_RUN_SYNTHETIC_RECEIPT",
+      "command_manifest_sha256": "f6f022ad8d80b9202b955eb6035dcfec385776f1b547d4a9d5db562eaf9a0128",
+      "approved_command_id": "not-run-runner-synthetic-receipt",
+      "approved_argv": [
+        "NOT_RUN_SYNTHETIC_RECEIPT",
+        "runner"
+      ],
+      "forbidden_argv_tokens": [
+        "--train",
+        "--fit-model",
+        "learn",
+        "ppo-learn",
+        "stable-baselines3",
+        "fresh-oos",
+        "oos-release",
+        "--execute"
+      ],
+      "forbidden_token_policy": "CASE_INSENSITIVE_SUBSTRING_REJECT",
+      "not_run_synthetic_receipt": true,
+      "synthetic_only": true,
+      "heavy_compute_run": false,
+      "fresh_oos_accessed": false,
+      "full_ppo_status": "NOT_RUN",
+      "fresh_oos_status": "NOT_RUN",
+      "receipt_sha256": "80735fac00ccbe4f4c3148a42e023e63096dfd19da887d480c0b3b86d6ef9384"
+    },
+    {
+      "schema": "kronos_daily_sb3_prereg_test_receipt.v1",
+      "component": "evaluator",
+      "status": "PASS",
+      "session_id": "kdp1-prereg-session-c1f42924f6d12f0d2ec0d444",
+      "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+      "scope": "evaluator_synthetic_mechanics",
+      "command": "NOT_RUN_SYNTHETIC_RECEIPT",
+      "command_manifest_sha256": "f6f022ad8d80b9202b955eb6035dcfec385776f1b547d4a9d5db562eaf9a0128",
+      "approved_command_id": "not-run-evaluator-synthetic-receipt",
+      "approved_argv": [
+        "NOT_RUN_SYNTHETIC_RECEIPT",
+        "evaluator"
+      ],
+      "forbidden_argv_tokens": [
+        "--train",
+        "--fit-model",
+        "learn",
+        "ppo-learn",
+        "stable-baselines3",
+        "fresh-oos",
+        "oos-release",
+        "--execute"
+      ],
+      "forbidden_token_policy": "CASE_INSENSITIVE_SUBSTRING_REJECT",
+      "not_run_synthetic_receipt": true,
+      "synthetic_only": true,
+      "heavy_compute_run": false,
+      "fresh_oos_accessed": false,
+      "full_ppo_status": "NOT_RUN",
+      "fresh_oos_status": "NOT_RUN",
+      "receipt_sha256": "1ee8eb3e2eeba3fda3f0215c947fbd21cb57829a2e5eea15ad627e1a767b19cf"
+    }
+  ],
+  "freeze": {
+    "schema": "kronos_daily_sb3_prereg_freeze.v1",
+    "frozen_at": "2026-07-15T00:00:00Z",
+    "receipt_components": [
+      "protocol",
+      "runner",
+      "evaluator"
+    ],
+    "receipt_sha256s": [
+      "7f095d2e784e49a4666887e3c10e594b39399d74150117f2d5d39f9bac1e91a6",
+      "80735fac00ccbe4f4c3148a42e023e63096dfd19da887d480c0b3b86d6ef9384",
+      "1ee8eb3e2eeba3fda3f0215c947fbd21cb57829a2e5eea15ad627e1a767b19cf"
+    ],
+    "receipt_count": 3,
+    "immutable": true,
+    "no_heavy_compute_confirmed": true,
+    "no_fresh_oos_access_confirmed": true
+  }
+}
