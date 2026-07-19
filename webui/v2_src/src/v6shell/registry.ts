@@ -28,9 +28,9 @@ export const V6_PAGES: readonly V6PageDef[] = [
   { id: 'insight-symbol', label: 'Symbol Drill-down', labelKo: '종목 심층', group: 'INSIGHT', step: null, status: 'BUILT', description: '개별 종목 연구 근거를 살펴보는 화면입니다.' },
   { id: 'insight-flow', label: 'Flow Ranking', labelKo: '수급 흐름', group: 'INSIGHT', step: null, status: 'BUILT', description: '수급 흐름 연구를 검토하는 화면입니다.' },
   { id: 'insight-regime', label: 'Market Regime', labelKo: '시장 국면', group: 'INSIGHT', step: null, status: 'BUILT', description: '시장 국면 연구를 검토하는 화면입니다.' },
-  { id: 'intraday', label: 'Intraday RL', labelKo: '인트라데이 RL', group: 'PLATFORM', step: null, status: 'NOT_BUILT', description: '인트라데이 강화학습 연구를 위한 화면입니다.' },
-  { id: 'kronos', label: 'Kronos Research', labelKo: 'Kronos 예측', group: 'PLATFORM', step: null, status: 'NOT_BUILT', description: 'Kronos 예측 연구를 검토하는 화면입니다.' },
-  { id: 'settings', label: 'Settings', labelKo: '설정', group: 'ADVANCED', step: null, status: 'NOT_BUILT', description: 'V6 연구 환경 설정을 다루는 화면입니다.' },
+  { id: 'intraday', label: 'Intraday RL', labelKo: '인트라데이 RL', group: 'PLATFORM', step: null, status: 'BUILT', description: '인트라데이 강화학습 연구를 위한 화면입니다.' },
+  { id: 'kronos', label: 'Kronos Research', labelKo: 'Kronos 예측', group: 'PLATFORM', step: null, status: 'BUILT', description: 'Kronos 예측 연구를 검토하는 화면입니다.' },
+  { id: 'settings', label: 'Settings', labelKo: '설정', group: 'ADVANCED', step: null, status: 'BUILT', description: 'V6 연구 환경 설정을 다루는 화면입니다.' },
 ];
 
 export function resolveV6Page(tab: string | null): V6PageDef {

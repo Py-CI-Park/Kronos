@@ -12,6 +12,9 @@
   import InsightFlowPage from './pages/InsightFlowPage.svelte';
   import InsightRegimePage from './pages/InsightRegimePage.svelte';
   import ReportPage from './pages/ReportPage.svelte';
+  import IntradayPage from './pages/IntradayPage.svelte';
+  import KronosPage from './pages/KronosPage.svelte';
+  import SettingsPage from './pages/SettingsPage.svelte';
   import { V6_BRAND, V6_PAGES, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
 
   const GROUPS = ['COMMAND', 'REINFORCEMENT LEARNING', 'INSIGHT', 'PLATFORM', 'ADVANCED'] as const;
@@ -88,6 +91,12 @@
       <InsightFlowPage />
     {:else if page.id === 'insight-regime'}
       <InsightRegimePage />
+    {:else if page.id === 'intraday'}
+      <IntradayPage />
+    {:else if page.id === 'kronos'}
+      <KronosPage />
+    {:else if page.id === 'settings'}
+      <SettingsPage />
     {:else}
       <V6PagePlaceholder {page} />
     {/if}
