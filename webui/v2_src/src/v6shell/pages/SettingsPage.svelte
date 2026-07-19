@@ -36,17 +36,17 @@
 </section>
 
 <style>
-  .page { max-width: 880px; color: #e5e7eb; }
-  header, .card { border: 1px solid #334155; border-radius: 14px; padding: clamp(16px, 4vw, 28px); background: #111827; }
-  .eyebrow { margin: 0; color: #7dd3fc; font-size: .72rem; font-weight: 800; letter-spacing: .1em; }
-  h1 { margin: 7px 0; color: #f8fafc; font-size: clamp(1.7rem, 6vw, 2.5rem); }
-  h2 { margin: 0 0 10px; color: #f8fafc; font-size: 1.1rem; }
-  header > p:last-child, .card > p { color: #cbd5e1; line-height: 1.6; }
+  .page { max-width: 880px; color: var(--fg); }
+  header, .card { border: 1px solid var(--border); border-radius: 14px; padding: clamp(16px, 4vw, 28px); background: var(--surface); }
+  .eyebrow { margin: 0; color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .1em; }
+  h1 { margin: 7px 0; color: var(--fg-strong); font-size: clamp(1.7rem, 6vw, 2.5rem); }
+  h2 { margin: 0 0 10px; color: var(--fg-strong); font-size: 1.1rem; }
+  header > p:last-child, .card > p { color: var(--muted); line-height: 1.6; }
   .card { margin-top: 16px; }
-  button, .shell-links a { border: 1px solid #38bdf8; border-radius: 7px; padding: 9px 12px; background: #082f49; color: #e0f2fe; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-  button:hover, .shell-links a:hover { border-color: #fef08a; background: #0c4a6e; }
-  button:focus-visible, .shell-links a:focus-visible { outline: 2px solid #fef08a; outline-offset: 3px; }
+  button, .shell-links a { border: 1px solid var(--accent); border-radius: 7px; padding: 9px 12px; background: var(--accent-soft); color: var(--accent-strong); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+  button:hover, .shell-links a:hover { border-color: var(--warn); background: var(--accent-soft); }
+  button:focus-visible, .shell-links a:focus-visible { outline: 2px solid var(--warn); outline-offset: 3px; }
   .shell-links { display: flex; flex-wrap: wrap; gap: 10px; }
-  .safety { border-color: #a16207; background: #1c1910; }
-  .safety p { color: #fde68a; }
+  .safety { border-color: var(--warn); background: var(--warn-soft); }
+  .safety p { color: var(--warn); }
 </style>

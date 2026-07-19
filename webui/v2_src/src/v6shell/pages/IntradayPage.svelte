@@ -27,18 +27,18 @@
 </section>
 
 <style>
-  .page { max-width: 980px; color: #e5e7eb; }
-  header, .notice, .lane-card { border: 1px solid #334155; border-radius: 14px; padding: clamp(16px, 4vw, 28px); background: #111827; }
-  .eyebrow, .card-label { margin: 0; color: #7dd3fc; font-size: .72rem; font-weight: 800; letter-spacing: .1em; }
-  h1 { margin: 7px 0; color: #f8fafc; font-size: clamp(1.7rem, 6vw, 2.5rem); }
-  h2 { margin: 0 0 10px; color: #f8fafc; font-size: 1.1rem; }
-  header > p:last-child, .lane-card p { color: #cbd5e1; line-height: 1.6; }
-  .notice { margin-top: 16px; border-color: #a16207; background: #1c1910; color: #fde68a; }
+  .page { max-width: 980px; color: var(--fg); }
+  header, .notice, .lane-card { border: 1px solid var(--border); border-radius: 14px; padding: clamp(16px, 4vw, 28px); background: var(--surface); }
+  .eyebrow, .card-label { margin: 0; color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .1em; }
+  h1 { margin: 7px 0; color: var(--fg-strong); font-size: clamp(1.7rem, 6vw, 2.5rem); }
+  h2 { margin: 0 0 10px; color: var(--fg-strong); font-size: 1.1rem; }
+  header > p:last-child, .lane-card p { color: var(--muted); line-height: 1.6; }
+  .notice { margin-top: 16px; border-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
   .notice p { margin-bottom: 0; line-height: 1.6; }
   .links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
   .lane-card { display: block; min-width: 0; color: inherit; text-decoration: none; }
-  .lane-card:hover { border-color: #38bdf8; background: #082f49; }
-  .lane-card:focus-visible { outline: 2px solid #fef08a; outline-offset: 3px; }
-  .destination { color: #bae6fd; font-weight: 800; }
+  .lane-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .lane-card:focus-visible { outline: 2px solid var(--warn); outline-offset: 3px; }
+  .destination { color: var(--accent-strong); font-weight: 800; }
   @media (max-width: 700px) { .links { grid-template-columns: 1fr; } }
 </style>

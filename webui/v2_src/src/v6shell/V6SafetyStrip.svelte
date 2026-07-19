@@ -25,10 +25,10 @@
 
 <style>
   .safety-strip {
-    border: 1px solid #7f1d1d;
+    border: 1px solid var(--danger);
     border-radius: 10px;
-    background: #1c1012;
-    color: #fecaca;
+    background: var(--danger-soft);
+    color: var(--danger);
     font-size: 0.78rem;
   }
   .strip-line {
@@ -41,26 +41,26 @@
   }
   .pills { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
   .pills span {
-    border: 1px solid #b91c1c;
+    border: 1px solid var(--danger);
     border-radius: 999px;
     padding: 2px 6px;
-    color: #fecaca;
+    color: var(--danger);
     font-weight: 700;
     letter-spacing: 0.02em;
     white-space: nowrap;
   }
   button {
     flex: 0 0 auto;
-    border: 1px solid #fca5a5;
+    border: 1px solid var(--danger);
     border-radius: 6px;
     padding: 4px 8px;
     background: transparent;
-    color: #fee2e2;
+    color: var(--danger);
     font: inherit;
     cursor: pointer;
   }
-  button:focus-visible { outline: 2px solid #fef3c7; outline-offset: 2px; }
-  .details { border-top: 1px solid #7f1d1d; padding: 8px 10px; color: #fee2e2; line-height: 1.45; }
+  button:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+  .details { border-top: 1px solid var(--danger); padding: 8px 10px; color: var(--danger); line-height: 1.45; }
   .details p { margin: 0; }
   .details p + p { margin-top: 4px; }
   @media (max-width: 520px) {

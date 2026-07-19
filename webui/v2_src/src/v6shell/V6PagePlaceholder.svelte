@@ -29,22 +29,22 @@
 </section>
 
 <style>
-  .placeholder { max-width: 920px; border: 1px solid #334155; border-radius: 14px; padding: clamp(20px, 4vw, 40px); background: #111827; color: #e5e7eb; }
-  .eyebrow { margin: 0; color: #94a3b8; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
-  h1 { margin: 8px 0 12px; font-size: clamp(1.65rem, 5vw, 2.5rem); line-height: 1.15; color: #f8fafc; }
-  h1 span { color: #94a3b8; font-size: 0.56em; font-weight: 500; white-space: nowrap; }
+  .placeholder { max-width: 920px; border: 1px solid var(--border); border-radius: 14px; padding: clamp(20px, 4vw, 40px); background: var(--surface); color: var(--fg); }
+  .eyebrow { margin: 0; color: var(--muted); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+  h1 { margin: 8px 0 12px; font-size: clamp(1.65rem, 5vw, 2.5rem); line-height: 1.15; color: var(--fg-strong); }
+  h1 span { color: var(--muted); font-size: 0.56em; font-weight: 500; white-space: nowrap; }
   .description, .notice { max-width: 690px; line-height: 1.6; }
-  .description { color: #cbd5e1; }
-  .notice { color: #fde68a; }
-  .status strong { display: inline-block; border: 1px solid #f59e0b; border-radius: 999px; padding: 3px 8px; color: #fcd34d; font-size: 0.75rem; letter-spacing: 0.06em; }
-  .stepper { margin-top: 28px; padding-top: 18px; border-top: 1px solid #334155; }
+  .description { color: var(--muted); }
+  .notice { color: var(--warn); }
+  .status strong { display: inline-block; border: 1px solid var(--warn); border-radius: 999px; padding: 3px 8px; color: var(--warn); font-size: 0.75rem; letter-spacing: 0.06em; }
+  .stepper { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border); }
   h2 { margin: 0 0 12px; font-size: 1rem; }
   ol { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
-  li { min-width: 0; padding: 8px 4px; border: 1px solid #475569; border-radius: 8px; text-align: center; color: #94a3b8; font-size: 0.7rem; }
-  li.current { border-color: #38bdf8; background: #0c4a6e; color: #e0f2fe; }
+  li { min-width: 0; padding: 8px 4px; border: 1px solid var(--border-strong); border-radius: 8px; text-align: center; color: var(--muted); font-size: 0.7rem; }
+  li.current { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
   .step-number, small { display: block; }
   .step-number { font-weight: 800; font-size: 1rem; }
-  small { margin-top: 4px; color: #fbbf24; font-size: 0.59rem; }
+  small { margin-top: 4px; color: var(--warn); font-size: 0.59rem; }
   @media (max-width: 520px) {
     ol { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
