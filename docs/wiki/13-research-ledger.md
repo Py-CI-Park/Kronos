@@ -24,6 +24,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-19 | `docs/kronos_v6_goal_review_and_plan_2026-07-19.md` | REVIEW/PLAN | 기존 V6 계획 목표 반영도 45~55% 판정; 일봉 DB 사실 확인; 3-Track 통합 계획; `IMPLEMENTATION_NOT_STARTED` |
 | 2026-07-18 | `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` | IMPLEMENTATION/RELEASE_RESULT | `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live `NOT_RUN / NO-GO`; V3 기본 유지 |
 | 2026-07-19 | `docs/kronos_dashboard_v6_remodel_plan_2026-07-19.md` | PLAN | V6 workflow 전면 재설계, `IMPLEMENTATION_NOT_STARTED`; read-only 우선, 실행 3단계 staging |
 | 2026-07-19 | `docs/kronos_dashboard_v51_ux_audit_2026-07-19.md` | AUDIT | 사용자 UX 종합 51/100 `IMMATURE`; RL/live `NOT_RUN / NO-GO` 유지 |
