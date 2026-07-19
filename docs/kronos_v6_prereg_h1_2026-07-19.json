@@ -1,0 +1,64 @@
+{
+  "schema_version": "kronos_v6_prereg.v1",
+  "prereg_id": "KRONOS-V6-PREREG-H1-2026-07-19",
+  "frozen_utc": "2026-07-19T10:30:00Z",
+  "status": "FROZEN",
+  "hypothesis": {
+    "primary": "A constrained 10-slot daily-close policy trained on daily-DB D-1 features (price/volume/flow) with exact 15:20 proxy execution achieves validation economic NAV above no-trade and at least equal to the best frozen RULE baseline at 0.23% round-trip cost.",
+    "null": "The policy does not beat no-trade or RULE baselines net of 0.23% cost on validation.",
+    "negative_controls": ["shuffled-label control must NOT beat no-trade net of cost", "zero-cost control reported but never used for the primary verdict"]
+  },
+  "not_claimed_even_if_success": ["profitability in live trading", "official-close executability", "model promotion", "paper-forward readiness", "broker/order readiness", "GO"],
+  "dataset": {
+    "contract": "kronos_v6_joined_dataset.v1",
+    "builder": "stom_rl.daily_v6_dataset",
+    "universe_manifest": "docs/kronos_v6_universe_manifest_2026-07-19.json",
+    "universe_manifest_sha256": "8695ca76f8944a55055c9dcbbeea39f00214d8dbd11e56235d06fde5d41a6f95",
+    "smoke_dataset_run_id": "v6_dataset_smoke_001",
+    "smoke_dataset_sha256": "02e7be1a03eacf4e28fdbdf13d2a7775e886c89771bdc53984a1235e2b6b763f",
+    "smoke_universe_limit": 50,
+    "full_run_params": {"universe_limit": 500, "start_yyyymmdd": 20180101, "end_yyyymmdd": 20260612},
+    "features": ["ret_1d_prev", "ret_5d_prev", "ret_20d_prev", "vol_z_20", "foreign_ratio_prev", "foreign_ratio_delta_5", "inst_netbuy_norm_5"],
+    "feature_timing": "daily_db_rows_strictly_before_fill_session_only",
+    "daily_price_basis_caveat": "daily DB price basis UNKNOWN_CONFIRMED; feature inputs only, never return evidence",
+    "labels": {"primary": "future_return_h1_1520_proxy", "validation_variants": ["future_return_h3_1520_proxy", "future_return_h5_1520_proxy"], "price_basis": "15:20_bar_close_proxy", "official_close": false, "fallback": "none_exact_1520_only"},
+    "splits": {"train": "<=20231231", "val": "20240101-20250630", "test": "20250701-20260612", "embargo": "rows whose max-horizon exit crosses a split boundary are dropped"}
+  },
+  "environment": {
+    "capital_krw": 60000000,
+    "slots": 10,
+    "slot_budget_krw": 5000000,
+    "max_invested_krw": 50000000,
+    "reserve_krw": 10000000,
+    "constraints": {"shorting": false, "leverage": false, "duplicate_symbol_slots": false, "hold_cash_action": true},
+    "costs": {"primary_display": "0.23%", "primary_internal": "base_23bp", "zero_control_display": "0.00%", "zero_control_internal": "zero_control_0bp", "stress_display": "0.46%", "stress_internal": "stress_46bp"},
+    "reward": "log economic NAV change at H1 exit net of primary cost; shaped penalties reported separately and never mixed into NAV evidence"
+  },
+  "algorithm": {
+    "family": "tabular_q_learning_on_bucketed_features",
+    "module_to_implement": "stom_rl.daily_v6_train",
+    "state_buckets": {"ret_5d_prev": "quintile", "vol_z_20": "tercile", "foreign_ratio_delta_5": "sign+zero", "inst_netbuy_norm_5": "sign+zero"},
+    "actions": ["hold_cash", "enter_topk_by_q"],
+    "selection": "top-k by Q with k<=10 slots, no duplicate symbols",
+    "seeds": [0, 1, 2],
+    "episodes_max_per_seed": 300,
+    "checkpoint_rule": "best rolling-3 validation economic NAV",
+    "early_stop": "rolling-3 validation NAV slope negative for 3 consecutive checks"
+  },
+  "baselines_and_controls": ["no_trade", "hold_all_topk_by_ret_5d_prev (RULE)", "random_topk_seeded (RULE control)", "shuffled_label_control"],
+  "verdict_rules": {
+    "GO_candidate": "validation NAV > no-trade AND >= best RULE baseline at 0.23%, consistent across >=2 of 3 seeds, then untouched test evaluated ONCE",
+    "NO_GO": "validation fails the above, or shuffled control passes (invalidates signal), or test OOS underperforms no-trade at 0.23%",
+    "INCONCLUSIVE": "pipeline incomplete or seeds disagree 1-of-3",
+    "post_test_retune": "forbidden; any retune requires a new prereg version"
+  },
+  "oos_policy": "test split is read exactly once by the final frozen checkpoint per seed; no peeking during training or model selection",
+  "allowed_commands": [
+    "py -3.11 -m stom_rl.daily_v6_dataset --universe-limit 50 --run-id v6_dataset_smoke_001",
+    "py -3.11 -m stom_rl.daily_v6_dataset --universe-limit 500 --run-id v6_dataset_full_001",
+    "py -3.11 -m stom_rl.daily_v6_train --dataset v6_dataset_smoke_001 --seeds 0 --smoke",
+    "py -3.11 -m stom_rl.daily_v6_train --dataset v6_dataset_full_001 --seeds 0,1,2"
+  ],
+  "forbidden": ["live trading", "broker/order integration", "paper-forward", "nearest-bar or daily-close fill fallback", "changing splits/features/costs after this freeze without a new prereg version"],
+  "false_research_locks": {"promotion_allowed": false, "model_build_allowed": false, "paper_forward_allowed": false, "live_broker_order_allowed": false, "profitability_claim_allowed": false, "go_summary_allowed": false}
+}
