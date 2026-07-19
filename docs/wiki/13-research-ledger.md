@@ -1,7 +1,7 @@
 # 연구 원장 · Research Ledger
 
 > 상태: `ACTIVE_RESEARCH_INDEX`  
-> 최종 갱신: 2026-07-18  
+> 최종 갱신: 2026-07-19  
 > 범위: Kronos 예측, 일봉 종가매매, 포트폴리오 RL, 대시보드·연구 인프라
 
 ## 목적
@@ -13,6 +13,7 @@
 - 기본 UI: V3 유지
 - V5: 연구 프리뷰 및 직접 경로 검증용
 - V5.1: `IMPLEMENTED_RESEARCH_FOUNDATION`, 직접 `?ui=v5` 확인용, 기본 전환 아님
+- V5.1 UX 성숙도: `IMMATURE`(사용자 UX 종합 51/100); V6 workflow 재설계 계획됨
 - 일봉 종가매매 선형 정책: `NO-GO / WATCH_RESEARCH_ONLY`
 - 일봉 PPO 5k: `INCONCLUSIVE_SMOKE_ONLY / NOT_PROMOTED`
 - 일봉 PPO full: `INCONCLUSIVE — NOT RUN`
@@ -24,6 +25,8 @@
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
 | 2026-07-18 | `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` | IMPLEMENTATION/RELEASE_RESULT | `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live `NOT_RUN / NO-GO`; V3 기본 유지 |
+| 2026-07-19 | `docs/kronos_dashboard_v6_remodel_plan_2026-07-19.md` | PLAN | V6 workflow 전면 재설계, `IMPLEMENTATION_NOT_STARTED`; read-only 우선, 실행 3단계 staging |
+| 2026-07-19 | `docs/kronos_dashboard_v51_ux_audit_2026-07-19.md` | AUDIT | 사용자 UX 종합 51/100 `IMMATURE`; RL/live `NOT_RUN / NO-GO` 유지 |
 | 2026-07-17 | `docs/kronos_daily_close_rl_v5_1_requirements_2026-07-17.md` | REQUIREMENTS | 구현 전 기준값 기록 |
 | 2026-07-16~17 | `docs/kronos_dashboard_v5_development_result_2026-07-16.md` | RELEASE/RESULT | 기능 98/100, V3 기본 유지 |
 | 2026-07-14 | `docs/stom_daily_sb3_ppo_v5_prereg_2026-07-14.json` | PREREGISTRATION | 50-cell, compute/fresh-OOS 잠금 |
