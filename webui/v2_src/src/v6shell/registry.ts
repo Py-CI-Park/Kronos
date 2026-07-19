@@ -18,8 +18,8 @@ export const V6_BRAND = {
 } as const;
 
 export const V6_PAGES: readonly V6PageDef[] = [
-  { id: 'overview', label: 'Overview', labelKo: '개요', group: 'COMMAND', step: 1, status: 'NOT_BUILT', description: 'V6 연구 워크플로의 개요와 현재 구현 상태를 확인하는 화면입니다.' },
-  { id: 'data', label: 'Data', labelKo: '데이터', group: 'REINFORCEMENT LEARNING', step: 2, status: 'NOT_BUILT', description: '강화학습 연구에 사용할 데이터 범위와 검증 상태를 다루는 화면입니다.' },
+  { id: 'overview', label: 'Overview', labelKo: '개요', group: 'COMMAND', step: 1, status: 'BUILT', description: 'V6 연구 워크플로의 개요와 현재 구현 상태를 확인하는 화면입니다.' },
+  { id: 'data', label: 'Data', labelKo: '데이터', group: 'REINFORCEMENT LEARNING', step: 2, status: 'BUILT', description: '강화학습 연구에 사용할 데이터 범위와 검증 상태를 다루는 화면입니다.' },
   { id: 'experiment', label: 'Experiment', labelKo: '실험 설계', group: 'REINFORCEMENT LEARNING', step: 3, status: 'NOT_BUILT', description: '실험 설계와 비교 조건을 명시하는 화면입니다.' },
   { id: 'training', label: 'Training', labelKo: '학습', group: 'REINFORCEMENT LEARNING', step: 4, status: 'NOT_BUILT', description: '학습 실행과 검증 경계를 다루는 화면입니다.' },
   { id: 'evaluation', label: 'Evaluation', labelKo: '평가', group: 'REINFORCEMENT LEARNING', step: 5, status: 'NOT_BUILT', description: '평가 기준과 실패 조건을 검토하는 화면입니다.' },

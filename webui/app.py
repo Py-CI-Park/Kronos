@@ -580,6 +580,11 @@ app.register_blueprint(_v5_bp)
 _v51_bp, _v51_config = _build_kronos_v51_blueprint()
 app.config.update(_v51_config)
 app.register_blueprint(_v51_bp)
+try:
+    from .v6_platform_api import create_v6_platform_blueprint
+except ImportError:
+    from v6_platform_api import create_v6_platform_blueprint
+app.register_blueprint(create_v6_platform_blueprint())
 
 # Global variables to store models
 tokenizer = None

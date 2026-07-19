@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import V6PagePlaceholder from './V6PagePlaceholder.svelte';
   import V6SafetyStrip from './V6SafetyStrip.svelte';
+  import OverviewPage from './pages/OverviewPage.svelte';
+  import DataPage from './pages/DataPage.svelte';
   import { V6_BRAND, V6_PAGES, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
 
   const GROUPS = ['COMMAND', 'REINFORCEMENT LEARNING', 'INSIGHT', 'PLATFORM', 'ADVANCED'] as const;
@@ -58,7 +60,13 @@
 
   <main>
     <V6SafetyStrip />
-    <V6PagePlaceholder {page} />
+    {#if page.id === 'overview'}
+      <OverviewPage />
+    {:else if page.id === 'data'}
+      <DataPage />
+    {:else}
+      <V6PagePlaceholder {page} />
+    {/if}
   </main>
 </div>
 

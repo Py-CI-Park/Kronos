@@ -21,7 +21,8 @@ test('V6 registry preserves the planned page order and group membership', () => 
 
 test('V6 registry keeps workflow steps and implementation status honest', () => {
   assert.deepEqual(V6_PAGES.map((page) => page.step).filter((step): step is number => step !== null), [1, 2, 3, 4, 5, 6, 7]);
-  assert.ok(V6_PAGES.every((page) => page.status === 'NOT_BUILT'));
+  assert.deepEqual(V6_PAGES.filter((page) => page.id === 'overview' || page.id === 'data').map((page) => page.status), ['BUILT', 'BUILT']);
+  assert.ok(V6_PAGES.filter((page) => page.id !== 'overview' && page.id !== 'data').every((page) => page.status === 'NOT_BUILT'));
 });
 
 test('V6 brand, fallback, and URLs match the shell contract', () => {
