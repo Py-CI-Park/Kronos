@@ -26,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | V7 P7 M1 tabular-Q v2 (`docs/kronos_v7_prereg_m1_2026-07-20.json`) | PREREG+IMPLEMENTATION | exposure-matched 음성 대조군(v1 결함 교정)·seed 5·RULE 3종; smoke `INCONCLUSIVE`(1/1 seed, 허위 NO_GO 재발 없음); **full 5-seed run 실행 중** — 결과는 완료 시 별도 기록 |
 | 2026-07-20 | V7 P6 데이터 확장 검증 (`docs/kronos_v7_p6_data_coverage_result_2026-07-20.md`) | VERIFICATION | 수급 컬럼 커버리지 100% → 수집 `DUPLICATE_SKIP`; 공매도 `ABSENT_DEFERRED`(소비 prereg 없이는 미수집) |
 | 2026-07-20 | V7 P5 비주얼 폴리시 | IMPLEMENTATION | 차트-테마 브리지(6페이지, V6 토큰 파생), 홈 KPI glow·진행바·NAV 스파크라인, 스테퍼 방향키 roving 내비 |
 | 2026-07-20 | V7 P4 V6 테마 시스템 | IMPLEMENTATION | `data-v6-theme` 5종(전역따름·다크·오션·포레스트·퀀트터미널)+배율 4단계, V6 스코프 한정(V3/V5 무영향 실측), localStorage 지속 |
