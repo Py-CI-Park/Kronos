@@ -1,0 +1,12 @@
+<section class="page" aria-labelledby="intraday-title">
+  <header><p class="eyebrow">SEPARATE RESEARCH LANE</p><h1 id="intraday-title">인트라데이 RL</h1><p>V6는 일봉 종가매매 연구에 집중합니다. 인트라데이 연구의 기존 증거와 판정은 별도 레인에서 확인합니다.</p></header>
+  <section class="notice" aria-labelledby="intraday-boundary-title"><h2 id="intraday-boundary-title">판정 경계</h2><p>기존 판정(NO-GO 등)은 그대로 유지됩니다. V6의 일봉 종가매매 연구 결과와 병합하거나 대체하지 않습니다.</p></section>
+  <div class="links" aria-label="기존 인트라데이 연구 레인">
+    <a class="lane-card" href="/?tab=rl&amp;ui=v5"><span class="card-label">EXISTING EVIDENCE LANE</span><h2>V5 RL Trading Evidence</h2><p>기존 판정(NO-GO 등)은 그대로 유지됩니다.</p><dl><dt>기준선</dt><dd>ts_imb RULE baseline</dd><dt>판정</dt><dd>NO-GO 유지</dd></dl><span class="destination">증거 레인 열기 →</span></a>
+    <a class="lane-card" href="/?tab=daily-ohlcv&amp;ui=v5"><span class="card-label">EXISTING DAILY CLOSE LANE</span><h2>V5 Daily Close RL</h2><p>기존 판정(NO-GO 등)은 그대로 유지됩니다.</p><dl><dt>연구 범위</dt><dd>orderbook RL</dd><dt>상태</dt><dd>research-only</dd></dl><span class="destination">일봉 종가 레인 열기 →</span></a>
+  </div>
+</section>
+
+<style>
+  .page { width: 100%; color: var(--fg); } header, .notice, .lane-card { border: 1px solid var(--border); border-radius: 14px; padding: clamp(18px, 4vw, 30px); background: var(--surface); } .eyebrow, .card-label { margin: 0; color: var(--accent); font-size: .82rem; font-weight: 800; letter-spacing: .1em; } h1 { margin: 7px 0; color: var(--fg-strong); font-size: clamp(1.9rem, 6vw, 2.7rem); } h2 { margin: 0 0 10px; color: var(--fg-strong); font-size: 1.2rem; } header > p:last-child, .lane-card p { color: var(--muted); line-height: 1.6; font-size: 1.05rem; } .notice { margin-top: 18px; border-color: var(--warn); background: var(--warn-soft); color: var(--warn); } .notice p { margin-bottom: 0; line-height: 1.6; font-size: 1.05rem; } .links { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; margin-top: 18px; } .lane-card { display: block; min-width: 0; color: inherit; text-decoration: none; } .lane-card:hover { border-color: var(--accent); background: var(--accent-soft); } .lane-card:focus-visible { outline: 2px solid var(--warn); outline-offset: 3px; } dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 16px 0; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: .95rem; } dt { color: var(--muted); } dd { margin: 0; color: var(--fg-strong); } .destination { color: var(--accent-strong); font-weight: 800; font-size: 1.05rem; }
+</style>

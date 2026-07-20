@@ -1,7 +1,7 @@
 import { writable, type Writable } from 'svelte/store';
 import { isV5DefaultGateAllowed, readLocalV5DefaultGateReceipt } from './v5DefaultGate';
 
-export type DashboardShell = 'v3' | 'v4' | 'v5';
+export type DashboardShell = 'v3' | 'v4' | 'v5' | 'v6';
 
 export const SHELL_STORAGE_KEY = 'kronos-dashboard-shell';
 
@@ -14,7 +14,7 @@ export interface ShellResolution {
 const DEFAULT_SHELL: DashboardShell = 'v3';
 
 function isDashboardShell(value: string | null): value is DashboardShell {
-  return value === 'v3' || value === 'v4' || value === 'v5';
+  return value === 'v3' || value === 'v4' || value === 'v5' || value === 'v6';
 }
 
 function parseSearch(search: string): URLSearchParams {

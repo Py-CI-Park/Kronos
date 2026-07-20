@@ -1,7 +1,7 @@
 # 연구 원장 · Research Ledger
 
 > 상태: `ACTIVE_RESEARCH_INDEX`  
-> 최종 갱신: 2026-07-19  
+> 최종 갱신: 2026-07-20  
 > 범위: Kronos 예측, 일봉 종가매매, 포트폴리오 RL, 대시보드·연구 인프라
 
 ## 목적
@@ -14,6 +14,8 @@
 - V5: 연구 프리뷰 및 직접 경로 검증용
 - V5.1: `IMPLEMENTED_RESEARCH_FOUNDATION`, 직접 `?ui=v5` 확인용, 기본 전환 아님
 - V5.1 UX 성숙도: `IMMATURE`(사용자 UX 종합 51/100); V6 workflow 재설계 계획됨
+- V6: `?ui=v6` opt-in workflow 플랫폼 13페이지 BUILT; UX 재감사 74/100 `USABLE_WITH_GAPS`; 기본 전환 아님
+- V6 일봉 H1 tabular-Q: smoke `NO_GO`, full(3-seed) `INCONCLUSIVE`; untouched test 미접근; 승격 불가
 - 일봉 종가매매 선형 정책: `NO-GO / WATCH_RESEARCH_ONLY`
 - 일봉 PPO 5k: `INCONCLUSIVE_SMOKE_ONLY / NOT_PROMOTED`
 - 일봉 PPO full: `INCONCLUSIVE — NOT RUN`
@@ -24,6 +26,12 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | `docs/kronos_v7_rl_models_and_reports_plan_2026-07-20.md` | PLAN | V7 3-Track(테마·모델 시리즈 M1~M4·HTML 리포트 시스템), `IMPLEMENTATION_NOT_STARTED` |
+| 2026-07-20 | `docs/kronos_dashboard_v61_result_2026-07-20.md` | IMPLEMENTATION_RESULT | V6/V6.1 플랫폼 완성; 사용성 50→≈78; RL 판정 변동 없음(`NO_GO`/`INCONCLUSIVE`) |
+| 2026-07-19 | `docs/kronos_v6_daily_h1_rl_result_2026-07-19.md` | RESULT | smoke `NO_GO`(shuffled control 발동) · full `INCONCLUSIVE`(1/3 seed); test `NOT_RUN`; locks 전부 false |
+| 2026-07-19 | `docs/kronos_v6_prereg_h1_2026-07-19.json` | PREREGISTRATION | H1 tabular-Q 가설·판정 규칙·OOS 1회 정책 동결 |
+| 2026-07-19 | `docs/kronos_v6_universe_manifest_2026-07-19.json` | DATA_MANIFEST | 유동성 상위 500 universe 동결; instrument_type UNVERIFIED 캐비앗 |
+| 2026-07-19 | `docs/kronos_v6_goal_review_and_plan_2026-07-19.md` | REVIEW/PLAN | 기존 V6 계획 목표 반영도 45~55% 판정; 일봉 DB 사실 확인; 3-Track 통합 계획; `IMPLEMENTATION_NOT_STARTED` |
 | 2026-07-18 | `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` | IMPLEMENTATION/RELEASE_RESULT | `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live `NOT_RUN / NO-GO`; V3 기본 유지 |
 | 2026-07-19 | `docs/kronos_dashboard_v6_remodel_plan_2026-07-19.md` | PLAN | V6 workflow 전면 재설계, `IMPLEMENTATION_NOT_STARTED`; read-only 우선, 실행 3단계 staging |
 | 2026-07-19 | `docs/kronos_dashboard_v51_ux_audit_2026-07-19.md` | AUDIT | 사용자 UX 종합 51/100 `IMMATURE`; RL/live `NOT_RUN / NO-GO` 유지 |
