@@ -26,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | V7 P5 비주얼 폴리시 | IMPLEMENTATION | 차트-테마 브리지(6페이지, V6 토큰 파생), 홈 KPI glow·진행바·NAV 스파크라인, 스테퍼 방향키 roving 내비 |
 | 2026-07-20 | V7 P4 V6 테마 시스템 | IMPLEMENTATION | `data-v6-theme` 5종(전역따름·다크·오션·포레스트·퀀트터미널)+배율 4단계, V6 스코프 한정(V3/V5 무영향 실측), localStorage 지속 |
 | 2026-07-20 | V7 P3 리포트 카탈로그·뷰어 | IMPLEMENTATION | GET `/api/v6/reports`·`/report-html`(SHA 무결성 검사·CSP·sandbox iframe); 보고서 STEP 카탈로그+뷰어+다운로드; STEP 6 `HAS_REPORTS` |
 | 2026-07-20 | V7 P2 HTML 리포트 빌더 | IMPLEMENTATION | `stom_rl/v7_report_builder.py` 16절 self-contained HTML(외부 리소스 0·값 재계산 금지); 기존 2개 run 소급 생성(smoke `NO_GO`·full `INCONCLUSIVE`, 지수 절 `PRESENT`) |

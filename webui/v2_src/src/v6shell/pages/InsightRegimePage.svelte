@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import EChartsRenderer from '../../charts/EChartsRenderer.svelte';
-  import { theme } from '$lib/stores';
+  import { v6ChartEpoch, v6CssVar } from '../v6ChartTheme';
   import { getV6InsightRegime, type V6InsightRegime } from '../v6Api';
   type ChartOption = Record<string, unknown>;
-  let currentTheme = $state<'light' | 'dark'>('light');
+  let chartEpoch = $state('');
   let data = $state<V6InsightRegime | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
-  theme.subscribe((value) => (currentTheme = value));
+  v6ChartEpoch.subscribe((value) => (chartEpoch = value));
   function percent(value: unknown): string { return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}%` : 'MISSING'; }
-  function color(name: string): string { return typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  const color = v6CssVar;
   function hasBreadthValue(): boolean { return typeof data?.breadth_proxy?.pct_above_20s_mean === 'number' && Number.isFinite(data.breadth_proxy.pct_above_20s_mean); }
   const breadthOption = $derived.by<ChartOption>(() => {
-    void currentTheme;
+    void chartEpoch;
     const value = data?.breadth_proxy?.pct_above_20s_mean;
     return { backgroundColor: 'transparent', series: [{ type: 'gauge', min: 0, max: 100, progress: { show: true, width: 16, itemStyle: { color: color('--accent') } }, axisLine: { lineStyle: { width: 16, color: [[0.35, color('--danger-soft')], [0.65, color('--surface-raised')], [1, color('--success-soft')]] } }, axisTick: { lineStyle: { color: color('--border-strong') } }, splitLine: { lineStyle: { color: color('--border-strong') } }, axisLabel: { color: color('--muted') }, pointer: { itemStyle: { color: color('--fg-strong') } }, title: { color: color('--muted'), fontSize: 14 }, detail: { valueAnimation: true, formatter: '{value}%', color: color('--fg-strong'), fontSize: 28 }, data: [{ value, name: '약세 <35 · 중립 35–65 · 강세 >65' }] }] };
   });
