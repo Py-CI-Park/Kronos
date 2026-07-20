@@ -15,6 +15,20 @@
     if (state === 'MISSING' || state.startsWith('BLOCKED')) return 'blocked';
     return 'neutral';
   }
+
+  function onStepKeydown(event: KeyboardEvent): void {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+    const container = (event.currentTarget as HTMLElement).closest('.stepper');
+    if (!container) return;
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')];
+    const index = buttons.indexOf(event.currentTarget as HTMLButtonElement);
+    if (index === -1) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? buttons.length - 1
+      : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next]?.focus();
+  }
 </script>
 
 <div class="stepper" aria-label="강화학습 연구 단계">
@@ -26,6 +40,7 @@
       class={stateClass(state)}
       aria-current={active === step.id ? 'step' : undefined}
       onclick={() => onSelect(step.id)}
+      onkeydown={onStepKeydown}
     >
       <span class="step-number">STEP {index + 1}</span>
       <strong>{step.labelKo}</strong>
