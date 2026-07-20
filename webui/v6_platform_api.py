@@ -22,6 +22,9 @@ FIVEMIN_DB_PATH: Final = REPO_ROOT / "_database" / "Stock_Database_ohlcv_5min.db
 INDEX_ARTIFACT_DIR: Final = REPO_ROOT / "artifacts" / "korean_index"
 INDEX_BLOCKER: Final = "BLOCKED_INDEX_SERIES_SOURCE"
 INDEX_BLOCKER_REASON: Final = "KRX credentials required for pykrx collection"
+INDEX_MARKETS: Final = ("KOSDAQ", "KOSPI")
+INDEX_NORMALIZED_GLOB: Final = "korean-index-*-normalized-*.json"
+_INDEX_OVERLAY_CACHE: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
 SIX_FALSE_LOCKS: Final = {
     "promotion_allowed": False,
     "model_build_allowed": False,
@@ -235,18 +238,81 @@ def _run_state() -> str:
     return _runs_payload()["training_state"]
 
 
+def _index_overlays() -> dict[str, dict[str, Any]]:
+    """Return per-market overlay-safe validated normalized index artifacts.
+
+    Validation is fully offline (no pykrx import, no network).  Invalid or
+    unreadable artifacts are skipped so the endpoint fails closed to the
+    blocker state instead of serving unverified index values.
+    """
+    try:
+        from stom_rl.korean_index_source import KoreanIndexArtifactError, validate_korean_index_artifact
+    except ImportError:
+        return {}
+    try:
+        paths = sorted(path for path in INDEX_ARTIFACT_DIR.glob(INDEX_NORMALIZED_GLOB) if path.is_file())
+    except OSError:
+        return {}
+    overlays: dict[str, dict[str, Any]] = {}
+    for path in paths:
+        try:
+            stat = path.stat()
+            key = path.as_posix()
+            signature = (stat.st_mtime_ns, stat.st_size)
+            cached = _INDEX_OVERLAY_CACHE.get(key)
+            if cached is not None and cached[0] == signature:
+                overlay = cached[1]
+            else:
+                overlay = validate_korean_index_artifact(path)
+                _INDEX_OVERLAY_CACHE[key] = (signature, overlay)
+        except (OSError, KoreanIndexArtifactError, ValueError):
+            continue
+        market = str(overlay["market"])
+        current = overlays.get(market)
+        if current is None or str(overlay["actual_end_date"]) > str(current["actual_end_date"]):
+            overlays[market] = overlay
+    return overlays
+
+
+def index_overlay_states() -> dict[str, dict[str, Any]]:
+    """Public per-market summary of validated offline index artifacts."""
+    overlays = _index_overlays()
+    return {
+        market: {
+            "index_code": overlay["index_code"],
+            "index_name": overlay["index_name"],
+            "actual_start_date": overlay["actual_start_date"],
+            "actual_end_date": overlay["actual_end_date"],
+            "row_count": overlay["row_count"],
+            "normalized_sha256": overlay["normalized_sha256"],
+        }
+        for market, overlay in sorted(overlays.items())
+    }
+
+def index_overlay_series() -> dict[str, list[dict[str, Any]]]:
+    """Public per-market validated close series rows (date/close only)."""
+    return {market: [dict(row) for row in overlay["series"]] for market, overlay in sorted(_index_overlays().items())}
+
+
+def _index_overlay_state() -> str:
+    overlays = _index_overlays()
+    return "PRESENT" if all(market in overlays for market in INDEX_MARKETS) else INDEX_BLOCKER
+
+
 def _journey_data() -> dict[str, Any]:
     manifest, _ = _manifest()
     if manifest is None:
         return {"state": "MISSING"}
     universe = manifest["universe"]
-    return {
+    payload = {
         "state": "PARTIAL",
         "universe_manifest": "docs/kronos_v6_universe_manifest_2026-07-19.json",
         "universe_size": len(universe),
-        "index_overlay": INDEX_BLOCKER,
-        "index_blocker_reason": INDEX_BLOCKER_REASON,
+        "index_overlay": _index_overlay_state(),
     }
+    if payload["index_overlay"] == INDEX_BLOCKER:
+        payload["index_blocker_reason"] = INDEX_BLOCKER_REASON
+    return payload
 
 
 def _experiment_payload() -> dict[str, Any]:
@@ -316,16 +382,10 @@ def _audit_summary() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def _index_status() -> dict[str, Any]:
-    try:
-        artifacts = [path for path in INDEX_ARTIFACT_DIR.glob("*.json") if path.is_file()]
-    except OSError:
-        artifacts = []
-    if not artifacts:
+    markets = index_overlay_states()
+    if not all(market in markets for market in INDEX_MARKETS):
         return {"state": INDEX_BLOCKER, "reason": INDEX_BLOCKER_REASON}
-    valid_artifacts = [path for path in artifacts if _read_json(path) is not None]
-    if not valid_artifacts:
-        return {"state": "MISSING"}
-    return {"state": "PRESENT", "artifact_count": len(valid_artifacts)}
+    return {"state": "PRESENT", "markets": markets}
 
 
 def _status_payload() -> dict[str, Any]:
@@ -412,6 +472,35 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             "price_basis": price_basis,
         })
 
+    def index_series_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        if set(request.args) != {"market"} or len(request.args.getlist("market")) != 1:
+            return _error(400, "BAD_REQUEST")
+        market = request.args["market"]
+        if market not in INDEX_MARKETS:
+            return _error(400, "BAD_REQUEST")
+        overlay = _index_overlays().get(market)
+        if overlay is None:
+            return _response({"status": "BLOCKED", "reason": INDEX_BLOCKER}, 404)
+        return _response({
+            "schema_version": "kronos_v6_index_series.v1",
+            "status": "OK",
+            "market": overlay["market"],
+            "index_code": overlay["index_code"],
+            "index_name": overlay["index_name"],
+            "actual_start_date": overlay["actual_start_date"],
+            "actual_end_date": overlay["actual_end_date"],
+            "row_count": overlay["row_count"],
+            "series": overlay["series"],
+            "provider_package": overlay["provider_package"],
+            "normalization_method": overlay["parser"]["normalization_method"],
+            "point_in_time": overlay["point_in_time"],
+            "false_locks": overlay["false_locks"],
+            "claims": overlay["claims"],
+            "hashes": overlay["hashes"],
+        })
+
     for rule, endpoint, handler in (
         ("/status", "status", status_handler),
         ("/experiment", "experiment", experiment_handler),
@@ -419,6 +508,7 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
         ("/run-detail", "run_detail", run_detail_handler),
         ("/universe", "universe", universe_handler),
         ("/data-readiness", "data_readiness", readiness_handler),
+        ("/index-series", "index_series", index_series_handler),
     ):
         blueprint.add_url_rule(rule, endpoint=endpoint, view_func=handler, methods=list(ALL_ROUTE_METHODS), provide_automatic_options=False)
     return blueprint

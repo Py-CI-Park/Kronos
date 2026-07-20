@@ -67,6 +67,14 @@ export interface V6DataReadiness {
   readonly index: {
     readonly state?: string;
     readonly reason?: string;
+    readonly markets?: Record<string, {
+      readonly index_code?: string;
+      readonly index_name?: string;
+      readonly actual_start_date?: string;
+      readonly actual_end_date?: string;
+      readonly row_count?: number;
+      readonly normalized_sha256?: string;
+    }>;
   };
   readonly price_basis: {
     readonly status?: string;
@@ -194,7 +202,12 @@ export interface V6InsightFlow {
 }
 
 export interface V6InsightRegime {
-  readonly index_regime?: { readonly state?: string; readonly reason?: string };
+  readonly index_regime?: {
+    readonly state?: string;
+    readonly reason?: string;
+    readonly markets?: Record<string, V6IndexRegimeMarket>;
+    readonly caveat?: string;
+  };
   readonly breadth_proxy?: {
     readonly as_of_date?: number;
     readonly tables_evaluated?: number;
@@ -213,6 +226,37 @@ async function getV6<T>(path: string): Promise<V6ApiResult<T>> {
   }
 }
 
+export interface V6IndexSeriesRow {
+  readonly date: string;
+  readonly close: number;
+}
+
+export interface V6IndexSeries {
+  readonly schema_version?: string;
+  readonly status?: string;
+  readonly market?: string;
+  readonly index_code?: string;
+  readonly index_name?: string;
+  readonly actual_start_date?: string;
+  readonly actual_end_date?: string;
+  readonly row_count?: number;
+  readonly series?: readonly V6IndexSeriesRow[];
+  readonly provider_package?: { readonly name?: string; readonly version?: string; readonly required_version?: string };
+  readonly normalization_method?: string;
+  readonly point_in_time?: { readonly constituents?: string; readonly limitation?: string; readonly index_levels_only?: boolean };
+  readonly false_locks?: Record<string, boolean>;
+  readonly claims?: Record<string, boolean>;
+  readonly hashes?: { readonly raw_sha256?: string; readonly normalized_sha256?: string; readonly artifact_sha256?: string };
+  readonly reason?: string;
+}
+
+export interface V6IndexRegimeMarket {
+  readonly last_date?: string;
+  readonly last_close?: number;
+  readonly pct_vs_20d_mean?: number | null;
+  readonly window_days?: number;
+}
+
 export const getV6Status = (): Promise<V6ApiResult<V6Status>> => getV6('/api/v6/status');
 export const getV6Universe = (limit: number): Promise<V6ApiResult<V6Universe>> =>
   getV6(`/api/v6/universe?limit=${encodeURIComponent(String(limit))}`);
@@ -226,3 +270,5 @@ export const getV6InsightSymbol = (code: string, maxPoints?: number): Promise<V6
 export const getV6InsightFlow = (window?: number, limit?: number): Promise<V6ApiResult<V6InsightFlow>> =>
   getV6(`/api/v6/insight/flow${window === undefined && limit === undefined ? '' : `?${[window === undefined ? '' : `window=${encodeURIComponent(String(window))}`, limit === undefined ? '' : `limit=${encodeURIComponent(String(limit))}`].filter(Boolean).join('&')}`}`);
 export const getV6InsightRegime = (): Promise<V6ApiResult<V6InsightRegime>> => getV6('/api/v6/insight/regime');
+export const getV6IndexSeries = (market: 'KOSPI' | 'KOSDAQ'): Promise<V6ApiResult<V6IndexSeries>> =>
+  getV6(`/api/v6/index-series?market=${encodeURIComponent(market)}`);
