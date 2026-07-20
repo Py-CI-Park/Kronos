@@ -257,6 +257,29 @@ export interface V6IndexRegimeMarket {
   readonly window_days?: number;
 }
 
+export interface V6ReportEntry {
+  readonly dataset_run_id?: string;
+  readonly train_run_id?: string;
+  readonly verdict?: string;
+  readonly test_state?: string;
+  readonly index_overlay_state?: string;
+  readonly generated_utc?: string;
+  readonly builder_version?: string;
+  readonly report_sha256?: string;
+  readonly size_bytes?: number;
+  readonly integrity?: string;
+}
+
+export interface V6Reports {
+  readonly schema_version?: string;
+  readonly status?: string;
+  readonly reports?: readonly V6ReportEntry[];
+}
+
+export function v6ReportHtmlUrl(dataset: string, train: string, download = false): string {
+  return `/api/v6/report-html?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}${download ? '&download=1' : ''}`;
+}
+
 export const getV6Status = (): Promise<V6ApiResult<V6Status>> => getV6('/api/v6/status');
 export const getV6Universe = (limit: number): Promise<V6ApiResult<V6Universe>> =>
   getV6(`/api/v6/universe?limit=${encodeURIComponent(String(limit))}`);
@@ -272,3 +295,4 @@ export const getV6InsightFlow = (window?: number, limit?: number): Promise<V6Api
 export const getV6InsightRegime = (): Promise<V6ApiResult<V6InsightRegime>> => getV6('/api/v6/insight/regime');
 export const getV6IndexSeries = (market: 'KOSPI' | 'KOSDAQ'): Promise<V6ApiResult<V6IndexSeries>> =>
   getV6(`/api/v6/index-series?market=${encodeURIComponent(market)}`);
+export const getV6Reports = (): Promise<V6ApiResult<V6Reports>> => getV6('/api/v6/reports');

@@ -297,3 +297,81 @@ def test_v6_runs_lists_dataset_manifest(client, monkeypatch, tmp_path) -> None:
         "generated_utc": None,
         "verdict_candidate": "NO_GO",
     }]
+
+
+def _write_report(runs_root, dataset="dataset-r1", train="train-r1", verdict="NO_GO"):
+    run_dir = runs_root / dataset / train
+    run_dir.mkdir(parents=True)
+    html_text = f"<!DOCTYPE html><html><body><div class=\"badge\">{verdict}</div></body></html>"
+    (run_dir / "report.html").write_text(html_text, encoding="utf-8")
+    manifest = {
+        "schema_version": "kronos_v7_report.v1",
+        "builder_version": "kronos_v7_report_builder.v1",
+        "generated_utc": "2026-07-20T01:00:00Z",
+        "verdict": verdict,
+        "test_state": "NOT_RUN",
+        "index_overlay_state": "PRESENT",
+        "report_sha256": hashlib.sha256(html_text.encode("utf-8")).hexdigest(),
+    }
+    (run_dir / "report_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return run_dir
+
+
+def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    _write_report(runs_root)
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+
+    catalog = client.get("/api/v6/reports").get_json()
+    status = client.get("/api/v6/status").get_json()
+    html = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1")
+    download = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1&download=1")
+
+    assert catalog["schema_version"] == "kronos_v6_reports.v1"
+    assert len(catalog["reports"]) == 1
+    entry = catalog["reports"][0]
+    assert entry["dataset_run_id"] == "dataset-r1"
+    assert entry["train_run_id"] == "train-r1"
+    assert entry["verdict"] == "NO_GO"
+    assert entry["integrity"] == "OK"
+    assert status["journey"]["report"]["state"] == "HAS_REPORTS"
+    assert html.status_code == 200
+    assert html.mimetype == "text/html"
+    assert "NO_GO" in html.get_data(as_text=True)
+    assert html.headers["X-Content-Type-Options"] == "nosniff"
+    assert html.headers["Content-Security-Policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+    assert "Content-Disposition" not in html.headers
+    assert download.headers["Content-Disposition"] == 'attachment; filename="kronos-report-dataset-r1-train-r1.html"'
+
+
+def test_v6_reports_empty_and_report_html_guards(client, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", tmp_path / "missing-runs")
+
+    assert client.get("/api/v6/reports").get_json()["reports"] == []
+    assert client.get("/api/v6/status").get_json()["journey"]["report"]["state"] == "NOT_RUN"
+    missing = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1")
+    assert missing.status_code == 404
+    assert missing.get_json() == {"status": "BLOCKED", "reason": "REPORT_NOT_FOUND"}
+
+    assert client.get("/api/v6/report-html").status_code == 400
+    assert client.get("/api/v6/report-html?dataset=../x&train=train-1").status_code == 400
+    assert client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1&download=2").status_code == 400
+    assert client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1&unexpected=1").status_code == 400
+    post = client.post("/api/v6/report-html")
+    assert post.status_code == 405
+    assert post.headers["Allow"] == "GET"
+    assert client.post("/api/v6/reports").status_code == 405
+
+
+def test_v6_report_html_blocks_sha_mismatch(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    run_dir = _write_report(runs_root)
+    (run_dir / "report.html").write_text("<!DOCTYPE html><html><body>tampered</body></html>", encoding="utf-8")
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+
+    catalog = client.get("/api/v6/reports").get_json()
+    blocked = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1")
+
+    assert catalog["reports"][0]["integrity"] == "SHA_MISMATCH"
+    assert blocked.status_code == 409
+    assert blocked.get_json() == {"status": "BLOCKED", "reason": "REPORT_SHA_MISMATCH"}

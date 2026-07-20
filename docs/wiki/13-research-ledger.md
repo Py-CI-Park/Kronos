@@ -26,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | V7 P3 리포트 카탈로그·뷰어 | IMPLEMENTATION | GET `/api/v6/reports`·`/report-html`(SHA 무결성 검사·CSP·sandbox iframe); 보고서 STEP 카탈로그+뷰어+다운로드; STEP 6 `HAS_REPORTS` |
 | 2026-07-20 | V7 P2 HTML 리포트 빌더 | IMPLEMENTATION | `stom_rl/v7_report_builder.py` 16절 self-contained HTML(외부 리소스 0·값 재계산 금지); 기존 2개 run 소급 생성(smoke `NO_GO`·full `INCONCLUSIVE`, 지수 절 `PRESENT`) |
 | 2026-07-20 | V7 P1 지수 오버레이 통합 | IMPLEMENTATION | `/api/v6/index-series` 신설, `BLOCKED_INDEX_SERIES_SOURCE` 해제(오프라인 검증 통과 시), 비교 STEP 지수 정규화 차트·국면 PRESENT 관측. 판정 변동 없음 |
 | 2026-07-20 | `docs/kronos_v7_paged_execution_plan_2026-07-20.md` | EXECUTION_PLAN | V7 P1~P10 페이지 단위 브랜치-머지 전략; KOSPI/KOSDAQ 지수 artifact 수집 완료(`BLOCKED_INDEX` 원인 해소); 요청사항 12건 반영 재검토 |
