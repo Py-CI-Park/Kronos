@@ -8,6 +8,8 @@
   import KronosPage from './pages/KronosPage.svelte';
   import SettingsPage from './pages/SettingsPage.svelte';
   import { V6_BRAND, V6_PAGES, resolveV6Location, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
+  import { v6Scale, v6Theme } from './v6Theme';
+  import './v6-themes.css';
 
   const GROUPS = ['COMMAND', 'RESEARCH', 'PLATFORM', 'ADVANCED'] as const;
   let page = $state<V6PageDef>(V6_PAGES[0]);
@@ -35,7 +37,7 @@
   });
 </script>
 
-<div class="v6-shell" data-v6-shell>
+<div class="v6-shell" data-v6-shell data-v6-theme={$v6Theme === 'inherit' ? undefined : $v6Theme} style:zoom={$v6Scale}>
   <aside class="sidebar" aria-label="V6 탐색">
     <header class="brand"><p>{V6_BRAND.subtitle}</p><h1>{V6_BRAND.name}</h1><small>{V6_BRAND.version} · {V6_BRAND.updateDate}</small></header>
     <nav>
