@@ -10,7 +10,7 @@
 
   function stateOf(id: string): string { return states[id] ?? 'MISSING'; }
   function stateClass(state: string): string {
-    if (state === 'FROZEN' || state === 'HAS_RUNS' || state === 'OK' || state === 'PARTIAL') return 'complete';
+    if (state === 'FROZEN' || state === 'HAS_RUNS' || state === 'HAS_REPORTS' || state === 'OK' || state === 'PARTIAL') return 'complete';
     if (state === 'NOT_RUN' || state === 'NOT_FROZEN') return 'waiting';
     if (state === 'MISSING' || state.startsWith('BLOCKED')) return 'blocked';
     return 'neutral';

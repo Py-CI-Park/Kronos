@@ -113,6 +113,61 @@ def _events_tail(path: Path) -> list[Any]:
     return events[-50:]
 
 
+def _report_entries() -> list[dict[str, Any]]:
+    """List validated report manifests under RUNS_ROOT with integrity states."""
+    entries: list[dict[str, Any]] = []
+    try:
+        manifest_paths = sorted(RUNS_ROOT.glob("*/*/report_manifest.json"))
+    except OSError:
+        return entries
+    for manifest_path in manifest_paths:
+        run_dir = manifest_path.parent
+        dataset_run_id = run_dir.parent.name
+        train_run_id = run_dir.name
+        if RUN_ID_PATTERN.fullmatch(dataset_run_id) is None or RUN_ID_PATTERN.fullmatch(train_run_id) is None:
+            continue
+        manifest = _read_json(manifest_path)
+        if manifest is None:
+            continue
+        report_path = run_dir / "report.html"
+        try:
+            report_bytes = report_path.read_bytes()
+        except OSError:
+            continue
+        actual_sha = hashlib.sha256(report_bytes).hexdigest()
+        recorded_sha = manifest.get("report_sha256")
+        entries.append({
+            "dataset_run_id": dataset_run_id,
+            "train_run_id": train_run_id,
+            "verdict": manifest.get("verdict", "MISSING"),
+            "test_state": manifest.get("test_state", "MISSING"),
+            "index_overlay_state": manifest.get("index_overlay_state", "MISSING"),
+            "generated_utc": manifest.get("generated_utc", "MISSING"),
+            "builder_version": manifest.get("builder_version", "MISSING"),
+            "report_sha256": recorded_sha,
+            "size_bytes": len(report_bytes),
+            "integrity": "OK" if recorded_sha == actual_sha else "SHA_MISMATCH",
+        })
+    entries.sort(key=lambda e: str(e.get("generated_utc")), reverse=True)
+    return entries
+
+
+def _report_query() -> tuple[str, str, bool]:
+    allowed = {"dataset", "train", "download"}
+    if not {"dataset", "train"} <= set(request.args) or set(request.args) - allowed:
+        raise ValueError("invalid report query")
+    if any(len(request.args.getlist(name)) > 1 for name in allowed):
+        raise ValueError("duplicated report query values")
+    dataset_run_id = request.args["dataset"]
+    train_run_id = request.args["train"]
+    download = request.args.get("download", "")
+    if download not in {"", "1"}:
+        raise ValueError("invalid download flag")
+    if RUN_ID_PATTERN.fullmatch(dataset_run_id) is None or RUN_ID_PATTERN.fullmatch(train_run_id) is None:
+        raise ValueError("invalid report run ids")
+    return dataset_run_id, train_run_id, download == "1"
+
+
 def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any]:
     manifest_path = RUNS_ROOT / dataset_run_id / train_run_id / "run_manifest.json"
     try:
@@ -398,7 +453,7 @@ def _status_payload() -> dict[str, Any]:
             "experiment": {"state": _experiment_state()},
             "training": {"state": run_state},
             "evaluation": {"state": run_state},
-            "report": {"state": "NOT_RUN"},
+            "report": {"state": "HAS_REPORTS" if _report_entries() else "NOT_RUN"},
         },
         "locks": dict(SIX_FALSE_LOCKS),
     }
@@ -501,6 +556,42 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             "hashes": overlay["hashes"],
         })
 
+    def reports_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        if request.args:
+            return _error(400, "BAD_REQUEST")
+        return _response({
+            "schema_version": "kronos_v6_reports.v1",
+            "status": "OK",
+            "reports": _report_entries(),
+        })
+
+    def report_html_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        try:
+            dataset_run_id, train_run_id, download = _report_query()
+        except ValueError:
+            return _error(400, "BAD_REQUEST")
+        run_dir = RUNS_ROOT / dataset_run_id / train_run_id
+        manifest = _read_json(run_dir / "report_manifest.json")
+        report_path = run_dir / "report.html"
+        try:
+            report_bytes = report_path.read_bytes()
+        except OSError:
+            return _response({"status": "BLOCKED", "reason": "REPORT_NOT_FOUND"}, 404)
+        if manifest is None:
+            return _response({"status": "BLOCKED", "reason": "REPORT_MANIFEST_MISSING"}, 404)
+        if manifest.get("report_sha256") != hashlib.sha256(report_bytes).hexdigest():
+            return _response({"status": "BLOCKED", "reason": "REPORT_SHA_MISMATCH"}, 409)
+        response = Response(report_bytes, status=200, mimetype="text/html")
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+        if download:
+            response.headers["Content-Disposition"] = f'attachment; filename="kronos-report-{dataset_run_id}-{train_run_id}.html"'
+        return response
+
     for rule, endpoint, handler in (
         ("/status", "status", status_handler),
         ("/experiment", "experiment", experiment_handler),
@@ -509,6 +600,8 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
         ("/universe", "universe", universe_handler),
         ("/data-readiness", "data_readiness", readiness_handler),
         ("/index-series", "index_series", index_series_handler),
+        ("/reports", "reports", reports_handler),
+        ("/report-html", "report_html", report_html_handler),
     ):
         blueprint.add_url_rule(rule, endpoint=endpoint, view_func=handler, methods=list(ALL_ROUTE_METHODS), provide_automatic_options=False)
     return blueprint
