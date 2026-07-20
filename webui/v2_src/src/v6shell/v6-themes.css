@@ -1,0 +1,140 @@
+/* V6-scoped theme token overrides.
+   Applied via [data-v6-theme] on the .v6-shell root only — V3/V4/V5 shells
+   keep the global :root / [data-theme="dark"] tokens untouched.
+   Token names mirror styles/core.css so every v6shell component inherits. */
+
+[data-v6-shell] {
+  --shadow: rgb(15 23 42 / 0.14); /* used by stepper/kpi hover shadows; undefined in core.css */
+}
+
+/* ---------- V6 다크 ---------- */
+[data-v6-theme='dark'] {
+  color-scheme: dark;
+  --bg: oklch(16% 0.02 250);
+  --surface: oklch(20% 0.022 250);
+  --surface-raised: oklch(23% 0.024 250);
+  --surface-sunken: oklch(14% 0.018 250);
+  --surface-elev: oklch(25% 0.026 250);
+  --border: oklch(28% 0.025 250);
+  --border-strong: oklch(36% 0.028 250);
+  --border-faint: oklch(24% 0.022 250);
+  --fg: oklch(94% 0.005 240);
+  --fg-strong: oklch(98% 0.003 240);
+  --muted: oklch(72% 0.014 240);
+  --dim: oklch(66% 0.016 240);
+  --faint: oklch(40% 0.02 240);
+  --on-accent: oklch(15% 0.02 170);
+  --accent: oklch(72% 0.14 170);
+  --accent-strong: oklch(80% 0.15 170);
+  --accent-soft: oklch(28% 0.08 170);
+  --accent-tint: oklch(34% 0.10 170);
+  --accent-glow: oklch(72% 0.14 170 / 0.25);
+  --success: oklch(76% 0.15 152);
+  --success-soft: oklch(28% 0.08 150);
+  --warn: oklch(82% 0.13 82);
+  --warn-soft: oklch(30% 0.10 75);
+  --danger: oklch(72% 0.17 25);
+  --danger-soft: oklch(28% 0.10 25);
+  --info: oklch(76% 0.13 235);
+  --info-soft: oklch(28% 0.08 235);
+  --shadow: rgb(0 0 0 / 0.45);
+}
+
+/* ---------- 오션 (심해 남색 + 시안 액센트) ---------- */
+[data-v6-theme='ocean'] {
+  color-scheme: dark;
+  --bg: #011627;
+  --surface: #08263b;
+  --surface-raised: #0d3550;
+  --surface-sunken: #021220;
+  --surface-elev: #0f3d5c;
+  --border: rgba(47, 120, 161, 0.55);
+  --border-strong: #2f78a1;
+  --border-faint: rgba(47, 120, 161, 0.32);
+  --fg: #d7f9ff;
+  --fg-strong: #f2fdff;
+  --muted: #9ddcee;
+  --dim: #7dbfd4;
+  --faint: #4a8399;
+  --on-accent: #01202e;
+  --accent: #4cc9f0;
+  --accent-strong: #90e0ef;
+  --accent-soft: rgba(76, 201, 240, 0.16);
+  --accent-tint: rgba(76, 201, 240, 0.30);
+  --accent-glow: rgba(76, 201, 240, 0.28);
+  --success: #7ce7a8;
+  --success-soft: rgba(124, 231, 168, 0.16);
+  --warn: #ffd166;
+  --warn-soft: rgba(255, 209, 102, 0.15);
+  --danger: #ff7b7b;
+  --danger-soft: rgba(255, 123, 123, 0.15);
+  --info: #8ecae6;
+  --info-soft: rgba(142, 202, 230, 0.15);
+  --shadow: rgba(1, 22, 39, 0.55);
+}
+
+/* ---------- 포레스트 (심록 + 민트 액센트) ---------- */
+[data-v6-theme='forest'] {
+  color-scheme: dark;
+  --bg: #03170f;
+  --surface: #061d15;
+  --surface-raised: #0a281d;
+  --surface-sunken: #02110b;
+  --surface-elev: #0d2f22;
+  --border: rgba(46, 107, 84, 0.55);
+  --border-strong: #2e6b54;
+  --border-faint: rgba(46, 107, 84, 0.32);
+  --fg: #d8fbe8;
+  --fg-strong: #f1fef7;
+  --muted: #a5dcc2;
+  --dim: #86bfa4;
+  --faint: #547f6a;
+  --on-accent: #032015;
+  --accent: #52d19b;
+  --accent-strong: #7fe3b8;
+  --accent-soft: rgba(82, 209, 155, 0.16);
+  --accent-tint: rgba(82, 209, 155, 0.30);
+  --accent-glow: rgba(82, 209, 155, 0.28);
+  --success: #7ce7a8;
+  --success-soft: rgba(124, 231, 168, 0.16);
+  --warn: #ffd166;
+  --warn-soft: rgba(255, 209, 102, 0.15);
+  --danger: #ff8f8f;
+  --danger-soft: rgba(255, 143, 143, 0.15);
+  --info: #8ecae6;
+  --info-soft: rgba(142, 202, 230, 0.15);
+  --shadow: rgba(3, 23, 15, 0.55);
+}
+
+/* ---------- 퀀트 터미널 (고대비 흑녹) ---------- */
+[data-v6-theme='quant-terminal'] {
+  color-scheme: dark;
+  --bg: #050505;
+  --surface: #0a0a0a;
+  --surface-raised: #121212;
+  --surface-sunken: #000000;
+  --surface-elev: #161616;
+  --border: #2a2a2a;
+  --border-strong: #404040;
+  --border-faint: #1d1d1d;
+  --fg: #d9ffe9;
+  --fg-strong: #ffffff;
+  --muted: #86c9a2;
+  --dim: #63a37e;
+  --faint: #3c6a50;
+  --on-accent: #001a0f;
+  --accent: #00e08a;
+  --accent-strong: #4dffb0;
+  --accent-soft: rgba(0, 224, 138, 0.13);
+  --accent-tint: rgba(0, 224, 138, 0.26);
+  --accent-glow: rgba(0, 224, 138, 0.30);
+  --success: #00e08a;
+  --success-soft: rgba(0, 224, 138, 0.13);
+  --warn: #ffcc33;
+  --warn-soft: rgba(255, 204, 51, 0.13);
+  --danger: #ff5c5c;
+  --danger-soft: rgba(255, 92, 92, 0.14);
+  --info: #55bbff;
+  --info-soft: rgba(85, 187, 255, 0.13);
+  --shadow: rgba(0, 0, 0, 0.65);
+}
