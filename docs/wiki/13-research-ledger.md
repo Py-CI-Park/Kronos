@@ -26,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | `docs/kronos_v7_model_series_result_2026-07-20.md` | RESULT | **V7 모델 시리즈 종결**: M1 `INCONCLUSIVE`(1/5) · M2 PPO `NO_GO`(0/3) · M3 LinUCB `INCONCLUSIVE`(1/3, 계수 해석 확보) · M4 `NOT_RUN_DEFERRED`(사후 선택 방지); 대조군 11/11 통과, test 전부 `NOT_RUN`, HTML 보고서 7건 |
 | 2026-07-20 | `docs/kronos_v7_m1_result_2026-07-20.md` | RESULT | M1 v2 full: **`INCONCLUSIVE`**(1/5 seed, seed0 +7.10%), exposure-matched 대조군 5/5 통과(허위 발동 없음), test `NOT_RUN`; HTML 보고서 자동 생성 |
 | 2026-07-20 | V7 P8 M2 PPO (`docs/kronos_v7_prereg_m2_2026-07-20.json`) | PREREG+IMPLEMENTATION | gymnasium 슬롯 env+SB3 PPO, smoke `INCONCLUSIVE`(1/1 seed·대조군 통과) → 게이트 통과, full 3-seed 실행 중 |
 | 2026-07-20 | V7 P7 M1 tabular-Q v2 (`docs/kronos_v7_prereg_m1_2026-07-20.json`) | PREREG+IMPLEMENTATION | exposure-matched 음성 대조군(v1 결함 교정)·seed 5·RULE 3종; smoke `INCONCLUSIVE`(1/1 seed, 허위 NO_GO 재발 없음); **full 5-seed run 실행 중** — 결과는 완료 시 별도 기록 |
