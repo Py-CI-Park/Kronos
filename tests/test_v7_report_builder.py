@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from stom_rl.v7_report_builder import ReportBuildError, build_report
+from stom_rl.v7_report_builder import ReportBuildError, build_project_report, build_report
 
 from tests.test_v6_platform_api import _write_index_artifacts
 
@@ -162,3 +162,66 @@ def test_report_includes_index_overlay_when_artifacts_valid(run_dir, prereg_path
 def test_report_rejects_missing_manifest(tmp_path) -> None:
     with pytest.raises(ReportBuildError, match="run_manifest.json not found"):
         build_report(tmp_path)
+
+def test_project_report_v2_validates_sidecar_and_preserves_run_contracts(tmp_path) -> None:
+    prereg_a = tmp_path / "prereg_a.json"
+    prereg_b = tmp_path / "prereg_b.json"
+    prereg_a.write_text('{"hypothesis":"A"}', encoding="utf-8")
+    prereg_b.write_text('{"hypothesis":"B"}', encoding="utf-8")
+    sha_a = hashlib.sha256(prereg_a.read_bytes()).hexdigest()
+    sha_b = hashlib.sha256(prereg_b.read_bytes()).hexdigest()
+
+    def write_run(name: str, prereg_sha: str, verdict: str, capital: float = 60000000.0) -> None:
+        run_dir = tmp_path / "dataset" / name
+        run_dir.mkdir(parents=True)
+        manifest = _run_manifest()
+        manifest["prereg"]["sha256"] = prereg_sha
+        manifest["verdict_candidate"]["value"] = verdict
+        manifest["hyperparams"]["capital_krw"] = capital
+        (run_dir / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    write_run("cycle_1_a", sha_a, "NO_GO")
+    write_run("cycle_1_b", sha_a, "INCONCLUSIVE")
+    write_run("cycle_2_a", sha_b, "NOT_RUN", capital=61000000.0)
+    sidecar = {
+        "schema_version": "kronos_v7_project_report_sidecar.v2",
+        "project_id": "KRONOS-PROJECT-TEST",
+        "title": "Project report fixture",
+        "cycles": [
+            {"cycle_id": "C1", "order": 1, "title": "First", "hypothesis_delta": "Initial hypothesis",
+             "prereg": {"path": "prereg_a.json", "sha256": sha_a},
+             "run_dirs": ["dataset/cycle_1_a", "dataset/cycle_1_b"]},
+            {"cycle_id": "C2", "order": 2, "title": "Second", "hypothesis_delta": "Changed feature",
+             "prereg": {"path": "prereg_b.json", "sha256": sha_b},
+             "run_dirs": ["dataset/cycle_2_a"]},
+        ],
+    }
+    sidecar_path = tmp_path / "project_sidecar.json"
+    sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+    output_dir = tmp_path / "export"
+    summary = build_project_report(sidecar_path, output_dir, now_utc="2026-07-20T01:00:00Z")
+    report = (output_dir / "project_report.html").read_text(encoding="utf-8")
+
+    assert summary["project_id"] == "KRONOS-PROJECT-TEST"
+    assert len(summary["source_sha256"]) == 6
+    assert summary["false_research_locks"] == _run_manifest()["false_research_locks"]
+    assert report.index("C1") < report.index("C2")
+    for tab in ("Summary", "Cycles", "Comparison", "Traceability", "Integrity"):
+        assert f">{tab}<" in report
+    for verdict in ("NO_GO", "INCONCLUSIVE", "NOT_RUN"):
+        assert verdict in report
+    assert "OOS remains closed" in report
+    assert "COMPATIBLE" in report and "INCOMPATIBLE" in report
+    assert "<script" not in report and " on" not in report
+    assert "http://" not in report and "https://" not in report and "src=" not in report and "url(" not in report
+    assert build_project_report(sidecar_path, output_dir, now_utc="2026-07-20T01:00:00Z")["report_sha256"] == summary["report_sha256"]
+
+    sidecar["cycles"][1]["order"] = 1
+    sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+    with pytest.raises(ReportBuildError, match="unique"):
+        build_project_report(sidecar_path, output_dir, now_utc="2026-07-20T01:00:00Z")
+    sidecar["cycles"][1]["order"] = 2
+    sidecar["cycles"][0]["prereg"]["sha256"] = "0" * 64
+    sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+    with pytest.raises(ReportBuildError, match="SHA-256 mismatch"):
+        build_project_report(sidecar_path, output_dir, now_utc="2026-07-20T01:00:00Z")

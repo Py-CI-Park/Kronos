@@ -14,7 +14,7 @@
 - V5: 연구 프리뷰 및 직접 경로 검증용
 - V5.1: `IMPLEMENTED_RESEARCH_FOUNDATION`, 직접 `?ui=v5` 확인용, 기본 전환 아님
 - V5.1 UX 성숙도: `IMMATURE`(사용자 UX 종합 51/100); V6 workflow 재설계 계획됨
-- V6: `?ui=v6` opt-in workflow 플랫폼 13페이지 BUILT; UX 재감사 74/100 `USABLE_WITH_GAPS`; 기본 전환 아님
+- V6: `?ui=v6` opt-in workflow 플랫폼 13페이지 BUILT; 전수감사 후 correctness·project-report 개선 완료, 심층 성숙도 58→76/100 `RESEARCH_PLATFORM_USABLE_WITH_RESIDUAL_ARCH_DEBT`; 기본 전환 아님
 - V6 일봉 H1 tabular-Q: smoke `NO_GO`, full(3-seed) `INCONCLUSIVE`; untouched test 미접근; 승격 불가
 - 일봉 종가매매 선형 정책: `NO-GO / WATCH_RESEARCH_ONLY`
 - 일봉 PPO 5k: `INCONCLUSIVE_SMOKE_ONLY / NOT_PROMOTED`
@@ -26,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | V7 P12 대시보드 전수검사·프로젝트 보고서 v2 | AUDIT+IMPLEMENTATION | greenfield 기준 58/100 `BLOCK` 감사 후 76/100: run/prereg/dataset/report chain custody, `TEST_NOT_RUN` 평가 상태, exact run ID, 3-cycle project sidecar·CSS-only 5-tab HTML·CHAIN_OK API/viewer, seed별 전체 학습곡선, API error/empty/MISSING 분리, Data/Experiment 계약 기반 UX, legacy polling/subscription/stale cost-gate 수정. 모델 판정은 M1/M3 `INCONCLUSIVE`, M2 `NO_GO`, test 전부 `NOT_RUN` 유지 |
 | 2026-07-20 | V7 P11 연구 레지스트리 | IMPLEMENTATION | `GET /api/v6/research-registry`·`/research-doc`(allowlist·traversal 차단); 보고서 STEP에 사전등록→실행→판정→보고서 생명주기 카드 + 마크다운 결과문서 뷰어(marked+DOMPurify). 갭 "과거 연구 체계적 관리·열람" 해소 |
 | 2026-07-20 | `docs/kronos_v7_model_series_result_2026-07-20.md` | RESULT | **V7 모델 시리즈 종결**: M1 `INCONCLUSIVE`(1/5) · M2 PPO `NO_GO`(0/3) · M3 LinUCB `INCONCLUSIVE`(1/3, 계수 해석 확보) · M4 `NOT_RUN_DEFERRED`(사후 선택 방지); 대조군 11/11 통과, test 전부 `NOT_RUN`, HTML 보고서 7건 |
 | 2026-07-20 | `docs/kronos_v7_m1_result_2026-07-20.md` | RESULT | M1 v2 full: **`INCONCLUSIVE`**(1/5 seed, seed0 +7.10%), exposure-matched 대조군 5/5 통과(허위 발동 없음), test `NOT_RUN`; HTML 보고서 자동 생성 |

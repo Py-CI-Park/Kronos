@@ -176,7 +176,7 @@ def test_v6_run_detail_blocks_when_manifest_is_missing(client, monkeypatch, tmp_
 
 def test_v6_run_detail_returns_manifest_sha_and_event_tail(client, monkeypatch, tmp_path) -> None:
     runs_root = tmp_path / "runs"
-    run_dir = runs_root / "dataset-1" / "train_1"
+    run_dir = runs_root / "dataset-1" / "train-1"
     run_dir.mkdir(parents=True)
     manifest = {"verdict_candidate": "NO_GO", "metrics": {"score": 0.0}}
     raw = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
@@ -187,7 +187,7 @@ def test_v6_run_detail_returns_manifest_sha_and_event_tail(client, monkeypatch, 
     )
     monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
 
-    response = client.get("/api/v6/run-detail?dataset=dataset-1&train=1")
+    response = client.get("/api/v6/run-detail?dataset=dataset-1&train=train-1")
     payload = response.get_json()
 
     assert response.status_code == 200
@@ -195,10 +195,16 @@ def test_v6_run_detail_returns_manifest_sha_and_event_tail(client, monkeypatch, 
         "schema_version": "kronos_v6_run_detail.v1",
         "status": "OK",
         "dataset_run_id": "dataset-1",
-        "train_run_id": "train_1",
+        "train_run_id": "train-1",
         "manifest": manifest,
         "manifest_sha256": hashlib.sha256(raw).hexdigest(),
         "events_tail": [{"event": "started"}, {"event": "finished"}],
+        "states": {
+            "training_state": "MISSING",
+            "validation_state": "NOT_RECORDED",
+            "test_state": "MISSING",
+            "evaluation_state": "TEST_MISSING",
+        },
     }
 
 def test_v6_experiment_reports_unfrozen_preregistration_and_read_only_plan(client, monkeypatch, tmp_path) -> None:
@@ -296,6 +302,10 @@ def test_v6_runs_lists_dataset_manifest(client, monkeypatch, tmp_path) -> None:
         "seeds": [],
         "generated_utc": None,
         "verdict_candidate": "NO_GO",
+        "training_state": "MISSING",
+        "validation_state": "NOT_RECORDED",
+        "test_state": "MISSING",
+        "evaluation_state": "TEST_MISSING",
     }]
 
 
@@ -315,6 +325,40 @@ def _write_report(runs_root, dataset="dataset-r1", train="train-r1", verdict="NO
     }
     (run_dir / "report_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return run_dir
+def _write_valid_report_chain(runs_root, docs_root, dataset="dataset-r1", train="train-1"):
+    run_dir = runs_root / dataset / train
+    run_dir.mkdir(parents=True)
+    docs_root.mkdir(parents=True, exist_ok=True)
+    prereg_path = docs_root / "kronos_v7_prereg_demo_2026-07-20.json"
+    prereg = {"prereg_id": "KRONOS-V7-PREREG-DEMO", "schema_version": "kronos_v7_prereg.v1"}
+    prereg_path.write_text(json.dumps(prereg), encoding="utf-8")
+    prereg_sha = hashlib.sha256(prereg_path.read_bytes()).hexdigest()
+    dataset_manifest_path = run_dir.parent / "dataset_manifest.json"
+    dataset_manifest_path.write_text(json.dumps({"schema_version": "kronos_v7_dataset.v1"}), encoding="utf-8")
+    run_manifest_path = run_dir / "run_manifest.json"
+    run_manifest = {
+        "schema_version": "kronos_v7_run.v1",
+        "dataset_run_id": dataset,
+        "prereg": {"id": prereg["prereg_id"], "sha256": prereg_sha},
+        "test": {"state": "NOT_RUN"},
+    }
+    run_manifest_path.write_text(json.dumps(run_manifest), encoding="utf-8")
+    html_text = "<!DOCTYPE html><html><body>NO_GO</body></html>"
+    (run_dir / "report.html").write_text(html_text, encoding="utf-8")
+    report_manifest = {
+        "schema_version": "kronos_v7_report.v1",
+        "verdict": "NO_GO",
+        "test_state": "NOT_RUN",
+        "report_sha256": hashlib.sha256(html_text.encode("utf-8")).hexdigest(),
+        "source_sha256": {
+            "run_manifest": hashlib.sha256(run_manifest_path.read_bytes()).hexdigest(),
+            "dataset_manifest": hashlib.sha256(dataset_manifest_path.read_bytes()).hexdigest(),
+            "prereg": prereg_sha,
+        },
+        "false_research_locks": dict(v6_platform_api.SIX_FALSE_LOCKS),
+    }
+    (run_dir / "report_manifest.json").write_text(json.dumps(report_manifest), encoding="utf-8")
+    return run_dir, prereg_path
 
 
 def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_path) -> None:
@@ -334,6 +378,8 @@ def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_pa
     assert entry["train_run_id"] == "train-r1"
     assert entry["verdict"] == "NO_GO"
     assert entry["integrity"] == "OK"
+    assert entry["chain_integrity"] == "LEGACY_UNVERIFIED"
+    assert entry["chain_reasons"] == ["LEGACY_SOURCE_CUSTODY_NOT_RECORDED"]
     assert status["journey"]["report"]["state"] == "HAS_REPORTS"
     assert html.status_code == 200
     assert html.mimetype == "text/html"
@@ -342,6 +388,67 @@ def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_pa
     assert html.headers["Content-Security-Policy"] == "default-src 'none'; style-src 'unsafe-inline'"
     assert "Content-Disposition" not in html.headers
     assert download.headers["Content-Disposition"] == 'attachment; filename="kronos-report-dataset-r1-train-r1.html"'
+def test_v6_valid_report_chain_round_trips_opaque_run_and_not_run_test(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    docs_root = tmp_path / "docs"
+    _write_valid_report_chain(runs_root, docs_root)
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+
+    catalog = client.get("/api/v6/reports").get_json()["reports"]
+    runs = client.get("/api/v6/runs").get_json()["runs"]
+    detail = client.get("/api/v6/run-detail?dataset=dataset-r1&train=train-1").get_json()
+    viewer = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-1")
+    status = client.get("/api/v6/status").get_json()
+
+    assert catalog[0]["chain_integrity"] == "CHAIN_OK"
+    assert catalog[0]["chain_reasons"] == []
+    assert runs[0]["run_id"] == "train-1"
+    assert runs[0]["test_state"] == "NOT_RUN"
+    assert catalog[0]["test_state"] == "NOT_RUN"
+    assert catalog[0]["evaluation_state"] == "TEST_NOT_RUN"
+    assert runs[0]["evaluation_state"] == "TEST_NOT_RUN"
+    assert detail["train_run_id"] == "train-1"
+    assert detail["states"]["test_state"] == "NOT_RUN"
+    assert detail["states"]["evaluation_state"] == "TEST_NOT_RUN"
+    assert status["journey"]["evaluation"]["state"] == "TEST_NOT_RUN"
+    assert viewer.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("tamper", "expected_reason"),
+    [
+        ("prereg", "PREREG_NOT_FOUND_OR_SHA_MISMATCH"),
+        ("locks", "FALSE_RESEARCH_LOCKS_MISMATCH"),
+        ("source", "RUN_MANIFEST_SHA_MISMATCH"),
+    ],
+)
+def test_v6_report_source_chain_tampering_fails_closed(client, monkeypatch, tmp_path, tamper, expected_reason) -> None:
+    runs_root = tmp_path / "runs"
+    docs_root = tmp_path / "docs"
+    run_dir, prereg_path = _write_valid_report_chain(runs_root, docs_root)
+    if tamper == "prereg":
+        prereg_path.write_text(json.dumps({"prereg_id": "KRONOS-V7-PREREG-DEMO", "schema_version": "tampered"}), encoding="utf-8")
+    elif tamper == "source":
+        run_manifest_path = run_dir / "run_manifest.json"
+        run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+        run_manifest["source_tampered"] = True
+        run_manifest_path.write_text(json.dumps(run_manifest), encoding="utf-8")
+    else:
+        report_manifest_path = run_dir / "report_manifest.json"
+        report_manifest = json.loads(report_manifest_path.read_text(encoding="utf-8"))
+        report_manifest["false_research_locks"]["go_summary_allowed"] = True
+        report_manifest_path.write_text(json.dumps(report_manifest), encoding="utf-8")
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+
+    entry = client.get("/api/v6/reports").get_json()["reports"][0]
+    blocked = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-1")
+
+    assert entry["chain_integrity"] == "CHAIN_INVALID"
+    assert expected_reason in entry["chain_reasons"]
+    assert blocked.status_code == 409
+    assert blocked.get_json()["reason"] == expected_reason
 
 
 def test_v6_reports_empty_and_report_html_guards(client, monkeypatch, tmp_path) -> None:
@@ -445,3 +552,122 @@ def test_v6_research_doc_serves_allowlisted_markdown_and_blocks_traversal(client
         response = client.post(path)
         assert response.status_code == 405
         assert response.headers["Allow"] == "GET"
+def _write_project_report(runs_root, docs_root):
+    project_dir = runs_root / "_projects" / "KRONOS-PROJECT-TEST"
+    project_dir.mkdir(parents=True)
+    docs_root.mkdir(parents=True, exist_ok=True)
+    prereg_path = docs_root / "prereg.json"
+    run_path = runs_root / "cycle-source-run.json"
+    prereg_path.write_text('{"state":"FROZEN"}', encoding="utf-8")
+    run_path.write_text('{"verdict":"NO_GO","test":"NOT_RUN"}', encoding="utf-8")
+    html = "<!DOCTYPE html><html><body>NO_GO NOT_RUN</body></html>"
+    (project_dir / "project_report.html").write_text(html, encoding="utf-8")
+    manifest = {
+        "schema_version": "kronos_v7_project_report.v2",
+        "builder_version": "kronos_v7_project_report_builder.v2",
+        "generated_utc": "2026-07-20T00:00:00Z",
+        "project_id": "KRONOS-PROJECT-TEST",
+        "title": "Two-cycle project",
+        "report_sha256": hashlib.sha256(html.encode("utf-8")).hexdigest(),
+        "source_sha256": [
+            {"label": "prereg", "path": str(prereg_path), "sha256": hashlib.sha256(prereg_path.read_bytes()).hexdigest()},
+            {"label": "run", "path": str(run_path), "sha256": hashlib.sha256(run_path.read_bytes()).hexdigest()},
+        ],
+        "cycle_count": 2,
+        "run_count": 2,
+        "verdicts": ["NO_GO"],
+        "test_states": ["NOT_RUN"],
+        "cycles": [
+            {"cycle_id": "C1", "runs": [{"verdict": "NO_GO", "test_state": "NOT_RUN"}]},
+            {"cycle_id": "C2", "runs": [{"verdict": "NO_GO", "test_state": "NOT_RUN"}]},
+        ],
+        "false_research_locks": dict(v6_platform_api.SIX_FALSE_LOCKS),
+    }
+    manifest_path = project_dir / "project_report_manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return project_dir, manifest_path, run_path
+
+
+def test_v6_project_reports_catalog_and_html_contract(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    docs_root = tmp_path / "docs"
+    _write_project_report(runs_root, docs_root)
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+
+    payload = client.get("/api/v6/project-reports").get_json()
+    viewer = client.get("/api/v6/project-report-html?project=KRONOS-PROJECT-TEST")
+    download = client.get("/api/v6/project-report-html?project=KRONOS-PROJECT-TEST&download=1")
+
+    assert payload["schema_version"] == "kronos_v7_project_reports.v2"
+    assert payload["status"] == "OK"
+    entry = payload["projects"][0]
+    assert {key for key in ("project_id", "title", "generated_utc", "builder_version", "report_sha256", "size_bytes",
+                            "cycle_count", "run_count", "verdicts", "test_states", "cycles", "integrity",
+                            "integrity_reasons")} <= set(entry)
+    assert entry["cycle_count"] == entry["run_count"] == 2
+    assert len(entry["cycles"]) == 2
+    assert entry["verdicts"] == ["NO_GO"] and entry["test_states"] == ["NOT_RUN"]
+    assert entry["integrity"] == "CHAIN_OK" and entry["integrity_reasons"] == []
+    assert viewer.status_code == 200
+    assert viewer.headers["Content-Security-Policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+    assert download.headers["Content-Disposition"] == 'attachment; filename="kronos-project-report-KRONOS-PROJECT-TEST.html"'
+
+
+@pytest.mark.parametrize(
+    ("tamper", "reason"),
+    [
+        ("html", "REPORT_SHA_MISMATCH"),
+        ("source", "SOURCE_SHA256_MISMATCH"),
+        ("locks", "FALSE_RESEARCH_LOCKS_MISMATCH"),
+        ("schema", "PROJECT_REPORT_SCHEMA_MISMATCH"),
+        ("escape", "SOURCE_PATH_INVALID"),
+    ],
+)
+def test_v6_project_reports_fail_closed_on_tampering(client, monkeypatch, tmp_path, tamper, reason) -> None:
+    runs_root = tmp_path / "runs"
+    docs_root = tmp_path / "docs"
+    project_dir, manifest_path, run_path = _write_project_report(runs_root, docs_root)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if tamper == "html":
+        (project_dir / "project_report.html").write_text("<html>tampered</html>", encoding="utf-8")
+    elif tamper == "source":
+        run_path.write_text('{"tampered":true}', encoding="utf-8")
+    elif tamper == "locks":
+        manifest["false_research_locks"]["go_summary_allowed"] = True
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    elif tamper == "schema":
+        manifest["schema_version"] = "wrong"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    else:
+        secret = tmp_path / "secret.json"
+        secret.write_text("secret", encoding="utf-8")
+        manifest["source_sha256"][0]["path"] = str(secret)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+
+    entry = client.get("/api/v6/project-reports").get_json()["projects"][0]
+    blocked = client.get("/api/v6/project-report-html?project=KRONOS-PROJECT-TEST")
+
+    assert entry["integrity"] == "CHAIN_INVALID"
+    assert reason in entry["integrity_reasons"]
+    assert blocked.status_code == 409
+    assert blocked.get_json()["reason"] == reason
+
+
+def test_v6_project_report_query_and_method_guards(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    docs_root = tmp_path / "docs"
+    _write_project_report(runs_root, docs_root)
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+
+    assert client.get("/api/v6/project-reports?unexpected=1").status_code == 400
+    assert client.get("/api/v6/project-report-html?project=../escape").status_code == 400
+    assert client.get("/api/v6/project-report-html?project=missing").status_code == 404
+    assert client.get("/api/v6/project-report-html?project=KRONOS-PROJECT-TEST&project=duplicate").status_code == 400
+    assert client.post("/api/v6/project-reports").status_code == 405
+    post = client.post("/api/v6/project-report-html")
+    assert post.status_code == 405
+    assert post.headers["Allow"] == "GET"

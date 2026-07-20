@@ -60,9 +60,14 @@ export interface V6DataReadiness {
     readonly size_bytes?: number;
   };
   readonly audit: {
+    readonly state?: string;
     readonly population?: unknown;
     readonly filters?: unknown;
-    readonly disclaimers?: unknown;
+    readonly disclaimers?: {
+      readonly instrument_type?: unknown;
+      readonly flow_columns_disclaimer?: unknown;
+      readonly liquidity_proxy_disclaimer?: unknown;
+    };
   };
   readonly index: {
     readonly state?: string;
@@ -79,6 +84,7 @@ export interface V6DataReadiness {
   readonly price_basis: {
     readonly status?: string;
     readonly decision_grade_returns?: boolean;
+    readonly caveat?: unknown;
   };
 }
 export interface V6Experiment {
@@ -86,6 +92,8 @@ export interface V6Experiment {
     readonly state?: string;
     readonly path?: string;
     readonly sha256?: string;
+    readonly frozen_utc?: string;
+    readonly hypothesis?: unknown;
   };
   readonly planned?: {
     readonly strategy?: string;
@@ -101,7 +109,7 @@ export interface V6Experiment {
     readonly universe?: { readonly manifest?: unknown; readonly size?: unknown };
     readonly dataset_contract?: unknown;
     readonly seeds?: unknown;
-    readonly constraints?: unknown;
+    readonly constraints?: Record<string, unknown>;
   };
   readonly locks?: Record<string, boolean>;
 }
@@ -131,6 +139,7 @@ export interface V6Runs {
 export interface V6RunSeed {
   readonly episodes_ran?: number;
   readonly best_episode?: number;
+  readonly val_nav_curve?: readonly number[];
   readonly final_val_metrics?: {
     readonly nav?: number;
     readonly total_net_return_pct?: number;
@@ -151,6 +160,17 @@ export interface V6RunDetail {
     readonly verdict_candidate?: { readonly value?: string; readonly reasons?: readonly unknown[] };
     readonly test?: { readonly state?: string };
     readonly seeds?: unknown;
+    readonly trainer_version?: string;
+    readonly model_family?: string;
+    readonly algorithm?: string;
+    readonly prereg?: { readonly id?: string; readonly sha256?: string };
+    readonly generated_utc?: string;
+    readonly primary_cost_rate?: number;
+    readonly hyperparams?: {
+      readonly algorithm?: string;
+      readonly model_family?: string;
+      readonly primary_cost_rate?: number;
+    };
     readonly false_research_locks?: unknown;
   };
   readonly manifest_sha256?: string;
@@ -285,6 +305,50 @@ export interface V6RegistryRun {
   readonly generated_utc?: string;
   readonly has_report?: boolean;
 }
+export interface V6ProjectReportRun {
+  readonly run_ref?: string;
+  readonly dataset_run_id?: string;
+  readonly train_run_id?: string;
+  readonly verdict?: string;
+  readonly test_state?: string;
+  readonly comparison_state?: string;
+}
+
+export interface V6ProjectReportCycle {
+  readonly cycle_id?: string;
+  readonly order?: number;
+  readonly title?: string;
+  readonly hypothesis_delta?: string;
+  readonly prereg_sha256?: string;
+  readonly runs?: readonly V6ProjectReportRun[];
+}
+
+export interface V6ProjectReportEntry {
+  readonly project_id?: string;
+  readonly title?: string;
+  readonly generated_utc?: string;
+  readonly builder_version?: string;
+  readonly report_sha256?: string;
+  readonly size_bytes?: number;
+  readonly cycle_count?: number;
+  readonly run_count?: number;
+  readonly verdicts?: readonly string[];
+  readonly test_states?: readonly string[];
+  readonly cycles?: readonly V6ProjectReportCycle[];
+  readonly integrity?: string;
+  readonly integrity_reasons?: readonly string[];
+}
+
+export interface V6ProjectReports {
+  readonly schema_version?: string;
+  readonly status?: string;
+  readonly projects?: readonly V6ProjectReportEntry[];
+}
+
+export function v6ProjectReportHtmlUrl(projectId: string, download = false): string {
+  return `/api/v6/project-report-html?project=${encodeURIComponent(projectId)}${download ? '&download=1' : ''}`;
+}
+
 
 export interface V6PreregEntry {
   readonly prereg_id?: string;
@@ -341,6 +405,7 @@ export const getV6InsightRegime = (): Promise<V6ApiResult<V6InsightRegime>> => g
 export const getV6IndexSeries = (market: 'KOSPI' | 'KOSDAQ'): Promise<V6ApiResult<V6IndexSeries>> =>
   getV6(`/api/v6/index-series?market=${encodeURIComponent(market)}`);
 export const getV6Reports = (): Promise<V6ApiResult<V6Reports>> => getV6('/api/v6/reports');
+export const getV6ProjectReports = (): Promise<V6ApiResult<V6ProjectReports>> => getV6('/api/v6/project-reports');
 export const getV6ResearchRegistry = (): Promise<V6ApiResult<V6ResearchRegistry>> => getV6('/api/v6/research-registry');
 export const getV6ResearchDoc = (doc: string): Promise<V6ApiResult<V6ResearchDoc>> =>
   getV6(`/api/v6/research-doc?doc=${encodeURIComponent(doc)}`);

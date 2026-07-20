@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onDestroy } from 'svelte';
   import { activeTab, sidebarCollapsed, sidebarMobileOpen, trainingStatus, metricsLatest } from '$lib/stores';
   import { ICONS } from '$lib/icons';
   import { fmt } from '$lib/format';
@@ -117,22 +117,22 @@
   ];
 
   let current = $state('live-training');
-  activeTab.subscribe((v) => (current = v));
+  const unsubscribeActiveTab = activeTab.subscribe((v) => (current = v));
 
   let collapsed = $state(false);
-  sidebarCollapsed.subscribe((v) => (collapsed = v));
+  const unsubscribeSidebarCollapsed = sidebarCollapsed.subscribe((v) => (collapsed = v));
 
   let mobileOpen = $state(false);
-  sidebarMobileOpen.subscribe((v) => (mobileOpen = v));
+  const unsubscribeSidebarMobileOpen = sidebarMobileOpen.subscribe((v) => (mobileOpen = v));
 
   let status = $state<any>(null);
-  trainingStatus.subscribe((v) => (status = v));
+  const unsubscribeTrainingStatus = trainingStatus.subscribe((v) => (status = v));
 
   let m = $state<any>({});
-  metricsLatest.subscribe((v) => (m = v));
+  const unsubscribeMetricsLatest = metricsLatest.subscribe((v) => (m = v));
 
   let shell = $state<DashboardShell>('v3');
-  dashboardShell.subscribe((v) => (shell = v));
+  const unsubscribeDashboardShell = dashboardShell.subscribe((v) => (shell = v));
   let navGroups = $derived<readonly NavGroup[]>(shell === 'v5' ? V51_NAV_GROUPS : shell === 'v4' ? v4Groups : v3Groups);
   let versionHistoryOpen = $state(false);
   let versionHistoryDialog = $state<HTMLDivElement | null>(null);
@@ -206,6 +206,14 @@
     navigateToTab(routeId);
     sidebarMobileOpen.set(false);
   }
+  onDestroy(() => {
+    unsubscribeActiveTab();
+    unsubscribeSidebarCollapsed();
+    unsubscribeSidebarMobileOpen();
+    unsubscribeTrainingStatus();
+    unsubscribeMetricsLatest();
+    unsubscribeDashboardShell();
+  });
 </script>
 
 <aside

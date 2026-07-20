@@ -36,6 +36,17 @@ DEFAULT_INDEX_ARTIFACT_DIR = REPO_ROOT / "artifacts" / "korean_index"
 INDEX_BLOCKER = "BLOCKED_INDEX_SERIES_SOURCE"
 PALETTE = ("#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed", "#0891b2")
 BASELINE_ORDER = ("no_trade", "rule_topk_ret5", "rule_topk_low_vol", "rule_topk_inst", "random_topk")
+PROJECT_BUILDER_VERSION = "kronos_v7_project_report_builder.v2"
+PROJECT_REPORT_SCHEMA_VERSION = "kronos_v7_project_report.v2"
+PROJECT_SIDECAR_SCHEMA_VERSION = "kronos_v7_project_report_sidecar.v2"
+SIX_FALSE_LOCKS = (
+    "go_summary_allowed",
+    "live_broker_order_allowed",
+    "model_build_allowed",
+    "paper_forward_allowed",
+    "profitability_claim_allowed",
+    "promotion_allowed",
+)
 
 
 class ReportBuildError(ValueError):
@@ -622,12 +633,224 @@ def build_report(
     return report_manifest
 
 
+def _required_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ReportBuildError(f"project sidecar {field} must be a non-empty string")
+    return value
+
+
+def _six_false_locks(value: Any, run_dir: Path) -> dict[str, bool]:
+    if not isinstance(value, Mapping) or set(value) != set(SIX_FALSE_LOCKS) or any(value[name] is not False for name in SIX_FALSE_LOCKS):
+        raise ReportBuildError(f"run {run_dir} must record exactly the six false research locks")
+    return {name: False for name in SIX_FALSE_LOCKS}
+
+
+def _project_prereg(cycle: Mapping[str, Any], sidecar_dir: Path, cycle_id: str) -> tuple[Path, str]:
+    prereg = cycle.get("prereg")
+    if isinstance(prereg, Mapping):
+        path_value, expected_sha = prereg.get("path"), prereg.get("sha256")
+    else:
+        path_value, expected_sha = cycle.get("prereg_path"), cycle.get("prereg_sha256")
+    prereg_path = (sidecar_dir / _required_text(path_value, f"cycles[{cycle_id}].prereg.path")).resolve()
+    expected_sha = _required_text(expected_sha, f"cycles[{cycle_id}].prereg.sha256")
+    if len(expected_sha) != 64 or any(char not in "0123456789abcdef" for char in expected_sha.lower()):
+        raise ReportBuildError(f"project sidecar cycles[{cycle_id}] prereg SHA-256 is invalid")
+    if not prereg_path.is_file():
+        raise ReportBuildError(f"project sidecar preregistration not found: {prereg_path}")
+    if _sha256_file(prereg_path) != expected_sha:
+        raise ReportBuildError(f"project sidecar preregistration SHA-256 mismatch: {prereg_path}")
+    return prereg_path, expected_sha
+
+
+def _comparison_key(manifest: Mapping[str, Any]) -> tuple[Any, ...]:
+    hyper = manifest.get("hyperparams")
+    hyper = hyper if isinstance(hyper, Mapping) else {}
+    return (manifest.get("schema_version"), manifest.get("dataset_run_id"), hyper.get("capital_krw"),
+            hyper.get("slots"), hyper.get("primary_cost_rate"))
+
+
+_PROJECT_CSS = """
+:root{color-scheme:light}body{margin:0;background:#f8fafc;color:#0f172a;font:16px/1.55 system-ui,sans-serif}
+.page{max-width:1100px;margin:auto;padding:28px}.hero,.panel{background:#fff;border:1px solid #cbd5e1;border-radius:16px;padding:26px;box-shadow:0 14px 35px rgba(15,23,42,.07)}
+.hero{background:linear-gradient(135deg,#0f172a 0%,#172554 55%,#164e63 100%);color:#e2e8f0}.hero h1{margin:8px 0;font-size:clamp(1.8rem,4vw,2.6rem)}.meta{color:#64748b}.hero .meta{color:#bae6fd}.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:18px 0}.kpi{border:1px solid #dbeafe;border-radius:12px;padding:14px;background:linear-gradient(145deg,#eff6ff,#f8fafc)}.kpi strong{display:block;font-size:1.5rem;color:#1e3a8a}.kpi small{color:#64748b}.status{display:inline-block;border-radius:999px;padding:4px 10px;font-size:.76rem;font-weight:900;white-space:nowrap}.status.danger{background:#dc2626;color:#fff}.status.warn{background:#f59e0b;color:#1c1917}.status.muted{background:#64748b;color:#fff}.cycle-index{display:grid;width:30px;height:30px;place-items:center;border-radius:50%;background:#dbeafe;color:#1d4ed8;font-weight:900}
+.tabs input{position:absolute;opacity:0}.tabs label{display:inline-block;margin:16px 6px 0 0;padding:9px 14px;border:1px solid #94a3b8;border-radius:8px 8px 0 0;font-weight:700;cursor:pointer}.tabs input:focus-visible+label{outline:3px solid #f59e0b;outline-offset:2px}
+.panels{margin-top:16px}.panel{display:none}.tabs #tab-summary:checked~.panels #panel-summary,.tabs #tab-cycles:checked~.panels #panel-cycles,.tabs #tab-comparison:checked~.panels #panel-comparison,.tabs #tab-traceability:checked~.panels #panel-traceability,.tabs #tab-integrity:checked~.panels #panel-integrity{display:block}
+.tabs #tab-summary:checked~label[for=tab-summary],.tabs #tab-cycles:checked~label[for=tab-cycles],.tabs #tab-comparison:checked~label[for=tab-comparison],.tabs #tab-traceability:checked~label[for=tab-traceability],.tabs #tab-integrity:checked~label[for=tab-integrity]{background:#2563eb;color:#fff}
+table{width:100%;border-collapse:collapse}th,td{border-top:1px solid #cbd5e1;padding:10px;text-align:left;vertical-align:top;overflow-wrap:anywhere}thead th{border-top:0;color:#475569;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}tbody tr:hover{background:#f8fafc}code{overflow-wrap:anywhere}.panel{overflow-x:auto}.danger{color:#b91c1c;font-weight:800}.verdict{font-weight:900}.notice{border-left:4px solid #dc2626;padding:10px;background:#fef2f2}@media(max-width:600px){.page{padding:12px}.hero,.panel{padding:16px}.tabs label{margin-top:8px;padding:8px 10px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}@media print{.panel{display:block!important;box-shadow:none}.tabs label{display:none}}
+"""
+
+
+def build_project_report(sidecar_path: str | Path, output_dir: str | Path, *, now_utc: str | None = None) -> dict[str, Any]:
+    """Build a deterministic V2 project report from an authoritative project sidecar."""
+    sidecar_file = Path(sidecar_path).resolve()
+    sidecar = _read_json(sidecar_file)
+    if sidecar.get("schema_version") != PROJECT_SIDECAR_SCHEMA_VERSION:
+        raise ReportBuildError(f"project sidecar schema_version must be {PROJECT_SIDECAR_SCHEMA_VERSION}")
+    project_id = _required_text(sidecar.get("project_id"), "project_id")
+    title = _required_text(sidecar.get("title"), "title")
+    cycles = sidecar.get("cycles")
+    if not isinstance(cycles, list) or not cycles:
+        raise ReportBuildError("project sidecar cycles must be a non-empty ordered list")
+
+    sidecar_dir = sidecar_file.parent
+    records: list[dict[str, Any]] = []
+    seen_cycle_ids: set[str] = set()
+    seen_orders: set[int] = set()
+    for cycle in cycles:
+        if not isinstance(cycle, Mapping):
+            raise ReportBuildError("project sidecar cycle must be an object")
+        cycle_id = _required_text(cycle.get("cycle_id"), "cycles[].cycle_id")
+        title_value = _required_text(cycle.get("title"), f"cycles[{cycle_id}].title")
+        hypothesis_delta = _required_text(cycle.get("hypothesis_delta"), f"cycles[{cycle_id}].hypothesis_delta")
+        order = cycle.get("order")
+        if not isinstance(order, int) or isinstance(order, bool) or order < 1:
+            raise ReportBuildError(f"project sidecar cycles[{cycle_id}].order must be a positive integer")
+        if cycle_id in seen_cycle_ids or order in seen_orders:
+            raise ReportBuildError("project sidecar cycle_id and order values must be unique")
+        seen_cycle_ids.add(cycle_id)
+        seen_orders.add(order)
+        prereg_path, prereg_sha = _project_prereg(cycle, sidecar_dir, cycle_id)
+        run_refs = cycle.get("run_dirs")
+        if not isinstance(run_refs, list) or not run_refs or any(not isinstance(item, str) or not item for item in run_refs):
+            raise ReportBuildError(f"project sidecar cycles[{cycle_id}].run_dirs must be a non-empty list of paths")
+        runs: list[dict[str, Any]] = []
+        for run_ref in run_refs:
+            run_dir = (sidecar_dir / run_ref).resolve()
+            manifest_path = run_dir / "run_manifest.json"
+            if not manifest_path.is_file():
+                raise ReportBuildError(f"run_manifest.json not found in {run_dir}")
+            manifest = _read_json(manifest_path)
+            locks = _six_false_locks(manifest.get("false_research_locks"), run_dir)
+            prereg_ref = manifest.get("prereg")
+            if not isinstance(prereg_ref, Mapping) or prereg_ref.get("sha256") != prereg_sha:
+                raise ReportBuildError(f"run {run_dir} preregistration SHA-256 does not match cycle {cycle_id}")
+            verdict_obj = manifest.get("verdict_candidate")
+            verdict = str(verdict_obj.get("value")) if isinstance(verdict_obj, Mapping) else "MISSING"
+            test = manifest.get("test")
+            test_state = str(test.get("state", "MISSING")) if isinstance(test, Mapping) else "MISSING"
+            metrics = []
+            for seed, seed_data in _seed_items(manifest.get("per_seed")):
+                final = seed_data.get("final_val_metrics")
+                metrics.append({"seed": seed, "val_nav": final.get("nav", "MISSING") if isinstance(final, Mapping) else "MISSING"})
+            dataset_manifest = run_dir.parent / "dataset_manifest.json"
+            runs.append({
+                "run_ref": run_ref,
+                "run_manifest_path": manifest_path,
+                "dataset_manifest_path": dataset_manifest if dataset_manifest.is_file() else None,
+                "dataset_run_id": str(manifest.get("dataset_run_id", run_dir.parent.name)),
+                "train_run_id": run_dir.name,
+                "verdict": verdict,
+                "test_state": test_state,
+                "metrics": metrics,
+                "locks": locks,
+                "comparison_key": _comparison_key(manifest),
+            })
+        records.append({"cycle_id": cycle_id, "order": order, "title": title_value, "hypothesis_delta": hypothesis_delta,
+                        "prereg_path": prereg_path, "prereg_sha256": prereg_sha, "runs": runs})
+    if [record["order"] for record in records] != sorted(record["order"] for record in records):
+        raise ReportBuildError("project sidecar cycles must be ordered by ascending order")
+
+    generated_utc = now_utc or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    flat_runs = [run for record in records for run in record["runs"]]
+    reference = flat_runs[0]
+    cycle_rows = "".join(
+        f"<tr><td><span class=cycle-index>{record['order']}</span></td><td><strong>{_esc(record['cycle_id'])}</strong></td><td>{_esc(record['title'])}</td><td>{_esc(record['hypothesis_delta'])}</td><td>{len(record['runs'])}</td></tr>"
+        for record in records
+    )
+    def render_metrics(run: Mapping[str, Any]) -> str:
+        return ", ".join(f"seed {metric['seed']}: {_won(metric['val_nav'])}" for metric in run["metrics"]) or "MISSING"
+    run_rows = "".join(
+        f"<tr><td><strong>{_esc(record['cycle_id'])}</strong></td><td><code>{_esc(run['dataset_run_id'])}<br>{_esc(run['train_run_id'])}</code></td><td><span class='status {_verdict_tone(run['verdict'])}'>{_esc(run['verdict'])}</span></td><td><span class='status muted'>{_esc(run['test_state'])}</span></td><td>{_esc(render_metrics(run))}</td></tr>"
+        for record in records for run in record["runs"]
+    )
+    comparison_rows = "".join(
+        f"<tr><td><code>{_esc(run['run_ref'])}</code></td><td>{'COMPATIBLE' if run['comparison_key'] == reference['comparison_key'] else '<span class=danger>INCOMPATIBLE</span>'}</td><td>{_esc('same comparison contract as ' + reference['run_ref'] if run['comparison_key'] == reference['comparison_key'] else 'dataset/schema/capital/slots/cost contract differs; no cross-run metric comparison')}</td></tr>"
+        for run in flat_runs
+    )
+    trace_rows = "".join(
+        f"<tr><td>{_esc(record['cycle_id'])}</td><td><code>{_esc(record['prereg_path'])}</code></td><td><code>{record['prereg_sha256']}</code></td></tr>"
+        for record in records
+    )
+    source_rows = [("project sidecar", sidecar_file, _sha256_file(sidecar_file))]
+    source_rows += [(f"{record['cycle_id']} preregistration", record["prereg_path"], record["prereg_sha256"]) for record in records]
+    for run in flat_runs:
+        source_rows.append((f"{run['run_ref']} run_manifest", run["run_manifest_path"], _sha256_file(run["run_manifest_path"])))
+        if run["dataset_manifest_path"] is not None:
+            source_rows.append((f"{run['run_ref']} dataset_manifest", run["dataset_manifest_path"], _sha256_file(run["dataset_manifest_path"])))
+    source_html = "".join(f"<tr><td>{_esc(label)}</td><td><code>{_esc(path)}</code></td><td><code>{sha}</code></td></tr>" for label, path, sha in source_rows)
+    lock_html = "".join(f"<tr><td><code>{_esc(run['run_ref'])}</code></td><td>{_esc(', '.join(f'{name}=False' for name in SIX_FALSE_LOCKS))}</td></tr>" for run in flat_runs)
+    html_text = (
+        "<!DOCTYPE html><html lang=ko><head><meta charset=utf-8><meta name=viewport content='width=device-width, initial-scale=1'>"
+        f"<title>{_esc(title)} · Kronos project report</title><style>{_PROJECT_CSS}</style></head><body><main class=page>"
+        f"<header class=hero><p>KRONOS PROJECT REPORT V2 · RESEARCH_ONLY</p><h1>{_esc(title)}</h1><p class=meta>{_esc(project_id)} · generated {generated_utc}</p><p>NO LIVE · NO BROKER / ORDER · NO PROFIT CLAIM · OOS remains closed unless each source manifest states otherwise.</p></header>"
+        '<div class=tabs><input type=radio name=tabs id=tab-summary checked><label for=tab-summary>Summary</label><input type=radio name=tabs id=tab-cycles><label for=tab-cycles>Cycles</label><input type=radio name=tabs id=tab-comparison><label for=tab-comparison>Comparison</label><input type=radio name=tabs id=tab-traceability><label for=tab-traceability>Traceability</label><input type=radio name=tabs id=tab-integrity><label for=tab-integrity>Integrity</label><div class=panels>'
+        f'<section class=panel id=panel-summary><h2>Summary</h2><p>{len(records)} ordered cycles · {len(flat_runs)} source runs. Verdict and OOS state are copied verbatim from source manifests.</p><div class=kpis><div class=kpi><strong>{len(records)}</strong><small>ordered cycles</small></div><div class=kpi><strong>{len(flat_runs)}</strong><small>source runs</small></div><div class=kpi><strong>{sum(1 for run in flat_runs if run["verdict"] == "NO_GO")}</strong><small>NO_GO cycles</small></div><div class=kpi><strong>{sum(1 for run in flat_runs if run["test_state"] == "NOT_RUN")}</strong><small>untouched OOS closed</small></div></div><table><thead><tr><th>Cycle</th><th>Run</th><th>Verdict</th><th>OOS state</th><th>Validation NAV</th></tr></thead><tbody>{run_rows}</tbody></table></section>'
+        f'<section class=panel id=panel-cycles><h2>Cycles</h2><table><thead><tr><th>Order</th><th>Cycle ID</th><th>Title</th><th>Hypothesis delta</th><th>Runs</th></tr></thead><tbody>{cycle_rows}</tbody></table></section>'
+        f'<section class=panel id=panel-comparison><h2>Comparison</h2><p class=notice>Only COMPATIBLE runs may be compared. INCOMPATIBLE runs are displayed but not scored or ranked.</p><table><thead><tr><th>Run</th><th>State</th><th>Reason</th></tr></thead><tbody>{comparison_rows}</tbody></table></section>'
+        f'<section class=panel id=panel-traceability><h2>Traceability</h2><table><thead><tr><th>Cycle</th><th>Authoritative preregistration source</th><th>SHA-256</th></tr></thead><tbody>{trace_rows}</tbody></table></section>'
+        f'<section class=panel id=panel-integrity><h2>Integrity</h2><p>Exact six-false-lock state is required for every source run.</p><table><thead><tr><th>Run</th><th>Locks</th></tr></thead><tbody>{lock_html}</tbody></table><h3>All source hashes</h3><table><thead><tr><th>Source</th><th>Path</th><th>SHA-256</th></tr></thead><tbody>{source_html}</tbody></table></section>'
+        "</div></div></main></body></html>"
+    )
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    report_path = output_path / "project_report.html"
+    report_path.write_text(html_text, encoding="utf-8")
+    report_sha = _sha256_file(report_path)
+    report_manifest = {
+        "schema_version": PROJECT_REPORT_SCHEMA_VERSION,
+        "builder_version": PROJECT_BUILDER_VERSION,
+        "generated_utc": generated_utc,
+        "project_id": project_id,
+        "title": title,
+        "report_sha256": report_sha,
+        "source_sha256": [{"label": label, "path": str(path), "sha256": sha} for label, path, sha in source_rows],
+        "cycle_count": len(records),
+        "run_count": len(flat_runs),
+        "verdicts": sorted({str(run["verdict"]) for run in flat_runs}),
+        "test_states": sorted({str(run["test_state"]) for run in flat_runs}),
+        "cycles": [
+            {
+                "cycle_id": record["cycle_id"],
+                "order": record["order"],
+                "title": record["title"],
+                "hypothesis_delta": record["hypothesis_delta"],
+                "prereg_sha256": record["prereg_sha256"],
+                "runs": [
+                    {
+                        "run_ref": run["run_ref"],
+                        "dataset_run_id": run["dataset_run_id"],
+                        "train_run_id": run["train_run_id"],
+                        "verdict": run["verdict"],
+                        "test_state": run["test_state"],
+                        "comparison_state": "COMPARABLE" if run["comparison_key"] == reference["comparison_key"] else "INCOMPARABLE",
+                    }
+                    for run in record["runs"]
+                ],
+            }
+            for record in records
+        ],
+        "false_research_locks": {name: False for name in SIX_FALSE_LOCKS},
+    }
+    (output_path / "project_report_manifest.json").write_text(json.dumps(report_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return report_manifest
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build self-contained HTML research reports for run directories.")
-    parser.add_argument("run_dirs", nargs="+", help="run directories containing run_manifest.json")
+    parser.add_argument("run_dirs", nargs="*", help="run directories containing run_manifest.json")
+    parser.add_argument("--project-sidecar", default=None, help="project report V2 sidecar JSON path")
+    parser.add_argument("--project-output-dir", default=None, help="project report V2 output directory")
     parser.add_argument("--prereg", default=None, help="preregistration JSON path (default: H1 prereg)")
     parser.add_argument("--index-artifact-dir", default=None, help="offline index artifact directory")
     args = parser.parse_args(argv)
+    if args.project_sidecar:
+        if args.run_dirs or not args.project_output_dir:
+            parser.error("--project-sidecar requires --project-output-dir and no run directories")
+        summary = build_project_report(args.project_sidecar, args.project_output_dir)
+        print(json.dumps({k: summary[k] for k in ("project_id", "report_sha256")}, ensure_ascii=False))
+        return 0
+    if not args.run_dirs:
+        parser.error("at least one run directory is required unless --project-sidecar is provided")
     for run_dir in args.run_dirs:
         summary = build_report(run_dir, prereg_path=args.prereg, index_artifact_dir=args.index_artifact_dir)
         print(json.dumps({k: summary[k] for k in ("run_id", "verdict", "index_overlay_state", "report_sha256")}, ensure_ascii=False))

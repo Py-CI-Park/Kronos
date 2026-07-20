@@ -218,6 +218,12 @@ Markdown을 권위 원본으로 유지하고 대시보드는 read-only HTML을 �
 - 결과 원문 다운로드와 SHA-256 표시
 - HTML 화면은 원본 판정을 변경하지 않음
 
+### Project report v2 sidecar and export
+
+복수 cycle 연구의 권위 원본은 `kronos_v7_project_report_sidecar.v2` JSON sidecar입니다. sidecar는 `project_id`, 제목, 순서가 고정된 cycle 목록, 각 cycle의 `cycle_id`·`order`·제목·`hypothesis_delta`, preregistration 경로와 SHA-256, 그리고 run directory 참조를 기록합니다. preregistration과 run manifest의 SHA-256가 sidecar와 일치하지 않으면 생성하지 않습니다.
+
+`project_report.html`과 `project_report_manifest.json`은 해당 sidecar와 source artifact에서 생성한 read-only export이며 권위 원본이 아닙니다. export는 모든 source SHA-256와 정확히 여섯 개의 `False` research lock 상태를 표시하고, 원문 `NO_GO`, `INCONCLUSIVE`, `NOT_RUN` 판정과 OOS 상태를 바꾸지 않습니다. 비교는 같은 dataset/schema/capital/slot/cost 계약의 run에만 허용하며, 다른 계약은 `INCOMPATIBLE`으로 명시하고 순위나 성과 주장을 만들지 않습니다.
+
 ## 기존 문서 이관 원칙
 
 기존 문서를 일괄 수정하지 않습니다.

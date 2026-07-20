@@ -197,6 +197,7 @@
     // never shows run A's data under run B's label while the new fetch is
     // in flight.
     selectedRun = null;
+    costGate = null;
     detailLoading = true;
     error = null;
     leaderboardRows = [];

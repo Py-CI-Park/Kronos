@@ -30,7 +30,7 @@
   import SettingsTab from '$tabs/SettingsTab.svelte';
   import DocsTab from '$tabs/DocsTab.svelte';
   import { activeTab, sidebarCollapsed } from '$lib/stores';
-  import { installPollingWatcher, startPolling } from '$lib/polling';
+  import { installPollingWatcher, startPolling, stopPolling } from '$lib/polling';
   import { resolveRoute, syncTabFromLocation } from '$lib/routes';
   import { dashboardShell, initializeDashboardShell, type DashboardShell } from '$lib/shellMode';
   import { isLearningNowRouteLocation } from './v5/learningNow';
@@ -61,6 +61,19 @@
   }
 
   let removePopstate: (() => void) | undefined;
+  let disposePollingWatcher: (() => void) | undefined;
+
+  function startLegacyPolling(): void {
+    if (disposePollingWatcher) return;
+    startPolling();
+    disposePollingWatcher = installPollingWatcher();
+  }
+
+  function stopLegacyPolling(): void {
+    disposePollingWatcher?.();
+    disposePollingWatcher = undefined;
+    stopPolling();
+  }
   let LearningNowTab = $state<Component | null>(null);
   let learningNowLoading = $state(false);
   let learningNowLoadError = $state<string | null>(null);
@@ -103,10 +116,17 @@
     };
     window.addEventListener('popstate', handlePopstate);
     removePopstate = () => window.removeEventListener('popstate', handlePopstate);
-    installPollingWatcher();
-    startPolling();
+    const unsubscribePollingShell = dashboardShell.subscribe((activeShell) => {
+      if (activeShell === 'v6') {
+        stopLegacyPolling();
+      } else {
+        startLegacyPolling();
+      }
+    });
     return () => {
       removePopstate?.();
+      unsubscribePollingShell();
+      stopLegacyPolling();
     };
   });
 

@@ -39,6 +39,8 @@ SIX_FALSE_LOCKS: Final = {
 }
 ALL_ROUTE_METHODS: Final = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 RUN_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
+PROJECT_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
+PROJECT_REPORT_SCHEMA: Final = "kronos_v7_project_report.v2"
 
 
 def _response(payload: Mapping[str, Any], status_code: int = 200) -> Response:
@@ -91,15 +93,14 @@ def _run_detail_query() -> tuple[str, str]:
     if any(len(request.args.getlist(key)) != 1 for key in ("dataset", "train")):
         raise ValueError
     dataset_run_id = request.args["dataset"]
-    train = request.args["train"]
+    train_run_id = request.args["train"]
     if (
         ".." in dataset_run_id
-        or ".." in train
+        or ".." in train_run_id
         or RUN_ID_PATTERN.fullmatch(dataset_run_id) is None
-        or RUN_ID_PATTERN.fullmatch(train) is None
+        or RUN_ID_PATTERN.fullmatch(train_run_id) is None
     ):
         raise ValueError
-    train_run_id = train if train.startswith("train_") else f"train_{train}"
     return dataset_run_id, train_run_id
 
 
@@ -117,8 +118,218 @@ def _events_tail(path: Path) -> list[Any]:
     return events[-50:]
 
 
+def _sha256_file(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _run_states(manifest: Mapping[str, Any]) -> dict[str, str]:
+    test = manifest.get("test")
+    test_state = str(test.get("state", "MISSING")) if isinstance(test, Mapping) else "MISSING"
+    per_seed = manifest.get("per_seed")
+    validation_state = "PRESENT" if isinstance(per_seed, (list, Mapping)) and per_seed else "NOT_RECORDED"
+    return {
+        "training_state": str(manifest.get("state", "MISSING")),
+        "validation_state": validation_state,
+        "test_state": test_state,
+        "evaluation_state": "TEST_NOT_RUN" if test_state == "NOT_RUN" else f"TEST_{test_state}",
+    }
+
+
+def _prereg_path(prereg_ref: Mapping[str, Any]) -> Path | None:
+    prereg_id = prereg_ref.get("id")
+    prereg_sha = prereg_ref.get("sha256")
+    if not isinstance(prereg_id, str) or not isinstance(prereg_sha, str):
+        return None
+    try:
+        paths = sorted({path for pattern in PREREG_GLOBS for path in DOCS_ROOT.glob(pattern) if path.is_file()})
+    except OSError:
+        return None
+    for path in paths:
+        prereg = _read_json(path)
+        if prereg and prereg.get("prereg_id") == prereg_id and _sha256_file(path) == prereg_sha:
+            return path
+    return None
+
+
+def _report_chain(run_dir: Path, report_manifest: Mapping[str, Any]) -> tuple[str, list[str]]:
+    """Verify V7 source custody while classifying source-less legacy reports."""
+    source_hashes = report_manifest.get("source_sha256")
+    locks = report_manifest.get("false_research_locks")
+    if source_hashes is None and locks is None:
+        return "LEGACY_UNVERIFIED", ["LEGACY_SOURCE_CUSTODY_NOT_RECORDED"]
+    reasons: list[str] = []
+    if not isinstance(report_manifest.get("schema_version"), str):
+        reasons.append("REPORT_SCHEMA_MISSING")
+    if not isinstance(source_hashes, Mapping):
+        reasons.append("REPORT_SOURCE_HASHES_MISSING")
+        source_hashes = {}
+    run_manifest_path = run_dir / "run_manifest.json"
+    run_manifest = _read_json(run_manifest_path)
+    if run_manifest is None:
+        reasons.append("RUN_MANIFEST_MISSING")
+    else:
+        if not isinstance(run_manifest.get("schema_version"), str):
+            reasons.append("RUN_MANIFEST_SCHEMA_MISSING")
+        if source_hashes.get("run_manifest") != _sha256_file(run_manifest_path):
+            reasons.append("RUN_MANIFEST_SHA_MISMATCH")
+        dataset_manifest_path = run_dir.parent / "dataset_manifest.json"
+        dataset_manifest = _read_json(dataset_manifest_path)
+        if dataset_manifest is None:
+            reasons.append("DATASET_MANIFEST_MISSING")
+        else:
+            if not isinstance(dataset_manifest.get("schema_version"), str):
+                reasons.append("DATASET_MANIFEST_SCHEMA_MISSING")
+            if source_hashes.get("dataset_manifest") != _sha256_file(dataset_manifest_path):
+                reasons.append("DATASET_MANIFEST_SHA_MISMATCH")
+        prereg_ref = run_manifest.get("prereg")
+        if not isinstance(prereg_ref, Mapping):
+            reasons.append("PREREG_REFERENCE_MISSING")
+        else:
+            prereg_path = _prereg_path(prereg_ref)
+            if prereg_path is None:
+                reasons.append("PREREG_NOT_FOUND_OR_SHA_MISMATCH")
+            elif source_hashes.get("prereg") != _sha256_file(prereg_path):
+                reasons.append("PREREG_SHA_MISMATCH")
+            elif not isinstance((_read_json(prereg_path) or {}).get("schema_version"), str):
+                reasons.append("PREREG_SCHEMA_MISSING")
+    if not isinstance(locks, Mapping) or dict(locks) != SIX_FALSE_LOCKS:
+        reasons.append("FALSE_RESEARCH_LOCKS_MISMATCH")
+    return ("CHAIN_OK", []) if not reasons else ("CHAIN_INVALID", reasons)
+def _project_source_path(path_value: object) -> Path | None:
+    """Resolve a project source only when it is a regular, non-symlinked custody file."""
+    if not isinstance(path_value, str) or not path_value:
+        return None
+    try:
+        raw_path = Path(path_value)
+        candidate = raw_path if raw_path.is_absolute() else REPO_ROOT / raw_path
+        resolved = candidate.resolve(strict=True)
+    except (OSError, ValueError):
+        return None
+    for root in (DOCS_ROOT, RUNS_ROOT):
+        try:
+            root_resolved = root.resolve(strict=True)
+            relative = candidate.relative_to(root)
+            resolved.relative_to(root_resolved)
+        except (OSError, ValueError):
+            continue
+        current = root
+        try:
+            for part in relative.parts:
+                current = current / part
+                if current.is_symlink():
+                    return None
+        except OSError:
+            return None
+        return resolved if resolved.is_file() else None
+    return None
+
+
+def _project_report_chain(project_id: str, project_dir: Path, manifest: Mapping[str, Any], report_bytes: bytes | None) -> tuple[str, list[str]]:
+    reasons: list[str] = []
+    if manifest.get("schema_version") != PROJECT_REPORT_SCHEMA:
+        reasons.append("PROJECT_REPORT_SCHEMA_MISMATCH")
+    if manifest.get("project_id") != project_id:
+        reasons.append("PROJECT_ID_MISMATCH")
+    if not isinstance(report_bytes, bytes):
+        reasons.append("PROJECT_REPORT_MISSING")
+    elif manifest.get("report_sha256") != hashlib.sha256(report_bytes).hexdigest():
+        reasons.append("REPORT_SHA_MISMATCH")
+    if not isinstance(manifest.get("false_research_locks"), Mapping) or dict(manifest["false_research_locks"]) != SIX_FALSE_LOCKS:
+        reasons.append("FALSE_RESEARCH_LOCKS_MISMATCH")
+    source_hashes = manifest.get("source_sha256")
+    if not isinstance(source_hashes, list) or not source_hashes:
+        reasons.append("SOURCE_SHA256_MISSING")
+    else:
+        for source in source_hashes:
+            if not isinstance(source, Mapping):
+                reasons.append("SOURCE_SHA256_INVALID")
+                continue
+            path = _project_source_path(source.get("path"))
+            recorded_sha = source.get("sha256")
+            if not isinstance(source.get("label"), str) or not isinstance(recorded_sha, str) or re.fullmatch(r"[0-9a-f]{64}", recorded_sha) is None:
+                reasons.append("SOURCE_SHA256_INVALID")
+                continue
+            if path is None:
+                reasons.append("SOURCE_PATH_INVALID")
+            elif _sha256_file(path) != recorded_sha:
+                reasons.append("SOURCE_SHA256_MISMATCH")
+    return ("CHAIN_OK", []) if not reasons else ("CHAIN_INVALID", reasons)
+
+
+def _project_report_entries() -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    projects_root = RUNS_ROOT / "_projects"
+    try:
+        project_dirs = sorted(path for path in projects_root.iterdir() if path.is_dir() and not path.is_symlink())
+    except OSError:
+        return entries
+    for project_dir in project_dirs:
+        project_id = project_dir.name
+        if PROJECT_ID_PATTERN.fullmatch(project_id) is None:
+            continue
+        manifest_path = project_dir / "project_report_manifest.json"
+        report_path = project_dir / "project_report.html"
+        if manifest_path.is_symlink() or report_path.is_symlink():
+            continue
+        manifest = _read_json(manifest_path)
+        if manifest is None:
+            continue
+        try:
+            report_bytes = report_path.read_bytes()
+        except OSError:
+            report_bytes = None
+        integrity, integrity_reasons = _project_report_chain(project_id, project_dir, manifest, report_bytes)
+        entries.append({
+            "project_id": project_id,
+            "title": manifest.get("title", "MISSING"),
+            "generated_utc": manifest.get("generated_utc", "MISSING"),
+            "builder_version": manifest.get("builder_version", "MISSING"),
+            "report_sha256": manifest.get("report_sha256"),
+            "size_bytes": len(report_bytes) if report_bytes is not None else 0,
+            "cycle_count": manifest.get("cycle_count", "MISSING"),
+            "run_count": manifest.get("run_count", "MISSING"),
+            "verdicts": manifest.get("verdicts", []),
+            "test_states": manifest.get("test_states", []),
+            "cycles": manifest.get("cycles", []),
+            "integrity": integrity,
+            "integrity_reasons": integrity_reasons,
+        })
+    entries.sort(key=lambda entry: str(entry["generated_utc"]), reverse=True)
+    return entries
+
+
+def _project_report_query() -> tuple[str, bool]:
+    allowed = {"project", "download"}
+    if "project" not in request.args or set(request.args) - allowed:
+        raise ValueError("invalid project report query")
+    if any(len(request.args.getlist(name)) != 1 for name in allowed if name in request.args):
+        raise ValueError("duplicated project report query values")
+    project_id = request.args["project"]
+    download = request.args.get("download", "")
+    if PROJECT_ID_PATTERN.fullmatch(project_id) is None or download not in {"", "1"}:
+        raise ValueError("invalid project report query")
+    return project_id, download == "1"
+
+
+def _project_report_dir(project_id: str) -> Path | None:
+    projects_root = RUNS_ROOT / "_projects"
+    project_dir = projects_root / project_id
+    try:
+        root_resolved = projects_root.resolve(strict=True)
+        resolved = project_dir.resolve(strict=True)
+        resolved.relative_to(root_resolved)
+    except (OSError, ValueError):
+        return None
+    if project_dir.is_symlink() or not resolved.is_dir():
+        return None
+    return resolved
+
+
 def _report_entries() -> list[dict[str, Any]]:
-    """List validated report manifests under RUNS_ROOT with integrity states."""
+    """List report manifests with report and source-custody integrity states."""
     entries: list[dict[str, Any]] = []
     try:
         manifest_paths = sorted(RUNS_ROOT.glob("*/*/report_manifest.json"))
@@ -140,17 +351,26 @@ def _report_entries() -> list[dict[str, Any]]:
             continue
         actual_sha = hashlib.sha256(report_bytes).hexdigest()
         recorded_sha = manifest.get("report_sha256")
+        chain_integrity, chain_reasons = _report_chain(run_dir, manifest)
+        run_manifest = _read_json(run_dir / "run_manifest.json")
+        states = _run_states(run_manifest) if run_manifest is not None else None
         entries.append({
             "dataset_run_id": dataset_run_id,
             "train_run_id": train_run_id,
             "verdict": manifest.get("verdict", "MISSING"),
-            "test_state": manifest.get("test_state", "MISSING"),
+            "test_state": states["test_state"] if states is not None else manifest.get("test_state", "MISSING"),
             "index_overlay_state": manifest.get("index_overlay_state", "MISSING"),
             "generated_utc": manifest.get("generated_utc", "MISSING"),
             "builder_version": manifest.get("builder_version", "MISSING"),
             "report_sha256": recorded_sha,
             "size_bytes": len(report_bytes),
             "integrity": "OK" if recorded_sha == actual_sha else "SHA_MISMATCH",
+            "chain_integrity": chain_integrity,
+            "chain_reasons": chain_reasons,
+            "report_state": "PRESENT",
+            "training_state": states["training_state"] if states is not None else "MISSING",
+            "validation_state": states["validation_state"] if states is not None else "NOT_RECORDED",
+            "evaluation_state": states["evaluation_state"] if states is not None else "TEST_MISSING",
         })
     entries.sort(key=lambda e: str(e.get("generated_utc")), reverse=True)
     return entries
@@ -273,6 +493,7 @@ def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any
         "manifest": manifest,
         "manifest_sha256": hashlib.sha256(raw).hexdigest(),
         "events_tail": _events_tail(manifest_path.with_name("events.jsonl")),
+        "states": _run_states(manifest) if isinstance(manifest, Mapping) else {},
     }
 
 
@@ -340,7 +561,7 @@ def _runs_payload() -> dict[str, Any]:
             continue
         split_row_counts = value.get("split_row_counts")
         datasets.append({
-            "run_id": value.get("run_id", path.parent.name),
+            "run_id": path.parent.name,
             "path": _artifact_path(path),
             "generated_utc": value.get("generated_utc"),
             "split_row_counts": dict(split_row_counts) if isinstance(split_row_counts, Mapping) else {},
@@ -355,15 +576,17 @@ def _runs_payload() -> dict[str, Any]:
         if value is None:
             continue
         seeds = value.get("seeds")
-        dataset_run_id = value.get("dataset_run_id", path.parent.parent.name)
+        dataset_run_id = path.parent.parent.name
+        states = _run_states(value)
         runs.append({
-            "run_id": value.get("run_id", path.parent.name),
+            "run_id": path.parent.name,
             "dataset_run_id": dataset_run_id,
             "path": _artifact_path(path),
             "state": value.get("state"),
             "seeds": list(seeds) if isinstance(seeds, list) else [],
             "generated_utc": value.get("generated_utc"),
             "verdict_candidate": value.get("verdict_candidate"),
+            **states,
         })
 
     return {
@@ -378,9 +601,6 @@ def _runs_payload() -> dict[str, Any]:
 def _experiment_state() -> str:
     return _preregistration()["state"]
 
-
-def _run_state() -> str:
-    return _runs_payload()["training_state"]
 
 
 def _index_overlays() -> dict[str, dict[str, Any]]:
@@ -534,15 +754,17 @@ def _index_status() -> dict[str, Any]:
 
 
 def _status_payload() -> dict[str, Any]:
-    run_state = _run_state()
+    runs_payload = _runs_payload()
+    runs = runs_payload["runs"]
+    evaluation_state = runs[0]["evaluation_state"] if runs else "NOT_RUN"
     return {
         "schema_version": "kronos_v6_platform_status.v1",
         "status": "OK",
         "journey": {
             "data": _journey_data(),
             "experiment": {"state": _experiment_state()},
-            "training": {"state": run_state},
-            "evaluation": {"state": run_state},
+            "training": {"state": runs_payload["training_state"]},
+            "evaluation": {"state": evaluation_state},
             "report": {"state": "HAS_REPORTS" if _report_entries() else "NOT_RUN"},
         },
         "locks": dict(SIX_FALSE_LOCKS),
@@ -656,6 +878,48 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             "status": "OK",
             "reports": _report_entries(),
         })
+    def project_reports_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        if request.args:
+            return _error(400, "BAD_REQUEST")
+        return _response({
+            "schema_version": "kronos_v7_project_reports.v2",
+            "status": "OK",
+            "projects": _project_report_entries(),
+        })
+
+    def project_report_html_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        try:
+            project_id, download = _project_report_query()
+        except ValueError:
+            return _error(400, "BAD_REQUEST")
+        project_dir = _project_report_dir(project_id)
+        if project_dir is None:
+            return _response({"status": "BLOCKED", "reason": "PROJECT_REPORT_NOT_FOUND"}, 404)
+        manifest_path = project_dir / "project_report_manifest.json"
+        report_path = project_dir / "project_report.html"
+        if manifest_path.is_symlink() or report_path.is_symlink():
+            return _response({"status": "BLOCKED", "reason": "PROJECT_REPORT_NOT_FOUND"}, 404)
+        manifest = _read_json(manifest_path)
+        try:
+            report_bytes = report_path.read_bytes()
+        except OSError:
+            return _response({"status": "BLOCKED", "reason": "PROJECT_REPORT_NOT_FOUND"}, 404)
+        if manifest is None:
+            return _response({"status": "BLOCKED", "reason": "PROJECT_REPORT_MANIFEST_MISSING"}, 404)
+        integrity, reasons = _project_report_chain(project_id, project_dir, manifest, report_bytes)
+        if integrity != "CHAIN_OK":
+            return _response({"status": "BLOCKED", "reason": reasons[0], "reasons": reasons}, 409)
+        response = Response(report_bytes, status=200, mimetype="text/html")
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+        if download:
+            response.headers["Content-Disposition"] = f'attachment; filename="kronos-project-report-{project_id}.html"'
+        return response
+
 
     def report_html_handler() -> Response:
         if request.method != "GET":
@@ -675,6 +939,9 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             return _response({"status": "BLOCKED", "reason": "REPORT_MANIFEST_MISSING"}, 404)
         if manifest.get("report_sha256") != hashlib.sha256(report_bytes).hexdigest():
             return _response({"status": "BLOCKED", "reason": "REPORT_SHA_MISMATCH"}, 409)
+        chain_integrity, chain_reasons = _report_chain(run_dir, manifest)
+        if chain_integrity == "CHAIN_INVALID":
+            return _response({"status": "BLOCKED", "reason": chain_reasons[0], "reasons": chain_reasons}, 409)
         response = Response(report_bytes, status=200, mimetype="text/html")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
@@ -732,6 +999,8 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
         ("/index-series", "index_series", index_series_handler),
         ("/reports", "reports", reports_handler),
         ("/report-html", "report_html", report_html_handler),
+        ("/project-reports", "project_reports", project_reports_handler),
+        ("/project-report-html", "project_report_html", project_report_html_handler),
         ("/research-registry", "research_registry", research_registry_handler),
         ("/research-doc", "research_doc", research_doc_handler),
     ):
