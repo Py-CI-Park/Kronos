@@ -35,7 +35,7 @@ DEFAULT_PREREG_PATH = REPO_ROOT / "docs" / "kronos_v6_prereg_h1_2026-07-19.json"
 DEFAULT_INDEX_ARTIFACT_DIR = REPO_ROOT / "artifacts" / "korean_index"
 INDEX_BLOCKER = "BLOCKED_INDEX_SERIES_SOURCE"
 PALETTE = ("#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed", "#0891b2")
-BASELINE_ORDER = ("no_trade", "rule_topk_ret5", "random_topk")
+BASELINE_ORDER = ("no_trade", "rule_topk_ret5", "rule_topk_low_vol", "rule_topk_inst", "random_topk")
 
 
 class ReportBuildError(ValueError):
