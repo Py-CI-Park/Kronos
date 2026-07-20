@@ -1,0 +1,63 @@
+{
+  "columns": {
+    "기관누적순매수": {
+      "recent_nonnull": 297000,
+      "recent_nonnull_pct": 100.0,
+      "recent_rows": 297000,
+      "table_coverage_pct": 100.0,
+      "tables_with_column": 500
+    },
+    "기관순매수": {
+      "recent_nonnull": 297000,
+      "recent_nonnull_pct": 100.0,
+      "recent_rows": 297000,
+      "table_coverage_pct": 100.0,
+      "tables_with_column": 500
+    },
+    "상장주식수": {
+      "recent_nonnull": 297000,
+      "recent_nonnull_pct": 100.0,
+      "recent_rows": 297000,
+      "table_coverage_pct": 100.0,
+      "tables_with_column": 500
+    },
+    "외국인주문한도수량": {
+      "recent_nonnull": 297000,
+      "recent_nonnull_pct": 100.0,
+      "recent_rows": 297000,
+      "table_coverage_pct": 100.0,
+      "tables_with_column": 500
+    },
+    "외국인현보유비율": {
+      "recent_nonnull": 297000,
+      "recent_nonnull_pct": 100.0,
+      "recent_rows": 297000,
+      "table_coverage_pct": 100.0,
+      "tables_with_column": 500
+    },
+    "외국인현보유수량": {
+      "recent_nonnull": 297000,
+      "recent_nonnull_pct": 100.0,
+      "recent_rows": 297000,
+      "table_coverage_pct": 100.0,
+      "tables_with_column": 500
+    }
+  },
+  "daily_db": "Stock_Database_ohlcv_1day.db",
+  "decision": {
+    "investor_flow_collection": "DUPLICATE_SKIP",
+    "shortselling_collection": "ABSENT_DEFERRED_UNTIL_PREREG_CONSUMES_IT"
+  },
+  "generated_utc": "2026-07-20T06:46:41Z",
+  "policy": {
+    "network_used": false,
+    "point_in_time_caveat": "flow publication lag unverified; D-1-or-earlier usage only",
+    "price_basis_caveat": "daily DB price basis UNKNOWN_CONFIRMED; feature inputs only"
+  },
+  "recent_window_start": 20240101,
+  "sample_tables_requested": 500,
+  "schema_version": "kronos_v7_p6_flow_coverage.v1",
+  "shortselling_columns_found": [],
+  "tables_checked": 500,
+  "universe_manifest": "kronos_v6_universe_manifest_2026-07-19.json"
+}
