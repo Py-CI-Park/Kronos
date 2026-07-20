@@ -26,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | V7 P1 지수 오버레이 통합 | IMPLEMENTATION | `/api/v6/index-series` 신설, `BLOCKED_INDEX_SERIES_SOURCE` 해제(오프라인 검증 통과 시), 비교 STEP 지수 정규화 차트·국면 PRESENT 관측. 판정 변동 없음 |
 | 2026-07-20 | `docs/kronos_v7_paged_execution_plan_2026-07-20.md` | EXECUTION_PLAN | V7 P1~P10 페이지 단위 브랜치-머지 전략; KOSPI/KOSDAQ 지수 artifact 수집 완료(`BLOCKED_INDEX` 원인 해소); 요청사항 12건 반영 재검토 |
 | 2026-07-20 | `docs/kronos_v7_rl_models_and_reports_plan_2026-07-20.md` | PLAN | V7 3-Track(테마·모델 시리즈 M1~M4·HTML 리포트 시스템), `IMPLEMENTATION_NOT_STARTED` |
 | 2026-07-20 | `docs/kronos_dashboard_v61_result_2026-07-20.md` | IMPLEMENTATION_RESULT | V6/V6.1 플랫폼 완성; 사용성 50→≈78; RL 판정 변동 없음(`NO_GO`/`INCONCLUSIVE`) |

@@ -21,6 +21,7 @@ PRICE_BASIS_CAVEAT: Final = "daily DB price basis UNKNOWN_CONFIRMED; observation
 FLOW_CAVEAT: Final = "point-in-time publication lag unverified"
 _FLOW_CACHE: dict[tuple[int, int, int], dict[str, Any]] = {}
 _REGIME_CACHE: dict[tuple[int], dict[str, Any]] = {}
+INDEX_BLOCKER_REGIME: Final = {"state": "BLOCKED_INDEX_SERIES_SOURCE", "reason": "KRX credentials required for pykrx collection"}
 
 
 def _response(payload: Mapping[str, Any], status_code: int = 200) -> Response:
@@ -207,9 +208,38 @@ def _flow_payload(window: int, limit: int) -> dict[str, Any]:
     return payload
 
 
+def _index_regime() -> dict[str, Any]:
+    """Derive a read-only index observation from validated offline artifacts."""
+    try:
+        from webui.v6_platform_api import INDEX_MARKETS, index_overlay_series
+    except ImportError:
+        return dict(INDEX_BLOCKER_REGIME)
+    series_by_market = index_overlay_series()
+    if not all(market in series_by_market for market in INDEX_MARKETS):
+        return dict(INDEX_BLOCKER_REGIME)
+    markets: dict[str, Any] = {}
+    for market, rows in sorted(series_by_market.items()):
+        if not rows:
+            return dict(INDEX_BLOCKER_REGIME)
+        closes = [float(row["close"]) for row in rows[-20:]]
+        mean20 = sum(closes) / len(closes)
+        last = rows[-1]
+        markets[market] = {
+            "last_date": last["date"],
+            "last_close": float(last["close"]),
+            "pct_vs_20d_mean": ((float(last["close"]) / mean20) - 1.0) * 100.0 if mean20 else None,
+            "window_days": len(closes),
+        }
+    return {
+        "state": "PRESENT",
+        "markets": markets,
+        "caveat": "pykrx offline artifact index levels only; observation only, not a trading signal",
+    }
+
+
 def _regime_payload() -> dict[str, Any]:
     tables = _manifest_tables()
-    index_regime = {"state": "BLOCKED_INDEX_SERIES_SOURCE", "reason": "KRX credentials required for pykrx collection"}
+    index_regime = _index_regime()
     if tables is None:
         return {"index_regime": index_regime, "breadth_proxy": {"status": "BLOCKED", "reason": "UNIVERSE_MANIFEST_MISSING"}}
     mtime = _database_mtime()
@@ -217,7 +247,7 @@ def _regime_payload() -> dict[str, Any]:
         return {"index_regime": index_regime, "breadth_proxy": {"status": "BLOCKED", "reason": "DAILY_DATABASE_UNAVAILABLE"}}
     key = (mtime,)
     if key in _REGIME_CACHE:
-        return _REGIME_CACHE[key]
+        return {"index_regime": index_regime, "breadth_proxy": _REGIME_CACHE[key]}
     sampled_tables = tables[:200]
     try:
         with _connect() as connection:
@@ -248,9 +278,8 @@ def _regime_payload() -> dict[str, Any]:
         "pct_above_20s_mean": (above / evaluated * 100) if evaluated else None,
         "disclaimer": "universe breadth proxy from daily DB; NOT an index regime; price basis unverified",
     }
-    payload = {"index_regime": index_regime, "breadth_proxy": breadth}
-    _REGIME_CACHE[key] = payload
-    return payload
+    _REGIME_CACHE[key] = breadth
+    return {"index_regime": index_regime, "breadth_proxy": breadth}
 
 
 def create_v6_insight_blueprint(*, name: str = "v6_insight", url_prefix: str = "/api/v6/insight") -> Blueprint:

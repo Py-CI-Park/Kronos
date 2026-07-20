@@ -15,6 +15,31 @@ def client():
     with app.test_client() as test_client:
         yield test_client
 
+def _write_index_artifacts(directory):
+    """Write valid KOSPI/KOSDAQ normalized artifacts through the custody boundary."""
+    from stom_rl.korean_index_source import collect_index_artifacts, write_normalized_index_artifact
+
+    def provider(*, market, index_code, index_name, start_date, end_date):
+        base = 2600.0 if market == "KOSPI" else 800.0
+        return [
+            {"date": "2024-01-02", "종가": base},
+            {"date": "2024-01-03", "종가": base * 1.01},
+            {"date": "2024-01-05", "종가": base * 1.02},
+        ]
+
+    written = {}
+    for market in ("KOSPI", "KOSDAQ"):
+        artifacts = collect_index_artifacts(
+            market=market,
+            start_date="2024-01-02",
+            end_date="2024-01-05",
+            provider=provider,
+            collected_at="2026-07-20T00:00:00Z",
+        )
+        written[market] = write_normalized_index_artifact(directory, artifacts["normalized"])
+    return written
+
+
 
 def test_v6_routes_return_expected_readiness_payloads(client) -> None:
     status = client.get("/api/v6/status")
@@ -51,11 +76,75 @@ def test_v6_universe_limit_and_false_locks(client) -> None:
     }
 
 
-def test_v6_readiness_exposes_price_basis_and_index_blocker(client) -> None:
+def test_v6_readiness_exposes_price_basis_and_index_blocker(client, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path / "missing-index")
+
     readiness = client.get("/api/v6/data-readiness").get_json()
+    status = client.get("/api/v6/status").get_json()
 
     assert readiness["price_basis"]["status"] == "UNKNOWN_CONFIRMED"
+    assert readiness["index"] == {
+        "state": "BLOCKED_INDEX_SERIES_SOURCE",
+        "reason": "KRX credentials required for pykrx collection",
+    }
+    assert status["journey"]["data"]["index_overlay"] == "BLOCKED_INDEX_SERIES_SOURCE"
+    assert status["journey"]["data"]["index_blocker_reason"] == "KRX credentials required for pykrx collection"
+
+
+def test_v6_index_present_state_and_series_route(client, monkeypatch, tmp_path) -> None:
+    _write_index_artifacts(tmp_path)
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path)
+
+    readiness = client.get("/api/v6/data-readiness").get_json()
+    status = client.get("/api/v6/status").get_json()
+    series = client.get("/api/v6/index-series?market=KOSPI").get_json()
+
+    assert readiness["index"]["state"] == "PRESENT"
+    assert set(readiness["index"]["markets"]) == {"KOSPI", "KOSDAQ"}
+    assert readiness["index"]["markets"]["KOSPI"]["row_count"] == 3
+    assert status["journey"]["data"]["index_overlay"] == "PRESENT"
+    assert "index_blocker_reason" not in status["journey"]["data"]
+    assert series["schema_version"] == "kronos_v6_index_series.v1"
+    assert series["market"] == "KOSPI"
+    assert series["index_code"] == "1001"
+    assert [row["date"] for row in series["series"]] == ["2024-01-02", "2024-01-03", "2024-01-05"]
+    assert series["row_count"] == 3
+    assert series["provider_package"] == {"name": "pykrx", "version": "1.2.8", "required_version": "1.2.8"}
+    assert series["normalization_method"] == "extract_close_levels_without_interpolation_fill_or_fallback"
+    assert series["hashes"]["normalized_sha256"] == readiness["index"]["markets"]["KOSPI"]["normalized_sha256"]
+    assert all(value is False for value in series["false_locks"].values())
+    assert all(value is False for value in series["claims"].values())
+
+
+def test_v6_index_series_blocked_and_bad_requests(client, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path / "empty")
+
+    blocked = client.get("/api/v6/index-series?market=KOSPI")
+    assert blocked.status_code == 404
+    assert blocked.get_json() == {"status": "BLOCKED", "reason": "BLOCKED_INDEX_SERIES_SOURCE"}
+
+    assert client.get("/api/v6/index-series").status_code == 400
+    assert client.get("/api/v6/index-series?market=NASDAQ").status_code == 400
+    assert client.get("/api/v6/index-series?market=KOSPI&market=KOSDAQ").status_code == 400
+    assert client.get("/api/v6/index-series?market=KOSPI&unexpected=1").status_code == 400
+    post = client.post("/api/v6/index-series")
+    assert post.status_code == 405
+    assert post.headers["Allow"] == "GET"
+    assert post.get_json() == {"status": "ERROR", "error": {"code": "METHOD_NOT_ALLOWED"}}
+
+
+def test_v6_index_tampered_artifact_fails_closed(client, monkeypatch, tmp_path) -> None:
+    written = _write_index_artifacts(tmp_path)
+    tampered = json.loads(written["KOSPI"].read_text(encoding="utf-8"))
+    tampered["series"][0]["close"] = 1.0
+    written["KOSPI"].write_text(json.dumps(tampered, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path)
+
+    readiness = client.get("/api/v6/data-readiness").get_json()
+
     assert readiness["index"]["state"] == "BLOCKED_INDEX_SERIES_SOURCE"
+    assert client.get("/api/v6/index-series?market=KOSPI").status_code == 404
+    assert client.get("/api/v6/index-series?market=KOSDAQ").status_code == 200
 
 
 def test_v6_rejects_unknown_query_parameters(client) -> None:
