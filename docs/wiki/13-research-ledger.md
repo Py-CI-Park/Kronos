@@ -26,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | V7 P6 데이터 확장 검증 (`docs/kronos_v7_p6_data_coverage_result_2026-07-20.md`) | VERIFICATION | 수급 컬럼 커버리지 100% → 수집 `DUPLICATE_SKIP`; 공매도 `ABSENT_DEFERRED`(소비 prereg 없이는 미수집) |
 | 2026-07-20 | V7 P5 비주얼 폴리시 | IMPLEMENTATION | 차트-테마 브리지(6페이지, V6 토큰 파생), 홈 KPI glow·진행바·NAV 스파크라인, 스테퍼 방향키 roving 내비 |
 | 2026-07-20 | V7 P4 V6 테마 시스템 | IMPLEMENTATION | `data-v6-theme` 5종(전역따름·다크·오션·포레스트·퀀트터미널)+배율 4단계, V6 스코프 한정(V3/V5 무영향 실측), localStorage 지속 |
 | 2026-07-20 | V7 P3 리포트 카탈로그·뷰어 | IMPLEMENTATION | GET `/api/v6/reports`·`/report-html`(SHA 무결성 검사·CSP·sandbox iframe); 보고서 STEP 카탈로그+뷰어+다운로드; STEP 6 `HAS_REPORTS` |
