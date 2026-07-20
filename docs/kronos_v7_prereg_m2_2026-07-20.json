@@ -1,0 +1,59 @@
+{
+  "schema_version": "kronos_v7_prereg.v1",
+  "prereg_id": "KRONOS-V7-PREREG-M2-2026-07-20",
+  "frozen_utc": "2026-07-20T08:10:00Z",
+  "status": "FROZEN",
+  "relates_to": "KRONOS-V7-PREREG-M1-2026-07-20",
+  "hypothesis": {
+    "primary": "A PPO policy over continuous D-1 daily-DB features with the identical 10-slot / 60,000,000 KRW accounting achieves validation economic NAV above no-trade and at least equal to the best frozen RULE/random baseline at 0.23% cost, in a majority of seeds.",
+    "null": "The PPO policy does not satisfy the criterion in a majority of seeds net of 0.23% cost on validation.",
+    "negative_controls": [
+      "shuffled-label PPO control must NOT exceed max(no_trade, exposure-matched random mean + 2*std) at primary cost",
+      "zero-cost scenario is display-only and never used for the verdict"
+    ]
+  },
+  "not_claimed_even_if_success": [
+    "profitability in live trading", "official-close executability", "model promotion",
+    "paper-forward readiness", "broker/order readiness", "GO"
+  ],
+  "dataset": {
+    "contract": "kronos_v6_joined_dataset.v1",
+    "full_dataset_run_id": "v6_dataset_full_001",
+    "full_dataset_sha256": "ae44c8056be90124c715f9accff51feabe767291ab65e8a5654e67d6ccf849b5",
+    "smoke_dataset_run_id": "v6_dataset_smoke_001",
+    "smoke_dataset_sha256": "02e7be1a03eacf4e28fdbdf13d2a7775e886c89771bdc53984a1235e2b6b763f",
+    "splits": {"train": "<=20231231", "val": "20240101-20250630", "test": "20250701-20260612"},
+    "labels": {"primary": "future_return_h1_1520_proxy", "price_basis": "15:20_bar_close_proxy", "official_close": false, "fallback": "none_exact_1520_only"}
+  },
+  "environment": {
+    "capital_krw": 60000000, "slots": 10, "slot_budget_krw": 5000000,
+    "max_invested_krw": 50000000, "reserve_krw": 10000000,
+    "costs": {"primary_display": "0.23%", "zero_control_display": "0.00%", "stress_display": "0.46%"},
+    "gym_env": {
+      "episode": "one trading session; candidate rows visited in symbol order",
+      "observation": "7 frozen features (NaN->0) + missing_count/7 + slots_used/10 + session_progress",
+      "action": "Discrete(2): skip / enter (enter coerced to skip when 10 slots used or symbol already held)",
+      "reward": "on enter: (future_return_h1_1520_proxy - 0.0023) * 100; else 0"
+    }
+  },
+  "algorithm": {
+    "family": "sb3_ppo_mlp",
+    "trainer": "stom_rl.daily_v7_ppo",
+    "trainer_version": "kronos_v7_m2_ppo.v1",
+    "library": "stable_baselines3==2.8.0",
+    "policy": "MlpPolicy",
+    "hyperparams_frozen": {"n_steps": 2048, "batch_size": 256, "learning_rate": 0.0003, "gamma": 0.99, "total_timesteps_full": 120000, "total_timesteps_smoke": 8000, "eval_checkpoints": 6},
+    "checkpoint_selection": "best validation NAV among the eval checkpoints; final metrics from that checkpoint only",
+    "policy_score": "P(action=enter); session portfolio = top-10 distinct symbols among rows with P>0.5, ranked by P",
+    "seeds": [0, 1, 2]
+  },
+  "baselines": "identical to KRONOS-V7-PREREG-M1-2026-07-20 (no_trade, rule ret5/low_vol/inst, random_topk, exposure-matched random reps=20)",
+  "verdict_rules": {
+    "negative_control_fail": "any shuffled seed final val NAV > max(60000000, exposure_matched mean + 2*std) => NO_GO",
+    "go_candidate": ">=2 of 3 seeds with val NAV > 60000000 AND >= best of (rule/random baselines) => GO_CANDIDATE_VALIDATION_ONLY",
+    "inconclusive": "exactly 1 qualifying seed => INCONCLUSIVE",
+    "no_go": "0 qualifying seeds => NO_GO",
+    "test_oos": "untouched test split read once only on GO_CANDIDATE_VALIDATION_ONLY; otherwise NOT_RUN",
+    "post_hoc_retune": "forbidden; changes require a new preregistration version"
+  }
+}
