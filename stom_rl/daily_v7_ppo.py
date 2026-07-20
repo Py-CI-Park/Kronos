@@ -159,7 +159,8 @@ def _enter_probabilities(model: Any, rows: list[dict[str, Any]]) -> list[float]:
     return [float(value) for value in probs]
 
 
-def evaluate_policy_scores(rows: list[dict[str, Any]], scores: list[float]) -> tuple[dict[str, Any], list[int]]:
+def evaluate_policy_scores(rows: list[dict[str, Any]], scores: list[float],
+                           threshold: float = ENTER_THRESHOLD) -> tuple[dict[str, Any], list[int]]:
     """Portfolio evaluation identical in accounting to the tabular trainers."""
     by_id = {id(row): score for row, score in zip(rows, scores)}
     navs = {cost: CAPITAL for cost in COST_SCENARIOS}
@@ -168,7 +169,7 @@ def evaluate_policy_scores(rows: list[dict[str, Any]], scores: list[float]) -> t
     max_invested = 0.0
     pick_counts: list[int] = []
     for candidates in _sessions(rows):
-        scored = [(by_id[id(row)], row) for row in candidates if by_id[id(row)] > ENTER_THRESHOLD]
+        scored = [(by_id[id(row)], row) for row in candidates if by_id[id(row)] > threshold]
         selected = _top_distinct(scored)
         pick_counts.append(len(selected))
         max_positions = max(max_positions, len(selected))
