@@ -1,7 +1,7 @@
 # 연구 원장 · Research Ledger
 
 > 상태: `ACTIVE_RESEARCH_INDEX`  
-> 최종 갱신: 2026-07-19  
+> 최종 갱신: 2026-07-20  
 > 범위: Kronos 예측, 일봉 종가매매, 포트폴리오 RL, 대시보드·연구 인프라
 
 ## 목적
@@ -26,6 +26,8 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | `docs/kronos_v7_rl_models_and_reports_plan_2026-07-20.md` | PLAN | V7 3-Track(테마·모델 시리즈 M1~M4·HTML 리포트 시스템), `IMPLEMENTATION_NOT_STARTED` |
+| 2026-07-20 | `docs/kronos_dashboard_v61_result_2026-07-20.md` | IMPLEMENTATION_RESULT | V6/V6.1 플랫폼 완성; 사용성 50→≈78; RL 판정 변동 없음(`NO_GO`/`INCONCLUSIVE`) |
 | 2026-07-19 | `docs/kronos_v6_daily_h1_rl_result_2026-07-19.md` | RESULT | smoke `NO_GO`(shuffled control 발동) · full `INCONCLUSIVE`(1/3 seed); test `NOT_RUN`; locks 전부 false |
 | 2026-07-19 | `docs/kronos_v6_prereg_h1_2026-07-19.json` | PREREGISTRATION | H1 tabular-Q 가설·판정 규칙·OOS 1회 정책 동결 |
 | 2026-07-19 | `docs/kronos_v6_universe_manifest_2026-07-19.json` | DATA_MANIFEST | 유동성 상위 500 universe 동결; instrument_type UNVERIFIED 캐비앗 |
