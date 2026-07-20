@@ -375,3 +375,73 @@ def test_v6_report_html_blocks_sha_mismatch(client, monkeypatch, tmp_path) -> No
     assert catalog["reports"][0]["integrity"] == "SHA_MISMATCH"
     assert blocked.status_code == 409
     assert blocked.get_json() == {"status": "BLOCKED", "reason": "REPORT_SHA_MISMATCH"}
+
+
+def test_v6_research_registry_links_prereg_runs_and_reports(client, monkeypatch, tmp_path) -> None:
+    docs_root = tmp_path / "docs"
+    docs_root.mkdir()
+    (docs_root / "kronos_v7_prereg_demo_2026-07-20.json").write_text(
+        json.dumps({"prereg_id": "KRONOS-V7-PREREG-DEMO", "status": "FROZEN",
+                    "frozen_utc": "2026-07-20T00:00:00Z", "algorithm": {"family": "demo_family"}}),
+        encoding="utf-8",
+    )
+    (docs_root / "kronos_v7_demo_result_2026-07-20.md").write_text("# Demo Result\n\nverdict INCONCLUSIVE\n", encoding="utf-8")
+
+    runs_root = tmp_path / "runs"
+    run_dir = runs_root / "ds-1" / "train-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps({"prereg": {"id": "KRONOS-V7-PREREG-DEMO"}, "trainer_version": "demo.v1",
+                    "verdict_candidate": {"value": "INCONCLUSIVE"}, "test": {"state": "NOT_RUN"},
+                    "generated_utc": "2026-07-20T01:00:00Z"}),
+        encoding="utf-8",
+    )
+    html_text = "<!DOCTYPE html><html><body><div class=\"badge\">INCONCLUSIVE</div></body></html>"
+    (run_dir / "report.html").write_text(html_text, encoding="utf-8")
+    (run_dir / "report_manifest.json").write_text(
+        json.dumps({"verdict": "INCONCLUSIVE", "test_state": "NOT_RUN", "index_overlay_state": "PRESENT",
+                    "generated_utc": "2026-07-20T02:00:00Z", "builder_version": "b.v1",
+                    "report_sha256": hashlib.sha256(html_text.encode("utf-8")).hexdigest()}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+
+    registry = client.get("/api/v6/research-registry").get_json()
+
+    assert registry["schema_version"] == "kronos_v6_research_registry.v1"
+    assert len(registry["preregistrations"]) == 1
+    entry = registry["preregistrations"][0]
+    assert entry["prereg_id"] == "KRONOS-V7-PREREG-DEMO"
+    assert entry["status"] == "FROZEN"
+    assert entry["family"] == "demo_family"
+    assert entry["run_count"] == 1
+    assert entry["verdicts"] == ["INCONCLUSIVE"]
+    run = entry["runs"][0]
+    assert run["dataset_run_id"] == "ds-1" and run["train_run_id"] == "train-1"
+    assert run["has_report"] is True
+    assert any(doc["doc"] == "kronos_v7_demo_result_2026-07-20.md" for doc in registry["result_docs"])
+
+
+def test_v6_research_doc_serves_allowlisted_markdown_and_blocks_traversal(client, monkeypatch, tmp_path) -> None:
+    docs_root = tmp_path / "docs"
+    docs_root.mkdir()
+    (docs_root / "kronos_v7_demo_result_2026-07-20.md").write_text("# Demo\n\nbody\n", encoding="utf-8")
+    (docs_root / "secret.md").write_text("secret", encoding="utf-8")
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+
+    ok = client.get("/api/v6/research-doc?doc=kronos_v7_demo_result_2026-07-20.md").get_json()
+    assert ok["format"] == "markdown"
+    assert ok["content"].startswith("# Demo")
+    assert ok["sha256"] == hashlib.sha256((docs_root / "kronos_v7_demo_result_2026-07-20.md").read_bytes()).hexdigest()
+
+    # non-allowlisted name, traversal, missing, and mutation are all closed
+    assert client.get("/api/v6/research-doc?doc=secret.md").status_code == 400
+    assert client.get("/api/v6/research-doc?doc=../secret.md").status_code == 400
+    assert client.get("/api/v6/research-doc?doc=kronos_v7_missing.md").status_code == 404
+    assert client.get("/api/v6/research-doc").status_code == 400
+    assert client.get("/api/v6/research-registry?x=1").status_code == 400
+    for path in ("/api/v6/research-registry", "/api/v6/research-doc"):
+        response = client.post(path)
+        assert response.status_code == 405
+        assert response.headers["Allow"] == "GET"

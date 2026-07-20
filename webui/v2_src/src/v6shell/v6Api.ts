@@ -276,6 +276,51 @@ export interface V6Reports {
   readonly reports?: readonly V6ReportEntry[];
 }
 
+export interface V6RegistryRun {
+  readonly dataset_run_id?: string;
+  readonly train_run_id?: string;
+  readonly trainer_version?: string;
+  readonly verdict?: string;
+  readonly test_state?: string;
+  readonly generated_utc?: string;
+  readonly has_report?: boolean;
+}
+
+export interface V6PreregEntry {
+  readonly prereg_id?: string;
+  readonly doc?: string;
+  readonly status?: string;
+  readonly frozen_utc?: string;
+  readonly supersedes?: string | null;
+  readonly family?: string | null;
+  readonly sha256?: string;
+  readonly runs?: readonly V6RegistryRun[];
+  readonly run_count?: number;
+  readonly verdicts?: readonly string[];
+}
+
+export interface V6ResultDoc {
+  readonly doc?: string;
+  readonly size_bytes?: number;
+  readonly sha256?: string;
+}
+
+export interface V6ResearchRegistry {
+  readonly schema_version?: string;
+  readonly status?: string;
+  readonly preregistrations?: readonly V6PreregEntry[];
+  readonly result_docs?: readonly V6ResultDoc[];
+}
+
+export interface V6ResearchDoc {
+  readonly status?: string;
+  readonly doc?: string;
+  readonly format?: string;
+  readonly sha256?: string;
+  readonly content?: string;
+  readonly reason?: string;
+}
+
 export function v6ReportHtmlUrl(dataset: string, train: string, download = false): string {
   return `/api/v6/report-html?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}${download ? '&download=1' : ''}`;
 }
@@ -296,3 +341,6 @@ export const getV6InsightRegime = (): Promise<V6ApiResult<V6InsightRegime>> => g
 export const getV6IndexSeries = (market: 'KOSPI' | 'KOSDAQ'): Promise<V6ApiResult<V6IndexSeries>> =>
   getV6(`/api/v6/index-series?market=${encodeURIComponent(market)}`);
 export const getV6Reports = (): Promise<V6ApiResult<V6Reports>> => getV6('/api/v6/reports');
+export const getV6ResearchRegistry = (): Promise<V6ApiResult<V6ResearchRegistry>> => getV6('/api/v6/research-registry');
+export const getV6ResearchDoc = (doc: string): Promise<V6ApiResult<V6ResearchDoc>> =>
+  getV6(`/api/v6/research-doc?doc=${encodeURIComponent(doc)}`);

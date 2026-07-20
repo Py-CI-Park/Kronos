@@ -22,6 +22,10 @@ FIVEMIN_DB_PATH: Final = REPO_ROOT / "_database" / "Stock_Database_ohlcv_5min.db
 INDEX_ARTIFACT_DIR: Final = REPO_ROOT / "artifacts" / "korean_index"
 INDEX_BLOCKER: Final = "BLOCKED_INDEX_SERIES_SOURCE"
 INDEX_BLOCKER_REASON: Final = "KRX credentials required for pykrx collection"
+DOCS_ROOT: Final = REPO_ROOT / "docs"
+PREREG_GLOBS: Final = ("kronos_v*_prereg_*.json", "kronos_v6_prereg_*.json")
+RESEARCH_DOC_RE: Final = re.compile(r"^kronos_v[0-9][0-9a-z_\-]*\.(md|json)$")
+DOC_NAME_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,120}$")
 INDEX_MARKETS: Final = ("KOSDAQ", "KOSPI")
 INDEX_NORMALIZED_GLOB: Final = "korean-index-*-normalized-*.json"
 _INDEX_OVERLAY_CACHE: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
@@ -151,6 +155,92 @@ def _report_entries() -> list[dict[str, Any]]:
     entries.sort(key=lambda e: str(e.get("generated_utc")), reverse=True)
     return entries
 
+
+
+def _prereg_registry() -> list[dict[str, Any]]:
+    """Registry of preregistrations linked to the runs and reports that cite them."""
+    runs_by_prereg: dict[str, list[dict[str, Any]]] = {}
+    report_index = {(entry["dataset_run_id"], entry["train_run_id"]): entry for entry in _report_entries()}
+    try:
+        run_manifests = sorted(RUNS_ROOT.glob("*/*/run_manifest.json"))
+    except OSError:
+        run_manifests = []
+    for manifest_path in run_manifests:
+        manifest = _read_json(manifest_path)
+        if manifest is None:
+            continue
+        prereg = manifest.get("prereg")
+        prereg_id = prereg.get("id") if isinstance(prereg, Mapping) else None
+        if not isinstance(prereg_id, str):
+            continue
+        run_dir = manifest_path.parent
+        dataset_run_id, train_run_id = run_dir.parent.name, run_dir.name
+        verdict = manifest.get("verdict_candidate")
+        record = {
+            "dataset_run_id": dataset_run_id,
+            "train_run_id": train_run_id,
+            "trainer_version": manifest.get("trainer_version", "MISSING"),
+            "verdict": verdict.get("value") if isinstance(verdict, Mapping) else "MISSING",
+            "test_state": manifest.get("test", {}).get("state") if isinstance(manifest.get("test"), Mapping) else "MISSING",
+            "generated_utc": manifest.get("generated_utc", "MISSING"),
+            "has_report": (dataset_run_id, train_run_id) in report_index,
+        }
+        runs_by_prereg.setdefault(prereg_id, []).append(record)
+
+    seen: set[Path] = set()
+    prereg_paths: list[Path] = []
+    for pattern in PREREG_GLOBS:
+        try:
+            for path in DOCS_ROOT.glob(pattern):
+                if path.is_file() and path not in seen:
+                    seen.add(path)
+                    prereg_paths.append(path)
+        except OSError:
+            continue
+    registry: list[dict[str, Any]] = []
+    for path in sorted(prereg_paths):
+        prereg = _read_json(path)
+        if prereg is None:
+            continue
+        prereg_id = str(prereg.get("prereg_id", "MISSING"))
+        runs = sorted(runs_by_prereg.get(prereg_id, []), key=lambda r: str(r["generated_utc"]), reverse=True)
+        registry.append({
+            "prereg_id": prereg_id,
+            "doc": path.name,
+            "status": prereg.get("status", "MISSING"),
+            "frozen_utc": prereg.get("frozen_utc", "MISSING"),
+            "supersedes": prereg.get("supersedes"),
+            "family": prereg.get("algorithm", {}).get("family") if isinstance(prereg.get("algorithm"), Mapping) else None,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "runs": runs,
+            "run_count": len(runs),
+            "verdicts": sorted({str(run["verdict"]) for run in runs}),
+        })
+    registry.sort(key=lambda item: str(item["frozen_utc"]), reverse=True)
+    return registry
+
+
+def _result_docs() -> list[dict[str, Any]]:
+    """Allowlisted V6/V7 research markdown documents available for read-only viewing."""
+    docs: list[dict[str, Any]] = []
+    try:
+        candidates = sorted(DOCS_ROOT.glob("kronos_v*_*.md"))
+    except OSError:
+        return docs
+    for path in candidates:
+        if RESEARCH_DOC_RE.fullmatch(path.name) is None:
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        docs.append({
+            "doc": path.name,
+            "size_bytes": stat.st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        })
+    docs.sort(key=lambda item: item["doc"], reverse=True)
+    return docs
 
 def _report_query() -> tuple[str, str, bool]:
     allowed = {"dataset", "train", "download"}
@@ -592,6 +682,46 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             response.headers["Content-Disposition"] = f'attachment; filename="kronos-report-{dataset_run_id}-{train_run_id}.html"'
         return response
 
+    def research_registry_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        if request.args:
+            return _error(400, "BAD_REQUEST")
+        return _response({
+            "schema_version": "kronos_v6_research_registry.v1",
+            "status": "OK",
+            "preregistrations": _prereg_registry(),
+            "result_docs": _result_docs(),
+        })
+
+    def research_doc_handler() -> Response:
+        if request.method != "GET":
+            return _method_not_allowed()
+        if set(request.args) != {"doc"} or len(request.args.getlist("doc")) != 1:
+            return _error(400, "BAD_REQUEST")
+        name = request.args["doc"]
+        if DOC_NAME_RE.fullmatch(name) is None or RESEARCH_DOC_RE.fullmatch(name) is None:
+            return _error(400, "BAD_REQUEST")
+        path = DOCS_ROOT / name
+        try:
+            resolved = path.resolve(strict=True)
+        except OSError:
+            return _response({"status": "BLOCKED", "reason": "DOC_NOT_FOUND"}, 404)
+        if resolved.parent != DOCS_ROOT.resolve() or not resolved.is_file():
+            return _response({"status": "BLOCKED", "reason": "DOC_NOT_FOUND"}, 404)
+        try:
+            text = resolved.read_text(encoding="utf-8")
+        except OSError:
+            return _response({"status": "BLOCKED", "reason": "DOC_NOT_FOUND"}, 404)
+        return _response({
+            "schema_version": "kronos_v6_research_doc.v1",
+            "status": "OK",
+            "doc": name,
+            "format": "markdown" if name.endswith(".md") else "json",
+            "sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
+            "content": text,
+        })
+
     for rule, endpoint, handler in (
         ("/status", "status", status_handler),
         ("/experiment", "experiment", experiment_handler),
@@ -602,6 +732,8 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
         ("/index-series", "index_series", index_series_handler),
         ("/reports", "reports", reports_handler),
         ("/report-html", "report_html", report_html_handler),
+        ("/research-registry", "research_registry", research_registry_handler),
+        ("/research-doc", "research_doc", research_doc_handler),
     ):
         blueprint.add_url_rule(rule, endpoint=endpoint, view_func=handler, methods=list(ALL_ROUTE_METHODS), provide_automatic_options=False)
     return blueprint
