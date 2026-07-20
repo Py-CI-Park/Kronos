@@ -26,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-20 | V7 P11 연구 레지스트리 | IMPLEMENTATION | `GET /api/v6/research-registry`·`/research-doc`(allowlist·traversal 차단); 보고서 STEP에 사전등록→실행→판정→보고서 생명주기 카드 + 마크다운 결과문서 뷰어(marked+DOMPurify). 갭 "과거 연구 체계적 관리·열람" 해소 |
 | 2026-07-20 | `docs/kronos_v7_model_series_result_2026-07-20.md` | RESULT | **V7 모델 시리즈 종결**: M1 `INCONCLUSIVE`(1/5) · M2 PPO `NO_GO`(0/3) · M3 LinUCB `INCONCLUSIVE`(1/3, 계수 해석 확보) · M4 `NOT_RUN_DEFERRED`(사후 선택 방지); 대조군 11/11 통과, test 전부 `NOT_RUN`, HTML 보고서 7건 |
 | 2026-07-20 | `docs/kronos_v7_m1_result_2026-07-20.md` | RESULT | M1 v2 full: **`INCONCLUSIVE`**(1/5 seed, seed0 +7.10%), exposure-matched 대조군 5/5 통과(허위 발동 없음), test `NOT_RUN`; HTML 보고서 자동 생성 |
 | 2026-07-20 | V7 P8 M2 PPO (`docs/kronos_v7_prereg_m2_2026-07-20.json`) | PREREG+IMPLEMENTATION | gymnasium 슬롯 env+SB3 PPO, smoke `INCONCLUSIVE`(1/1 seed·대조군 통과) → 게이트 통과, full 3-seed 실행 중 |
