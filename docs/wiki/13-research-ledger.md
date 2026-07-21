@@ -1,7 +1,7 @@
 # 연구 원장 · Research Ledger
 
 > 상태: `ACTIVE_RESEARCH_INDEX`  
-> 최종 갱신: 2026-07-20  
+> 최종 갱신: 2026-07-21
 > 범위: Kronos 예측, 일봉 종가매매, 포트폴리오 RL, 대시보드·연구 인프라
 
 ## 목적
@@ -15,6 +15,7 @@
 - V5/V5.1: `/?ui=v5` 연구 프리뷰·비교 경로, 기본 전환 아님
 - V6: 전수감사 후 correctness·project-report 개선 완료, 심층 성숙도 58→76/100 `RESEARCH_PLATFORM_USABLE_WITH_RESIDUAL_ARCH_DEBT`; 2026-07-21 기본 shell 승인
 - V6 일봉 H1 tabular-Q: smoke `NO_GO`, full(3-seed) `INCONCLUSIVE`; untouched test 미접근; 승격 불가
+- V8 M3E fixed-seed consensus contextual bandit: reused validation `NO_GO`; 23bp NAV 52.88M, jackknife 0/5, shuffled jackknife_4 control failure; sealed test `NOT_RUN`, gate receipt 거절
 - 일봉 종가매매 선형 정책: `NO-GO / WATCH_RESEARCH_ONLY`
 - 일봉 PPO 5k: `INCONCLUSIVE_SMOKE_ONLY / NOT_PROMOTED`
 - 일봉 PPO full: `INCONCLUSIVE — NOT RUN`
@@ -25,6 +26,7 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-21 | `docs/kronos_v8_m3e_result_and_rl_roadmap_2026-07-21.md` | PREREG+RESULT+ROADMAP | M3E 5-member fixed-seed contextual bandit 완료: public/sealed partition custody와 frozen SHA, 동일 train/eval action·23bp reward, 42개 synthetic/custody 초기 gate; reused validation full NAV 52.88M·jackknife 0/5·control failure로 **`NO_GO`**, independent OOS gate 거절, sealed test `NOT_RUN`; full sequential RL은 새 prereg/fresh OOS가 필요한 후속 |
 | 2026-07-21 | `docs/kronos_v7_dashboard_release_2026-07-21.md` | RELEASE | V6를 8122 기본 shell로 전환; V3 `?ui=v3` rollback 유지; research-only/read-only, 모델 판정·OOS 잠금 불변 |
 | 2026-07-20 | V7 P12 대시보드 전수검사·프로젝트 보고서 v2 | AUDIT+IMPLEMENTATION | greenfield 기준 58/100 `BLOCK` 감사 후 76/100: run/prereg/dataset/report chain custody, `TEST_NOT_RUN` 평가 상태, exact run ID, 3-cycle project sidecar·CSS-only 5-tab HTML·CHAIN_OK API/viewer, seed별 전체 학습곡선, API error/empty/MISSING 분리, Data/Experiment 계약 기반 UX, legacy polling/subscription/stale cost-gate 수정. 모델 판정은 M1/M3 `INCONCLUSIVE`, M2 `NO_GO`, test 전부 `NOT_RUN` 유지 |
 | 2026-07-20 | V7 P11 연구 레지스트리 | IMPLEMENTATION | `GET /api/v6/research-registry`·`/research-doc`(allowlist·traversal 차단); 보고서 STEP에 사전등록→실행→판정→보고서 생명주기 카드 + 마크다운 결과문서 뷰어(marked+DOMPurify). 갭 "과거 연구 체계적 관리·열람" 해소 |

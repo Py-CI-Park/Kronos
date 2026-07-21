@@ -223,6 +223,60 @@ def write_joined_dataset(
     manifest_path = destination / "dataset_manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {"manifest": manifest, "dataset_path": dataset_path, "manifest_path": manifest_path}
+def write_partitioned_h1_dataset(
+    universe: Sequence[str] | None = None,
+    *,
+    public_root: Path | str,
+    sealed_test_sink: Any,
+    custody_uid: str,
+    prereg_id: str,
+    daily_db_path: Path | str = DEFAULT_DAILY_DB_PATH,
+    fivemin_db_path: Path | str = daily_1520_source.DEFAULT_5MIN_DB_PATH,
+    start_yyyymmdd: int = DEFAULT_START_YYYYMMDD,
+    end_yyyymmdd: int = DEFAULT_END_YYYYMMDD,
+    universe_manifest_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Generate H1 rows directly into public and sealed partitions.
+
+    Unlike ``write_joined_dataset``, this never creates a combined dataset.
+    """
+    from stom_rl.daily_v8_custody import SPLIT_BOUNDARIES, write_partitioned_dataset
+
+    start = _coerce_yyyymmdd(start_yyyymmdd, "start_yyyymmdd")
+    end = _coerce_yyyymmdd(end_yyyymmdd, "end_yyyymmdd")
+    if start > end or end != SPLIT_BOUNDARIES["test_end"]:
+        raise ValueError("partitioned H1 generation requires the preregistered end boundary")
+    if universe is None:
+        tables = load_default_universe(universe_manifest_path or DEFAULT_UNIVERSE_MANIFEST_PATH)
+    else:
+        tables = [str(table) for table in universe]
+    if len(set(tables)) != len(tables):
+        raise ValueError("universe must not contain duplicate tables")
+    daily_path = Path(daily_db_path)
+
+    def generated_rows() -> Iterable[dict[str, Any]]:
+        missing_by_split = {split: {"missing_h1_labels": 0}
+                            for split in ("train", "val", "test", "embargo_dropped")}
+        missing_by_symbol: dict[str, dict[str, int]] = {}
+        with _connect_daily_readonly(daily_path) as conn:
+            for table in sorted(tables):
+                symbol = daily_1520_source.resolve_5min_table(table).symbol
+                fills = daily_1520_source.read_exact_1520_rows(
+                    fivemin_db_path, table, start_date=start, end_date=end
+                )
+                for row in _build_symbol_rows(
+                    symbol, table, _read_daily_rows(conn, table), fills, (1,),
+                    missing_by_split, missing_by_symbol,
+                ):
+                    yield row
+
+    return write_partitioned_dataset(
+        generated_rows(), public_root=public_root, sealed_test_sink=sealed_test_sink,
+        source_db_sha256=_sha256_file(daily_path),
+        source_fivemin_db_sha256=_sha256_file(Path(fivemin_db_path)),
+        custody_uid=custody_uid, prereg_id=prereg_id,
+    )
+
 
 
 def _build_symbol_rows(

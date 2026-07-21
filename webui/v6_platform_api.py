@@ -16,6 +16,7 @@ REPO_ROOT: Final = WEBUI_ROOT.parent
 MANIFEST_PATH: Final = REPO_ROOT / "docs" / "kronos_v6_universe_manifest_2026-07-19.json"
 PREREG_PATH: Final = REPO_ROOT / "docs" / "kronos_v6_prereg_h1_2026-07-19.json"
 RUNS_ROOT: Final = WEBUI_ROOT / "rl_runs" / "v6_daily_h1"
+M3E_CUSTODY_ROOT: Final = WEBUI_ROOT / "rl_runs" / "v8_daily_m3e_custody"
 AUDIT_PATH: Final = WEBUI_ROOT / "rl_runs" / "daily_ohlcv_db_summary" / "v6_universe_audit.json"
 DAILY_DB_PATH: Final = REPO_ROOT / "_database" / "Stock_Database_ohlcv_1day.db"
 FIVEMIN_DB_PATH: Final = REPO_ROOT / "_database" / "Stock_Database_ohlcv_5min.db"
@@ -187,10 +188,17 @@ def _request_snapshot(key: str, factory: Any) -> Any:
 def _run_states(manifest: Mapping[str, Any]) -> dict[str, str]:
     test = manifest.get("test")
     test_state = str(test.get("state", "MISSING")) if isinstance(test, Mapping) else "MISSING"
-    per_seed = manifest.get("per_seed")
-    validation_state = "PRESENT" if isinstance(per_seed, (list, Mapping)) and per_seed else "NOT_RECORDED"
+    if manifest.get("schema_version") == "kronos_v8_m3e_validation_run.v1":
+        has_members = isinstance(manifest.get("members"), list) and len(manifest["members"]) == 5
+        has_validation = isinstance(manifest.get("ensemble"), Mapping) and isinstance(manifest.get("jackknives"), Mapping)
+        training_state = "COMPLETE" if has_members else "MISSING"
+        validation_state = "REUSED_VALIDATION_COMPLETE" if has_validation else "NOT_RECORDED"
+    else:
+        per_seed = manifest.get("per_seed")
+        training_state = str(manifest.get("state", "MISSING"))
+        validation_state = "PRESENT" if isinstance(per_seed, (list, Mapping)) and per_seed else "NOT_RECORDED"
     return {
-        "training_state": str(manifest.get("state", "MISSING")),
+        "training_state": training_state,
         "validation_state": validation_state,
         "test_state": test_state,
         "evaluation_state": "TEST_NOT_RUN" if test_state == "NOT_RUN" else f"TEST_{test_state}",
@@ -213,8 +221,57 @@ def _prereg_path(prereg_ref: Mapping[str, Any]) -> Path | None:
     return None
 
 
+def _m3e_report_chain(run_dir: Path, report_manifest: Mapping[str, Any]) -> tuple[str, list[str]]:
+    reasons: list[str] = []
+    run_manifest_path = run_dir / "run_manifest.json"
+    run_manifest = _read_json(run_manifest_path)
+    if report_manifest.get("schema_version") != "kronos_v8_m3e_report.v1":
+        reasons.append("REPORT_SCHEMA_MISMATCH")
+    if report_manifest.get("test_state") != "NOT_RUN":
+        reasons.append("REPORT_TEST_STATE_MISMATCH")
+    if run_manifest is None:
+        reasons.append("RUN_MANIFEST_MISSING")
+        return "CHAIN_INVALID", reasons
+    if report_manifest.get("run_manifest_sha256") != _sha256_file(run_manifest_path):
+        reasons.append("RUN_MANIFEST_SHA_MISMATCH")
+    if run_manifest.get("schema_version") != "kronos_v8_m3e_validation_run.v1":
+        reasons.append("RUN_MANIFEST_SCHEMA_MISMATCH")
+    if run_manifest.get("test") != {"state": "NOT_RUN"}:
+        reasons.append("RUN_TEST_STATE_MISMATCH")
+    if run_manifest.get("false_research_locks") != SIX_FALSE_LOCKS:
+        reasons.append("FALSE_RESEARCH_LOCKS_MISMATCH")
+    prereg_ref = run_manifest.get("prereg")
+    prereg_path = _prereg_path(prereg_ref) if isinstance(prereg_ref, Mapping) else None
+    if prereg_path is None:
+        reasons.append("PREREG_NOT_FOUND_OR_SHA_MISMATCH")
+    elif report_manifest.get("prereg_sha256") != _sha256_file(prereg_path):
+        reasons.append("PREREG_SHA_MISMATCH")
+    custody_uid = run_manifest.get("custody_uid")
+    if not isinstance(custody_uid, str) or not custody_uid or Path(custody_uid).name != custody_uid:
+        reasons.append("CUSTODY_UID_INVALID")
+    else:
+        custody_path = M3E_CUSTODY_ROOT / custody_uid / "public" / "train_validation_manifest.json"
+        if custody_path.is_symlink():
+            reasons.append("PUBLIC_CUSTODY_MANIFEST_INVALID")
+        else:
+            custody = _read_json(custody_path)
+            if custody is None:
+                reasons.append("PUBLIC_CUSTODY_MANIFEST_MISSING")
+            else:
+                if report_manifest.get("public_custody_manifest_sha256") != _sha256_file(custody_path):
+                    reasons.append("PUBLIC_CUSTODY_MANIFEST_SHA_MISMATCH")
+                public = custody.get("public_artifact")
+                if not isinstance(public, Mapping) or report_manifest.get("public_custody_sha256") != public.get("sha256"):
+                    reasons.append("PUBLIC_CUSTODY_SHA_MISMATCH")
+                if custody.get("custody_uid") != custody_uid:
+                    reasons.append("PUBLIC_CUSTODY_UID_MISMATCH")
+    return ("CHAIN_OK", []) if not reasons else ("CHAIN_INVALID", reasons)
+
+
 def _report_chain(run_dir: Path, report_manifest: Mapping[str, Any]) -> tuple[str, list[str]]:
-    """Verify V7 source custody while classifying source-less legacy reports."""
+    """Verify source custody while classifying source-less legacy reports."""
+    if report_manifest.get("schema_version") == "kronos_v8_m3e_report.v1":
+        return _m3e_report_chain(run_dir, report_manifest)
     source_hashes = report_manifest.get("source_sha256")
     locks = report_manifest.get("false_research_locks")
     if source_hashes is None and locks is None:
