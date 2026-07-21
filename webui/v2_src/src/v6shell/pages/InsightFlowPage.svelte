@@ -1,23 +1,23 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import EChartsRenderer from '../../charts/EChartsRenderer.svelte';
-  import { theme } from '$lib/stores';
+  import { v6ChartEpoch, v6CssVar } from '../v6ChartTheme';
   import { getV6InsightFlow, type V6InsightFlow, type V6InsightFlowRow } from '../v6Api';
   type ChartOption = Record<string, unknown>;
-  let currentTheme = $state<'light' | 'dark'>('light');
+  let chartEpoch = $state('');
   let windowSize = $state(20);
   let data = $state<V6InsightFlow | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(false);
   const formatter = new Intl.NumberFormat('ko-KR');
-  theme.subscribe((value) => (currentTheme = value));
-  function color(name: string): string { return typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  v6ChartEpoch.subscribe((value) => (chartEpoch = value));
+  const color = v6CssVar;
   function text(value: unknown): string { return value === undefined || value === null || value === '' ? 'MISSING' : String(value); }
   function won(value: unknown): string { return typeof value === 'number' && Number.isFinite(value) ? `₩${formatter.format(value)}` : 'MISSING'; }
   function signed(value: unknown): string { return typeof value === 'number' && Number.isFinite(value) ? formatter.format(value) : 'MISSING'; }
   function ratio(value: unknown): string { return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(3)}%p` : 'MISSING'; }
   function chartOption(rows: readonly V6InsightFlowRow[] | undefined, mode: 'institution' | 'foreign'): ChartOption {
-    void currentTheme;
+    void chartEpoch;
     const sample = (rows ?? []).slice(0, 15);
     const values = sample.map((row) => mode === 'institution' ? row.inst_netbuy_sum : row.foreign_ratio_delta);
     return { backgroundColor: 'transparent', grid: { left: mode === 'institution' ? 86 : 64, right: 26, top: 22, bottom: 28 }, tooltip: { trigger: 'axis' }, xAxis: { type: 'value', axisLabel: { color: color('--muted'), formatter: (value: number) => mode === 'institution' ? `₩${formatter.format(value)}` : `${value}%p` }, splitLine: { lineStyle: { color: color('--border') } } }, yAxis: { type: 'category', inverse: true, data: sample.map((row) => text(row.code)), axisLabel: { color: color('--muted') } }, series: [{ name: mode === 'institution' ? '기관 순매수 합계' : '외국인 비율 변화', type: 'bar', data: values, itemStyle: { color: (item: { value?: number }) => Number(item.value) >= 0 ? color('--success') : color('--danger'), borderRadius: [0, 5, 5, 0] } }] };

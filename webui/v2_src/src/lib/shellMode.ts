@@ -11,7 +11,7 @@ export interface ShellResolution {
   shouldPersist: boolean;
 }
 
-const DEFAULT_SHELL: DashboardShell = 'v3';
+const DEFAULT_SHELL: DashboardShell = 'v6';
 
 function isDashboardShell(value: string | null): value is DashboardShell {
   return value === 'v3' || value === 'v4' || value === 'v5' || value === 'v6';
@@ -65,9 +65,6 @@ export function resolveDashboardShell(
     }
   }
 
-  if (v5DefaultAllowed) {
-    return { shell: 'v5', source: 'default', shouldPersist: false };
-  }
 
   return { shell: DEFAULT_SHELL, source: 'default', shouldPersist: false };
 }

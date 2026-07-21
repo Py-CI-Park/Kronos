@@ -1,0 +1,53 @@
+{
+  "schema_version": "kronos_v7_prereg.v1",
+  "prereg_id": "KRONOS-V7-PREREG-M3-2026-07-20",
+  "frozen_utc": "2026-07-20T09:20:00Z",
+  "status": "FROZEN",
+  "relates_to": "KRONOS-V7-PREREG-M1-2026-07-20",
+  "hypothesis": {
+    "primary": "A LinUCB contextual-bandit slot policy over D-1 daily-DB features with the identical 10-slot / 60,000,000 KRW accounting achieves validation economic NAV above no-trade and at least equal to the best frozen RULE/random baseline at 0.23% cost, in a majority of seeds.",
+    "null": "The LinUCB policy does not satisfy the criterion in a majority of seeds net of 0.23% cost on validation.",
+    "negative_controls": [
+      "shuffled-label LinUCB control must NOT exceed max(no_trade, exposure-matched random mean + 2*std) at primary cost",
+      "zero-cost scenario is display-only and never used for the verdict"
+    ]
+  },
+  "not_claimed_even_if_success": [
+    "profitability in live trading", "official-close executability", "model promotion",
+    "paper-forward readiness", "broker/order readiness", "GO"
+  ],
+  "dataset": {
+    "contract": "kronos_v6_joined_dataset.v1",
+    "full_dataset_run_id": "v6_dataset_full_001",
+    "full_dataset_sha256": "ae44c8056be90124c715f9accff51feabe767291ab65e8a5654e67d6ccf849b5",
+    "smoke_dataset_run_id": "v6_dataset_smoke_001",
+    "smoke_dataset_sha256": "02e7be1a03eacf4e28fdbdf13d2a7775e886c89771bdc53984a1235e2b6b763f",
+    "splits": {"train": "<=20231231", "val": "20240101-20250630", "test": "20250701-20260612"},
+    "labels": {"primary": "future_return_h1_1520_proxy", "price_basis": "15:20_bar_close_proxy", "official_close": false, "fallback": "none_exact_1520_only"}
+  },
+  "environment": {
+    "capital_krw": 60000000, "slots": 10, "slot_budget_krw": 5000000,
+    "max_invested_krw": 50000000, "reserve_krw": 10000000,
+    "costs": {"primary_display": "0.23%", "zero_control_display": "0.00%", "stress_display": "0.46%"}
+  },
+  "algorithm": {
+    "family": "linucb_contextual_bandit",
+    "trainer": "stom_rl.daily_v7_linucb",
+    "trainer_version": "kronos_v7_m3_linucb.v1",
+    "context": "7 frozen features (NaN->0) + bias term (dim 8)",
+    "hyperparams_frozen": {"alpha_ucb": 1.0, "ridge_lambda": 1.0, "reward": "(future_return_h1_1520_proxy - 0.0023) per entered slot", "train_passes": 1},
+    "seed_role": "seeds permute the chronological order of training sessions (online-learning path sensitivity)",
+    "policy_score_validation": "theta^T x with exploration term dropped; enter when score > 0; session portfolio = top-10 distinct by score",
+    "seeds": [0, 1, 2],
+    "interpretability_artifact": "final theta coefficients per feature are recorded in the run manifest"
+  },
+  "baselines": "identical to KRONOS-V7-PREREG-M1-2026-07-20 (no_trade, rule ret5/low_vol/inst, random_topk, exposure-matched random reps=20)",
+  "verdict_rules": {
+    "negative_control_fail": "any shuffled seed final val NAV > max(60000000, exposure_matched mean + 2*std) => NO_GO",
+    "go_candidate": ">=2 of 3 seeds with val NAV > 60000000 AND >= best of (rule/random baselines) => GO_CANDIDATE_VALIDATION_ONLY",
+    "inconclusive": "exactly 1 qualifying seed => INCONCLUSIVE",
+    "no_go": "0 qualifying seeds => NO_GO",
+    "test_oos": "untouched test split read once only on GO_CANDIDATE_VALIDATION_ONLY; otherwise NOT_RUN",
+    "post_hoc_retune": "forbidden; changes require a new preregistration version"
+  }
+}

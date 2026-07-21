@@ -219,27 +219,27 @@ function validV5GateReceipt(): Record<string, unknown> {
   };
 }
 
-test('resolveDashboardShell defaults to V3 without valid query, storage, or local V5 gate', () => {
+test('resolveDashboardShell defaults to released V6 without valid query or storage', () => {
   assert.deepEqual(resolveDashboardShell('', null), {
-    shell: 'v3',
+    shell: 'v6',
     source: 'default',
     shouldPersist: false,
   });
   assert.deepEqual(resolveDashboardShell('?ui=v9', 'unexpected', { invalid: true }), {
-    shell: 'v3',
+    shell: 'v6',
     source: 'default',
     shouldPersist: false,
   });
 });
 
-test('resolveDashboardShell defaults to V5 only from a validated local closure gate', () => {
+test('released V6 supersedes the historical local V5 default gate', () => {
   assert.deepEqual(resolveDashboardShell('', null, validV5GateReceipt()), {
-    shell: 'v5',
+    shell: 'v6',
     source: 'default',
     shouldPersist: false,
   });
   assert.deepEqual(resolveDashboardShell('', 'v5', { invalid: true }), {
-    shell: 'v3',
+    shell: 'v6',
     source: 'default',
     shouldPersist: false,
   });
@@ -278,7 +278,7 @@ test('stored V5 reload is honored only while the local closure gate remains vali
     shouldPersist: false,
   });
   assert.deepEqual(resolveDashboardShell('', 'v5', null), {
-    shell: 'v3',
+    shell: 'v6',
     source: 'default',
     shouldPersist: false,
   });
@@ -320,15 +320,15 @@ test('initializeDashboardShell explicitly persists a query when ui_persist=1', (
   }
 });
 
-test('initializeDashboardShell defaults to V5 only with a validated local closure gate', () => {
+test('initializeDashboardShell defaults to released V6 even with a historical V5 closure gate', () => {
   const snapshot = snapshotGlobals();
   try {
     const { markerWrites, storageWrites } = installClientGlobals({ gateReceipt: validV5GateReceipt() });
 
-    assert.equal(initializeDashboardShell(), 'v5');
-    assert.equal(readShell(), 'v5');
+    assert.equal(initializeDashboardShell(), 'v6');
+    assert.equal(readShell(), 'v6');
     assert.deepEqual(storageWrites, []);
-    assert.deepEqual(markerWrites, ['data-kronos-shell:v5']);
+    assert.deepEqual(markerWrites, ['data-kronos-shell:v6']);
   } finally {
     restoreGlobals(snapshot);
     dashboardShell.set('v3');
@@ -350,8 +350,8 @@ test('initializeDashboardShell reloads stored V5 only while the local closure ga
     try {
       installClientGlobals({ stored: 'v5', gateReceipt: null });
 
-      assert.equal(initializeDashboardShell(), 'v3');
-      assert.equal(readShell(), 'v3');
+      assert.equal(initializeDashboardShell(), 'v6');
+      assert.equal(readShell(), 'v6');
     } finally {
       restoreGlobals(snapshotWithoutGate);
       dashboardShell.set('v3');
@@ -536,7 +536,7 @@ test('unavailable window and storage globals do not block load or local shell ch
     }
 
     assert.doesNotThrow(() => initializeDashboardShell());
-    assert.equal(readShell(), 'v3');
+    assert.equal(readShell(), 'v6');
     assert.doesNotThrow(() => setDashboardShell('v4', { persist: true }));
     assert.equal(readShell(), 'v4');
   } finally {

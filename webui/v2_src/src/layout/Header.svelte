@@ -20,19 +20,19 @@
   const SIDEBAR_ID = 'kronos-sidebar';
 
   let tab = $state('live-training');
-  activeTab.subscribe((v) => (tab = v));
+  const unsubscribeActiveTab = activeTab.subscribe((v) => (tab = v));
   let status = $state<any>(null);
-  trainingStatus.subscribe((v) => (status = v));
+  const unsubscribeTrainingStatus = trainingStatus.subscribe((v) => (status = v));
   let last = $state('-');
-  lastUpdatedAt.subscribe((v) => (last = v));
+  const unsubscribeLastUpdatedAt = lastUpdatedAt.subscribe((v) => (last = v));
   let currentTheme = $state<'light' | 'dark'>('light');
-  theme.subscribe((v) => (currentTheme = v));
+  const unsubscribeTheme = theme.subscribe((v) => (currentTheme = v));
   let shell = $state<DashboardShell>('v3');
-  dashboardShell.subscribe((v) => (shell = v));
+  const unsubscribeDashboardShell = dashboardShell.subscribe((v) => (shell = v));
   let sidebarIsCollapsed = $state(false);
-  sidebarCollapsed.subscribe((v) => (sidebarIsCollapsed = v));
+  const unsubscribeSidebarCollapsed = sidebarCollapsed.subscribe((v) => (sidebarIsCollapsed = v));
   let sidebarIsMobileOpen = $state(false);
-  sidebarMobileOpen.subscribe((v) => (sidebarIsMobileOpen = v));
+  const unsubscribeSidebarMobileOpen = sidebarMobileOpen.subscribe((v) => (sidebarIsMobileOpen = v));
   let sidebarUsesMobileState = $state(false);
   let sidebarViewportQuery: MediaQueryList | undefined;
 
@@ -56,6 +56,13 @@
   onDestroy(() => {
     if (timer != null) clearInterval(timer);
     sidebarViewportQuery?.removeEventListener('change', syncSidebarViewport);
+    unsubscribeActiveTab();
+    unsubscribeTrainingStatus();
+    unsubscribeLastUpdatedAt();
+    unsubscribeTheme();
+    unsubscribeDashboardShell();
+    unsubscribeSidebarCollapsed();
+    unsubscribeSidebarMobileOpen();
   });
 
   function sidebarControlExpanded(): boolean {

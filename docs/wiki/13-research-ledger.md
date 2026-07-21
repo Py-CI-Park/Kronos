@@ -10,11 +10,10 @@
 
 ## 현재 연구 경계
 
-- 기본 UI: V3 유지
-- V5: 연구 프리뷰 및 직접 경로 검증용
-- V5.1: `IMPLEMENTED_RESEARCH_FOUNDATION`, 직접 `?ui=v5` 확인용, 기본 전환 아님
-- V5.1 UX 성숙도: `IMMATURE`(사용자 UX 종합 51/100); V6 workflow 재설계 계획됨
-- V6: `?ui=v6` opt-in workflow 플랫폼 13페이지 BUILT; UX 재감사 74/100 `USABLE_WITH_GAPS`; 기본 전환 아님
+- 기본 UI: V6 release (`http://127.0.0.1:8122/`, canonical `/?ui=v6&tab=home`)
+- V3: `/?ui=v3` 명시적 rollback·회귀검증 경로
+- V5/V5.1: `/?ui=v5` 연구 프리뷰·비교 경로, 기본 전환 아님
+- V6: 전수감사 후 correctness·project-report 개선 완료, 심층 성숙도 58→76/100 `RESEARCH_PLATFORM_USABLE_WITH_RESIDUAL_ARCH_DEBT`; 2026-07-21 기본 shell 승인
 - V6 일봉 H1 tabular-Q: smoke `NO_GO`, full(3-seed) `INCONCLUSIVE`; untouched test 미접근; 승격 불가
 - 일봉 종가매매 선형 정책: `NO-GO / WATCH_RESEARCH_ONLY`
 - 일봉 PPO 5k: `INCONCLUSIVE_SMOKE_ONLY / NOT_PROMOTED`
@@ -26,6 +25,20 @@
 
 | 날짜 | 문서 | 종류 | 상태 |
 |---|---|---|---|
+| 2026-07-21 | `docs/kronos_v7_dashboard_release_2026-07-21.md` | RELEASE | V6를 8122 기본 shell로 전환; V3 `?ui=v3` rollback 유지; research-only/read-only, 모델 판정·OOS 잠금 불변 |
+| 2026-07-20 | V7 P12 대시보드 전수검사·프로젝트 보고서 v2 | AUDIT+IMPLEMENTATION | greenfield 기준 58/100 `BLOCK` 감사 후 76/100: run/prereg/dataset/report chain custody, `TEST_NOT_RUN` 평가 상태, exact run ID, 3-cycle project sidecar·CSS-only 5-tab HTML·CHAIN_OK API/viewer, seed별 전체 학습곡선, API error/empty/MISSING 분리, Data/Experiment 계약 기반 UX, legacy polling/subscription/stale cost-gate 수정. 모델 판정은 M1/M3 `INCONCLUSIVE`, M2 `NO_GO`, test 전부 `NOT_RUN` 유지 |
+| 2026-07-20 | V7 P11 연구 레지스트리 | IMPLEMENTATION | `GET /api/v6/research-registry`·`/research-doc`(allowlist·traversal 차단); 보고서 STEP에 사전등록→실행→판정→보고서 생명주기 카드 + 마크다운 결과문서 뷰어(marked+DOMPurify). 갭 "과거 연구 체계적 관리·열람" 해소 |
+| 2026-07-20 | `docs/kronos_v7_model_series_result_2026-07-20.md` | RESULT | **V7 모델 시리즈 종결**: M1 `INCONCLUSIVE`(1/5) · M2 PPO `NO_GO`(0/3) · M3 LinUCB `INCONCLUSIVE`(1/3, 계수 해석 확보) · M4 `NOT_RUN_DEFERRED`(사후 선택 방지); 대조군 11/11 통과, test 전부 `NOT_RUN`, HTML 보고서 7건 |
+| 2026-07-20 | `docs/kronos_v7_m1_result_2026-07-20.md` | RESULT | M1 v2 full: **`INCONCLUSIVE`**(1/5 seed, seed0 +7.10%), exposure-matched 대조군 5/5 통과(허위 발동 없음), test `NOT_RUN`; HTML 보고서 자동 생성 |
+| 2026-07-20 | V7 P8 M2 PPO (`docs/kronos_v7_prereg_m2_2026-07-20.json`) | PREREG+IMPLEMENTATION | gymnasium 슬롯 env+SB3 PPO, smoke `INCONCLUSIVE`(1/1 seed·대조군 통과) → 게이트 통과, full 3-seed 실행 중 |
+| 2026-07-20 | V7 P7 M1 tabular-Q v2 (`docs/kronos_v7_prereg_m1_2026-07-20.json`) | PREREG+IMPLEMENTATION | exposure-matched 음성 대조군(v1 결함 교정)·seed 5·RULE 3종; smoke `INCONCLUSIVE`(1/1 seed, 허위 NO_GO 재발 없음); **full 5-seed run 실행 중** — 결과는 완료 시 별도 기록 |
+| 2026-07-20 | V7 P6 데이터 확장 검증 (`docs/kronos_v7_p6_data_coverage_result_2026-07-20.md`) | VERIFICATION | 수급 컬럼 커버리지 100% → 수집 `DUPLICATE_SKIP`; 공매도 `ABSENT_DEFERRED`(소비 prereg 없이는 미수집) |
+| 2026-07-20 | V7 P5 비주얼 폴리시 | IMPLEMENTATION | 차트-테마 브리지(6페이지, V6 토큰 파생), 홈 KPI glow·진행바·NAV 스파크라인, 스테퍼 방향키 roving 내비 |
+| 2026-07-20 | V7 P4 V6 테마 시스템 | IMPLEMENTATION | `data-v6-theme` 5종(전역따름·다크·오션·포레스트·퀀트터미널)+배율 4단계, V6 스코프 한정(V3/V5 무영향 실측), localStorage 지속 |
+| 2026-07-20 | V7 P3 리포트 카탈로그·뷰어 | IMPLEMENTATION | GET `/api/v6/reports`·`/report-html`(SHA 무결성 검사·CSP·sandbox iframe); 보고서 STEP 카탈로그+뷰어+다운로드; STEP 6 `HAS_REPORTS` |
+| 2026-07-20 | V7 P2 HTML 리포트 빌더 | IMPLEMENTATION | `stom_rl/v7_report_builder.py` 16절 self-contained HTML(외부 리소스 0·값 재계산 금지); 기존 2개 run 소급 생성(smoke `NO_GO`·full `INCONCLUSIVE`, 지수 절 `PRESENT`) |
+| 2026-07-20 | V7 P1 지수 오버레이 통합 | IMPLEMENTATION | `/api/v6/index-series` 신설, `BLOCKED_INDEX_SERIES_SOURCE` 해제(오프라인 검증 통과 시), 비교 STEP 지수 정규화 차트·국면 PRESENT 관측. 판정 변동 없음 |
+| 2026-07-20 | `docs/kronos_v7_paged_execution_plan_2026-07-20.md` | EXECUTION_PLAN | V7 P1~P10 페이지 단위 브랜치-머지 전략; KOSPI/KOSDAQ 지수 artifact 수집 완료(`BLOCKED_INDEX` 원인 해소); 요청사항 12건 반영 재검토 |
 | 2026-07-20 | `docs/kronos_v7_rl_models_and_reports_plan_2026-07-20.md` | PLAN | V7 3-Track(테마·모델 시리즈 M1~M4·HTML 리포트 시스템), `IMPLEMENTATION_NOT_STARTED` |
 | 2026-07-20 | `docs/kronos_dashboard_v61_result_2026-07-20.md` | IMPLEMENTATION_RESULT | V6/V6.1 플랫폼 완성; 사용성 50→≈78; RL 판정 변동 없음(`NO_GO`/`INCONCLUSIVE`) |
 | 2026-07-19 | `docs/kronos_v6_daily_h1_rl_result_2026-07-19.md` | RESULT | smoke `NO_GO`(shuffled control 발동) · full `INCONCLUSIVE`(1/3 seed); test `NOT_RUN`; locks 전부 false |

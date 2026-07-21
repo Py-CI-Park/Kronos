@@ -132,14 +132,14 @@ def test_v4_shell_reuses_existing_chrome_and_exposes_opt_in_markers() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Shell-mode guards: V3 default, V4 opt-in, fail closed
+# Shell-mode guards: V6 released default, V3/V4 explicit rollback, fail closed
 # --------------------------------------------------------------------------- #
-def test_shell_mode_keeps_v3_default_query_storage_persist_and_fail_closed_guards() -> None:
+def test_shell_mode_keeps_v6_default_query_storage_persist_and_fail_closed_guards() -> None:
     mode = _source("lib/shellMode.ts")
 
     assert "export type DashboardShell = 'v3' | 'v4'" in mode
     assert "export const SHELL_STORAGE_KEY = 'kronos-dashboard-shell'" in mode
-    assert "const DEFAULT_SHELL: DashboardShell = 'v3'" in mode
+    assert "const DEFAULT_SHELL: DashboardShell = 'v6'" in mode
     assert "params.get('ui')" in mode
     assert "params.get('ui_persist') === '1'" in mode
     assert "source: 'query'" in mode

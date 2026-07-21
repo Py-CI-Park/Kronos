@@ -1,0 +1,66 @@
+{
+  "schema_version": "kronos_v7_project_report_sidecar.v2",
+  "project_id": "kronos-v7-daily-model-series-2026-07-20",
+  "title": "Kronos V7 일봉 강화학습 모델 시리즈",
+  "status": "RESEARCH_ONLY_COMPLETE_VALIDATION",
+  "created_utc": "2026-07-20T10:00:00Z",
+  "scope": "동일한 V6 full dataset과 0.23% 1차 비용에서 M1 Tabular-Q, M2 PPO, M3 LinUCB validation 결과를 순차 cycle로 관리",
+  "cycles": [
+    {
+      "cycle_id": "M1-TABULAR-Q",
+      "order": 1,
+      "title": "Tabular-Q v2 기준 cycle",
+      "hypothesis_delta": "D-1 일봉 feature를 이산화한 tabular-Q 정책이 exposure-matched control과 고정 RULE baseline을 validation에서 초과하는지 검증",
+      "prereg": {
+        "path": "kronos_v7_prereg_m1_2026-07-20.json",
+        "sha256": "594014cbef42ab4610ff583d6a7db247fd00a54f0bdb9f0f574aaae4515ea97e"
+      },
+      "run_dirs": [
+        "../webui/rl_runs/v6_daily_h1/v6_dataset_full_001/train_20260720T070920Z"
+      ]
+    },
+    {
+      "cycle_id": "M2-PPO",
+      "order": 2,
+      "title": "PPO 정책 cycle",
+      "hypothesis_delta": "동일 회계·데이터 계약에서 연속 정책 최적화가 Tabular-Q의 seed 불안정성을 줄이는지 검증",
+      "prereg": {
+        "path": "kronos_v7_prereg_m2_2026-07-20.json",
+        "sha256": "b67fdd41326fe8c15833a6de09173fee259272153b0c7cc21af8ca27698f6d1c"
+      },
+      "run_dirs": [
+        "../webui/rl_runs/v6_daily_h1/v6_dataset_full_001/train_20260720T080217Z"
+      ]
+    },
+    {
+      "cycle_id": "M3-LINUCB",
+      "order": 3,
+      "title": "LinUCB 해석 가능 정책 cycle",
+      "hypothesis_delta": "동일 회계·baseline에서 해석 가능한 contextual-bandit이 seed 안정성과 validation NAV를 개선하는지 검증",
+      "prereg": {
+        "path": "kronos_v7_prereg_m3_2026-07-20.json",
+        "sha256": "acdf4d57b773855944fca81b113bdcbb2d1e76291c69f1ab20cf3668b0858aa7"
+      },
+      "run_dirs": [
+        "../webui/rl_runs/v6_daily_h1/v6_dataset_full_001/train_20260720T072529Z"
+      ]
+    }
+  ],
+  "project_verdict": {
+    "value": "NO_GO_OR_INCONCLUSIVE_SERIES",
+    "reasons": [
+      "M1: INCONCLUSIVE (1/5 qualifying seeds)",
+      "M2: NO_GO (0/3 qualifying seeds)",
+      "M3: INCONCLUSIVE (1/3 qualifying seeds)",
+      "untouched test OOS remains NOT_RUN for every cycle"
+    ]
+  },
+  "false_research_locks": {
+    "promotion_allowed": false,
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "profitability_claim_allowed": false,
+    "go_summary_allowed": false
+  }
+}

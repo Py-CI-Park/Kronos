@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 rem =====================================================================
 rem  Kronos remodeled dashboard launcher (single Svelte app)
-rem  - Starts Flask on 127.0.0.1:8122, opens Mission Control landing.
+rem  - Starts Flask on 127.0.0.1:8122, opens the released V6 research dashboard.
 rem  - No Next.js / trading_src dependency (retired in consolidation A).
 rem  - Stop with stop_kronos_dashboard.bat, or close the minimized window.
 rem =====================================================================
@@ -54,10 +54,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [OK] Ready. Opening Mission Control in your browser...
+echo [OK] Ready. Opening the released V6 dashboard in your browser...
 start "" "http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/"
 echo(
-echo [OK] Mission Control : http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/
+echo [OK] V6 Dashboard   : http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/
 echo [OK] Daily OHLCV     : http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/daily-ohlcv
 echo [OK] RL Trading      : http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/rl
 echo [OK] Stop            : stop_kronos_dashboard.bat  (or close the minimized window)

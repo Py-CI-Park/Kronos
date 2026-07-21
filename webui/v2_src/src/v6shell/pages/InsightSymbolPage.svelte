@@ -1,29 +1,29 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import EChartsRenderer from '../../charts/EChartsRenderer.svelte';
-  import { theme } from '$lib/stores';
+  import { v6ChartEpoch, v6CssVar } from '../v6ChartTheme';
   import { getV6InsightSymbol, type V6InsightSymbol, type V6InsightSeriesRow } from '../v6Api';
 
   type ChartOption = Record<string, unknown>;
   const formatter = new Intl.NumberFormat('ko-KR');
-  let currentTheme = $state<'light' | 'dark'>('light');
+  let chartEpoch = $state('');
   let code = $state('005930');
   let data = $state<V6InsightSymbol | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(false);
-  theme.subscribe((value) => (currentTheme = value));
+  v6ChartEpoch.subscribe((value) => (chartEpoch = value));
 
   function finite(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value); }
-  function color(name: string): string { return typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  const color = v6CssVar;
   function date(value: unknown): string { return finite(value) ? String(value) : 'MISSING'; }
   const rows = $derived((data?.series ?? []).filter((row): row is V6InsightSeriesRow => Boolean(row?.date)));
   const categories = $derived(rows.map((row) => date(row.date)));
   const closeOption = $derived.by<ChartOption>(() => {
-    void currentTheme;
+    void chartEpoch;
     return { backgroundColor: 'transparent', grid: { left: 76, right: 28, top: 34, bottom: 78 }, tooltip: { trigger: 'axis' }, dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 14 }], xAxis: { type: 'category', data: categories, boundaryGap: false, axisLabel: { color: color('--muted') } }, yAxis: { type: 'value', name: '종가', axisLabel: { color: color('--muted'), formatter: (value: number) => `₩${formatter.format(value)}` }, splitLine: { lineStyle: { color: color('--border') } } }, series: [{ name: '종가', type: 'line', symbol: 'none', connectNulls: false, data: rows.map((row) => finite(row.close) ? row.close : null), lineStyle: { color: color('--accent'), width: 2.5 } }] };
   });
   const flowOption = $derived.by<ChartOption>(() => {
-    void currentTheme;
+    void chartEpoch;
     return { backgroundColor: 'transparent', grid: { left: 62, right: 78, top: 32, bottom: 30 }, tooltip: { trigger: 'axis' }, xAxis: { type: 'category', data: categories, axisLabel: { color: color('--muted'), hideOverlap: true } }, yAxis: [{ type: 'value', name: '외국인 %', axisLabel: { color: color('--muted'), formatter: '{value}%' }, splitLine: { lineStyle: { color: color('--border') } } }, { type: 'value', name: '기관 순매수', axisLabel: { color: color('--muted'), formatter: (value: number) => `₩${formatter.format(value)}` } }], series: [{ name: '외국인 비율', type: 'line', yAxisIndex: 0, symbol: 'none', connectNulls: false, data: rows.map((row) => finite(row.foreign_ratio) ? row.foreign_ratio : null), lineStyle: { color: color('--info'), width: 2.2 } }, { name: '기관 순매수', type: 'bar', yAxisIndex: 1, data: rows.map((row) => finite(row.inst_netbuy) ? row.inst_netbuy : null), itemStyle: { color: (item: { value?: number }) => Number(item.value) >= 0 ? color('--success') : color('--danger') } }] };
   });
   async function load(): Promise<void> {

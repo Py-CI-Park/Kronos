@@ -78,10 +78,39 @@ def test_flow_ranks_planted_data_and_is_observation_only(client, insight_data) -
     assert payload["not_a_recommendation"] is True
 
 
-def test_regime_blocks_index_and_returns_breadth_proxy(client, insight_data) -> None:
+def test_regime_blocks_index_and_returns_breadth_proxy(client, insight_data, monkeypatch, tmp_path) -> None:
+    from webui import v6_platform_api
+
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path / "missing-index")
+
     payload = client.get("/api/v6/insight/regime").get_json()
 
-    assert payload["index_regime"]["state"] == "BLOCKED_INDEX_SERIES_SOURCE"
+    assert payload["index_regime"] == {
+        "state": "BLOCKED_INDEX_SERIES_SOURCE",
+        "reason": "KRX credentials required for pykrx collection",
+    }
+    assert {"as_of_date", "tables_evaluated", "pct_above_20s_mean", "disclaimer"} <= set(payload["breadth_proxy"])
+
+
+def test_regime_reports_present_index_observation(client, insight_data, monkeypatch, tmp_path) -> None:
+    from webui import v6_platform_api
+
+    from tests.test_v6_platform_api import _write_index_artifacts
+
+    _write_index_artifacts(tmp_path)
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path)
+
+    payload = client.get("/api/v6/insight/regime").get_json()
+    regime = payload["index_regime"]
+
+    assert regime["state"] == "PRESENT"
+    assert set(regime["markets"]) == {"KOSPI", "KOSDAQ"}
+    kospi = regime["markets"]["KOSPI"]
+    assert kospi["last_date"] == "2024-01-05"
+    assert kospi["last_close"] == pytest.approx(2600.0 * 1.02)
+    assert kospi["window_days"] == 3
+    assert kospi["pct_vs_20d_mean"] == pytest.approx((1.02 / ((1 + 1.01 + 1.02) / 3) - 1.0) * 100.0)
+    assert "not a trading signal" in regime["caveat"]
     assert {"as_of_date", "tables_evaluated", "pct_above_20s_mean", "disclaimer"} <= set(payload["breadth_proxy"])
 
 
