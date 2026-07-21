@@ -3,3 +3,5 @@ scripts/generate_kronos_v5_api_types.mjs text eol=lf
 webui/v2_src/src/lib/generated/*.ts text eol=lf
 docs/kronos_v*_prereg_*.json text eol=lf
 docs/kronos_v*_project_*.json text eol=lf
+stom_rl/daily_v8_*.py text eol=lf
+scripts/build_m3e_custody_v8.py text eol=lf
