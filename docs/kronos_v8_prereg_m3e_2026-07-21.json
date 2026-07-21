@@ -1,0 +1,94 @@
+{
+  "schema_version": "kronos_v8_prereg_draft.v1",
+  "prereg_id": "KRONOS-V8-PREREG-M3E-2026-07-21-DRAFT",
+  "status": "DRAFT_NOT_FROZEN",
+  "frozen_utc": null,
+  "relates_to": "KRONOS-V7-PREREG-M3-2026-07-20",
+  "classification": "CONTEXTUAL_BANDIT_RESEARCH_EXPERIMENT",
+  "hypothesis": {
+    "primary": "Five from-scratch fixed LinUCB members aggregated by unweighted mean score, without member or seed selection, reduce path variance enough that the full ensemble and at least four of five leave-one-member-out ensembles exceed both no-trade and the best frozen RULE/random baseline at 0.23% on the reused validation screen.",
+    "null": "The full ensemble or jackknife stability gate does not meet the frozen criterion net of 0.23% cost.",
+    "reused_validation_limitation": "2024-01-01 through 2025-06-30 has already been observed in M1-M3 and is a reused screening window, not fresh confirmatory evidence."
+  },
+  "accounting": {
+    "notional_research_capital_krw": 60000000,
+    "optional_slot_capacity": 10,
+    "notional_per_slot_krw": 5000000,
+    "max_notional_exposure_krw": 50000000,
+    "notional_reserve_krw": 10000000,
+    "guaranteed_stock_count": false,
+    "actual_operating_money": false,
+    "broker_realized_nav": false,
+    "nav_formula": "60000000 + sum(5000000 * (future_return_h1_1520_proxy - cost_rate))"
+  },
+  "dataset": {
+    "dataset_run_id": "v6_dataset_full_001",
+    "dataset_sha256": "ae44c8056be90124c715f9accff51feabe767291ab65e8a5654e67d6ccf849b5",
+    "train_end": 20231231,
+    "reused_validation_start": 20240101,
+    "reused_validation_end": 20250630,
+    "sealed_test_start": 20250701,
+    "sealed_test_end": 20260612,
+    "label": "future_return_h1_1520_proxy",
+    "price_basis": "15:20_bar_close_proxy",
+    "official_close": false,
+    "fallback": "none_exact_1520_only"
+  },
+  "algorithm": {
+    "family": "linucb_fixed_seed_consensus",
+    "members": 5,
+    "seeds": [0, 1, 2, 3, 4],
+    "train_passes": 1,
+    "member_selection_allowed": false,
+    "checkpoint_selection_allowed": false,
+    "aggregation": "unweighted_mean_member_score",
+    "action": "select 0 to 10 distinct symbols with mean_score > 0; descending mean_score then ascending symbol tie-break",
+    "reward": "future_return_h1_1520_proxy - 0.0023 per entered optional slot"
+  },
+  "costs": {
+    "primary_rate": 0.0023,
+    "zero_control_rate": 0.0,
+    "stress_display_rate": 0.0046
+  },
+  "baselines": [
+    "no_trade",
+    "rule_topk_ret5",
+    "rule_topk_low_vol",
+    "rule_topk_inst",
+    "seeded_random_topk",
+    "exposure_matched_random_20_repetitions"
+  ],
+  "controls": {
+    "shuffled_label_ensemble_seeds": [0, 1, 2, 3, 4],
+    "control_fail_rule": "any shuffled ensemble NAV > max(60000000, exposure_matched_mean + 2*std) => NO_GO"
+  },
+  "validation_gate": {
+    "eligible": "full ensemble and at least 4 of 5 jackknives exceed no-trade and best frozen baseline at 0.23%",
+    "eligible_token": "OOS_OPEN_ELIGIBLE_REUSED_VALIDATION_SCREEN",
+    "inconclusive": "full ensemble passes and 1 to 3 jackknives pass",
+    "no_go": "negative control fails, full ensemble fails, or zero jackknives pass",
+    "go_claim_allowed": false
+  },
+  "oos_custody_required_before_execution": {
+    "separate_test_artifact": true,
+    "frozen_test_sha256": "TO_BE_FILLED_BEFORE_FREEZE",
+    "gate_receipt_required": true,
+    "one_time_access_ledger": true,
+    "train_validation_loader_must_not_deserialize_test": true
+  },
+  "source_contract_before_freeze": {
+    "trainer_path": "TO_BE_IMPLEMENTED",
+    "trainer_sha256": "TO_BE_FILLED_BEFORE_FREEZE",
+    "protocol_sha256": "TO_BE_FILLED_BEFORE_FREEZE"
+  },
+  "forbidden_claims": [
+    "guaranteed ten stocks",
+    "actual deployed or required 60000000 KRW",
+    "funded or broker-realized NAV",
+    "official-close execution",
+    "profitability or alpha",
+    "GO or model promotion",
+    "paper-forward, live, broker, or order readiness",
+    "OOS result before one-time gate"
+  ]
+}
