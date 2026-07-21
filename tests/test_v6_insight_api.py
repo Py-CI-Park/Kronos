@@ -43,11 +43,11 @@ def insight_data(monkeypatch, tmp_path):
         json.dumps({"universe": [{"table": f"A{code}"} for code in ("000001", "000002", "000003")]}),
         encoding="utf-8",
     )
+    v6_insight_api.reset_v6_insight_cache()
     monkeypatch.setattr(v6_insight_api, "DAILY_DB_PATH", database_path)
     monkeypatch.setattr(v6_insight_api, "UNIVERSE_MANIFEST_PATH", manifest_path)
-    v6_insight_api._FLOW_CACHE.clear()
-    v6_insight_api._REGIME_CACHE.clear()
-    return database_path
+    yield database_path, manifest_path
+    v6_insight_api.reset_v6_insight_cache()
 
 
 def test_symbol_shape_and_sampling_preserves_endpoints(client, insight_data) -> None:
@@ -77,6 +77,83 @@ def test_flow_ranks_planted_data_and_is_observation_only(client, insight_data) -
     assert payload["top_foreign_loss"][0]["code"] == "000002"
     assert payload["not_a_recommendation"] is True
 
+def test_manifest_content_revision_purges_same_size_generation(client, insight_data) -> None:
+    _, manifest_path = insight_data
+    first = client.get("/api/v6/insight/flow?window=5&limit=5").get_json()
+    first_revision = v6_insight_api.v6_insight_cache_stats()["revision"]
+
+    original = manifest_path.read_text(encoding="utf-8")
+    revised = original.replace("A000001", "A000002", 1)
+    assert len(revised) == len(original)
+    manifest_path.write_text(revised, encoding="utf-8")
+
+    second = client.get("/api/v6/insight/flow?window=5&limit=5").get_json()
+    stats = v6_insight_api.v6_insight_cache_stats()
+    assert first["top_inst_buy"][0]["code"] == "000001"
+    assert second["top_inst_buy"][0]["code"] == "000003"
+    assert stats["revision"] != first_revision
+    assert stats["generation_count"] == 1
+    assert stats["entry_count"] == 1
+
+
+def test_wal_signature_revision_purges_generation(client, insight_data) -> None:
+    database_path, _ = insight_data
+    client.get("/api/v6/insight/flow?window=5&limit=5")
+    first_revision = v6_insight_api.v6_insight_cache_stats()["revision"]
+
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute('UPDATE "A000001" SET close = close + 0.5 WHERE date = 20260201')
+        connection.commit()
+        assert database_path.with_name(f"{database_path.name}-wal").exists()
+        client.get("/api/v6/insight/flow?window=5&limit=5")
+    finally:
+        connection.close()
+
+    stats = v6_insight_api.v6_insight_cache_stats()
+    assert stats["revision"] != first_revision
+    assert stats["entry_count"] == 1
+
+
+def test_flow_and_regime_share_one_revision(client, insight_data, monkeypatch, tmp_path) -> None:
+    from webui import v6_platform_api
+
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path / "missing-index")
+    client.get("/api/v6/insight/flow?window=5&limit=5")
+    flow_stats = v6_insight_api.v6_insight_cache_stats()
+    client.get("/api/v6/insight/regime")
+    shared_stats = v6_insight_api.v6_insight_cache_stats()
+
+    assert shared_stats["revision"] == flow_stats["revision"]
+    assert shared_stats["generation_count"] == 1
+    assert shared_stats["flow_entries"] == 1
+    assert shared_stats["regime_entries"] == 1
+
+
+def test_cache_capacity_evicts_least_recent_entry(client, insight_data) -> None:
+    v6_insight_api.reset_v6_insight_cache(max_entries=2)
+
+    client.get("/api/v6/insight/flow?window=5&limit=5")
+    client.get("/api/v6/insight/flow?window=6&limit=5")
+    client.get("/api/v6/insight/regime")
+
+    stats = v6_insight_api.v6_insight_cache_stats()
+    assert stats["max_entries"] == 2
+    assert stats["entry_count"] == 2
+    assert stats["flow_entries"] == 1
+    assert stats["regime_entries"] == 1
+    assert ("flow", 5, 5) not in stats["entry_keys"]
+    assert ("flow", 6, 5) in stats["entry_keys"]
+    assert ("regime", 0, 0) in stats["entry_keys"]
+
+
+def test_cached_payload_is_a_defensive_copy(insight_data) -> None:
+    first = v6_insight_api._flow_payload(5, 5)
+    first["top_inst_buy"][0]["code"] = "mutated"
+
+    second = v6_insight_api._flow_payload(5, 5)
+    assert second["top_inst_buy"][0]["code"] == "000001"
 
 def test_regime_blocks_index_and_returns_breadth_proxy(client, insight_data, monkeypatch, tmp_path) -> None:
     from webui import v6_platform_api

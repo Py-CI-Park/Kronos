@@ -1,10 +1,14 @@
 """Read-only V6 daily-data insight API for research observation."""
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import math
 import re
 import sqlite3
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Final, Mapping
 
@@ -19,8 +23,11 @@ CODE_PATTERN: Final = re.compile(r"^[0-9]{6}$")
 TABLE_PATTERN: Final = re.compile(r"^A[0-9]{6}$")
 PRICE_BASIS_CAVEAT: Final = "daily DB price basis UNKNOWN_CONFIRMED; observation only, not return evidence"
 FLOW_CAVEAT: Final = "point-in-time publication lag unverified"
-_FLOW_CACHE: dict[tuple[int, int, int], dict[str, Any]] = {}
-_REGIME_CACHE: dict[tuple[int], dict[str, Any]] = {}
+_CACHE_DEFAULT_MAX_ENTRIES: Final = 32
+_CACHE_LOCK = threading.RLock()
+_CACHE_ENTRY_LIMIT = _CACHE_DEFAULT_MAX_ENTRIES
+_CACHE_REVISION: tuple[str | None, tuple[tuple[int, int] | None, ...]] | None = None
+_CACHE_ENTRIES: OrderedDict[tuple[str, int, int], dict[str, Any]] = OrderedDict()
 INDEX_BLOCKER_REGIME: Final = {"state": "BLOCKED_INDEX_SERIES_SOURCE", "reason": "KRX credentials required for pykrx collection"}
 
 
@@ -38,11 +45,16 @@ def _method_not_allowed() -> Response:
     return response
 
 
-def _database_mtime() -> int | None:
-    try:
-        return DAILY_DB_PATH.stat().st_mtime_ns
-    except OSError:
-        return None
+def _database_signature() -> tuple[tuple[int, int] | None, ...]:
+    signatures: list[tuple[int, int] | None] = []
+    for path in (DAILY_DB_PATH, Path(f"{DAILY_DB_PATH}-wal"), Path(f"{DAILY_DB_PATH}-shm")):
+        try:
+            stat = path.stat()
+        except OSError:
+            signatures.append(None)
+        else:
+            signatures.append((stat.st_mtime_ns, stat.st_size))
+    return tuple(signatures)
 
 
 def _connect() -> sqlite3.Connection:
@@ -51,19 +63,87 @@ def _connect() -> sqlite3.Connection:
     return connection
 
 
-def _manifest_tables() -> list[str] | None:
+def _manifest_snapshot() -> tuple[list[str] | None, str | None]:
     try:
-        value = json.loads(UNIVERSE_MANIFEST_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+        contents = UNIVERSE_MANIFEST_PATH.read_bytes()
+    except OSError:
+        return None, None
+    digest = hashlib.sha256(contents).hexdigest()
+    try:
+        value = json.loads(contents)
+    except (UnicodeDecodeError, ValueError):
+        return None, digest
     if not isinstance(value, Mapping) or not isinstance(value.get("universe"), list):
-        return None
+        return None, digest
     tables: list[str] = []
     for item in value["universe"]:
         table = item.get("table") if isinstance(item, Mapping) else None
         if isinstance(table, str) and TABLE_PATTERN.fullmatch(table):
             tables.append(table)
-    return tables
+    return tables, digest
+def _cache_snapshot() -> tuple[list[str] | None, tuple[str | None, tuple[tuple[int, int] | None, ...]]]:
+    tables, manifest_digest = _manifest_snapshot()
+    return tables, (manifest_digest, _database_signature())
+
+
+def reset_v6_insight_cache(*, max_entries: int | None = None) -> None:
+    """Clear cached insight payloads; optional capacity is intended for tests."""
+    if max_entries is not None and (not isinstance(max_entries, int) or isinstance(max_entries, bool) or max_entries < 1):
+        raise ValueError("max_entries must be a positive integer")
+    with _CACHE_LOCK:
+        global _CACHE_ENTRY_LIMIT, _CACHE_REVISION
+        _CACHE_ENTRY_LIMIT = _CACHE_DEFAULT_MAX_ENTRIES if max_entries is None else max_entries
+        _CACHE_REVISION = None
+        _CACHE_ENTRIES.clear()
+
+
+def v6_insight_cache_stats() -> dict[str, Any]:
+    """Return a stable cache summary without exposing mutable cache contents."""
+    with _CACHE_LOCK:
+        flow_entries = sum(key[0] == "flow" for key in _CACHE_ENTRIES)
+        regime_entries = sum(key[0] == "regime" for key in _CACHE_ENTRIES)
+        return {
+            "revision": _CACHE_REVISION,
+            "generation_count": int(_CACHE_REVISION is not None),
+            "entry_count": len(_CACHE_ENTRIES),
+            "entry_keys": tuple(_CACHE_ENTRIES),
+            "flow_entries": flow_entries,
+            "regime_entries": regime_entries,
+            "max_entries": _CACHE_ENTRY_LIMIT,
+        }
+
+
+def _cache_activate(revision: tuple[str | None, tuple[tuple[int, int] | None, ...]]) -> None:
+    with _CACHE_LOCK:
+        global _CACHE_REVISION
+        if _CACHE_REVISION != revision:
+            _CACHE_REVISION = revision
+            _CACHE_ENTRIES.clear()
+
+
+def _cache_get(revision: tuple[str | None, tuple[tuple[int, int] | None, ...]], key: tuple[str, int, int]) -> dict[str, Any] | None:
+    _cache_activate(revision)
+    with _CACHE_LOCK:
+        payload = _CACHE_ENTRIES.get(key)
+        if payload is None:
+            return None
+        _CACHE_ENTRIES.move_to_end(key)
+        return copy.deepcopy(payload)
+
+
+def _cache_store(
+    revision: tuple[str | None, tuple[tuple[int, int] | None, ...]],
+    key: tuple[str, int, int],
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    with _CACHE_LOCK:
+        if _CACHE_REVISION != revision:
+            return None
+        _CACHE_ENTRIES[key] = copy.deepcopy(payload)
+        _CACHE_ENTRIES.move_to_end(key)
+        while len(_CACHE_ENTRIES) > _CACHE_ENTRY_LIMIT:
+            _CACHE_ENTRIES.popitem(last=False)
+        return copy.deepcopy(payload)
 
 
 def _quoted_table(table: str) -> str:
@@ -176,36 +256,42 @@ def _rank(records: list[dict[str, Any]], field: str, descending: bool, limit: in
 
 
 def _flow_payload(window: int, limit: int) -> dict[str, Any]:
-    tables = _manifest_tables()
-    if tables is None:
-        return {"status": "BLOCKED", "reason": "UNIVERSE_MANIFEST_MISSING"}
-    mtime = _database_mtime()
-    if mtime is None:
-        return _blocked_database()
-    key = (window, limit, mtime)
-    if key in _FLOW_CACHE:
-        return _FLOW_CACHE[key]
-    try:
-        with _connect() as connection:
-            records = [record for table in tables if (record := _flow_record(connection, table, window)) is not None]
-    except sqlite3.Error:
-        return _blocked_database()
-    payload = {
-        "schema_version": "kronos_v6_insight_flow.v1",
-        "status": "OK",
-        "window": window,
-        "limit": limit,
-        "top_inst_buy": _rank(records, "inst_netbuy_sum", True, limit),
-        "top_inst_sell": _rank(records, "inst_netbuy_sum", False, limit),
-        "top_foreign_gain": _rank(records, "foreign_ratio_delta", True, limit),
-        "top_foreign_loss": _rank(records, "foreign_ratio_delta", False, limit),
-        "price_basis_caveat": PRICE_BASIS_CAVEAT,
-        "flow_caveat": FLOW_CAVEAT,
-        "not_a_recommendation": True,
-        "note": "연구 관측용 순위이며 매수 추천이 아닙니다",
-    }
-    _FLOW_CACHE[key] = payload
-    return payload
+    for _ in range(2):
+        tables, revision = _cache_snapshot()
+        _cache_activate(revision)
+        if tables is None:
+            return {"status": "BLOCKED", "reason": "UNIVERSE_MANIFEST_MISSING"}
+        if revision[1][0] is None:
+            return _blocked_database()
+        key = ("flow", window, limit)
+        cached = _cache_get(revision, key)
+        if cached is not None:
+            return cached
+        try:
+            with _connect() as connection:
+                records = [record for table in tables if (record := _flow_record(connection, table, window)) is not None]
+        except sqlite3.Error:
+            return _blocked_database()
+        payload = {
+            "schema_version": "kronos_v6_insight_flow.v1",
+            "status": "OK",
+            "window": window,
+            "limit": limit,
+            "top_inst_buy": _rank(records, "inst_netbuy_sum", True, limit),
+            "top_inst_sell": _rank(records, "inst_netbuy_sum", False, limit),
+            "top_foreign_gain": _rank(records, "foreign_ratio_delta", True, limit),
+            "top_foreign_loss": _rank(records, "foreign_ratio_delta", False, limit),
+            "price_basis_caveat": PRICE_BASIS_CAVEAT,
+            "flow_caveat": FLOW_CAVEAT,
+            "not_a_recommendation": True,
+            "note": "연구 관측용 순위이며 매수 추천이 아닙니다",
+        }
+        if _cache_snapshot()[1] != revision:
+            continue
+        cached = _cache_store(revision, key, payload)
+        if cached is not None:
+            return cached
+    return copy.deepcopy(payload)
 
 
 def _index_regime() -> dict[str, Any]:
@@ -238,48 +324,54 @@ def _index_regime() -> dict[str, Any]:
 
 
 def _regime_payload() -> dict[str, Any]:
-    tables = _manifest_tables()
     index_regime = _index_regime()
-    if tables is None:
-        return {"index_regime": index_regime, "breadth_proxy": {"status": "BLOCKED", "reason": "UNIVERSE_MANIFEST_MISSING"}}
-    mtime = _database_mtime()
-    if mtime is None:
-        return {"index_regime": index_regime, "breadth_proxy": {"status": "BLOCKED", "reason": "DAILY_DATABASE_UNAVAILABLE"}}
-    key = (mtime,)
-    if key in _REGIME_CACHE:
-        return {"index_regime": index_regime, "breadth_proxy": _REGIME_CACHE[key]}
-    sampled_tables = tables[:200]
-    try:
-        with _connect() as connection:
-            maxima: list[Any] = []
-            for table in sampled_tables:
-                maximum = connection.execute(f"SELECT MAX(date) FROM {_quoted_table(table)}").fetchone()[0]
-                if maximum is not None:
-                    maxima.append(maximum)
-            as_of_date = min(maxima) if maxima else None
-            evaluated = 0
-            above = 0
-            if as_of_date is not None:
+    for _ in range(2):
+        tables, revision = _cache_snapshot()
+        _cache_activate(revision)
+        if tables is None:
+            return {"index_regime": index_regime, "breadth_proxy": {"status": "BLOCKED", "reason": "UNIVERSE_MANIFEST_MISSING"}}
+        if revision[1][0] is None:
+            return {"index_regime": index_regime, "breadth_proxy": {"status": "BLOCKED", "reason": "DAILY_DATABASE_UNAVAILABLE"}}
+        key = ("regime", 0, 0)
+        cached = _cache_get(revision, key)
+        if cached is not None:
+            return {"index_regime": index_regime, "breadth_proxy": cached}
+        sampled_tables = tables[:200]
+        try:
+            with _connect() as connection:
+                maxima: list[Any] = []
                 for table in sampled_tables:
-                    rows = connection.execute(
-                        f"SELECT close FROM {_quoted_table(table)} WHERE date <= ? ORDER BY date DESC LIMIT 20",
-                        (as_of_date,),
-                    ).fetchall()
-                    if not rows or rows[0][0] is None or any(row[0] is None for row in rows):
-                        continue
-                    evaluated += 1
-                    if rows[0][0] > sum(row[0] for row in rows) / len(rows):
-                        above += 1
-    except sqlite3.Error:
-        return {"index_regime": index_regime, "breadth_proxy": {"status": "BLOCKED", "reason": "DAILY_DATABASE_UNAVAILABLE"}}
-    breadth = {
-        "as_of_date": as_of_date,
-        "tables_evaluated": evaluated,
-        "pct_above_20s_mean": (above / evaluated * 100) if evaluated else None,
-        "disclaimer": "universe breadth proxy from daily DB; NOT an index regime; price basis unverified",
-    }
-    _REGIME_CACHE[key] = breadth
-    return {"index_regime": index_regime, "breadth_proxy": breadth}
+                    maximum = connection.execute(f"SELECT MAX(date) FROM {_quoted_table(table)}").fetchone()[0]
+                    if maximum is not None:
+                        maxima.append(maximum)
+                as_of_date = min(maxima) if maxima else None
+                evaluated = 0
+                above = 0
+                if as_of_date is not None:
+                    for table in sampled_tables:
+                        rows = connection.execute(
+                            f"SELECT close FROM {_quoted_table(table)} WHERE date <= ? ORDER BY date DESC LIMIT 20",
+                            (as_of_date,),
+                        ).fetchall()
+                        if not rows or rows[0][0] is None or any(row[0] is None for row in rows):
+                            continue
+                        evaluated += 1
+                        if rows[0][0] > sum(row[0] for row in rows) / len(rows):
+                            above += 1
+        except sqlite3.Error:
+            return {"index_regime": index_regime, "breadth_proxy": {"status": "BLOCKED", "reason": "DAILY_DATABASE_UNAVAILABLE"}}
+        breadth = {
+            "as_of_date": as_of_date,
+            "tables_evaluated": evaluated,
+            "pct_above_20s_mean": (above / evaluated * 100) if evaluated else None,
+            "disclaimer": "universe breadth proxy from daily DB; NOT an index regime; price basis unverified",
+        }
+        if _cache_snapshot()[1] != revision:
+            continue
+        cached = _cache_store(revision, key, breadth)
+        if cached is not None:
+            return {"index_regime": index_regime, "breadth_proxy": cached}
+    return {"index_regime": index_regime, "breadth_proxy": copy.deepcopy(breadth)}
 
 
 def create_v6_insight_blueprint(*, name: str = "v6_insight", url_prefix: str = "/api/v6/insight") -> Blueprint:
@@ -321,4 +413,11 @@ def create_v6_insight_blueprint(*, name: str = "v6_insight", url_prefix: str = "
 
 create_blueprint = create_v6_insight_blueprint
 
-__all__ = ["DAILY_DB_PATH", "UNIVERSE_MANIFEST_PATH", "create_blueprint", "create_v6_insight_blueprint"]
+__all__ = [
+    "DAILY_DB_PATH",
+    "UNIVERSE_MANIFEST_PATH",
+    "create_blueprint",
+    "create_v6_insight_blueprint",
+    "reset_v6_insight_cache",
+    "v6_insight_cache_stats",
+]

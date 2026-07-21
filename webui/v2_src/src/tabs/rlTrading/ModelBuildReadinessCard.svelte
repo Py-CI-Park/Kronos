@@ -7,6 +7,7 @@
     type RlFactoryReadinessStep,
     type RlFactoryRiskPolicyRun,
   } from '$lib/rlApi';
+  import { requireJsonPayload } from '$lib/http';
   import { num, pct } from '$lib/rlRows';
 
   let readiness = $state<RlFactoryModelBuildReadinessResponse | null>(null);
@@ -17,6 +18,7 @@
 
   const steps = $derived<readonly RlFactoryReadinessStep[]>(readiness?.readiness_steps ?? []);
   const selectedPolicies = $derived((readiness?.selected_policy_ids ?? []).join(', ') || '-');
+  const available = $derived(readiness?.available === true);
 
   onMount(() => {
     void load();
@@ -25,17 +27,19 @@
   async function load(): Promise<void> {
     loading = true;
     error = null;
+    readiness = null;
+    riskRuns = [];
+    freshRuns = [];
     try {
-      const [readinessPayload, riskPayload, freshPayload] = await Promise.all([
-        rlApi.factoryModelBuildReadiness(),
-        rlApi.factoryRiskPolicyRuns(),
-        rlApi.factoryFreshValidationRuns(),
-      ]);
+      const readinessPayload = await requireJsonPayload(
+        'Model-build readiness request',
+        rlApi.factoryModelBuildReadiness()
+      );
       readiness = readinessPayload;
-      riskRuns = riskPayload?.runs?.length ? riskPayload.runs : readinessPayload?.risk_policy_runs ?? [];
-      freshRuns = freshPayload?.runs?.length ? freshPayload.runs : readinessPayload?.fresh_validation_runs ?? [];
+      riskRuns = readinessPayload.risk_policy_runs ?? [];
+      freshRuns = readinessPayload.fresh_validation_runs ?? [];
     } catch (caught) {
-      error = caught instanceof Error ? caught.message : 'model build readiness load failed';
+      error = caught instanceof Error ? caught.message : 'Model-build readiness request failed';
     } finally {
       loading = false;
     }
@@ -66,8 +70,13 @@
   {#if loading}
     <p class="text-muted">Loading model-build readiness...</p>
   {:else if error}
-    <p class="text-muted">{error}</p>
-  {:else if readiness}
+    <p class="text-muted">Model-build readiness request error: {error}</p>
+    <button type="button" class="retry-btn" onclick={() => void load()}>Retry model-build readiness request</button>
+  {:else if !readiness}
+    <p class="text-muted">No model-build readiness payload from the authoritative backend response.</p>
+  {:else if !available}
+    <p class="text-muted">Model-build readiness is unavailable in the authoritative backend response.</p>
+  {:else}
     <div class="mini-grid" style="margin-top:12px">
       <div><span>Overall</span><strong>{readiness.status ?? '-'}</strong></div>
       <div><span>P1 fill modes</span><strong>{readiness.p1_status ?? '-'}</strong></div>
@@ -99,19 +108,25 @@
           <tr><th>fill</th><th>policy</th><th>P2 candidate</th><th>unlocked</th><th>total Δ</th><th>maxDD Δ</th><th>mean/std Δ</th><th>trades</th><th>halted sessions</th></tr>
         </thead>
         <tbody>
-          {#each riskRuns.slice(0, 6) as run}
+          {#if riskRuns.length}
+            {#each riskRuns.slice(0, 6) as run}
+              <tr>
+                <td>{run.fill_mode ?? '-'}</td>
+                <td class="policy-cell">{run.best_policy_id ?? run.run}</td>
+                <td><span class="pill {run.candidate_p2_pass ? 'success' : 'danger'}">{run.verdict ?? '-'}</span></td>
+                <td><span class="pill {run.implementation_unlocked ? 'success' : 'danger'}">{run.implementation_unlocked ? 'UNLOCKED' : 'LOCKED'}</span></td>
+                <td>{pct(run.total_pct_delta, 3)}</td>
+                <td>{pct(run.max_drawdown_delta, 3)}</td>
+                <td>{num(run.risk_adjusted_delta, 3)}</td>
+                <td>{run.candidate_trade_count ?? '-'} / {run.baseline_trade_count ?? '-'}</td>
+                <td>{run.sessions_halted ?? '-'}</td>
+              </tr>
+            {/each}
+          {:else}
             <tr>
-              <td>{run.fill_mode ?? '-'}</td>
-              <td class="policy-cell">{run.best_policy_id ?? run.run}</td>
-              <td><span class="pill {run.candidate_p2_pass ? 'success' : 'danger'}">{run.verdict ?? '-'}</span></td>
-              <td><span class="pill {run.implementation_unlocked ? 'success' : 'danger'}">{run.implementation_unlocked ? 'UNLOCKED' : 'LOCKED'}</span></td>
-              <td>{pct(run.total_pct_delta, 3)}</td>
-              <td>{pct(run.max_drawdown_delta, 3)}</td>
-              <td>{num(run.risk_adjusted_delta, 3)}</td>
-              <td>{run.candidate_trade_count ?? '-'} / {run.baseline_trade_count ?? '-'}</td>
-              <td>{run.sessions_halted ?? '-'}</td>
+              <td colspan="9" class="text-muted">No risk-policy candidate summaries in the authoritative readiness response.</td>
             </tr>
-          {/each}
+          {/if}
         </tbody>
       </table>
     </div>
@@ -153,8 +168,6 @@
         {/each}
       </ul>
     {/if}
-  {:else}
-    <p class="text-muted">No model-build readiness payload.</p>
   {/if}
 </section>
 

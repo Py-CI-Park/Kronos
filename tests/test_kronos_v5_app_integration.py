@@ -152,6 +152,51 @@ def test_app_import_registers_v5_prefix_and_preserves_legacy_post_routes(monkeyp
         and not rule.rule.startswith("/api/v6/")
     }
     assert legacy_post_rules == EXPECTED_LEGACY_POST_RULES
+def _route_methods(application: Flask) -> set[tuple[str, tuple[str, ...]]]:
+    return {
+        (rule.rule, tuple(sorted(rule.methods)))
+        for rule in application.url_map.iter_rules()
+    }
+
+
+def test_create_app_isolated_instances_preserve_routes_without_reload() -> None:
+    import webui.app as app_module
+
+    module_before = sys.modules["webui.app"]
+    first = app_module.create_app({"TESTING": True, "FACTORY_MARKER": "first"})
+    second = app_module.create_app({"TESTING": False, "FACTORY_MARKER": "second"})
+
+    assert first is not second
+    assert first is not app_module.app
+    assert first.config["FACTORY_MARKER"] == "first"
+    assert second.config["FACTORY_MARKER"] == "second"
+    assert first.config["TESTING"] is True
+    assert second.config["TESTING"] is False
+    assert _route_methods(first) == _route_methods(second) == _route_methods(app_module.app)
+    assert list(first.blueprints).count("v6_platform") == 1
+    assert list(first.blueprints).count("v6_insight") == 1
+    assert sys.modules["webui.app"] is module_before
+    assert first.view_functions["get_model_status"] is second.view_functions["get_model_status"]
+
+
+def test_create_app_reports_sanitized_optional_subsystem_failure() -> None:
+    import webui.app as app_module
+
+    def broken_insight_factory():
+        raise RuntimeError("credential=must-not-appear")
+
+    application = app_module.create_app(
+        blueprint_factories={"v6_insight": broken_insight_factory},
+    )
+
+    diagnostic = application.config["KRONOS_SUBSYSTEM_DIAGNOSTICS"]["v6_insight"]
+    assert diagnostic == {
+        "available": False,
+        "error": {
+            "type": "RuntimeError",
+            "message": "subsystem construction failed",
+        },
+    }
 
 
 def test_v5_absent_store_fails_closed_without_creating_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

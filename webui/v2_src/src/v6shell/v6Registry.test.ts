@@ -21,6 +21,9 @@ test('V6 registry resolves legacy locations into their workspace deep links', ()
   assert.deepEqual(resolveV6Location('training', null, null), { tab: 'rl', step: 'training' });
   assert.deepEqual(resolveV6Location('insight-flow', null, null), { tab: 'insight', sub: 'flow' });
   assert.deepEqual(resolveV6Location('intraday', null, null), { tab: 'lanes' });
+  assert.deepEqual(resolveV6Location(null, null, null, '/training'), { tab: 'rl', step: 'training' });
+  assert.deepEqual(resolveV6Location(null, null, null, '/dashboard'), { tab: 'rl', step: 'training' });
+  assert.deepEqual(resolveV6Location('live-training', null, null), { tab: 'rl', step: 'training' });
 });
 
 test('V6 brand remains unchanged', () => {

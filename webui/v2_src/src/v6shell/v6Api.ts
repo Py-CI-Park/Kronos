@@ -375,6 +375,11 @@ export interface V6ResearchRegistry {
   readonly preregistrations?: readonly V6PreregEntry[];
   readonly result_docs?: readonly V6ResultDoc[];
 }
+export function newestDraftPreregistration(registry: V6ResearchRegistry | null | undefined): V6PreregEntry | null {
+  return [...(registry?.preregistrations ?? [])]
+    .filter((entry) => entry.status === 'DRAFT_NOT_FROZEN')
+    .sort((left, right) => String(right.prereg_id ?? '').localeCompare(String(left.prereg_id ?? '')))[0] ?? null;
+}
 
 export interface V6ResearchDoc {
   readonly status?: string;

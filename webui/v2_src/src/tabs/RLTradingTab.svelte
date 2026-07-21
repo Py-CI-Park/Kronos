@@ -133,12 +133,14 @@
     '원시 테이블은 마지막에 열어 원인 분석용으로만 사용합니다.',
   ] as const;
   const unsubscribeDashboardShell = dashboardShell.subscribe((value) => (shell = value));
+  rlApi.resetFactoryLaneRuns();
 
   onMount(() => {
     void loadDashboard();
   });
   onDestroy(() => {
     unsubscribeDashboardShell();
+    rlApi.resetFactoryLaneRuns();
   });
 
   function choosePreferredRun(candidates: readonly RlRunRecord[]): RlRunRecord | undefined {
@@ -362,31 +364,31 @@
   <OrderbookReadinessCard run={readinessRun ?? openingCandidateRun} />
 </Disclosure>
 <section class="factory-evidence" data-rl-factory-evidence-section>
-  <Disclosure summary="팩토리 큐 · read-only evidence" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="팩토리 큐 · read-only evidence" meta="RESEARCH_ONLY">
     <FactoryStatusCard />
   </Disclosure>
-  <Disclosure summary="팩토리 리니지 · fill-mode robustness (supervised gate · NOT RL)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="팩토리 리니지 · fill-mode robustness (supervised gate · NOT RL)" meta="RESEARCH_ONLY">
     <FactoryLineageCard />
   </Disclosure>
-  <Disclosure summary="확률 레인 캘리브레이션 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="확률 레인 캘리브레이션 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
     <CalibrationCard />
   </Disclosure>
-  <Disclosure summary="엣지 원장 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="엣지 원장 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
     <EdgeLedgerCard />
   </Disclosure>
-  <Disclosure summary="사이징 · 리스크 · P2 gate (P5 blocked by P2)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="사이징 · 리스크 · P2 gate (P5 blocked by P2)" meta="RESEARCH_ONLY">
     <SizingRiskCard />
   </Disclosure>
-  <Disclosure summary="모델 빌드 준비도 · RL lock" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="모델 빌드 준비도 · RL lock" meta="RESEARCH_ONLY">
     <ModelBuildReadinessCard />
   </Disclosure>
-  <Disclosure summary="포워드 · 페이퍼 원장 · read-only" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="포워드 · 페이퍼 원장 · read-only" meta="RESEARCH_ONLY">
     <ForwardLedgerCard />
   </Disclosure>
-  <Disclosure summary="세션 리플레이 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="세션 리플레이 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
     <SessionReplayCard />
   </Disclosure>
-  <Disclosure summary="rliable 신뢰도 통계 · research-only" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="rliable 신뢰도 통계 · research-only" meta="RESEARCH_ONLY">
     <RliableStatsCard />
   </Disclosure>
 </section>

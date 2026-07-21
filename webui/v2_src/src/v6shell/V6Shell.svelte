@@ -16,13 +16,13 @@
 
   function selectFromLocation(): void {
     const params = new URLSearchParams(window.location.search);
-    const location = resolveV6Location(params.get('tab'), params.get('step'), params.get('sub'));
+    const location = resolveV6Location(params.get('tab'), params.get('step'), params.get('sub'), window.location.pathname);
     page = resolveV6Page(location.tab);
     if (params.get('tab') !== location.tab || params.get('step') !== (location.step ?? null) || params.get('sub') !== (location.sub ?? null)) {
       const canonical = new URLSearchParams({ ui: 'v6', tab: location.tab });
       if (location.step) canonical.set('step', location.step);
       if (location.sub) canonical.set('sub', location.sub);
-      history.replaceState(history.state, '', `?${canonical.toString()}`);
+      history.replaceState(history.state, '', `/?${canonical.toString()}`);
     }
   }
   function selectPage(id: string): void {

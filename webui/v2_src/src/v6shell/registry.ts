@@ -1,3 +1,5 @@
+import { v6CompatibilityTarget } from '$lib/routes';
+
 export type V6PageStatus = 'BUILT' | 'NOT_BUILT';
 
 export interface V6PageDef {
@@ -46,14 +48,30 @@ export const V6_PAGES: readonly V6PageDef[] = [
   { id: 'lanes', label: 'Other Lanes', labelKo: '다른 레인', group: 'PLATFORM', step: null, status: 'BUILT', description: '인트라데이 RL과 Kronos 예측 레인을 함께 확인합니다.' },
   { id: 'settings', label: 'Settings', labelKo: '설정', group: 'ADVANCED', step: null, status: 'BUILT', description: 'V6 연구 환경 설정을 다루는 화면입니다.' },
 ];
+function compatibilityLocation(tab: string | null, pathname: string): { tab: string; step?: string; sub?: string } | null {
+  const search = tab == null ? '' : `?tab=${encodeURIComponent(tab)}`;
+  const target = v6CompatibilityTarget({ pathname, search });
+  if (!target) return null;
+  const [targetTab, query = ''] = target.split('?', 2);
+  const params = new URLSearchParams(query);
+  const location: { tab: string; step?: string; sub?: string } = { tab: targetTab };
+  if (params.get('step')) location.step = params.get('step')!;
+  if (params.get('sub')) location.sub = params.get('sub')!;
+  return location;
+}
 
-export function resolveV6Location(tab: string | null, step: string | null, sub: string | null): { tab: string; step?: string; sub?: string } {
+
+export function resolveV6Location(tab: string | null, step: string | null, sub: string | null, pathname = '/'): { tab: string; step?: string; sub?: string } {
   if (tab === 'overview') return { tab: 'home' };
   if (V6_RL_STEPS.some((item) => item.id === tab)) return { tab: 'rl', step: tab };
   if (tab === 'insight-symbol') return { tab: 'insight', sub: 'symbol' };
   if (tab === 'insight-flow') return { tab: 'insight', sub: 'flow' };
   if (tab === 'insight-regime') return { tab: 'insight', sub: 'regime' };
   if (tab === 'intraday' || tab === 'kronos') return { tab: 'lanes' };
+  if (!V6_PAGES.some((page) => page.id === tab)) {
+    const compatibility = compatibilityLocation(tab, pathname);
+    if (compatibility) return compatibility;
+  }
   const resolvedTab = V6_PAGES.some((page) => page.id === tab) ? tab! : 'home';
   const location: { tab: string; step?: string; sub?: string } = { tab: resolvedTab };
   if (resolvedTab === 'rl' && V6_RL_STEPS.some((item) => item.id === step)) location.step = step!;

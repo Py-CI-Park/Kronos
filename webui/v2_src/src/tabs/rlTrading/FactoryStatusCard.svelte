@@ -4,13 +4,12 @@
 
   let queue = $state<RlFactoryQueueResponse | null>(null);
   let loading = $state(true);
+  let loadError = $state<string | null>(null);
 
   const available = $derived(queue?.available === true);
   const counts = $derived(queue?.counts_by_status ?? queue?.status_counts ?? {});
   const latestRuns = $derived(queue?.latest_runs ?? []);
-  const guardrail = $derived(
-    queue?.guardrail ?? 'Read-only research evidence viewer — no profit claim, 23bp cost basis.'
-  );
+  const guardrail = $derived(queue?.guardrail ?? null);
 
   onMount(() => {
     void load();
@@ -18,8 +17,17 @@
 
   async function load(): Promise<void> {
     loading = true;
-    queue = await rlApi.factoryQueue();
-    loading = false;
+    loadError = null;
+    queue = null;
+    try {
+      const payload = await rlApi.factoryQueue();
+      if (payload == null) throw new Error('Factory queue returned no response.');
+      queue = payload;
+    } catch (caught) {
+      loadError = caught instanceof Error ? caught.message : 'Factory queue request failed.';
+    } finally {
+      loading = false;
+    }
   }
 
   function verdictTone(verdict: string): string {
@@ -40,11 +48,14 @@
   </div>
   {#if loading}
     <p class="text-muted">Loading factory queue...</p>
+  {:else if loadError}
+    <p class="text-muted" role="alert">Factory queue request failed: {loadError}</p>
+    <button type="button" onclick={load}>Retry factory queue</button>
   {:else if !available}
-    <p class="text-muted">
-      {queue?.reason === 'registry_not_found' ? 'Factory registry not found — no experiments have been queued yet.' : 'Factory queue unavailable.'}
-    </p>
-    <p class="text-caption safety-note">{guardrail}</p>
+    <p class="text-muted">{queue?.reason ?? 'Factory queue unavailable.'}</p>
+    {#if guardrail}
+      <p class="text-caption safety-note">{guardrail}</p>
+    {/if}
   {:else}
     <div class="mini-grid">
       {#each Object.entries(counts) as [status, count]}
@@ -73,7 +84,7 @@
       <p class="text-muted" style="margin-top:8px">No runs registered yet.</p>
     {/if}
     <p class="text-caption safety-note">
-      {guardrail} Verdict labels are evidence, not profitability.
+      {#if guardrail}{guardrail} {/if}Verdict labels are evidence, not profitability.
       {#if queue?.read_only_dashboard_note}
         {queue.read_only_dashboard_note}
       {/if}

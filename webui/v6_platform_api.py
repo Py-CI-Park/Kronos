@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
-from flask import Blueprint, Response, request
+from flask import Blueprint, Response, g, has_request_context, request
 
 WEBUI_ROOT: Final = Path(__file__).resolve().parent
 REPO_ROOT: Final = WEBUI_ROOT.parent
@@ -28,7 +28,11 @@ RESEARCH_DOC_RE: Final = re.compile(r"^kronos_v[0-9][0-9a-z_\-]*\.(md|json)$")
 DOC_NAME_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,120}$")
 INDEX_MARKETS: Final = ("KOSDAQ", "KOSPI")
 INDEX_NORMALIZED_GLOB: Final = "korean-index-*-normalized-*.json"
-_INDEX_OVERLAY_CACHE: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+_INDEX_OVERLAY_CACHE: dict[str, tuple[str, dict[str, Any]]] = {}
+_INDEX_OVERLAY_CACHE_LIMIT: Final = 64
+_EVENT_TAIL_CHUNK_BYTES: Final = 64 * 1024
+_EVENT_TAIL_MAX_BYTES: Final = 1024 * 1024
+_EVENT_TAIL_MAX_EVENTS: Final = 50
 SIX_FALSE_LOCKS: Final = {
     "promotion_allowed": False,
     "model_build_allowed": False,
@@ -104,18 +108,61 @@ def _run_detail_query() -> tuple[str, str]:
     return dataset_run_id, train_run_id
 
 
-def _events_tail(path: Path) -> list[Any]:
+def _events_tail(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Read the newest JSON object events from a bounded, stable file snapshot."""
+    diagnostics: dict[str, Any] = {
+        "state": "MISSING",
+        "invalid_line_count": 0,
+        "bytes_scanned": 0,
+        "truncated": False,
+    }
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
-        return []
-    events: list[Any] = []
-    for line in lines:
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
+        with path.open("rb") as event_file:
+            snapshot_size = event_file.seek(0, 2)
+            if snapshot_size == 0:
+                diagnostics["state"] = "EMPTY"
+                return [], diagnostics
+            start = max(0, snapshot_size - _EVENT_TAIL_MAX_BYTES)
+            diagnostics["truncated"] = start > 0
+            event_file.seek(start)
+            chunks: list[bytes] = []
+            remaining = snapshot_size - start
+            while remaining:
+                chunk = event_file.read(min(_EVENT_TAIL_CHUNK_BYTES, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+    except OSError:
+        return [], diagnostics
+
+    snapshot = b"".join(chunks)
+    diagnostics["bytes_scanned"] = len(snapshot)
+    if start:
+        newline = snapshot.find(b"\n")
+        snapshot = snapshot[newline + 1:] if newline >= 0 else b""
+    events: list[dict[str, Any]] = []
+    for line in snapshot.splitlines():
+        if not line.strip():
             continue
-    return events[-50:]
+        try:
+            event = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            diagnostics["invalid_line_count"] += 1
+            continue
+        if not isinstance(event, Mapping):
+            diagnostics["invalid_line_count"] += 1
+            continue
+        events.append(dict(event))
+
+    events = events[-_EVENT_TAIL_MAX_EVENTS:]
+    if events and diagnostics["invalid_line_count"] == 0 and not diagnostics["truncated"]:
+        diagnostics["state"] = "PRESENT"
+    elif events:
+        diagnostics["state"] = "PARTIAL"
+    else:
+        diagnostics["state"] = "CORRUPT"
+    return events, diagnostics
 
 
 def _sha256_file(path: Path) -> str | None:
@@ -123,6 +170,18 @@ def _sha256_file(path: Path) -> str | None:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
         return None
+def _request_snapshot(key: str, factory: Any) -> Any:
+    """Cache deterministic artifact indexes for the lifetime of one request."""
+    if not has_request_context():
+        return factory()
+    snapshots = getattr(g, "_v6_artifact_snapshots", None)
+    if snapshots is None:
+        snapshots = {}
+        g._v6_artifact_snapshots = snapshots
+    if key not in snapshots:
+        snapshots[key] = factory()
+    return snapshots[key]
+
 
 
 def _run_states(manifest: Mapping[str, Any]) -> dict[str, str]:
@@ -329,55 +388,77 @@ def _project_report_dir(project_id: str) -> Path | None:
 
 
 def _report_entries() -> list[dict[str, Any]]:
-    """List report manifests with report and source-custody integrity states."""
+    return _request_snapshot("report_entries", _build_report_entries)
+
+
+def _build_report_entries() -> list[dict[str, Any]]:
+    """List report artifacts, retaining invalid custody states for review."""
     entries: list[dict[str, Any]] = []
     try:
-        manifest_paths = sorted(RUNS_ROOT.glob("*/*/report_manifest.json"))
+        run_dirs = {
+            path.parent
+            for pattern in ("*/*/report_manifest.json", "*/*/report.html")
+            for path in RUNS_ROOT.glob(pattern)
+        }
     except OSError:
         return entries
-    for manifest_path in manifest_paths:
-        run_dir = manifest_path.parent
+    for run_dir in sorted(run_dirs):
         dataset_run_id = run_dir.parent.name
         train_run_id = run_dir.name
         if RUN_ID_PATTERN.fullmatch(dataset_run_id) is None or RUN_ID_PATTERN.fullmatch(train_run_id) is None:
             continue
-        manifest = _read_json(manifest_path)
-        if manifest is None:
-            continue
+        manifest_path = run_dir / "report_manifest.json"
         report_path = run_dir / "report.html"
-        try:
-            report_bytes = report_path.read_bytes()
-        except OSError:
-            continue
-        actual_sha = hashlib.sha256(report_bytes).hexdigest()
-        recorded_sha = manifest.get("report_sha256")
-        chain_integrity, chain_reasons = _report_chain(run_dir, manifest)
+        manifest = None if manifest_path.is_symlink() else _read_json(manifest_path)
+        report_bytes: bytes | None = None
+        if not report_path.is_symlink():
+            try:
+                report_bytes = report_path.read_bytes()
+            except OSError:
+                pass
+        reasons: list[str] = []
+        if manifest is None:
+            reasons.append("REPORT_MANIFEST_INVALID")
+        if report_bytes is None:
+            reasons.append("REPORT_NOT_FOUND")
+        actual_sha = hashlib.sha256(report_bytes).hexdigest() if report_bytes is not None else None
+        recorded_sha = manifest.get("report_sha256") if manifest is not None else None
+        if report_bytes is not None and manifest is not None and recorded_sha != actual_sha:
+            reasons.append("REPORT_SHA_MISMATCH")
+        chain_integrity, chain_reasons = (
+            _report_chain(run_dir, manifest) if manifest is not None and report_bytes is not None else ("CHAIN_INVALID", reasons)
+        )
         run_manifest = _read_json(run_dir / "run_manifest.json")
         states = _run_states(run_manifest) if run_manifest is not None else None
         entries.append({
             "dataset_run_id": dataset_run_id,
             "train_run_id": train_run_id,
-            "verdict": manifest.get("verdict", "MISSING"),
-            "test_state": states["test_state"] if states is not None else manifest.get("test_state", "MISSING"),
-            "index_overlay_state": manifest.get("index_overlay_state", "MISSING"),
-            "generated_utc": manifest.get("generated_utc", "MISSING"),
-            "builder_version": manifest.get("builder_version", "MISSING"),
+            "verdict": manifest.get("verdict", "MISSING") if manifest is not None else "MISSING",
+            "test_state": states["test_state"] if states is not None else manifest.get("test_state", "MISSING") if manifest is not None else "MISSING",
+            "index_overlay_state": manifest.get("index_overlay_state", "MISSING") if manifest is not None else "MISSING",
+            "generated_utc": manifest.get("generated_utc", "MISSING") if manifest is not None else "MISSING",
+            "builder_version": manifest.get("builder_version", "MISSING") if manifest is not None else "MISSING",
             "report_sha256": recorded_sha,
-            "size_bytes": len(report_bytes),
-            "integrity": "OK" if recorded_sha == actual_sha else "SHA_MISMATCH",
+            "size_bytes": len(report_bytes) if report_bytes is not None else 0,
+            "integrity": "OK" if not reasons else "INVALID" if actual_sha is None or manifest is None else "SHA_MISMATCH",
+            "integrity_reasons": reasons,
             "chain_integrity": chain_integrity,
             "chain_reasons": chain_reasons,
-            "report_state": "PRESENT",
+            "report_state": "PRESENT" if report_bytes is not None else "MISSING",
             "training_state": states["training_state"] if states is not None else "MISSING",
             "validation_state": states["validation_state"] if states is not None else "NOT_RECORDED",
             "evaluation_state": states["evaluation_state"] if states is not None else "TEST_MISSING",
         })
-    entries.sort(key=lambda e: str(e.get("generated_utc")), reverse=True)
+    entries.sort(key=lambda entry: str(entry.get("generated_utc")), reverse=True)
     return entries
 
 
 
 def _prereg_registry() -> list[dict[str, Any]]:
+    return _request_snapshot("prereg_registry", _build_prereg_registry)
+
+
+def _build_prereg_registry() -> list[dict[str, Any]]:
     """Registry of preregistrations linked to the runs and reports that cite them."""
     runs_by_prereg: dict[str, list[dict[str, Any]]] = {}
     report_index = {(entry["dataset_run_id"], entry["train_run_id"]): entry for entry in _report_entries()}
@@ -421,6 +502,19 @@ def _prereg_registry() -> list[dict[str, Any]]:
     for path in sorted(prereg_paths):
         prereg = _read_json(path)
         if prereg is None:
+            registry.append({
+                "prereg_id": "MISSING",
+                "doc": path.name,
+                "status": "INVALID",
+                "frozen_utc": "MISSING",
+                "supersedes": None,
+                "family": None,
+                "sha256": _sha256_file(path),
+                "runs": [],
+                "run_count": 0,
+                "verdicts": [],
+                "integrity_reasons": ["PREREG_PARSE_FAILED"],
+            })
             continue
         prereg_id = str(prereg.get("prereg_id", "MISSING"))
         runs = sorted(runs_by_prereg.get(prereg_id, []), key=lambda r: str(r["generated_utc"]), reverse=True)
@@ -435,6 +529,7 @@ def _prereg_registry() -> list[dict[str, Any]]:
             "runs": runs,
             "run_count": len(runs),
             "verdicts": sorted({str(run["verdict"]) for run in runs}),
+            "integrity_reasons": [],
         })
     registry.sort(key=lambda item: str(item["frozen_utc"]), reverse=True)
     return registry
@@ -485,6 +580,7 @@ def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any
         manifest = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {"status": "BLOCKED", "reason": "RUN_MANIFEST_MISSING"}
+    events_tail, events_tail_diagnostics = _events_tail(manifest_path.with_name("events.jsonl"))
     return {
         "schema_version": "kronos_v6_run_detail.v1",
         "status": "OK",
@@ -492,7 +588,8 @@ def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any
         "train_run_id": train_run_id,
         "manifest": manifest,
         "manifest_sha256": hashlib.sha256(raw).hexdigest(),
-        "events_tail": _events_tail(manifest_path.with_name("events.jsonl")),
+        "events_tail": events_tail,
+        "events_tail_diagnostics": events_tail_diagnostics,
         "states": _run_states(manifest) if isinstance(manifest, Mapping) else {},
     }
 
@@ -615,21 +712,32 @@ def _index_overlays() -> dict[str, dict[str, Any]]:
     except ImportError:
         return {}
     try:
-        paths = sorted(path for path in INDEX_ARTIFACT_DIR.glob(INDEX_NORMALIZED_GLOB) if path.is_file())
+        paths = sorted(
+            path for path in INDEX_ARTIFACT_DIR.glob(INDEX_NORMALIZED_GLOB)
+            if not path.is_symlink() and path.is_file()
+        )
     except OSError:
         return {}
+    current_keys = {path.as_posix() for path in paths}
+    for key in tuple(_INDEX_OVERLAY_CACHE):
+        if key not in current_keys:
+            del _INDEX_OVERLAY_CACHE[key]
+
     overlays: dict[str, dict[str, Any]] = {}
     for path in paths:
         try:
-            stat = path.stat()
             key = path.as_posix()
-            signature = (stat.st_mtime_ns, stat.st_size)
+            content_sha = _sha256_file(path)
+            if content_sha is None:
+                continue
             cached = _INDEX_OVERLAY_CACHE.get(key)
-            if cached is not None and cached[0] == signature:
+            if cached is not None and cached[0] == content_sha:
                 overlay = cached[1]
             else:
                 overlay = validate_korean_index_artifact(path)
-                _INDEX_OVERLAY_CACHE[key] = (signature, overlay)
+                _INDEX_OVERLAY_CACHE[key] = (content_sha, overlay)
+                while len(_INDEX_OVERLAY_CACHE) > _INDEX_OVERLAY_CACHE_LIMIT:
+                    del _INDEX_OVERLAY_CACHE[next(iter(_INDEX_OVERLAY_CACHE))]
         except (OSError, KoreanIndexArtifactError, ValueError):
             continue
         market = str(overlay["market"])

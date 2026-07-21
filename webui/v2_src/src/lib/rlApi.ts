@@ -475,6 +475,30 @@ export interface RlRliableStatsResponse {
   readonly error?: string;
 }
 
+let factoryLaneRunsRequest: Promise<RlFactoryLaneRunsResponse | null> | null = null;
+
+function factoryLaneRuns(): Promise<RlFactoryLaneRunsResponse | null> {
+  if (factoryLaneRunsRequest) return factoryLaneRunsRequest;
+
+  const request = fetchJson<RlFactoryLaneRunsResponse>('/api/rl/factory/lane-runs');
+  const sharedRequest = request.then(
+    (payload) => {
+      if (payload === null && factoryLaneRunsRequest === sharedRequest) factoryLaneRunsRequest = null;
+      return payload;
+    },
+    (error: unknown) => {
+      if (factoryLaneRunsRequest === sharedRequest) factoryLaneRunsRequest = null;
+      throw error;
+    },
+  );
+  factoryLaneRunsRequest = sharedRequest;
+  return sharedRequest;
+}
+
+function resetFactoryLaneRuns(): void {
+  factoryLaneRunsRequest = null;
+}
+
 const v5RunIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const v5CursorPattern = /^[A-Za-z0-9_-]{16,2048}$/u;
 const v5RevisionForbiddenPattern = /[\u0000-\u001F\u007F]/u;
@@ -718,7 +742,8 @@ export const rlApi = {
     fetchJson<RlTableResponse>(`/api/rl/runs/${encodeURIComponent(run)}/table/feature_ablation?limit=${limit}`),
   rlCostGate: (run: string, limit: number = 500) => fetchJson<RlCostGateResponse>(`/api/rl/runs/${encodeURIComponent(run)}/cost-gate?limit=${limit}`),
   factoryQueue: () => fetchJson<RlFactoryQueueResponse>('/api/rl/factory/queue'),
-  factoryLaneRuns: () => fetchJson<RlFactoryLaneRunsResponse>('/api/rl/factory/lane-runs'),
+  factoryLaneRuns,
+  resetFactoryLaneRuns,
   factoryLaneCalibration: (run: string) =>
     fetchJson<RlFactoryCalibrationResponse>(`/api/rl/factory/lane/${encodeURIComponent(run)}/calibration`),
   factoryLaneEdgeLedger: (run: string, limit: number = 200, decision?: RlFactoryDecisionFilter) =>

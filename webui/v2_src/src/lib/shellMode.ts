@@ -1,7 +1,9 @@
 import { writable, type Writable } from 'svelte/store';
 import { isV5DefaultGateAllowed, readLocalV5DefaultGateReceipt } from './v5DefaultGate';
 
-export type DashboardShell = 'v3' | 'v4' | 'v5' | 'v6';
+export const DASHBOARD_SHELLS = ['v3', 'v4', 'v5', 'v6'] as const;
+export type DashboardShell = (typeof DASHBOARD_SHELLS)[number];
+export const DEFAULT_DASHBOARD_SHELL: DashboardShell = 'v6';
 
 export const SHELL_STORAGE_KEY = 'kronos-dashboard-shell';
 
@@ -11,10 +13,8 @@ export interface ShellResolution {
   shouldPersist: boolean;
 }
 
-const DEFAULT_SHELL: DashboardShell = 'v6';
-
-function isDashboardShell(value: string | null): value is DashboardShell {
-  return value === 'v3' || value === 'v4' || value === 'v5' || value === 'v6';
+export function isDashboardShell(value: string | null): value is DashboardShell {
+  return DASHBOARD_SHELLS.some((shell) => shell === value);
 }
 
 function parseSearch(search: string): URLSearchParams {
@@ -66,7 +66,7 @@ export function resolveDashboardShell(
   }
 
 
-  return { shell: DEFAULT_SHELL, source: 'default', shouldPersist: false };
+  return { shell: DEFAULT_DASHBOARD_SHELL, source: 'default', shouldPersist: false };
 }
 export function preserveShellQuery(targetUrl: string, currentSearch: string): string {
   const currentParams = parseSearch(currentSearch);
@@ -91,7 +91,7 @@ export function preserveShellQuery(targetUrl: string, currentSearch: string): st
   return `${pathname}${query ? `?${query}` : ''}${hash}`;
 }
 
-export const dashboardShell: Writable<DashboardShell> = writable<DashboardShell>(DEFAULT_SHELL);
+export const dashboardShell: Writable<DashboardShell> = writable<DashboardShell>(DEFAULT_DASHBOARD_SHELL);
 
 function getSafeLocalStorage(): Storage | null {
   try {

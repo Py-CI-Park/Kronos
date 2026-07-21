@@ -6,6 +6,7 @@
     type RlFactoryEdgeLedgerResponse,
     type RlFactoryLaneRun,
   } from '$lib/rlApi';
+  import { requireJsonPayload } from '$lib/http';
   import { num, pct } from '$lib/rlRows';
 
   type FilterChoice = 'ALL' | RlFactoryDecisionFilter;
@@ -15,7 +16,7 @@
   let ledger = $state<RlFactoryEdgeLedgerResponse | null>(null);
   let decisionFilter = $state<FilterChoice>('ALL');
   let loading = $state(true);
-
+  let requestError = $state<string | null>(null);
   const available = $derived(ledger?.available === true);
   const summary = $derived(ledger?.summary ?? {});
   const rows = $derived(ledger?.rows ?? []);
@@ -26,10 +27,18 @@
 
   async function load(): Promise<void> {
     loading = true;
-    const lanePayload = await rlApi.factoryLaneRuns();
-    laneRun = lanePayload?.runs?.[0] ?? null;
-    await loadLedger();
-    loading = false;
+    requestError = null;
+    laneRun = null;
+    ledger = null;
+    try {
+      const lanePayload = await requireJsonPayload('Lane-runs request', rlApi.factoryLaneRuns());
+      laneRun = lanePayload.runs?.[0] ?? null;
+      if (laneRun) await loadLedger();
+    } catch (caught) {
+      requestError = caught instanceof Error ? caught.message : 'Edge ledger request failed';
+    } finally {
+      loading = false;
+    }
   }
 
   async function loadLedger(): Promise<void> {
@@ -37,19 +46,29 @@
       ledger = null;
       return;
     }
-    ledger = await rlApi.factoryLaneEdgeLedger(
-      laneRun.run,
-      200,
-      decisionFilter === 'ALL' ? undefined : decisionFilter
+    ledger = await requireJsonPayload(
+      'Edge ledger request',
+      rlApi.factoryLaneEdgeLedger(
+        laneRun.run,
+        200,
+        decisionFilter === 'ALL' ? undefined : decisionFilter
+      )
     );
   }
 
   async function setFilter(next: FilterChoice): Promise<void> {
-    if (decisionFilter === next) return;
+    if (decisionFilter === next || !laneRun) return;
     decisionFilter = next;
     loading = true;
-    await loadLedger();
-    loading = false;
+    requestError = null;
+    ledger = null;
+    try {
+      await loadLedger();
+    } catch (caught) {
+      requestError = caught instanceof Error ? caught.message : 'Edge ledger request failed';
+    } finally {
+      loading = false;
+    }
   }
 </script>
 
@@ -72,8 +91,13 @@
   </p>
   {#if loading}
     <p class="text-muted">Loading edge ledger...</p>
-  {:else if !available}
+  {:else if requestError}
+    <p class="text-muted">Edge ledger request error: {requestError}</p>
+    <button type="button" class="retry-btn" onclick={() => void load()}>Retry edge ledger request</button>
+  {:else if !laneRun}
     <p class="text-muted">Edge ledger unavailable — no probability-lane run found.</p>
+  {:else if !available}
+    <p class="text-muted">Edge ledger unavailable from the authoritative backend response.</p>
   {:else}
     <div class="mini-grid">
       <div><span>Rows (total / take / skip)</span><strong>{summary.total_rows ?? '-'} / {summary.take_count ?? '-'} / {summary.skip_count ?? '-'}</strong></div>

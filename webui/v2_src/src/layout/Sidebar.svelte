@@ -4,11 +4,14 @@
   import { ICONS } from '$lib/icons';
   import { fmt } from '$lib/format';
   import {
+    V3_NAV_GROUPS,
+    V4_NAV_GROUPS,
     V51_NAV_GROUPS,
     V51_SHELL_BRAND,
     V51_VERSION_HISTORY,
     navigateToTab,
     type V51NavGroup,
+    type DashboardRouteId,
     type V51NavItem,
   } from '$lib/routes';
   import { dashboardShell, type DashboardShell } from '$lib/shellMode';
@@ -17,104 +20,6 @@
   type NavItem = V51NavItem;
   type NavGroup = V51NavGroup;
 
-  // v3 "AI Quant" technique-based IA (code-grounded):
-  //   커맨드 → Kronos 예측(독립 파운데이션) → 트레이딩 리서치(일봉 D0–D9 ⊃ D4 RL·종가매매,
-  //   + 인트라데이 커맨드센터) → 라이브·시스템. Kronos와 RL은 독립 축(데이터만 공유).
-  const v3Groups: NavGroup[] = [
-    {
-      label: '커맨드',
-      items: [
-        { id: 'mission-control', label: 'Mission Control', icon: 'pulse', badge: null },
-      ],
-    },
-    {
-      label: 'Kronos 예측',
-      items: [
-        { id: 'forecast', label: '예측 워크벤치', icon: 'wand', badge: null },
-        { id: 'stom', label: '예측 진단', icon: 'pulse', badge: null },
-      ],
-    },
-    {
-      label: '트레이딩 리서치',
-      items: [
-        {
-          id: 'daily-ohlcv',
-          label: 'Daily OHLCV',
-          icon: 'pulse',
-          badge: '연구',
-          // daily-rl-guide는 daily-ohlcv 라인의 하위(자식) 항목으로 귀속.
-          children: [
-            { id: 'daily-rl-guide', label: '일봉 RL 설명서', icon: 'file', badge: null },
-          ],
-        },
-        { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: 'RL' },
-      ],
-    },
-    {
-      label: '라이브 · 시스템',
-      items: [
-        { id: 'live-training', label: '실시간 학습', icon: 'activity', badge: 'LIVE', status: 'live' },
-        { id: 'system-health', label: '시스템 상태', icon: 'cpu', badge: null },
-        { id: 'artifacts', label: '아티팩트 & 모델', icon: 'package', badge: null },
-        { id: 'history', label: '기록 & 런', icon: 'history', badge: null },
-        { id: 'settings', label: '설정', icon: 'settings', badge: null },
-        { id: 'docs', label: '문서 · Wiki', icon: 'file', badge: null },
-      ],
-    },
-  ];
-
-  const v4Groups: NavGroup[] = [
-    {
-      label: 'Home / Mission Control',
-      items: [
-        { id: 'mission-control', label: 'Mission Control', icon: 'pulse', badge: null },
-      ],
-    },
-    {
-      label: 'Forecast',
-      items: [
-        { id: 'forecast', label: '예측 워크벤치', icon: 'wand', badge: null },
-        { id: 'stom', label: '예측 진단', icon: 'pulse', badge: null },
-      ],
-    },
-    {
-      label: 'Daily Research',
-      items: [
-        {
-          id: 'daily-ohlcv',
-          label: 'Daily OHLCV',
-          icon: 'pulse',
-          badge: '연구',
-          // daily-rl-guide는 daily-ohlcv 라인의 하위(자식) 항목으로 귀속.
-          children: [
-            { id: 'daily-rl-guide', label: '일봉 RL 설명서', icon: 'file', badge: null },
-          ],
-        },
-      ],
-    },
-    {
-      label: 'RL Evidence',
-      items: [
-        { id: 'rl', label: 'Trading Command Center', icon: 'rocket', badge: 'RL' },
-      ],
-    },
-    {
-      label: 'Operations',
-      items: [
-        { id: 'live-training', label: '실시간 학습', icon: 'activity', badge: 'LIVE', status: 'live' },
-        { id: 'system-health', label: '시스템 상태', icon: 'cpu', badge: null },
-        { id: 'artifacts', label: '아티팩트 & 모델', icon: 'package', badge: null },
-        { id: 'history', label: '기록 & 런', icon: 'history', badge: null },
-      ],
-    },
-    {
-      label: 'Admin & Docs',
-      items: [
-        { id: 'settings', label: '설정', icon: 'settings', badge: null },
-        { id: 'docs', label: '문서 · Wiki', icon: 'file', badge: null },
-      ],
-    },
-  ];
 
   let current = $state('live-training');
   const unsubscribeActiveTab = activeTab.subscribe((v) => (current = v));
@@ -133,7 +38,7 @@
 
   let shell = $state<DashboardShell>('v3');
   const unsubscribeDashboardShell = dashboardShell.subscribe((v) => (shell = v));
-  let navGroups = $derived<readonly NavGroup[]>(shell === 'v5' ? V51_NAV_GROUPS : shell === 'v4' ? v4Groups : v3Groups);
+  let navGroups = $derived<readonly NavGroup[]>(shell === 'v5' ? V51_NAV_GROUPS : shell === 'v4' ? V4_NAV_GROUPS : V3_NAV_GROUPS);
   let versionHistoryOpen = $state(false);
   let versionHistoryDialog = $state<HTMLDivElement | null>(null);
   let versionHistoryTrigger = $state<HTMLButtonElement | null>(null);
@@ -148,7 +53,7 @@
 
   function itemIsActive(item: NavItem): boolean {
     const routeId = itemRouteId(item);
-    return (routeId != null && current === routeId) || item.activeRouteIds?.includes(current) === true;
+    return (routeId != null && current === routeId) || item.activeRouteIds?.includes(current as DashboardRouteId) === true;
   }
 
   function closeVersionHistory(): void {

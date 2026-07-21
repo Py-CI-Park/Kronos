@@ -532,7 +532,8 @@ def _build_kronos_v5_blueprint():
         return blueprint, config
     except Exception as exc:
         config["KRONOS_V5_AVAILABLE"] = False
-        return _create_unavailable_v5_rl_blueprint(f"V5 API is unavailable: {exc}"), config
+        config["KRONOS_V5_CONSTRUCTION_ERROR_TYPE"] = type(exc).__name__
+        return _create_unavailable_v5_rl_blueprint("V5 API is unavailable"), config
 
 
 def _v51_config_path():
@@ -562,34 +563,19 @@ def _build_kronos_v51_blueprint():
         except ImportError:
             from v51_research_api import create_v51_research_api_blueprint
         return create_v51_research_api_blueprint(artifact_dir=artifact_dir), config
-    except Exception:
+    except Exception as exc:
         config["KRONOS_V51_AVAILABLE"] = False
+        config["KRONOS_V51_CONSTRUCTION_ERROR_TYPE"] = type(exc).__name__
         try:
             from .v51_research_api import create_v51_research_api_blueprint
         except ImportError:
             from v51_research_api import create_v51_research_api_blueprint
         return create_v51_research_api_blueprint(artifact_provider=None, artifact_dir=None), config
 
+# Legacy handlers below are registered once on this private route template.  Each
+# application factory instance clones those rules onto its own Flask instance.
 app = Flask(__name__)
-CORS(app, origins=[origin.strip() for origin in os.environ.get("KRONOS_WEBUI_CORS_ORIGINS", f"http://127.0.0.1:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))},http://localhost:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))}").split(",") if _re.fullmatch(r"https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?", origin.strip())], supports_credentials=False)
-if v2_bp is not None:
-    app.register_blueprint(v2_bp)
-_v5_bp, _v5_config = _build_kronos_v5_blueprint()
-app.config.update(_v5_config)
-app.register_blueprint(_v5_bp)
-_v51_bp, _v51_config = _build_kronos_v51_blueprint()
-app.config.update(_v51_config)
-app.register_blueprint(_v51_bp)
-try:
-    from .v6_platform_api import create_v6_platform_blueprint
-except ImportError:
-    from v6_platform_api import create_v6_platform_blueprint
-app.register_blueprint(create_v6_platform_blueprint())
-try:
-    from .v6_insight_api import create_v6_insight_blueprint
-except ImportError:
-    from v6_insight_api import create_v6_insight_blueprint
-app.register_blueprint(create_v6_insight_blueprint())
+_legacy_route_app = app
 
 # Global variables to store models
 tokenizer = None
@@ -2700,6 +2686,118 @@ def docs_read():
         'modified_at': st.st_mtime,
     })
 
+
+def _cors_origins():
+    default_origins = (
+        f"http://127.0.0.1:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))},"
+        f"http://localhost:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))}"
+    )
+    return [
+        origin.strip()
+        for origin in os.environ.get("KRONOS_WEBUI_CORS_ORIGINS", default_origins).split(",")
+        if _re.fullmatch(r"https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?", origin.strip())
+    ]
+
+
+def _construction_failure(exc):
+    """Expose construction state without returning exception text or secrets."""
+    return {
+        "available": False,
+        "error": {
+            "type": type(exc).__name__,
+            "message": "subsystem construction failed",
+        },
+    }
+
+
+def _register_legacy_routes(target):
+    for rule in _legacy_route_app.url_map.iter_rules():
+        if rule.endpoint == "static":
+            continue
+        target.add_url_rule(
+            rule.rule,
+            endpoint=rule.endpoint,
+            view_func=_legacy_route_app.view_functions[rule.endpoint],
+            defaults=rule.defaults,
+            subdomain=rule.subdomain,
+            methods=set(rule.methods),
+            provide_automatic_options=False,
+        )
+
+
+def _create_v6_platform_blueprint():
+    try:
+        from .v6_platform_api import create_v6_platform_blueprint
+    except ImportError:
+        from v6_platform_api import create_v6_platform_blueprint
+    return create_v6_platform_blueprint()
+
+
+def _create_v6_insight_blueprint():
+    try:
+        from .v6_insight_api import create_v6_insight_blueprint
+    except ImportError:
+        from v6_insight_api import create_v6_insight_blueprint
+    return create_v6_insight_blueprint()
+
+
+def create_app(config=None, *, blueprint_factories=None):
+    """Create an isolated dashboard app while preserving process-wide model state."""
+    target = Flask(__name__)
+    if config is not None:
+        target.config.update(config)
+    CORS(target, origins=_cors_origins(), supports_credentials=False)
+
+    factories = {
+        "v2": lambda: v2_bp,
+        "v5": _build_kronos_v5_blueprint,
+        "v51": _build_kronos_v51_blueprint,
+        "v6_platform": _create_v6_platform_blueprint,
+        "v6_insight": _create_v6_insight_blueprint,
+    }
+    if blueprint_factories is not None:
+        factories.update(blueprint_factories)
+
+    diagnostics = {}
+
+    for subsystem in ("v2", "v5", "v51", "v6_platform", "v6_insight"):
+        try:
+            result = factories[subsystem]()
+            blueprint, subsystem_config = result if subsystem in {"v5", "v51"} and isinstance(result, tuple) else (result, {})
+            if subsystem_config:
+                target.config.update(subsystem_config)
+            if blueprint is None:
+                diagnostics[subsystem] = {
+                    "available": False,
+                    "error": {"type": "Unavailable", "message": "subsystem blueprint is unavailable"},
+                }
+                continue
+            target.register_blueprint(blueprint)
+            available_key = f"KRONOS_{subsystem.upper()}_AVAILABLE"
+            error_type = subsystem_config.get(
+                f"KRONOS_{subsystem.upper()}_CONSTRUCTION_ERROR_TYPE",
+            )
+            available = bool(subsystem_config.get(available_key, True))
+            diagnostics[subsystem] = {"available": available}
+            if not available:
+                diagnostics[subsystem]["error"] = {
+                    "type": error_type or "Unavailable",
+                    "message": "subsystem construction failed" if error_type else "subsystem is unavailable",
+                }
+        except Exception as exc:
+            diagnostics[subsystem] = _construction_failure(exc)
+
+    try:
+        _register_legacy_routes(target)
+        diagnostics["legacy"] = {"available": True}
+    except Exception as exc:
+        diagnostics["legacy"] = _construction_failure(exc)
+
+    target.config["KRONOS_SUBSYSTEM_DIAGNOSTICS"] = diagnostics
+    return target
+
+
+app = create_app()
 
 if __name__ == '__main__':
     print("Kronos 웹 UI 시작 중...")

@@ -38,14 +38,14 @@ def test_official_dashboard_sources_register_stom_rl_trading_tab():
     # Consolidation A: RL trading is now rendered by the Svelte RLTradingTab
     # (the Next.js command-center redirect card is retired).
     assert "RLTradingTab" in app
-    assert "tab === 'rl'" in app
+    assert "rl: RLTradingTab" in app
     assert "data-trading-command-center-redirect" not in app
     assert "id: 'rl'" in routes
+    assert "label: 'Trading Command Center'" in routes
     assert "id: 'daily-ohlcv'" in routes  # B1: daily is a registered Svelte tab
     assert "id: 'daily-rl-guide'" in routes  # A: daily RL guide is a registered Svelte tab
-    assert "id: 'rl'" in sidebar
-    assert "label: 'Trading Command Center'" in sidebar
-    assert "id: 'daily-ohlcv'" in sidebar  # B1: daily is a registered Svelte tab
+    assert "V3_NAV_GROUPS" in sidebar
+    assert "V4_NAV_GROUPS" in sidebar
     assert "routeLabelForShell(tab, shell)" in header
     assert "data-rl-trading-tab" in source
     assert "data-rl-orderbook-readiness-card" in source

@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 
+import os
 import pytest
+from pathlib import Path
 
 from webui import v6_platform_api
 from webui.app import app
@@ -145,6 +147,68 @@ def test_v6_index_tampered_artifact_fails_closed(client, monkeypatch, tmp_path) 
     assert readiness["index"]["state"] == "BLOCKED_INDEX_SERIES_SOURCE"
     assert client.get("/api/v6/index-series?market=KOSPI").status_code == 404
     assert client.get("/api/v6/index-series?market=KOSDAQ").status_code == 200
+def test_v6_index_cache_revalidates_same_stat_tampering_and_prunes_deleted_paths(monkeypatch, tmp_path) -> None:
+    written = _write_index_artifacts(tmp_path)
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path)
+    v6_platform_api._INDEX_OVERLAY_CACHE.clear()
+
+    assert "KOSPI" in v6_platform_api._index_overlays()
+    path = written["KOSPI"]
+    original_stat = path.stat()
+    original = path.read_bytes()
+    artifact = json.loads(original)
+    old_value = artifact["series"][0]["close"]
+    new_value = old_value - 1000
+    old_token = json.dumps(old_value).encode("ascii")
+    new_token = json.dumps(new_value).encode("ascii")
+    assert len(old_token) == len(new_token)
+    needle = next(
+        candidate
+        for candidate in (b'"close":' + old_token, b'"close": ' + old_token)
+        if candidate in original
+    )
+    replacement = needle.removesuffix(old_token) + new_token
+    tampered = original.replace(needle, replacement, 1)
+    assert tampered != original
+    path.write_bytes(tampered)
+    os.utime(path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    assert "KOSPI" not in v6_platform_api._index_overlays()
+    path.unlink()
+    v6_platform_api._index_overlays()
+    assert path.as_posix() not in v6_platform_api._INDEX_OVERLAY_CACHE
+
+
+def test_v6_index_cache_is_bounded(monkeypatch, tmp_path) -> None:
+    written = _write_index_artifacts(tmp_path)
+    source = written["KOSPI"].read_bytes()
+    for index in range(v6_platform_api._INDEX_OVERLAY_CACHE_LIMIT + 1):
+        (tmp_path / f"korean-index-copy-{index}-normalized-test.json").write_bytes(source)
+    monkeypatch.setattr(v6_platform_api, "INDEX_ARTIFACT_DIR", tmp_path)
+    v6_platform_api._INDEX_OVERLAY_CACHE.clear()
+
+    v6_platform_api._index_overlays()
+
+    assert len(v6_platform_api._INDEX_OVERLAY_CACHE) <= v6_platform_api._INDEX_OVERLAY_CACHE_LIMIT
+
+
+def test_v6_registry_reuses_single_request_report_snapshot(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    docs_root = tmp_path / "docs"
+    _write_valid_report_chain(runs_root, docs_root)
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+    calls = 0
+    original = v6_platform_api._build_report_entries
+
+    def counted():
+        nonlocal calls
+        calls += 1
+        return original()
+
+    monkeypatch.setattr(v6_platform_api, "_build_report_entries", counted)
+    assert client.get("/api/v6/research-registry").status_code == 200
+    assert calls == 1
 
 
 def test_v6_rejects_unknown_query_parameters(client) -> None:
@@ -181,9 +245,8 @@ def test_v6_run_detail_returns_manifest_sha_and_event_tail(client, monkeypatch, 
     manifest = {"verdict_candidate": "NO_GO", "metrics": {"score": 0.0}}
     raw = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
     (run_dir / "run_manifest.json").write_bytes(raw)
-    (run_dir / "events.jsonl").write_text(
-        '{"event":"started"}\nnot-json\n{"event":"finished"}\n',
-        encoding="utf-8",
+    (run_dir / "events.jsonl").write_bytes(
+        b'{"event":"started"}\nnot-json\n{"event":"finished"}\n'
     )
     monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
 
@@ -199,6 +262,12 @@ def test_v6_run_detail_returns_manifest_sha_and_event_tail(client, monkeypatch, 
         "manifest": manifest,
         "manifest_sha256": hashlib.sha256(raw).hexdigest(),
         "events_tail": [{"event": "started"}, {"event": "finished"}],
+        "events_tail_diagnostics": {
+            "state": "PARTIAL",
+            "invalid_line_count": 1,
+            "bytes_scanned": len(b'{"event":"started"}\nnot-json\n{"event":"finished"}\n'),
+            "truncated": False,
+        },
         "states": {
             "training_state": "MISSING",
             "validation_state": "NOT_RECORDED",
@@ -206,6 +275,89 @@ def test_v6_run_detail_returns_manifest_sha_and_event_tail(client, monkeypatch, 
             "evaluation_state": "TEST_MISSING",
         },
     }
+
+
+def test_v6_events_tail_is_bounded_and_preserves_newest_object_events(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    with path.open("wb") as event_file:
+        event_file.write((b'{"padding":"' + b"x" * 1024 + b'"}\n') * 1100)
+        for index in range(60):
+            event_file.write(json.dumps({"event": index}).encode("utf-8") + b"\n")
+
+    events, diagnostics = v6_platform_api._events_tail(path)
+
+    assert events == [{"event": index} for index in range(10, 60)]
+    assert diagnostics["bytes_scanned"] <= 1024 * 1024
+    assert diagnostics["truncated"] is True
+    assert diagnostics["state"] == "PARTIAL"
+
+
+@pytest.mark.parametrize(
+    ("contents", "state", "invalid_count"),
+    [(None, "MISSING", 0), (b"", "EMPTY", 0), (b"not-json\n", "CORRUPT", 1)],
+)
+def test_v6_events_tail_reports_artifact_states(tmp_path, contents, state, invalid_count) -> None:
+    path = tmp_path / "events.jsonl"
+    if contents is not None:
+        path.write_bytes(contents)
+
+    events, diagnostics = v6_platform_api._events_tail(path)
+
+    assert events == []
+    assert diagnostics["state"] == state
+    assert diagnostics["invalid_line_count"] == invalid_count
+
+
+def test_v6_events_tail_reports_trailing_corruption_and_snapshot_boundaries(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    path.write_bytes(b'{"event":"before"}\n{"event":"after"}\npartial')
+
+    events, diagnostics = v6_platform_api._events_tail(path)
+
+    assert events == [{"event": "before"}, {"event": "after"}]
+    assert diagnostics == {
+        "state": "PARTIAL",
+        "invalid_line_count": 1,
+        "bytes_scanned": len(b'{"event":"before"}\n{"event":"after"}\npartial'),
+        "truncated": False,
+    }
+def test_v6_events_tail_uses_initial_size_during_concurrent_append(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    path.write_bytes(b'{"event":"before"}\n')
+    original_open = Path.open
+
+    class AppendingReader:
+        appended = False
+
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.handle.close()
+
+        def seek(self, offset, whence=0):
+            result = self.handle.seek(offset, whence)
+            if offset == 0 and whence == 2 and not self.appended:
+                self.appended = True
+                with original_open(path, "ab") as writer:
+                    writer.write(b'{"event":"after"}\n')
+            return result
+
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+
+    def open_with_append(self, *args, **kwargs):
+        handle = original_open(self, *args, **kwargs)
+        return AppendingReader(handle) if self == path and args == ("rb",) else handle
+
+    monkeypatch.setattr(Path, "open", open_with_append)
+    events, diagnostics = v6_platform_api._events_tail(path)
+
+    assert events == [{"event": "before"}]
+    assert diagnostics["bytes_scanned"] == len(b'{"event":"before"}\n')
 
 def test_v6_experiment_reports_unfrozen_preregistration_and_read_only_plan(client, monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(v6_platform_api, "PREREG_PATH", tmp_path / "missing-prereg.json")
@@ -388,6 +540,25 @@ def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_pa
     assert html.headers["Content-Security-Policy"] == "default-src 'none'; style-src 'unsafe-inline'"
     assert "Content-Disposition" not in html.headers
     assert download.headers["Content-Disposition"] == 'attachment; filename="kronos-report-dataset-r1-train-r1.html"'
+def test_v6_reports_and_prereg_registry_retain_invalid_artifacts(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    run_dir = runs_root / "dataset-r1" / "train-r1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "report_manifest.json").write_text("{not-json", encoding="utf-8")
+    docs_root = tmp_path / "docs"
+    docs_root.mkdir()
+    (docs_root / "kronos_v7_prereg_broken_2026-07-20.json").write_text("{not-json", encoding="utf-8")
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+
+    report = client.get("/api/v6/reports").get_json()["reports"][0]
+    prereg = client.get("/api/v6/research-registry").get_json()["preregistrations"][0]
+
+    assert report["integrity"] == "INVALID"
+    assert report["integrity_reasons"] == ["REPORT_MANIFEST_INVALID", "REPORT_NOT_FOUND"]
+    assert prereg["status"] == "INVALID"
+    assert prereg["integrity_reasons"] == ["PREREG_PARSE_FAILED"]
+
 def test_v6_valid_report_chain_round_trips_opaque_run_and_not_run_test(client, monkeypatch, tmp_path) -> None:
     runs_root = tmp_path / "runs"
     docs_root = tmp_path / "docs"

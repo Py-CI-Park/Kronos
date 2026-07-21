@@ -98,8 +98,9 @@ def _assert_in_order(source: str, needles: list[str]) -> None:
 # --------------------------------------------------------------------------- #
 # App shell activation and tab preservation
 # --------------------------------------------------------------------------- #
-def test_app_preserves_all_tab_branches_popstate_and_polling() -> None:
+def test_app_preserves_manifest_driven_tabs_popstate_and_polling() -> None:
     app = _source("App.svelte")
+    routes = _source("lib/routes.ts")
 
     assert "data-kronos-shell={shell}" in app
     assert "data-v3-tab-host" in app
@@ -111,10 +112,11 @@ def test_app_preserves_all_tab_branches_popstate_and_polling() -> None:
     assert "window.removeEventListener('popstate', handlePopstate)" in app
     assert "installPollingWatcher()" in app
     assert "startPolling()" in app
+    assert "LEGACY_COMPONENTS[activeRoute.componentKey]" in app
 
-    branches = re.findall(r"tab === '([^']+)'", app)
-    assert len(branches) == len(set(branches)) == len(_EXPECTED_TABS)
-    assert set(branches) == set(_EXPECTED_TABS)
+    manifest_ids = re.findall(r"\{ id: '([^']+)', label:", routes)
+    assert len(manifest_ids) == len(set(manifest_ids)) == len(_EXPECTED_TABS)
+    assert set(manifest_ids) == set(_EXPECTED_TABS)
 
 
 # --------------------------------------------------------------------------- #
@@ -137,15 +139,15 @@ def test_v4_shell_reuses_existing_chrome_and_exposes_opt_in_markers() -> None:
 def test_shell_mode_keeps_v6_default_query_storage_persist_and_fail_closed_guards() -> None:
     mode = _source("lib/shellMode.ts")
 
-    assert "export type DashboardShell = 'v3' | 'v4'" in mode
+    assert "export const DASHBOARD_SHELLS = ['v3', 'v4', 'v5', 'v6'] as const" in mode
     assert "export const SHELL_STORAGE_KEY = 'kronos-dashboard-shell'" in mode
-    assert "const DEFAULT_SHELL: DashboardShell = 'v6'" in mode
+    assert "export const DEFAULT_DASHBOARD_SHELL: DashboardShell = 'v6'" in mode
     assert "params.get('ui')" in mode
     assert "params.get('ui_persist') === '1'" in mode
     assert "source: 'query'" in mode
     assert "source: 'storage'" in mode
     assert "source: 'default'" in mode
-    assert "return value === 'v3' || value === 'v4'" in mode
+    assert "DASHBOARD_SHELLS.some((shell) => shell === value)" in mode
     assert "function getSafeLocalStorage(): Storage | null" in mode
     assert "globalThis.localStorage" in mode
     assert "const storage = getSafeLocalStorage()" in mode
@@ -171,7 +173,7 @@ def test_routes_preserve_shell_query_during_canonicalization_and_navigation() ->
     assert "export function routeUrl(tabId: string, options: { currentSearch?: string } = {})" in routes
     assert "window.location.search" in routes
     assert "return preserveShellQuery(baseUrl, currentSearch)" in routes
-    assert "const nextUrl = routeUrl(tabId)" in routes
+    assert "const nextUrl = routeUrl(route.id)" in routes
     assert "replaceAlias" in routes
     assert "window.history.replaceState({ tab: route.id }, '', canonical)" in routes
     for alias in ["/rl", "/daily-ohlcv", "/daily-rl-guide", "/daily-ohlcv/rl-guide"]:
@@ -180,19 +182,20 @@ def test_routes_preserve_shell_query_during_canonicalization_and_navigation() ->
 # --------------------------------------------------------------------------- #
 # Sidebar navigation contracts
 # --------------------------------------------------------------------------- #
-def test_sidebar_v4_groups_contain_all_twelve_tab_ids_once_and_v3_markers_remain() -> None:
+def test_sidebar_navigation_is_manifest_driven_and_preserves_v3_v4_markers() -> None:
     sidebar = _source("layout/Sidebar.svelte")
-    v4_groups = _const_block(sidebar, "v4Groups")
-    v3_groups = _const_block(sidebar, "v3Groups")
+    routes = _source("lib/routes.ts")
 
-    v4_ids = re.findall(r"id: '([^']+)'", v4_groups)
-    assert len(v4_ids) == len(set(v4_ids)) == len(_EXPECTED_TABS)
-    assert set(v4_ids) == set(_EXPECTED_TABS)
+    manifest_ids = re.findall(r"\{ id: '([^']+)', label:", routes)
+    assert len(manifest_ids) == len(set(manifest_ids)) == len(_EXPECTED_TABS)
+    assert set(manifest_ids) == set(_EXPECTED_TABS)
+    assert "export const V3_NAV_GROUPS = navGroupsForShell('v3')" in routes
+    assert "export const V4_NAV_GROUPS = navGroupsForShell('v4')" in routes
 
     assert "data-v4-shell={shell === 'v4' ? 'sidebar' : undefined}" in sidebar
     assert "data-v4-command-trigger" in sidebar
     assert "onclick={requestCommandPalette}" in sidebar
-    assert "shell === 'v5' ? V51_NAV_GROUPS : shell === 'v4' ? v4Groups : v3Groups" in sidebar
+    assert "shell === 'v5' ? V51_NAV_GROUPS : shell === 'v4' ? V4_NAV_GROUPS : V3_NAV_GROUPS" in sidebar
 
     for marker in [
         "커맨드",
@@ -201,9 +204,10 @@ def test_sidebar_v4_groups_contain_all_twelve_tab_ids_once_and_v3_markers_remain
         "라이브 · 시스템",
         "일봉 RL 설명서",
         "Trading Command Center",
-        "data-nav-child=\"true\"",
+        "parentRouteId: 'daily-ohlcv'",
     ]:
-        assert marker in v3_groups or marker in sidebar
+        assert marker in routes
+    assert "data-nav-child=\"true\"" in sidebar
 
 
 # --------------------------------------------------------------------------- #
