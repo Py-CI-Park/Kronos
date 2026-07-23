@@ -9,6 +9,9 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
+PREREG_PATH = REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"
 REPORT_ROOT = "type1_reports"
 REVISION_SCHEMA = "kronos_type1_report_revision.v1"
 MATERIALIZATION_SCHEMA = "kronos_type1_report_materialization.v1"
@@ -20,6 +23,21 @@ LOCKS = {"promotion_allowed": False, "model_build_allowed": False, "paper_forwar
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _EVENT = re.compile(r"([0-9]{8})-([0-9a-f]{64})\.json\Z")
 _OBJECT = re.compile(r"([A-Za-z0-9][A-Za-z0-9_.-]{0,80})-([0-9a-f]{64})\.html\Z")
+_SOURCE_LOCAL_PATHS = {
+    "dataset_manifest": Path("..") / "dataset_manifest.json",
+    "public_rows": Path("..") / "public_rows.json",
+    "run_manifest": Path("run_manifest.json"),
+    "run_receipt": Path("receipt.json"),
+    **{
+        f"{kind}_seed_{seed}_{artifact}": Path(kind) / f"seed_{seed}" / filename
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+        for artifact, filename in (
+            ("model", "final_model.zip"),
+            ("normalizer", "normalizer.pkl"),
+        )
+    },
+}
 
 
 class Type1ReportError(ValueError):
@@ -81,6 +99,25 @@ def _root(run_dir: str | Path, *, create: bool = False) -> Path:
     if not root.is_dir() or root.is_symlink() or not (root / "events").is_dir() or not (root / "objects").is_dir():
         raise Type1ReportError("report catalog root is invalid")
     return root
+
+
+def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
+    """Hash the exact fixed Type1 evidence paths; report input cannot choose paths."""
+    directory = Path(run_dir)
+    paths = {
+        "protocol": PROTOCOL_PATH,
+        "preregistration": PREREG_PATH,
+        **{label: directory / relative for label, relative in _SOURCE_LOCAL_PATHS.items()},
+    }
+    hashes: dict[str, str] = {}
+    for label, path in paths.items():
+        if path.is_symlink() or not path.is_file():
+            raise Type1ReportError(f"required report source is missing: {label}")
+        try:
+            hashes[label] = _sha(path.read_bytes())
+        except OSError as exc:
+            raise Type1ReportError(f"required report source is unreadable: {label}") from exc
+    return hashes
 
 
 def _validate_revision(value: Mapping[str, Any]) -> None:
@@ -158,6 +195,8 @@ def verify_report_catalog(run_dir: str | Path) -> dict[str, Any]:
             if event["revision_id"] in revisions or event["revision_ordinal"] != (position + 1) // 2:
                 raise Type1ReportError("duplicate or noncontiguous revision")
             revisions[event["revision_id"]] = (event, digest)
+            if event["source_sha256"] != report_source_sha256(run_dir):
+                raise Type1ReportError("revision source hashes differ from fixed evidence paths")
         else:
             if set(event) != {"schema_version", "catalog_ordinal", "previous_event_sha256", "revision_event_sha256", "builder_version", "builder_sha256", "object_id", "html_sha256", "byte_size"}:
                 raise Type1ReportError("materialization fields are not exact")
@@ -220,6 +259,8 @@ def insert_report_revision(run_dir: str | Path, revision: Mapping[str, Any]) -> 
     if any(item[0].get("revision_id") == event.get("revision_id") for item in snapshot["events"][::2]):
         raise Type1ReportError("revision ID already exists")
     _validate_revision(event)
+    if event["source_sha256"] != report_source_sha256(run_dir):
+        raise Type1ReportError("revision source hashes differ from fixed evidence paths")
     raw = _canonical(event); digest = _sha(raw)
     _write_new(root / "events" / f"{event['catalog_ordinal']:08d}-{digest}.json", raw)
     return {"event_sha256": digest, "catalog_ordinal": event["catalog_ordinal"], "revision_id": event["revision_id"]}

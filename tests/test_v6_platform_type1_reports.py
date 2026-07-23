@@ -1,17 +1,19 @@
-import hashlib
 
 from flask import Flask
 
 import webui.v6_platform_api as api
-from stom_rl.daily_v1_type1_report import IDENTITY, LOCKS, POLICY, commit_report_tip, insert_report_revision, materialize_report_revision
+from stom_rl.daily_v1_type1_report import (
+    IDENTITY, LOCKS, POLICY, commit_report_tip, insert_report_revision,
+    materialize_report_revision, report_source_sha256,
+)
 
 
-def _revision():
+def _revision(run):
     return {
         "schema_version": "kronos_type1_report_revision.v1", "revision_id": "type1-r0001", "revision_ordinal": 1,
         "identity": IDENTITY, "policy": POLICY,
         "result": {"run_state": "FAILED", "training_state": "FAILED", "reused_validation_state": "FAILED", "verdict": "NO_GO", "fresh_oos_state": "NOT_RUN", "fresh_oos_read_performed": False, "failures": ["EXPECTED_FAILURE"]},
-        "source_sha256": {"public_run_seal": hashlib.sha256(b"public").hexdigest()},
+        "source_sha256": report_source_sha256(run),
         "false_research_locks": LOCKS, "claims": {"symbol": "000660"},
     }
 
@@ -19,7 +21,17 @@ def _revision():
 def _client(monkeypatch, tmp_path):
     root = tmp_path / "runs"; run = root / "type1-close-20260803-001" / "train_type1-public-001"
     run.mkdir(parents=True)
-    inserted = insert_report_revision(run, _revision())
+    (run.parent / "dataset_manifest.json").write_bytes(b"dataset")
+    (run.parent / "public_rows.json").write_bytes(b"rows")
+    (run / "run_manifest.json").write_bytes(b"run")
+    (run / "receipt.json").write_bytes(b"receipt")
+    for kind in ("primary", "shuffled_reward"):
+        for seed in range(5):
+            member = run / kind / f"seed_{seed}"
+            member.mkdir(parents=True)
+            (member / "final_model.zip").write_bytes(f"{kind}-{seed}-model".encode())
+            (member / "normalizer.pkl").write_bytes(f"{kind}-{seed}-normalizer".encode())
+    inserted = insert_report_revision(run, _revision(run))
     materialized = materialize_report_revision(run, inserted["event_sha256"])
     commit_report_tip(run, materialized["event_sha256"])
     monkeypatch.setattr(api, "RUNS_ROOT", root)
