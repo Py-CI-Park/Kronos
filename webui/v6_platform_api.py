@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import stat
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
@@ -46,6 +47,7 @@ ALL_ROUTE_METHODS: Final = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OP
 RUN_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 PROJECT_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 PROJECT_REPORT_SCHEMA: Final = "kronos_v7_project_report.v2"
+KNOWN_V7_REPORT_SCHEMA: Final = "kronos_v7_report.v1"
 
 
 def _response(payload: Mapping[str, Any], status_code: int = 200) -> Response:
@@ -442,6 +444,106 @@ def _project_report_dir(project_id: str) -> Path | None:
     if project_dir.is_symlink() or not resolved.is_dir():
         return None
     return resolved
+def _safe_contained_file(root: Path, *parts: str) -> Path | None:
+    """Return a regular, non-reparse file below ``root`` without following links."""
+    if not parts or any(not isinstance(part, str) or not part or part in {".", ".."} or "/" in part or "\\" in part for part in parts):
+        return None
+    try:
+        root_resolved = root.resolve(strict=True)
+        if root.is_symlink() or not root_resolved.is_dir():
+            return None
+        candidate = root.joinpath(*parts)
+        current = root
+        for part in parts:
+            current = current / part
+            if current.is_symlink() or getattr(current.lstat(), "st_file_attributes", 0) & 0x400:
+                return None
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root_resolved)
+        mode = resolved.stat().st_mode
+    except (OSError, ValueError):
+        return None
+    return resolved if stat.S_ISREG(mode) else None
+
+
+def _safe_contained_dir(root: Path, *parts: str) -> Path | None:
+    if not parts or any(not isinstance(part, str) or not part or part in {".", ".."} or "/" in part or "\\" in part for part in parts):
+        return None
+    try:
+        root_resolved = root.resolve(strict=True)
+        if root.is_symlink() or not root_resolved.is_dir():
+            return None
+        candidate = root.joinpath(*parts)
+        current = root
+        for part in parts:
+            current = current / part
+            if current.is_symlink() or getattr(current.lstat(), "st_file_attributes", 0) & 0x400:
+                return None
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root_resolved)
+    except (OSError, ValueError):
+        return None
+    return resolved if resolved.is_dir() else None
+
+
+def _type1_report_dir(dataset_run_id: str, train_run_id: str) -> Path | None:
+    if RUN_ID_PATTERN.fullmatch(dataset_run_id) is None or RUN_ID_PATTERN.fullmatch(train_run_id) is None:
+        return None
+    run_dir = _safe_contained_dir(RUNS_ROOT, dataset_run_id, train_run_id)
+    return run_dir if run_dir is not None and _safe_contained_dir(run_dir, "type1_reports") is not None else None
+
+
+def _type1_catalog_snapshot(run_dir: Path) -> tuple[dict[str, Any] | None, list[str]]:
+    try:
+        from stom_rl.daily_v1_type1_report import Type1ReportError, verify_report_catalog
+        snapshot = verify_report_catalog(run_dir)
+    except (ImportError, Type1ReportError, OSError, ValueError):
+        return None, ["TYPE1_CATALOG_INVALID"]
+    return (snapshot, []) if snapshot.get("state") == "COMMITTED" else (None, ["TYPE1_COMMITTED_TIP_MISSING"])
+
+
+def _type1_report_entry(run_dir: Path) -> dict[str, Any]:
+    dataset_run_id, train_run_id = run_dir.parent.name, run_dir.name
+    snapshot, reasons = _type1_catalog_snapshot(run_dir)
+    if snapshot is None:
+        return {"dataset_run_id": dataset_run_id, "train_run_id": train_run_id, "report_family": "TYPE1", "compatibility_state": "NATIVE", "availability": "BLOCKED", "integrity": "BLOCKED", "chain_integrity": "CHAIN_INVALID", "integrity_reasons": reasons, "chain_reasons": reasons, "verdict": "NO_GO", "test_state": "NOT_RUN", "report_state": "MISSING"}
+    revision, materialization, tip = snapshot["revision"], snapshot["materialization"], snapshot["tip"]
+    result = revision["result"]
+    return {"dataset_run_id": dataset_run_id, "train_run_id": train_run_id, "report_family": "TYPE1", "compatibility_state": "NATIVE", "availability": "COMMITTED", "integrity": "OK", "chain_integrity": "CHAIN_OK", "integrity_reasons": [], "chain_reasons": [], "verdict": result["verdict"], "test_state": result["fresh_oos_state"], "generated_utc": "IMMUTABLE", "builder_version": materialization["builder_version"], "report_sha256": materialization["html_sha256"], "size_bytes": materialization["byte_size"], "report_state": "PRESENT", "training_state": result["training_state"], "validation_state": result["reused_validation_state"], "evaluation_state": f"TEST_{result['fresh_oos_state']}", "result": dict(result), "catalog": {"event_count": snapshot["event_count"], "revision_id": revision["revision_id"], "revision_ordinal": revision["revision_ordinal"], "committed_tip_sha256": snapshot["tip_sha256"], "revision_event_sha256": tip["latest_revision_event_sha256"], "materialization_event_sha256": tip["materialization_event_sha256"], "html_sha256": tip["html_sha256"], "report_url": f"/api/v6/report-html?dataset={dataset_run_id}&train={train_run_id}"}}
+
+
+def _report_family(run_dir: Path, manifest: Mapping[str, Any] | None) -> str:
+    if _safe_contained_dir(run_dir, "type1_reports") is not None:
+        return "TYPE1"
+    if manifest is not None and manifest.get("schema_version") == "kronos_v8_m3e_report.v1":
+        return "M3E"
+    if manifest is not None and manifest.get("schema_version") == KNOWN_V7_REPORT_SCHEMA:
+        source_hashes = manifest.get("source_sha256")
+        locks = manifest.get("false_research_locks")
+        return "V7" if isinstance(source_hashes, Mapping) and isinstance(locks, Mapping) else "LEGACY"
+    return "LEGACY" if manifest is not None and manifest.get("source_sha256") is None and manifest.get("false_research_locks") is None else "UNKNOWN"
+
+
+def _type1_report_response(run_dir: Path, download: bool) -> Response:
+    snapshot, reasons = _type1_catalog_snapshot(run_dir)
+    if snapshot is None:
+        return _response({"status": "BLOCKED", "reason": reasons[0], "reasons": reasons}, 404 if reasons[0] == "TYPE1_COMMITTED_TIP_MISSING" else 409)
+    tip = snapshot["tip"]
+    path = _safe_contained_file(run_dir / "type1_reports", "objects", f"{tip['object_id']}-{tip['html_sha256']}.html")
+    if path is None:
+        return _response({"status": "BLOCKED", "reason": "TYPE1_OBJECT_MISSING"}, 404)
+    try:
+        report_bytes = path.read_bytes()
+    except OSError:
+        return _response({"status": "BLOCKED", "reason": "TYPE1_OBJECT_MISSING"}, 404)
+    response = Response(report_bytes, status=200, mimetype="text/html")
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+    response.headers["ETag"] = f'"{tip["html_sha256"]}"'
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    if download:
+        response.headers["Content-Disposition"] = f'attachment; filename="kronos-type1-report-{run_dir.parent.name}-{run_dir.name}.html"'
+    return response
 
 
 def _report_entries() -> list[dict[str, Any]]:
@@ -459,10 +561,23 @@ def _build_report_entries() -> list[dict[str, Any]]:
         }
     except OSError:
         return entries
+    try:
+        type1_dirs = sorted({
+            path.parent for path in RUNS_ROOT.glob("*/*/type1_reports")
+            if path.is_dir() and not path.is_symlink()
+        })
+    except OSError:
+        type1_dirs = []
+    for run_dir in type1_dirs:
+        dataset_run_id, train_run_id = run_dir.parent.name, run_dir.name
+        if _type1_report_dir(dataset_run_id, train_run_id) is not None:
+            entries.append(_type1_report_entry(run_dir))
     for run_dir in sorted(run_dirs):
         dataset_run_id = run_dir.parent.name
         train_run_id = run_dir.name
         if RUN_ID_PATTERN.fullmatch(dataset_run_id) is None or RUN_ID_PATTERN.fullmatch(train_run_id) is None:
+            continue
+        if _report_family(run_dir, None) == "TYPE1":
             continue
         manifest_path = run_dir / "report_manifest.json"
         report_path = run_dir / "report.html"
@@ -487,9 +602,13 @@ def _build_report_entries() -> list[dict[str, Any]]:
         )
         run_manifest = _read_json(run_dir / "run_manifest.json")
         states = _run_states(run_manifest) if run_manifest is not None else None
+        family = _report_family(run_dir, manifest)
         entries.append({
             "dataset_run_id": dataset_run_id,
             "train_run_id": train_run_id,
+            "report_family": family,
+            "compatibility_state": "NATIVE" if family == "M3E" else "KNOWN_V7" if family == "V7" else "LEGACY_UNVERIFIED" if family == "LEGACY" else "UNKNOWN_SCHEMA",
+            "availability": "COMMITTED" if family in {"M3E", "V7"} and not reasons and chain_integrity == "CHAIN_OK" else "BLOCKED",
             "verdict": manifest.get("verdict", "MISSING") if manifest is not None else "MISSING",
             "test_state": states["test_state"] if states is not None else manifest.get("test_state", "MISSING") if manifest is not None else "MISSING",
             "index_overlay_state": manifest.get("index_overlay_state", "MISSING") if manifest is not None else "MISSING",
@@ -631,6 +750,19 @@ def _report_query() -> tuple[str, str, bool]:
 
 
 def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any]:
+    type1_dir = _type1_report_dir(dataset_run_id, train_run_id)
+    if type1_dir is not None:
+        entry = _type1_report_entry(type1_dir)
+        return {
+            "schema_version": "kronos_v6_run_detail.v1",
+            "status": "OK" if entry["availability"] == "COMMITTED" else "BLOCKED",
+            "dataset_run_id": dataset_run_id, "train_run_id": train_run_id,
+            "identity": {"report_family": "TYPE1", "dataset_id": dataset_run_id, "train_id": train_run_id, "train_run_id": train_run_id, "domain": "kronos.type1", "algorithm_family": "MASKABLE_PPO"},
+            "result": entry.get("result", {"verdict": "NO_GO", "fresh_oos_state": "NOT_RUN"}),
+            "catalog": entry.get("catalog", {}), "manifest": {}, "events_tail": [],
+            "events_tail_diagnostics": {"state": "TYPE1_IMMUTABLE_CATALOG"},
+            "states": {"training_state": entry.get("training_state", "MISSING"), "validation_state": entry.get("validation_state", "NOT_RECORDED"), "test_state": entry["test_state"], "evaluation_state": entry.get("evaluation_state", "TEST_NOT_RUN")},
+        }
     manifest_path = RUNS_ROOT / dataset_run_id / train_run_id / "run_manifest.json"
     try:
         raw = manifest_path.read_bytes()
@@ -1093,9 +1225,17 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             dataset_run_id, train_run_id, download = _report_query()
         except ValueError:
             return _error(400, "BAD_REQUEST")
-        run_dir = RUNS_ROOT / dataset_run_id / train_run_id
-        manifest = _read_json(run_dir / "report_manifest.json")
-        report_path = run_dir / "report.html"
+        run_dir = _safe_contained_dir(RUNS_ROOT, dataset_run_id, train_run_id)
+        if run_dir is None:
+            return _response({"status": "BLOCKED", "reason": "REPORT_NOT_FOUND"}, 404)
+        manifest_path = _safe_contained_file(run_dir, "report_manifest.json")
+        manifest = _read_json(manifest_path) if manifest_path is not None else None
+        family = _report_family(run_dir, manifest)
+        if family == "TYPE1":
+            return _type1_report_response(run_dir, download)
+        report_path = _safe_contained_file(run_dir, "report.html")
+        if manifest_path is None or report_path is None:
+            return _response({"status": "BLOCKED", "reason": "REPORT_NOT_FOUND"}, 404)
         try:
             report_bytes = report_path.read_bytes()
         except OSError:
@@ -1104,8 +1244,14 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             return _response({"status": "BLOCKED", "reason": "REPORT_MANIFEST_MISSING"}, 404)
         if manifest.get("report_sha256") != hashlib.sha256(report_bytes).hexdigest():
             return _response({"status": "BLOCKED", "reason": "REPORT_SHA_MISMATCH"}, 409)
-        chain_integrity, chain_reasons = _report_chain(run_dir, manifest)
-        if chain_integrity == "CHAIN_INVALID":
+        if family not in {"M3E", "V7"}:
+            return _response({"status": "BLOCKED", "reason": "UNKNOWN_OR_LEGACY_REPORT_FAMILY"}, 409)
+        chain_integrity, chain_reasons = (
+            _m3e_report_chain(run_dir, manifest)
+            if family == "M3E"
+            else _report_chain(run_dir, manifest)
+        )
+        if chain_integrity != "CHAIN_OK":
             return _response({"status": "BLOCKED", "reason": chain_reasons[0], "reasons": chain_reasons}, 409)
         response = Response(report_bytes, status=200, mimetype="text/html")
         response.headers["X-Content-Type-Options"] = "nosniff"

@@ -532,14 +532,17 @@ def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_pa
     assert entry["integrity"] == "OK"
     assert entry["chain_integrity"] == "LEGACY_UNVERIFIED"
     assert entry["chain_reasons"] == ["LEGACY_SOURCE_CUSTODY_NOT_RECORDED"]
+    assert entry["compatibility_state"] == "LEGACY_UNVERIFIED"
+    assert entry["availability"] == "BLOCKED"
     assert status["journey"]["report"]["state"] == "HAS_REPORTS"
-    assert html.status_code == 200
-    assert html.mimetype == "text/html"
-    assert "NO_GO" in html.get_data(as_text=True)
-    assert html.headers["X-Content-Type-Options"] == "nosniff"
-    assert html.headers["Content-Security-Policy"] == "default-src 'none'; style-src 'unsafe-inline'"
-    assert "Content-Disposition" not in html.headers
-    assert download.headers["Content-Disposition"] == 'attachment; filename="kronos-report-dataset-r1-train-r1.html"'
+    assert html.status_code == 409
+    assert html.get_json() == {
+        "status": "BLOCKED",
+        "reason": "UNKNOWN_OR_LEGACY_REPORT_FAMILY",
+    }
+    assert download.status_code == 409
+    assert download.get_json() == html.get_json()
+    assert "Content-Disposition" not in download.headers
 def test_v6_reports_and_prereg_registry_retain_invalid_artifacts(client, monkeypatch, tmp_path) -> None:
     runs_root = tmp_path / "runs"
     run_dir = runs_root / "dataset-r1" / "train-r1"
