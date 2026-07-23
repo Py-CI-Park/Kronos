@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from stom_rl.daily_type1_authority import (  # noqa: E402
-    ANCHOR, AUTHORITY_ID, INTEGRITY_LABEL, MARKET_QUERY_IDS, MARKETS, PUBLIC_END, SCHEMA,
+    ANCHOR, AUTHORITY_ID, AUTHORITY_METADATA_END, INTEGRITY_LABEL, MARKET_QUERY_IDS, MARKETS, PUBLIC_END, SCHEMA,
     SIGNING_DOMAIN, _field, _median, _symbol, _typed_exclusion, _typed_row_for_historical, _value,
     canonical_json, sha256_canonical, validate_authority,
 )
@@ -108,9 +108,13 @@ def build_authority(*, typed_current: list[Mapping[str, Any]], typed_delisted_ch
         raise CollectionError("fewer than 500 typed ordinary common anchor members")
     if set(values) != set(ranking_sessions):
         raise CollectionError("missing typed ranking session responses")
+    values_by_session = {
+        date: {_symbol(row): row for row in values[date] if _symbol(row)}
+        for date in ranking_sessions
+    }
     rows = []
     for symbol in sorted(eligible):
-        series = [_value({_symbol(row): row for row in values[date]}.get(symbol)) for date in ranking_sessions]
+        series = [_value(values_by_session[date].get(symbol)) for date in ranking_sessions]
         rows.append({"symbol": symbol, "traded_values": series, "median_traded_value": _median(series)})
     rows.sort(key=lambda row: (-row["median_traded_value"], row["symbol"]))
     raw = {
@@ -124,7 +128,7 @@ def build_authority(*, typed_current: list[Mapping[str, Any]], typed_delisted_ch
         "authority_id": AUTHORITY_ID, "anchor_date": ANCHOR,
         "approved_dates": {"calendar_start": CALENDAR_START, "public_end": PUBLIC_END},
         "provider": {"name": "KRX public data portal", "retrieval_utc": provider_retrieval_utc},
-        "query_profile": {"historical_anchor_surface": "MDCSTAT01501", "typed_current_surface": "MDCSTAT01901", "typed_delisted_surface": "MDCSTAT23801", "typed_join": "ISU_CD exact; unique ISU_SRT_CD fallback", "anchor_date": ANCHOR, "markets": list(MARKETS), "ranking_sessions": ranking_sessions, "delisted_chunk_bounds": delisted_chunk_bounds},
+        "query_profile": {"historical_anchor_surface": "MDCSTAT01501", "typed_current_surface": "MDCSTAT01901", "typed_delisted_surface": "MDCSTAT23801", "typed_join": "ISU_CD exact; unique ISU_SRT_CD fallback", "authority_metadata_cutoff": AUTHORITY_METADATA_END, "anchor_date": ANCHOR, "markets": list(MARKETS), "ranking_sessions": ranking_sessions, "delisted_chunk_bounds": delisted_chunk_bounds},
         "classification_profile": {"effective_dated": "LIST_DD<=anchor<DELIST_DD_or_active", "markets": list(MARKETS), "security_group": "SECUGRP_NM==주권", "certificate_type": "KIND_STKCERT_TP_NM==보통주", "domestic_group_fields": list(DOMESTIC_TYPED_FIELDS), "domestic_values": ["국내", "DOMESTIC"], "name_rule": "historical SPAC only when typed SPAC field absent"},
         "candidate_exclusions": exclusions, "raw_responses": raw, "raw_sha256": sha256_canonical(raw),
         "sessions": {"count": len(public), "first": public[0], "last": public[-1], "ordered": public, "pairs": [[i, i + 1] for i in range(0, len(public) - 1, 2)], "parity": len(public) % 2, "trailing_embargo": [len(public)-1] if len(public) % 2 else []},
@@ -163,9 +167,9 @@ def _typed_delisted_bounds() -> list[dict[str, str]]:
     return [
         {
             "from": f"{year}-01-01",
-            "to": min(f"{year + 4}-12-31", PUBLIC_END),
+            "to": min(f"{year + 4}-12-31", AUTHORITY_METADATA_END),
         }
-        for year in range(1973, int(PUBLIC_END[:4]) + 1, 5)
+        for year in range(1973, int(AUTHORITY_METADATA_END[:4]) + 1, 5)
     ]
 
 

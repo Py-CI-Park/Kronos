@@ -24,7 +24,7 @@ from stom_rl.daily_type1_market import (
     public_row_from_mapping,
 )
 
-DATASET_ID = "type1-close-20260803-003"
+DATASET_ID = "type1-close-20260803-004"
 PUBLIC_CUTOFF = 20250630
 PUBLIC_START = 20180102
 PROXY_HHMM = 1520
@@ -32,9 +32,9 @@ SCHEMA_VERSION = "kronos_type1_g002_public_data.v3"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PREREG_PATH = REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v2_2026-07-23.json"
-DEFAULT_AUTHORITY_PATH = REPO_ROOT / "artifacts" / "type1-authority" / "type1-krx-authority-20260723-002.json"
-AUTHORITY_ID = "type1-krx-authority-20260723-002"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json"
+DEFAULT_AUTHORITY_PATH = REPO_ROOT / "artifacts" / "type1-authority" / "type1-krx-authority-20260724-003.json"
+AUTHORITY_ID = "type1-krx-authority-20260724-003"
 MATERIALIZER_MANIFEST_SCHEMA = "kronos.type1.public-materializer.v3"
 _DECIMAL_CONTEXT = Context(prec=50, rounding=ROUND_HALF_EVEN)
 _DAILY_COLUMNS = ("date", "close", "volume", "상장주식수", "외국인현보유비율", "기관순매수")
@@ -177,21 +177,33 @@ def _load_amendment() -> Mapping[str, Any]:
     value = json.loads(AMENDMENT_PATH.read_text(encoding="utf-8"))
     required = {
         "schema_version", "amendment_id", "supersedes", "status", "reason",
-        "preserved_aborted_evidence", "replacement_identity", "authority_contract",
-        "execution_contract", "fresh_oos", "frozen_utc",
+        "preserved_aborted_evidence", "quarantined_authorities", "replacement_identity",
+        "authority_contract", "execution_contract", "fresh_oos", "frozen_utc",
     }
     if not isinstance(value, Mapping) or set(value) != required:
-        raise ValueError("recovery amendment v2 schema mismatch")
+        raise ValueError("recovery amendment v3 schema mismatch")
     replacement = value["replacement_identity"]
     expected = {
         "authority_id": AUTHORITY_ID,
         "dataset_id": DATASET_ID,
-        "train_id": "type1-public-003",
-        "train_run_id": "train_type1-public-003",
-        "custody_uid": "type1-fresh-oos-20260803-003",
+        "train_id": "type1-public-004",
+        "train_run_id": "train_type1-public-004",
+        "custody_uid": "type1-fresh-oos-20260803-004",
     }
-    if value["schema_version"] != "kronos.type1.g002-recovery-amendment.v2" or replacement != expected:
+    quarantined = [{
+        "authority_id": "type1-krx-authority-20260723-002",
+        "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+        "status": "QUARANTINED",
+        "models_created": 0,
+        "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+    }]
+    if value["schema_version"] != "kronos.type1.g002-recovery-amendment.v3" or replacement != expected:
         raise ValueError("recovery amendment does not authorize this replacement identity")
+    if value["quarantined_authorities"] != quarantined:
+        raise ValueError("recovery amendment quarantined authority record is unsafe")
+    authority_contract = value["authority_contract"]
+    if not isinstance(authority_contract, Mapping) or authority_contract.get("authority_metadata_cutoff") != "2026-07-24":
+        raise ValueError("recovery amendment authority metadata cutoff is unsafe")
     if value["fresh_oos"] != {"custody_uid": expected["custody_uid"], "status": "NOT_RUN", "no_read": True, "no_price_or_oos_query_after": "2025-06-30"}:
         raise ValueError("recovery amendment fresh-OOS state is unsafe")
     if value["execution_contract"] != {"proxy_time": "15:20:00", "cost_bps": 23, "fixed_notional": 60000000, "primary_seeds": 5, "shuffled_seeds": 5, "timesteps_per_seed": 200000, "outcome": "NO_GO_ONLY"}:

@@ -50,11 +50,11 @@ PROJECT_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 PROJECT_REPORT_SCHEMA: Final = "kronos_v7_project_report.v2"
 KNOWN_V7_REPORT_SCHEMA: Final = "kronos_v7_report.v1"
 TYPE1_REPLACEMENT_IDENTITY: Final = {
-    "authority_id": "type1-krx-authority-20260723-002",
-    "dataset_id": "type1-close-20260803-003",
-    "train_id": "type1-public-003",
-    "train_run_id": "train_type1-public-003",
-    "custody_uid": "type1-fresh-oos-20260803-003",
+    "authority_id": "type1-krx-authority-20260724-003",
+    "dataset_id": "type1-close-20260803-004",
+    "train_id": "type1-public-004",
+    "train_run_id": "train_type1-public-004",
+    "custody_uid": "type1-fresh-oos-20260803-004",
 }
 TYPE1_MAX_OBJECT_BYTES: Final = 8 * 1024 * 1024
 TYPE1_MAX_CATALOG_EVENTS: Final = 256
@@ -632,21 +632,68 @@ def _type1_report_entry(run_dir: Path) -> dict[str, Any]:
 
 
 def _type1_preserved_attempt_entries() -> list[dict[str, Any]]:
-    amendment = _read_json(DOCS_ROOT / "kronos_type1_g002_recovery_amendment_v2_2026-07-23.json")
+    amendment = _read_json(DOCS_ROOT / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json")
     preserved = amendment.get("preserved_aborted_evidence") if amendment is not None else None
+    expected_attempts = (
+        ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001", "INELIGIBLE_BLOCKED"),
+        ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002", "INELIGIBLE_BLOCKED"),
+        ("type1-close-20260803-003", "type1-public-003", "train_type1-public-003", "NON_MATERIALIZED_INELIGIBLE"),
+    )
     if (
-        not isinstance(preserved, list)
-        or amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v2"
-        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-002"
+        not isinstance(amendment, Mapping)
+        or not isinstance(preserved, list)
+        or amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v3"
+        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
         or amendment.get("replacement_identity") != TYPE1_REPLACEMENT_IDENTITY
-        or preserved != [
-            {"dataset_id": "type1-close-20260803-001", "train_id": "type1-public-001", "train_run_id": "train_type1-public-001", "status": "INELIGIBLE_BLOCKED", "models_created": 0},
-            {"dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002", "status": "INELIGIBLE_BLOCKED", "models_created": 0},
-        ]
+        or len(preserved) != len(expected_attempts)
+        or amendment.get("quarantined_authorities") != [{
+            "authority_id": "type1-krx-authority-20260723-002",
+            "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+            "status": "QUARANTINED",
+            "models_created": 0,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+        }]
+        or not isinstance(amendment.get("authority_contract"), Mapping)
+        or (
+            amendment["authority_contract"].get("authority_metadata_cutoff"),
+            amendment["authority_contract"].get("authority_metadata_scope"),
+        ) != (
+            "2026-07-24",
+            "MDCSTAT23801 instrument-master metadata only; this does not extend price, calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30.",
+        )
     ):
         return []
-    return [
-        {
+    entries: list[dict[str, Any]] = []
+    for evidence, (dataset_id, train_id, train_run_id, status) in zip(preserved, expected_attempts):
+        if not isinstance(evidence, Mapping) or (
+            evidence.get("dataset_id"),
+            evidence.get("train_id"),
+            evidence.get("train_run_id"),
+            evidence.get("status"),
+            evidence.get("models_created"),
+        ) != (dataset_id, train_id, train_run_id, status, 0):
+            return []
+        if dataset_id == "type1-close-20260803-003" and evidence.get("fresh_oos") != {
+            "status": "NOT_RUN", "no_read": True,
+        }:
+            return []
+        custody = {
+            "amendment_id": amendment["amendment_id"],
+            "scientific_eligibility": evidence["status"],
+            "model_files_created": evidence["models_created"],
+            "fresh_oos_state": "NOT_RUN",
+            "fresh_oos_read": False,
+            "immutable_history": True,
+            "html_serving": "BLOCKED",
+        }
+        if dataset_id == "type1-close-20260803-003":
+            custody.update({
+                "authority_id": "type1-krx-authority-20260723-002",
+                "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+                "authority_status": "QUARANTINED",
+                "materializations_created": 0,
+            })
+        entries.append({
             "record_type": "TYPE1_PRESERVED_INELIGIBLE_CUSTODY",
             "dataset_run_id": evidence["dataset_id"],
             "train_run_id": evidence["train_run_id"],
@@ -654,18 +701,10 @@ def _type1_preserved_attempt_entries() -> list[dict[str, Any]]:
             "availability": "BLOCKED",
             "integrity": "OK",
             "integrity_reasons": [],
-            "custody": {
-                "amendment_id": amendment["amendment_id"],
-                "scientific_eligibility": evidence["status"],
-                "model_files_created": evidence["models_created"],
-                "fresh_oos_state": "NOT_RUN",
-                "fresh_oos_read": False,
-                "immutable_history": True,
-            },
+            "custody": custody,
             "attempts": [],
-        }
-        for evidence in preserved
-    ]
+        })
+    return entries
 
 
 def _report_family(run_dir: Path, manifest: Mapping[str, Any] | None) -> str:

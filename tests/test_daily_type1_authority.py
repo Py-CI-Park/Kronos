@@ -16,7 +16,7 @@ def _envelope():
     calendar = [{"TRD_DD": date} for date in pre + ["2018-01-02", "2025-06-30"]]
     master = [_typed(number) for number in range(1000, 1506)]
     values = {date: [{"ISU_SRT_CD": f"{number:06d}", "거래대금": number} for number in range(1000, 1506)] for date in pre}
-    authority = build_authority(typed_current=master, typed_delisted_chunks=[[]], historical_anchor=master, calendar=calendar, values=values, delisted_chunk_bounds=[{"from": "1973-01-01", "to": "2017-12-28"}], provider_retrieval_utc="2025-07-01T00:00:00Z")
+    authority = build_authority(typed_current=master, typed_delisted_chunks=[[]], historical_anchor=master, calendar=calendar, values=values, delisted_chunk_bounds=[{"from": "1973-01-01", "to": "2026-07-24"}], provider_retrieval_utc="2025-07-01T00:00:00Z")
     return seal_authority(authority)
 
 
@@ -28,9 +28,14 @@ def _write(tmp_path: Path, envelope: dict) -> Path:
 
 def test_loads_only_canonical_signed_typed_authority(tmp_path):
     authority = load_type1_authority(_write(tmp_path, _envelope()))
-    assert authority["authority_id"] == "type1-krx-authority-20260723-002"
+    assert authority["authority_id"] == "type1-krx-authority-20260724-003"
     assert authority["stable_symbols"][0] == "001505"
     assert authority["fresh_oos"]["status"] == "NOT_RUN"
+    assert authority["query_profile"]["authority_metadata_cutoff"] == "2026-07-24"
+    assert authority["approved_dates"]["public_end"] == "2025-06-30"
+    assert authority["sessions"]["ordered"][-1] == "2025-06-30"
+    assert authority["raw_responses"]["calendar"]["query"]["to"] == "2025-06-30"
+    assert authority["raw_responses"]["typed_delisted_chunks"][-1]["query"]["endDd"] == "20260724"
     with pytest.raises(TypeError):
         authority["stable_symbols"] += ("000001",)
 
@@ -44,6 +49,19 @@ def test_reader_reconstructs_isin_join_without_short_code_collision(tmp_path):
     collision["ISU_CD"] = "KR7999999003"
     collision["KIND_STKCERT_TP_NM"] = "우선주"
     envelope["authority"]["raw_responses"]["typed_delisted_chunks"][0]["response"].append(collision)
+    envelope["authority"]["raw_sha256"] = sha256_canonical(envelope["authority"]["raw_responses"])
+
+    authority = load_type1_authority(_write(tmp_path, seal_authority(envelope["authority"])))
+
+    assert "001000" in {row["symbol"] for row in authority["ranking"]["rows"]}
+def test_reader_recovers_mdcstat23801_six_digit_isu_cd_anchor_member(tmp_path):
+    envelope = _envelope()
+    current = envelope["authority"]["raw_responses"]["typed_current"]["response"]
+    historical = envelope["authority"]["raw_responses"]["historical_anchor"]["response"]
+    delisted = dict(current.pop(0))
+    delisted.pop("ISU_SRT_CD")
+    delisted["ISU_CD"] = historical[0]["ISU_CD"] = "001000"
+    envelope["authority"]["raw_responses"]["typed_delisted_chunks"][0]["response"].append(delisted)
     envelope["authority"]["raw_sha256"] = sha256_canonical(envelope["authority"]["raw_responses"])
 
     authority = load_type1_authority(_write(tmp_path, seal_authority(envelope["authority"])))

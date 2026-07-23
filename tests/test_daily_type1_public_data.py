@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-from stom_rl.daily_type1_public_data import DATASET_ID, materialize_public_data, write_public_materialization
+from stom_rl.daily_type1_public_data import AMENDMENT_PATH, DATASET_ID, materialize_public_data, write_public_materialization
 
 
 DAILY_COLUMNS = 'date, open, high, low, close, volume, "상장주식수", "외국인주문한도수량", "외국인현보유수량", "외국인현보유비율", "기관순매수", "기관누적순매수"'
@@ -59,9 +59,30 @@ def test_authority_sessions_exact_proxy_leading_zero_and_split_local_pairs(tmp_p
     assert rows[1]["gross_return"] is None
     assert rows[2]["gross_return"] == str(Decimal(120) / Decimal(110) - Decimal(1))
     assert rows[3]["gross_return"] is None
+    assert max(row["decision_date"] for row in rows) == "2025-06-30"
+    assert all(row["decision_date"] <= "2025-06-30" for row in rows)
     manifest = result["manifest"]
+    assert manifest["dataset_id"] == "type1-close-20260803-004"
+    assert manifest["authority"]["authority_id"] == "type1-krx-authority-20260724-003"
     assert manifest["authority"]["sessions"]["train"] == {"ordered": ["2023-12-28", "2023-12-29"], "pairs": [[0, 1]], "trailing_embargo": []}
     assert manifest["authority"]["sessions"]["reused_validation"] == {"ordered": ["2024-01-02", "2025-06-30"], "pairs": [[0, 1]], "trailing_embargo": []}
+    assert manifest["price_basis"] == "15:20_bar_close_proxy"
+    assert manifest["sql_predicates"]["exact_1520"].endswith("% 10000 = 1520")
+    assert manifest["amendment_id"] == "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
+    amendment = json.loads(AMENDMENT_PATH.read_text(encoding="utf-8"))
+    assert amendment["schema_version"] == "kronos.type1.g002-recovery-amendment.v3"
+    assert amendment["replacement_identity"] == {
+        "authority_id": "type1-krx-authority-20260724-003",
+        "dataset_id": "type1-close-20260803-004",
+        "train_id": "type1-public-004",
+        "train_run_id": "train_type1-public-004",
+        "custody_uid": "type1-fresh-oos-20260803-004",
+    }
+    assert amendment["authority_contract"]["authority_metadata_cutoff"] == "2026-07-24"
+    assert amendment["authority_contract"]["authority_metadata_scope"] == (
+        "MDCSTAT23801 instrument-master metadata only; this does not extend price, "
+        "calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30."
+    )
     assert manifest["fresh_oos"] == {"state": "NOT_RUN", "read_performed": False}
 
 

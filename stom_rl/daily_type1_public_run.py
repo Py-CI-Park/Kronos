@@ -25,12 +25,12 @@ from stom_rl.daily_type1_contract import FEATURES, INITIAL_NAV_KRW, SEEDS, SLOT_
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PUBLIC_TRAIN_START = "2018-01-02"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v2_2026-07-23.json"
-REPLACEMENT_DATASET_ID = "type1-close-20260803-003"
-REPLACEMENT_TRAIN_ID = "type1-public-003"
-REPLACEMENT_RUN_ID = "train_type1-public-003"
-REPLACEMENT_AUTHORITY_ID = "type1-krx-authority-20260723-002"
-REPLACEMENT_CUSTODY_UID = "type1-fresh-oos-20260803-003"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json"
+REPLACEMENT_DATASET_ID = "type1-close-20260803-004"
+REPLACEMENT_TRAIN_ID = "type1-public-004"
+REPLACEMENT_RUN_ID = "train_type1-public-004"
+REPLACEMENT_AUTHORITY_ID = "type1-krx-authority-20260724-003"
+REPLACEMENT_CUSTODY_UID = "type1-fresh-oos-20260803-004"
 AUTHORIZED_RUN_ROOT = REPO_ROOT / "artifacts" / "type1-public-runs"
 PUBLIC_TRAIN_END = "2023-12-29"
 REUSED_VALIDATION_START = "2024-01-02"
@@ -169,11 +169,26 @@ def _verified_inputs(
     }
     required_amendment = {
         "schema_version", "amendment_id", "supersedes", "status", "reason",
-        "preserved_aborted_evidence", "replacement_identity", "authority_contract",
-        "execution_contract", "fresh_oos", "frozen_utc",
+        "preserved_aborted_evidence", "quarantined_authorities", "replacement_identity",
+        "authority_contract", "execution_contract", "fresh_oos", "frozen_utc",
     }
-    if set(amendment) != required_amendment or amendment["schema_version"] != "kronos.type1.g002-recovery-amendment.v2" or amendment["replacement_identity"] != expected_identity:
-        raise ValueError("recovery amendment v2 replacement identity mismatch")
+    quarantined = [{
+        "authority_id": "type1-krx-authority-20260723-002",
+        "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+        "status": "QUARANTINED",
+        "models_created": 0,
+        "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+    }]
+    if (
+        set(amendment) != required_amendment
+        or amendment["schema_version"] != "kronos.type1.g002-recovery-amendment.v3"
+        or amendment["replacement_identity"] != expected_identity
+        or amendment["quarantined_authorities"] != quarantined
+    ):
+        raise ValueError("recovery amendment v3 replacement identity mismatch")
+    authority_contract = amendment["authority_contract"]
+    if not isinstance(authority_contract, Mapping) or authority_contract.get("authority_metadata_cutoff") != "2026-07-24":
+        raise ValueError("recovery amendment authority metadata cutoff is unsafe")
     if amendment["fresh_oos"] != {"custody_uid": REPLACEMENT_CUSTODY_UID, "status": "NOT_RUN", "no_read": True, "no_price_or_oos_query_after": "2025-06-30"}:
         raise ValueError("recovery amendment does not prove untouched fresh OOS")
     if amendment["execution_contract"] != {"proxy_time": "15:20:00", "cost_bps": 23, "fixed_notional": 60000000, "primary_seeds": 5, "shuffled_seeds": 5, "timesteps_per_seed": 200000, "outcome": "NO_GO_ONLY"}:

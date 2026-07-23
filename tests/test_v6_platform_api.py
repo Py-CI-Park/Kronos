@@ -632,8 +632,20 @@ def test_v6_reports_empty_and_report_html_guards(client, monkeypatch, tmp_path) 
     assert {report["dataset_run_id"] for report in reports} == {
         "type1-close-20260803-001",
         "type1-close-20260803-002",
+        "type1-close-20260803-003",
     }
     assert all(report["availability"] == "BLOCKED" for report in reports)
+    assert all(report["custody"]["immutable_history"] is True for report in reports)
+    aborted = next(report for report in reports if report["dataset_run_id"] == "type1-close-20260803-003")
+    assert aborted["custody"]["scientific_eligibility"] == "NON_MATERIALIZED_INELIGIBLE"
+    assert aborted["custody"]["model_files_created"] == 0
+    assert aborted["custody"]["materializations_created"] == 0
+    assert aborted["custody"]["authority_id"] == "type1-krx-authority-20260723-002"
+    assert aborted["custody"]["authority_sha256"] == "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2"
+    assert aborted["custody"]["fresh_oos_state"] == "NOT_RUN"
+    assert aborted["custody"]["fresh_oos_read"] is False
+
+
     assert client.get("/api/v6/status").get_json()["journey"]["report"]["state"] == "HAS_REPORTS"
     missing = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1")
     assert missing.status_code == 404
@@ -647,6 +659,32 @@ def test_v6_reports_empty_and_report_html_guards(client, monkeypatch, tmp_path) 
     assert post.status_code == 405
     assert post.headers["Allow"] == "GET"
     assert client.post("/api/v6/reports").status_code == 405
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("authority_metadata_cutoff", "2026-07-25"),
+        ("authority_metadata_scope", "metadata includes post-cutoff prices"),
+    ],
+)
+def test_v6_reports_omit_type1_history_for_tampered_authority_metadata(client, monkeypatch, tmp_path, field, value) -> None:
+    amendment = json.loads(
+        (v6_platform_api.DOCS_ROOT / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    amendment["authority_contract"][field] = value
+    docs_root = tmp_path / "docs"
+    docs_root.mkdir()
+    (docs_root / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json").write_text(
+        json.dumps(amendment), encoding="utf-8"
+    )
+    monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", tmp_path / "missing-runs")
+
+    reports = client.get("/api/v6/reports").get_json()["reports"]
+    assert not [entry for entry in reports if entry["record_type"] == "TYPE1_PRESERVED_INELIGIBLE_CUSTODY"]
 
 
 def test_v6_report_html_blocks_sha_mismatch(client, monkeypatch, tmp_path) -> None:

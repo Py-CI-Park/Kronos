@@ -43,14 +43,31 @@ def test_frozen_ranking_reconstructs_from_typed_anchor_only():
         values[date].extend([{"ISU_SRT_CD": "001504", "거래대금": 9999}, {"ISU_SRT_CD": "001505", "거래대금": 9999}, {"ISU_SRT_CD": "777777", "거래대금": 999999}])
     authority = build_authority(typed_current=current, typed_delisted_chunks=chunks, historical_anchor=historical, calendar=calendar, values=values, delisted_chunk_bounds=bounds, provider_retrieval_utc="2025-07-01T00:00:00Z")
     rows = {row["symbol"]: row for row in authority["ranking"]["rows"]}
+    assert authority["authority_id"] == "type1-krx-authority-20260724-003"
+    assert len(authority["stable_symbols"]) == 500
     assert rows["001504"]["median_traded_value"] == 9999
     assert authority["stable_symbols"].index("001504") < authority["stable_symbols"].index("001505")
     assert "777777" not in rows
-    assert authority["raw_responses"]["typed_current"]["query"]["bld"].endswith("MDCSTAT01901")
+    assert authority["raw_responses"]["typed_current"]["query"]["bld"] == "dbms/MDC/STAT/standard/MDCSTAT01901"
     assert authority["raw_responses"]["historical_anchor"]["query"]["calls"] == [
         {"bld": "dbms/MDC/STAT/standard/MDCSTAT01501", "trdDd": "20171228", "mktId": "STK"},
         {"bld": "dbms/MDC/STAT/standard/MDCSTAT01501", "trdDd": "20171228", "mktId": "KSQ"},
     ]
+    assert authority["raw_responses"]["typed_delisted_chunks"][0]["query"] == {
+        "bld": "dbms/MDC/STAT/issue/MDCSTAT23801",
+        "strtDd": "19730101",
+        "endDd": "20171231",
+        "mktId": "ALL",
+        "isuCd": "ALL",
+        "isuCd2": "ALL",
+        "share": "1",
+        "csvxls_isNo": "true",
+    }
+    assert authority["query_profile"]["authority_metadata_cutoff"] == "2026-07-24"
+    assert authority["raw_responses"]["calendar"]["query"]["to"] == "2025-06-30"
+    assert authority["sessions"]["last"] == "2025-06-30"
+    assert authority["fresh_oos"] == {"status": "NOT_RUN", "no_read": True}
+
 
 def test_isin_join_prevents_reused_short_code_from_overwriting_anchor_type():
     current, chunks, historical, calendar, values, bounds = _inputs()
@@ -63,6 +80,15 @@ def test_isin_join_prevents_reused_short_code_from_overwriting_anchor_type():
     authority = build_authority(typed_current=current, typed_delisted_chunks=chunks, historical_anchor=historical, calendar=calendar, values=values, delisted_chunk_bounds=bounds, provider_retrieval_utc="2025-07-01T00:00:00Z")
 
     assert "001000" in {row["symbol"] for row in authority["ranking"]["rows"]}
+def test_recycled_short_code_ambiguity_is_rejected():
+    current, chunks, historical, calendar, values, bounds = _inputs()
+    reused = _typed("001000", "reused code", certificate="우선주", delisted="2018-01-02")
+    chunks[0].append(reused)
+
+    authority = build_authority(typed_current=current, typed_delisted_chunks=chunks, historical_anchor=historical, calendar=calendar, values=values, delisted_chunk_bounds=bounds, provider_retrieval_utc="2025-07-01T00:00:00Z")
+
+    assert "001000" not in {row["symbol"] for row in authority["ranking"]["rows"]}
+    assert {"symbol": "001000", "name": "종목1000", "reason": "typed_market_not_kospi_or_kosdaq"} in authority["candidate_exclusions"]
 
 
 def test_post_anchor_delisted_typed_member_remains_eligible():
@@ -74,13 +100,23 @@ def test_post_anchor_delisted_typed_member_remains_eligible():
     authority = build_authority(typed_current=current, typed_delisted_chunks=[[delisted]], historical_anchor=historical, calendar=calendar, values=values, delisted_chunk_bounds=bounds, provider_retrieval_utc="2025-07-01T00:00:00Z")
 
     assert "001000" in {row["symbol"] for row in authority["ranking"]["rows"]}
+def test_mdcstat23801_six_digit_isu_cd_recovers_delisted_anchor_member():
+    current, _, historical, calendar, values, bounds = _inputs()
+    current = current[1:]
+    delisted = dict(historical[0])
+    delisted.pop("ISU_SRT_CD")
+    delisted["ISU_CD"] = "001000"
+
+    authority = build_authority(typed_current=current, typed_delisted_chunks=[[delisted]], historical_anchor=historical, calendar=calendar, values=values, delisted_chunk_bounds=bounds, provider_retrieval_utc="2025-07-01T00:00:00Z")
+
+    assert "001000" in {row["symbol"] for row in authority["ranking"]["rows"]}
 
 
-def test_typed_delisted_metadata_bounds_stop_at_public_end():
+def test_typed_delisted_metadata_bounds_extend_only_to_metadata_cutoff():
     bounds = _typed_delisted_bounds()
 
     assert bounds[0] == {"from": "1973-01-01", "to": "1977-12-31"}
-    assert bounds[-1] == {"from": "2023-01-01", "to": "2025-06-30"}
+    assert bounds[-1] == {"from": "2023-01-01", "to": "2026-07-24"}
 
 
 def test_dependency_import_banner_is_suppressed_before_krx_login(monkeypatch, tmp_path, capsys):

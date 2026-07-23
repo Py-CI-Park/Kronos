@@ -17,7 +17,8 @@ SIGNING_DOMAIN = b"KRONOS.TYPE1.KRX.PUBLIC.AUTHORITY.V2\x00"
 INTEGRITY_LABEL = "local artifact integrity; not KRX/external attestation"
 PUBLIC_END = "2025-06-30"
 ANCHOR = "2017-12-29"
-AUTHORITY_ID = "type1-krx-authority-20260723-002"
+AUTHORITY_METADATA_END = "2026-07-24"
+AUTHORITY_ID = "type1-krx-authority-20260724-003"
 MARKETS = ("KOSPI", "KOSDAQ")
 MARKET_QUERY_IDS = {"KOSPI": "STK", "KOSDAQ": "KSQ"}
 
@@ -93,17 +94,21 @@ def _symbol(row: Mapping[str, Any]) -> str:
     if short:
         return short
     isin = _field(row, "ISU_CD")
+    if re.fullmatch(r"\d{6}", isin):
+        return isin
     match = re.fullmatch(r"KR7(\d{6})\d{3}", isin)
     return match.group(1) if match else ""
+
+
 def _typed_row_for_historical(
     historical: Mapping[str, Any],
     typed_by_isin: Mapping[str, Mapping[str, Any]],
     typed_by_symbol: Mapping[str, list[Mapping[str, Any]]],
 ) -> Mapping[str, Any]:
-    """Join KRX instruments by ISIN; only use an unambiguous short-code fallback."""
+    """Join by exact ISIN first, then only an unambiguous short-code fallback."""
     isin = _field(historical, "ISU_CD")
-    if isin:
-        return typed_by_isin.get(isin, {})
+    if isin in typed_by_isin:
+        return typed_by_isin[isin]
     candidates = typed_by_symbol.get(_symbol(historical), [])
     return candidates[0] if len(candidates) == 1 else {}
 
@@ -184,10 +189,25 @@ def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
     _require(isinstance(chunks, list) and chunks, "missing chunked delisted typed history")
     delisted = [row for chunk in chunks for row in _response_rows(chunk)]
     profile = authority["query_profile"]
-    _require(isinstance(profile, Mapping) and profile.get("historical_anchor_surface") == "MDCSTAT01501" and profile.get("typed_current_surface") == "MDCSTAT01901" and profile.get("typed_delisted_surface") == "MDCSTAT23801", "wrong KRX typed query profile")
+    _require(
+        isinstance(profile, Mapping)
+        and profile.get("historical_anchor_surface") == "MDCSTAT01501"
+        and profile.get("typed_current_surface") == "MDCSTAT01901"
+        and profile.get("typed_delisted_surface") == "MDCSTAT23801"
+        and profile.get("authority_metadata_cutoff") == AUTHORITY_METADATA_END,
+        "wrong KRX typed query profile",
+    )
     _require(profile.get("typed_join") == "ISU_CD exact; unique ISU_SRT_CD fallback", "wrong typed instrument join")
     bounds = profile.get("delisted_chunk_bounds")
-    _require(isinstance(bounds, list) and len(bounds) == len(chunks) and all(set(bound) == {"from", "to"} and bound["from"] <= bound["to"] <= PUBLIC_END for bound in bounds), "invalid delisted chunk bounds")
+    _require(
+        isinstance(bounds, list)
+        and len(bounds) == len(chunks)
+        and all(
+            set(bound) == {"from", "to"} and bound["from"] <= bound["to"] <= AUTHORITY_METADATA_END
+            for bound in bounds
+        ),
+        "invalid delisted metadata chunk bounds",
+    )
     current_query = raw["typed_current"]["query"]
     historical_query = raw["historical_anchor"]["query"]
     _require(
@@ -254,11 +274,15 @@ def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
     _require(isinstance(ranking_sessions, list) and len(ranking_sessions) == 60 and ranking_sessions == sorted(ranking_sessions) and ranking_sessions[-1] <= ANCHOR, "invalid 60-session ranking window")
     values = raw["traded_value_by_session"]
     _require(isinstance(values, Mapping) and set(values) == set(ranking_sessions), "missing ranking source captures")
+    values_by_session = {
+        date: {_symbol(item): item for item in _response_rows(values[date]) if _symbol(item)}
+        for date in ranking_sessions
+    }
     rows = authority["ranking"].get("rows")
     _require(isinstance(rows, list) and len(rows) >= 500, "incomplete ranking")
     expected_rows = []
     for symbol in eligible:
-        series = [_value({ _symbol(item): item for item in _response_rows(values[date]) }.get(symbol)) for date in ranking_sessions]
+        series = [_value(values_by_session[date].get(symbol)) for date in ranking_sessions]
         expected_rows.append({"symbol": symbol, "traded_values": series, "median_traded_value": _median(series)})
     expected_rows.sort(key=lambda row: (-row["median_traded_value"], row["symbol"]))
     _require(rows == expected_rows, "ranking does not reconstruct from typed raw sources")

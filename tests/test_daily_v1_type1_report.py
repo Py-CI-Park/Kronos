@@ -1,9 +1,11 @@
 import json
 
 import pytest
+import stom_rl.daily_v1_type1_report as type1_report
 
 from stom_rl.daily_v1_type1_report import (
-    IDENTITY, LOCKS, POLICY, REPLACEMENT_OUTER_IDENTITY, Type1ReportError, commit_report_tip,
+    AMENDMENT_PATH, IDENTITY, LOCKS, M3E_STATEMENT, POLICY,
+    REPLACEMENT_OUTER_IDENTITY, Type1ReportError, commit_report_tip,
     insert_report_revision, materialize_report_revision, report_source_sha256,
     verify_report_catalog,
 )
@@ -96,13 +98,64 @@ def test_catalog_rejects_semantic_outer_identity_tamper(tmp_path):
     with pytest.raises(Type1ReportError, match="outer identity"):
         report_source_sha256(tmp_path)
     assert REPLACEMENT_OUTER_IDENTITY == {
-        "authority_id": "type1-krx-authority-20260723-002",
-        "dataset_id": "type1-close-20260803-003",
-        "train_id": "type1-public-003",
-        "train_run_id": "train_type1-public-003",
-        "custody_uid": "type1-fresh-oos-20260803-003",
+        "authority_id": "type1-krx-authority-20260724-003",
+        "dataset_id": "type1-close-20260803-004",
+        "train_id": "type1-public-004",
+        "train_run_id": "train_type1-public-004",
+        "custody_uid": "type1-fresh-oos-20260803-004",
         "report_family": "kronos.type1.report.v1",
     }
+    amendment = json.loads(AMENDMENT_PATH.read_text(encoding="utf-8"))
+    assert amendment["schema_version"] == "kronos.type1.g002-recovery-amendment.v3"
+    assert amendment["amendment_id"] == "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
+    assert amendment["replacement_identity"] == {
+        key: REPLACEMENT_OUTER_IDENTITY[key]
+        for key in ("authority_id", "dataset_id", "train_id", "train_run_id", "custody_uid")
+    }
+    assert [(item["dataset_id"], item["models_created"]) for item in amendment["preserved_aborted_evidence"]] == [
+        ("type1-close-20260803-001", 0),
+        ("type1-close-20260803-002", 0),
+        ("type1-close-20260803-003", 0),
+    ]
+    assert amendment["preserved_aborted_evidence"][2]["status"] == "NON_MATERIALIZED_INELIGIBLE"
+    assert amendment["quarantined_authorities"] == [{
+        "authority_id": "type1-krx-authority-20260723-002",
+        "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+        "status": "QUARANTINED",
+        "models_created": 0,
+        "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+    }]
+    assert amendment["authority_contract"]["authority_metadata_cutoff"] == "2026-07-24"
+    assert amendment["authority_contract"]["authority_metadata_scope"] == (
+        "MDCSTAT23801 instrument-master metadata only; this does not extend price, calendar, "
+        "ranking, public-row, or fresh-OOS access beyond 2025-06-30."
+    )
+    assert amendment["fresh_oos"]["no_price_or_oos_query_after"] == "2025-06-30"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("authority_metadata_cutoff", "2026-07-25"),
+        ("authority_metadata_scope", "metadata includes post-cutoff prices"),
+    ],
+)
+def test_report_builder_rejects_amendment_authority_metadata_tampering(tmp_path, monkeypatch, field, value):
+    original_read_json = type1_report._read_json
+
+    def tampered_read_json(path, label):
+        source = original_read_json(path, label)
+        if label != "amendment":
+            return source
+        source = dict(source)
+        authority_contract = dict(source["authority_contract"])
+        authority_contract[field] = value
+        source["authority_contract"] = authority_contract
+        return source
+
+    monkeypatch.setattr(type1_report, "_read_json", tampered_read_json)
+    with pytest.raises(Type1ReportError, match="authority metadata scope"):
+        _sources(tmp_path)
 
 
 def test_report_uses_seven_ordinary_anchor_linked_sections(tmp_path):
@@ -114,4 +167,5 @@ def test_report_uses_seven_ordinary_anchor_linked_sections(tmp_path):
     for section in ("overview", "identity", "protocol", "training", "validation", "custody", "integrity"):
         assert f'href="#{section}"' in report
         assert f'id="{section}"' in report
-    assert "LINUCB_CONTEXTUAL_BANDIT_NO_GO_FIVE_SEEDS_23BP_FRESH_OOS_NOT_RUN_UNCHANGED" in report
+    assert M3E_STATEMENT == "LINUCB_CONTEXTUAL_BANDIT_NO_GO_FIVE_SEEDS_23BP_FRESH_OOS_NOT_RUN_UNCHANGED"
+    assert M3E_STATEMENT in report

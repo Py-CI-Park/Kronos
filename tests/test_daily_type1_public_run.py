@@ -26,6 +26,7 @@ from stom_rl.daily_type1_public_run import (
     REPLACEMENT_DATASET_ID,
     REPLACEMENT_RUN_ID,
     REPLACEMENT_TRAIN_ID,
+    REPLACEMENT_CUSTODY_UID,
     _verified_inputs,
 )
 
@@ -81,9 +82,46 @@ def test_parser_exposes_no_smoke_seed_or_selection_escape_hatches():
     assert "--seeds" not in parser.format_help()
     assert "--smoke" not in parser.format_help()
     assert "best" not in parser.format_help().lower()
-def test_replacement_input_binding_exposes_required_identity_and_source_hashes(tmp_path: Path, monkeypatch):
+def test_replacement_input_binding_exposes_v4_identity_and_source_hashes(tmp_path: Path, monkeypatch):
     import stom_rl.daily_type1_authority as authority_module
 
+    amendment = json.loads(AMENDMENT_PATH.read_text(encoding="utf-8"))
+    assert (REPLACEMENT_AUTHORITY_ID, REPLACEMENT_DATASET_ID, REPLACEMENT_TRAIN_ID, REPLACEMENT_RUN_ID, REPLACEMENT_CUSTODY_UID) == (
+        "type1-krx-authority-20260724-003",
+        "type1-close-20260803-004",
+        "type1-public-004",
+        "train_type1-public-004",
+        "type1-fresh-oos-20260803-004",
+    )
+    assert amendment["schema_version"] == "kronos.type1.g002-recovery-amendment.v3"
+    assert amendment["amendment_id"] == "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
+    assert amendment["replacement_identity"] == {
+        "authority_id": REPLACEMENT_AUTHORITY_ID,
+        "dataset_id": REPLACEMENT_DATASET_ID,
+        "train_id": REPLACEMENT_TRAIN_ID,
+        "train_run_id": REPLACEMENT_RUN_ID,
+        "custody_uid": REPLACEMENT_CUSTODY_UID,
+    }
+    assert amendment["execution_contract"] == {
+        "proxy_time": "15:20:00",
+        "cost_bps": 23,
+        "fixed_notional": 60_000_000,
+        "primary_seeds": 5,
+        "shuffled_seeds": 5,
+        "timesteps_per_seed": 200_000,
+        "outcome": "NO_GO_ONLY",
+    }
+    assert amendment["fresh_oos"] == {
+        "custody_uid": REPLACEMENT_CUSTODY_UID,
+        "status": "NOT_RUN",
+        "no_read": True,
+        "no_price_or_oos_query_after": "2025-06-30",
+    }
+    assert amendment["authority_contract"]["authority_metadata_cutoff"] == "2026-07-24"
+    assert amendment["authority_contract"]["authority_metadata_scope"] == (
+        "MDCSTAT23801 instrument-master metadata only; this does not extend price, "
+        "calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30."
+    )
     symbols = [f"{index:06d}" for index in range(500)]
     authority_path = tmp_path / "authority.json"
     authority_path.write_text(json.dumps({"authority": {

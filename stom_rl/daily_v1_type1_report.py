@@ -18,18 +18,18 @@ from typing import Any, Mapping
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PREREG_PATH = REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v2_2026-07-23.json"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json"
 REPORT_ROOT = "type1_reports"
 REVISION_SCHEMA = "kronos_type1_report_revision.v2"
 MATERIALIZATION_SCHEMA = "kronos_type1_report_materialization.v2"
 TIP_SCHEMA = "kronos_type1_committed_report_tip.v2"
 BUILDER_VERSION = "kronos_type1_report_builder.v2"
 REPLACEMENT_IDENTITY = {
-    "authority_id": "type1-krx-authority-20260723-002",
-    "dataset_id": "type1-close-20260803-003",
-    "train_id": "type1-public-003",
-    "train_run_id": "train_type1-public-003",
-    "custody_uid": "type1-fresh-oos-20260803-003",
+    "authority_id": "type1-krx-authority-20260724-003",
+    "dataset_id": "type1-close-20260803-004",
+    "train_id": "type1-public-004",
+    "train_run_id": "train_type1-public-004",
+    "custody_uid": "type1-fresh-oos-20260803-004",
 }
 REPLACEMENT_OUTER_IDENTITY = {
     **REPLACEMENT_IDENTITY,
@@ -191,16 +191,21 @@ def _identity_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
 def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
     amendment = fixed["amendment"]
     if (
-        amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v2"
-        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-002"
-        or amendment.get("supersedes") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-001"
-        or amendment.get("status") != "FROZEN_BEFORE_REPLACEMENT_MATERIALIZATION_OR_TRAINING"
+        amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v3"
+        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
+        or amendment.get("supersedes") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-002"
+        or amendment.get("status") != "FROZEN_BEFORE_V4_MATERIALIZATION_OR_TRAINING"
         or amendment.get("replacement_identity") != REPLACEMENT_IDENTITY
     ):
-        raise Type1ReportError("recovery amendment does not bind exact frozen v3 replacement identity")
+        raise Type1ReportError("recovery amendment does not bind exact frozen v4 replacement identity")
     execution = amendment.get("execution_contract")
     fresh_oos = amendment.get("fresh_oos")
     preserved = amendment.get("preserved_aborted_evidence")
+    expected_attempts = (
+        ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001", "INELIGIBLE_BLOCKED"),
+        ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002", "INELIGIBLE_BLOCKED"),
+        ("type1-close-20260803-003", "type1-public-003", "train_type1-public-003", "NON_MATERIALIZED_INELIGIBLE"),
+    )
     if (
         not isinstance(execution, Mapping)
         or execution.get("outcome") != "NO_GO_ONLY"
@@ -214,12 +219,39 @@ def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
             "no_read": True,
             "no_price_or_oos_query_after": "2025-06-30",
         }
-        or preserved != [
-            {"dataset_id": "type1-close-20260803-001", "train_id": "type1-public-001", "train_run_id": "train_type1-public-001", "status": "INELIGIBLE_BLOCKED", "models_created": 0},
-            {"dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002", "status": "INELIGIBLE_BLOCKED", "models_created": 0},
-        ]
+        or not isinstance(preserved, list)
+        or len(preserved) != len(expected_attempts)
     ):
         raise Type1ReportError("recovery amendment frozen no-go or aborted history is invalid")
+    for evidence, (dataset_id, train_id, train_run_id, status) in zip(preserved, expected_attempts):
+        if not isinstance(evidence, Mapping) or (
+            evidence.get("dataset_id"),
+            evidence.get("train_id"),
+            evidence.get("train_run_id"),
+            evidence.get("status"),
+            evidence.get("models_created"),
+        ) != (dataset_id, train_id, train_run_id, status, 0):
+            raise Type1ReportError("recovery amendment aborted history is invalid")
+    if preserved[2].get("fresh_oos") != {"status": "NOT_RUN", "no_read": True}:
+        raise Type1ReportError("recovery amendment v3 fresh-OOS history is invalid")
+    quarantined = amendment.get("quarantined_authorities")
+    if quarantined != [{
+        "authority_id": "type1-krx-authority-20260723-002",
+        "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+        "status": "QUARANTINED",
+        "models_created": 0,
+        "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+    }]:
+        raise Type1ReportError("recovery amendment does not quarantine the v2 authority")
+    authority_contract = amendment.get("authority_contract")
+    if not isinstance(authority_contract, Mapping) or (
+        authority_contract.get("authority_metadata_cutoff"),
+        authority_contract.get("authority_metadata_scope"),
+    ) != (
+        "2026-07-24",
+        "MDCSTAT23801 instrument-master metadata only; this does not extend price, calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30.",
+    ):
+        raise Type1ReportError("recovery amendment authority metadata scope is invalid")
 
     protocol, preregistration = fixed["protocol"], fixed["preregistration"]
     if (protocol.get("protocol_id"), protocol.get("parent_prereg_id")) != (
