@@ -21,6 +21,7 @@
     type V6Runs,
     type V6Status,
   } from '../v6Api';
+  import { classifyType1State, isType1Identity } from '../type1Presentation';
 
   let status = $state<V6Status | null>(null);
   let runs = $state<V6Runs | null>(null);
@@ -46,8 +47,23 @@
   const text = (value: unknown) => value === undefined || value === null || value === '' ? 'MISSING' : String(value);
   const short = (value: unknown) => text(value).slice(0, 12);
   const kb = (value: number | undefined) => typeof value === 'number' ? `${(value / 1024).toFixed(0)} KB` : 'MISSING';
-  const badgeClass = (value: string | undefined) => value === 'NO_GO' ? 'danger' : value === 'INCONCLUSIVE' ? 'warn' : value?.startsWith('GO_CANDIDATE') ? 'warn' : 'muted';
-  const reportUrl = (report: V6ReportEntry, download = false) => v6ReportHtmlUrl(report.dataset_run_id ?? '', report.train_run_id ?? '', download);
+  const record = (report: V6ReportEntry | null | undefined): Record<string, unknown> => (report ?? {}) as Record<string, unknown>;
+  const type1 = (report: V6ReportEntry | null | undefined) => isType1Identity(record(report));
+  const field = (report: V6ReportEntry | null | undefined, key: string) => record(report)[key];
+  const reportState = (report: V6ReportEntry | null | undefined) => classifyType1State(record(report));
+  const badgeClass = (value: string | undefined) => value === 'NO_GO' || value === 'TAMPERED' || value === 'BLOCKED' ? 'danger' : value === 'INCONCLUSIVE' || value === 'NOT_RUN' ? 'warn' : value?.startsWith('GO_CANDIDATE') ? 'warn' : 'muted';
+  const reportUrl = (report: V6ReportEntry, download = false): string | null => {
+    const sha = report.report_sha256;
+    return type1(report) ? sha ? v6ReportHtmlUrl(report.dataset_run_id ?? '', report.train_run_id ?? '', sha, download) : null : v6ReportHtmlUrl(report.dataset_run_id ?? '', report.train_run_id ?? '', undefined, download);
+  };
+  const revisionHistory = (report: V6ReportEntry) => {
+    const direct = report.failures;
+    if (direct?.length) return direct;
+    const catalog = field(report, 'catalog');
+    if (!catalog || typeof catalog !== 'object') return [] as unknown[];
+    const value = (catalog as Record<string, unknown>).failed_revisions ?? (catalog as Record<string, unknown>).history;
+    return Array.isArray(value) ? value : [];
+  };
   const projectUrl = (project: V6ProjectReportEntry, download = false) => v6ProjectReportHtmlUrl(project.project_id ?? '', download);
   const projectUsable = (project: V6ProjectReportEntry) => project.integrity === 'CHAIN_OK';
   const selectedDataset = () => runs?.datasets?.find((dataset) => dataset.run_id === selectedReport?.dataset_run_id);
@@ -126,9 +142,10 @@
     if (statusResponse.ok && statusResponse.data) status = statusResponse.data;
     if (runsResponse.ok && runsResponse.data) {
       runs = runsResponse.data;
-      const newest = runsResponse.data.runs?.[0];
-      if (newest?.dataset_run_id && newest.run_id) {
-        await selectReport({ dataset_run_id: newest.dataset_run_id, train_run_id: newest.run_id });
+      const immutable = reports?.reports?.find((report) => type1(report)) ?? reports?.reports?.[0];
+      const newest = immutable ?? (runsResponse.data.runs?.[0] ? { dataset_run_id: runsResponse.data.runs[0].dataset_run_id, train_run_id: runsResponse.data.runs[0].run_id } : undefined);
+      if (newest?.dataset_run_id && newest.train_run_id) {
+        await selectReport(newest);
       }
     } else {
       coreError = `UNAVAILABLE: ${runsResponse.error ?? statusResponse.error ?? '기본 연구 데이터를 불러올 수 없습니다.'}`;
@@ -145,6 +162,7 @@
     <h1>보고서</h1>
     <p>판정과 근거의 연결만 기록합니다. 이 화면은 투자 권유나 수익 주장이 아닙니다.</p>
   </header>
+  <nav class="section-nav" aria-label="보고서 섹션"><a href="#project-research-title">프로젝트</a><a href="#selected-verdict">판정</a><a href="#report-catalog-title">카탈로그</a><a href="#registry-title">레지스트리</a><a href="#evidence-chain">증거 체인</a><a href="#report-rules">규칙</a><a href="#related-docs">문서</a></nav>
 
   {#if loading}
     <section class="panel" aria-live="polite">판정과 증거 체인을 확인하고 있습니다.</section>
@@ -211,7 +229,7 @@
       {/if}
     </section>
 
-    <section class="verdict" class:danger={text(selectedVerdict()?.value) === 'NO_GO'} aria-live="polite">
+    <section id="selected-verdict" class="verdict" class:danger={text(selectedVerdict()?.value) === 'NO_GO'} aria-live="polite">
       <p class="eyebrow">선택된 실행의 판정</p><h2>{text(selectedVerdict()?.value)}</h2>
       {#each (selectedVerdict()?.reasons ?? []) as reason}<p>{text(reason)}</p>{:else}<p>판정 사유가 기록되지 않았습니다.</p>{/each}
     </section>
@@ -224,16 +242,17 @@
       {:else if reports?.reports?.length}
         <div class="report-grid">
           {#each reports.reports as report}
-            <article class:selected={selectedReport?.dataset_run_id === report.dataset_run_id && selectedReport?.train_run_id === report.train_run_id} class:mismatch={report.integrity !== 'OK'} class="report-card">
-              <span class="badge {badgeClass(report.verdict)}">{text(report.verdict)}</span><h3>{text(report.dataset_run_id)}</h3><p class="run">{text(report.train_run_id)}</p>
-              <dl><dt>생성</dt><dd>{text(report.generated_utc)}</dd><dt>test OOS</dt><dd>{text(report.test_state)}</dd><dt>지수 절</dt><dd>{text(report.index_overlay_state)}</dd><dt>SHA</dt><dd><code title={text(report.report_sha256)}>{short(report.report_sha256)}…</code><button class="mini" onclick={() => copy(report.report_sha256)}>복사</button></dd><dt>크기·무결성</dt><dd>{kb(report.size_bytes)} · {text(report.integrity)}</dd></dl>
-              {#if report.integrity === 'OK'}<div class="actions"><button onclick={() => selectReport(report, true)}>보고서 보기</button><button onclick={() => selectReport(report)}>provenance 선택</button><a href={reportUrl(report)} target="_blank" rel="noopener">새 창</a><a href={reportUrl(report, true)}>다운로드</a></div>{:else}<p class="mismatch-note">SHA_MISMATCH · 열람 차단됨(재생성 필요)</p>{/if}
+            <article class:selected={selectedReport?.dataset_run_id === report.dataset_run_id && selectedReport?.train_run_id === report.train_run_id} class:mismatch={report.integrity !== 'OK' || reportState(report)==='TAMPERED'} class="report-card">
+              <span class="badge {badgeClass(type1(report) ? reportState(report) ?? report.verdict : report.verdict)}">{text(type1(report) ? reportState(report) ?? report.verdict : report.verdict)}</span><h3>{text(report.dataset_run_id)}</h3><p class="run">{text(report.train_run_id)}{#if type1(report)} · Type1 sequential MaskablePPO{/if}</p>
+              <dl><dt>생성</dt><dd>{text(report.generated_utc)}</dd><dt>test OOS</dt><dd>{text(report.test_state)}</dd>{#if type1(report)}<dt>revision</dt><dd>{text(report.revision_ordinal)} · <code>{short(report.revision_sha256)}…</code></dd><dt>parent</dt><dd><code>{short(report.parent_sha256)}…</code></dd><dt>materialization</dt><dd><code>{short(report.materialization_sha256)}…</code></dd>{/if}<dt>SHA</dt><dd><code title={text(report.report_sha256)}>{short(report.report_sha256)}…</code><button class="mini" onclick={() => copy(report.report_sha256)}>복사</button></dd><dt>무결성</dt><dd>{text(report.integrity)} · {text(field(report,'chain_integrity'))}</dd></dl>
+              {#if type1(report)}<p class="note">Type1은 명시된 report SHA로만 열람합니다. SHA 없음, BLOCKED 또는 TAMPERED면 latest-tip 또는 다른 family로 대체하지 않습니다.</p>{#if revisionHistory(report).length}<p class="mismatch-note">이전 실패 revision 보존: {revisionHistory(report).map(text).join(' · ')}</p>{/if}{/if}
+              {#if report.integrity === 'OK' && (!type1(report) || (report.report_sha256 && reportState(report)!=='BLOCKED' && reportState(report)!=='TAMPERED'))}{#if reportUrl(report)}<div class="actions"><button onclick={() => selectReport(report, true)}>보고서 보기</button><button onclick={() => selectReport(report)}>provenance 선택</button><a href={reportUrl(report) ?? undefined} target="_blank" rel="noopener">새 창</a><a href={reportUrl(report, true) ?? undefined}>다운로드</a></div>{/if}{:else}<p class="mismatch-note">{text(reportState(report) ?? report.integrity)} · 열람 차단됨 · Type1 latest fallback 없음</p>{/if}
             </article>
           {/each}
         </div>
-        {#if viewerReport}
-          <div class="viewer-head"><h3>{text(viewerReport.dataset_run_id)} / {text(viewerReport.train_run_id)}</h3><button onclick={() => { viewerReport = null; }}>닫기</button></div>
-          <iframe class="viewer" sandbox="" src={reportUrl(viewerReport)} title="연구 실행 보고서 뷰어"></iframe>
+        {#if viewerReport && reportUrl(viewerReport)}
+          <div class="viewer-head"><h3>{text(viewerReport.dataset_run_id)} / {text(viewerReport.train_run_id)} · {type1(viewerReport) ? `SHA ${short(viewerReport.report_sha256)}` : 'catalog report'}</h3><button onclick={() => { viewerReport = null; }}>닫기</button></div>
+          <iframe class="viewer" sandbox="" src={reportUrl(viewerReport) ?? undefined} title="연구 실행 보고서 뷰어"></iframe>
         {/if}
       {:else}<p>생성된 보고서가 없습니다. 실행 종료 후 보고서를 생성합니다.</p>{/if}
     </section>
@@ -253,7 +272,7 @@
     {#if detailError}<section class="panel unavailable" role="alert">{detailError}{#if selectedReport}<button onclick={() => selectReport(selectedReport)}>다시 시도</button>{/if}</section>{/if}
     {#if detailLoading}<p class="note" aria-live="polite">선택된 실행의 provenance를 불러오는 중…</p>{/if}
     {#if selectedReport}
-      <section class="chains" aria-label="Selected run SHA chain">
+      <section id="evidence-chain" class="chains" aria-label="Selected run SHA chain">
         <section class="chain"><h2>Universe manifest</h2><code title={text(status?.journey.data.universe_manifest)}>{short(status?.journey.data.universe_manifest)}</code><button onclick={() => copy(status?.journey.data.universe_manifest)}>복사</button><p>{text(status?.journey.data.universe_size)} rows</p></section>
         <section class="chain"><h2>Preregistration</h2><code title={text(detail?.manifest?.prereg?.sha256)}>{short(detail?.manifest?.prereg?.sha256)}</code><button onclick={() => copy(detail?.manifest?.prereg?.sha256)}>복사</button></section>
         <section class="chain"><h2>Dataset run</h2><code title={text(selectedDataset()?.sha256)}>{short(selectedDataset()?.sha256)}</code><button onclick={() => copy(selectedDataset()?.sha256)}>복사</button><p>{text(selectedDataset()?.run_id)}</p></section>
@@ -262,8 +281,8 @@
     {:else}<section class="panel empty"><h2>증거 체인이 비어 있습니다</h2><p>학습 실행이 없으므로 데이터셋·학습 manifest·판정을 연결할 수 없습니다.</p></section>{/if}
 
     {#if copyMessage}<p class="copy-message" aria-live="polite">{copyMessage}</p>{/if}
-    <section class="card rules"><h2>보고 규칙</h2><p>GO/NO-GO/INCONCLUSIVE/NOT_RUN은 그대로 기록되며 완화되지 않습니다.</p></section>
-    <section class="card"><h2>관련 문서</h2><div class="docs"><code>requirements.txt</code><code>docs/kronos_v6_prereg_h1_2026-07-19.json</code><code>docs/kronos_v6_universe_manifest_2026-07-19.json</code><code>docs/kronos_v6_goal_review_and_plan_2026-07-19.md</code></div></section>
+    <section id="report-rules" class="card rules"><h2>보고 규칙</h2><p>GO/NO_GO/INCONCLUSIVE/NOT_RUN은 그대로 기록되며 완화되지 않습니다. Type1 TAMPERED, BLOCKED, NO_GO와 fresh OOS NOT_RUN은 정상 상태처럼 표시하지 않습니다.</p></section>
+    <section id="related-docs" class="card"><h2>관련 문서</h2><div class="docs"><code>requirements.txt</code><code>docs/kronos_v6_prereg_h1_2026-07-19.json</code><code>docs/kronos_v6_universe_manifest_2026-07-19.json</code><code>docs/kronos_v6_goal_review_and_plan_2026-07-19.md</code></div></section>
   {/if}
 </section>
 
@@ -275,6 +294,7 @@
   h2 { margin: 0 0 12px; color: var(--fg-strong); font-size: 1.15rem; }
   h3 { overflow-wrap: anywhere; }
   .verdict, .card, .panel, .chains { margin-top: 16px; }
+  .section-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }.section-nav a { border: 1px solid var(--border-strong); border-radius: 999px; padding: 5px 9px; color: var(--accent-strong); font-size: .82rem; text-decoration: none; }.section-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .verdict h2 { color: var(--info); font-size: clamp(2rem, 8vw, 3.5rem); }
   .verdict.danger, .report-card.mismatch, .project-card.blocked { border-color: var(--danger); background: var(--danger-soft); }
   .verdict.danger h2, .error, .mismatch-note { color: var(--danger); }

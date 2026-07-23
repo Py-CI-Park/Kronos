@@ -9,6 +9,12 @@
     type V6RunSeed,
     type V6Runs,
   } from '../v6Api';
+  import {
+    TYPE1_FACTS,
+    classifyType1State,
+    isType1Identity,
+    type1StateLabel,
+  } from '../type1Presentation';
 
   const NO_TRADE_CAPITAL = 60_000_000;
   const SEED_COLORS = ['#49a6ff', '#9b8cff', '#36c6a0', '#f0ae4f', '#e9799a'];
@@ -56,6 +62,47 @@
   );
   const generatedTime = $derived(manifest?.generated_utc ?? selectedRun?.generated_utc);
   const primaryCost = $derived(manifest?.hyperparams?.primary_cost_rate ?? manifest?.primary_cost_rate);
+  const shuffledSeedEntries = $derived(
+    Object.entries(manifest?.shuffled_label_control ?? {}) as [string, V6RunSeed][],
+  );
+  const observedEpisodes = $derived(
+    seedEntries.reduce((total, [, seed]) => total + (finiteNumber(seed.episodes_ran) ?? 0), 0),
+  );
+  const observedTrainingState = $derived(detail?.status ?? selectedRun?.state ?? runsData?.training_state);
+  const runArtifactPath = $derived(selectedRun?.path);
+  const datasetArtifactPath = $derived(
+    (runsData?.datasets ?? []).find((dataset) => dataset.run_id === detail?.dataset_run_id)?.path,
+  );
+  const isCompleted = $derived(
+    observedTrainingState === 'COMPLETED' || observedTrainingState === 'COMPLETE',
+  );
+  const isType1 = $derived(
+    isType1Identity(manifest as unknown as Readonly<Record<string, unknown>> | undefined)
+      || isType1Identity(`${detail?.dataset_run_id ?? ''} ${detail?.train_run_id ?? ''} ${modelLabel ?? ''} ${manifest?.prereg?.id ?? ''}`),
+  );
+  const type1EvidenceState = $derived(
+    classifyType1State(
+      {
+        status: observedTrainingState,
+        verdict: manifest?.verdict_candidate?.value,
+        test_state: manifest?.test?.state,
+        reason: detail?.reason,
+      },
+      detailLoading,
+    ),
+  );
+  const type1Run = $derived(
+    (runsData?.runs ?? []).find((run) =>
+      isType1Identity(`${run.dataset_run_id ?? ''} ${run.run_id ?? ''}`),
+    ),
+  );
+  const type1OverviewState = $derived(
+    isType1
+      ? type1EvidenceState
+      : classifyType1State(type1Run?.state) === 'EMPTY'
+        ? 'NOT_RUN'
+        : classifyType1State(type1Run?.state),
+  );
 
   const navOption = $derived.by(() => {
     void chartEpoch;
@@ -158,6 +205,13 @@
       <h1>학습</h1>
       <p>실행 기록과 상세 manifest는 읽기 전용 API 응답에서만 표시합니다.</p>
     </header>
+    <section class="card wide type1-overview" role="status" aria-live="polite">
+      <p class="eyebrow">TYPE1 STATUS</p>
+      <h2>Sequential MaskablePPO</h2>
+      <p>Planned: 5 primary + 5 shuffled-label control seeds × 200,000 fixed episodes.</p>
+      <p>Current Type1 evidence: <strong>{type1StateLabel(type1OverviewState)}</strong> — no observed completion is implied without an eligible completed Type1 manifest.</p>
+      <p>Fresh OOS: <strong>NOT_RUN</strong>. {TYPE1_FACTS.execution.officialCloseStatement} {TYPE1_FACTS.claims.statement}</p>
+    </section>
 
     {#if runsData.training_state === 'NOT_RUN'}
       <section class="empty-state" role="status" aria-live="polite">
@@ -217,6 +271,28 @@
     {:else if detailError}
       <section class="card error" role="alert" aria-live="assertive">{detailError}</section>
     {:else if manifest}
+      {#if isType1}
+        <section class="card wide type1-evidence">
+          <p class="eyebrow">TYPE1 TRAINING CONTRACT</p>
+          <h2>Sequential MaskablePPO · 계획과 관측 증거를 분리</h2>
+          <div class="lineage-grid">
+            <dl><dt>planned primary seeds</dt><dd>{TYPE1_FACTS.evaluation.fixedSeeds}</dd></dl>
+            <dl><dt>planned shuffled-label controls</dt><dd>{TYPE1_FACTS.evaluation.fixedSeeds}</dd></dl>
+            <dl><dt>planned budget</dt><dd>200,000 episodes fixed</dd></dl>
+            <dl><dt>observed run state</dt><dd>{text(observedTrainingState)}</dd></dl>
+            <dl><dt>observed completion</dt><dd>{isCompleted ? `${observedEpisodes} seed-episodes evidenced` : 'NOT COMPLETED — completion evidence absent'}</dd></dl>
+            <dl><dt>primary seed artifacts</dt><dd>{seedEntries.length} observed</dd></dl>
+            <dl><dt>shuffled-control artifacts</dt><dd>{shuffledSeedEntries.length} observed</dd></dl>
+            <dl><dt>evidence gate</dt><dd>{type1StateLabel(type1EvidenceState)}</dd></dl>
+            <dl><dt>execution</dt><dd>{TYPE1_FACTS.execution.priceBasis}; {TYPE1_FACTS.execution.roundTripCost}</dd></dl>
+            <dl><dt>accounting</dt><dd>{TYPE1_FACTS.accounting.initialNav}; max {TYPE1_FACTS.accounting.maxSlots} slots</dd></dl>
+            <dl><dt>dataset reload artifact</dt><dd class="sha">{text(datasetArtifactPath)}</dd></dl>
+            <dl><dt>training reload artifact</dt><dd class="sha">{text(runArtifactPath)}</dd></dl>
+          </div>
+          <p class="note">Synthetic overfit or shuffled-label behavior is calibration evidence only; it is not a completion, profitability, or live-trading claim.</p>
+          <p class="note">{TYPE1_FACTS.execution.officialCloseStatement} {TYPE1_FACTS.claims.statement}</p>
+        </section>
+      {/if}
       <section class="card wide lineage">
         <div class="section-heading">
           <div>
@@ -280,6 +356,29 @@
           </table>
         </div>
       </section>
+      {#if isType1}
+        <section class="card wide">
+          <h2>Type1 shuffled-label control</h2>
+          <p class="note">계획된 5개 control은 synthetic-overfit calibration 전용입니다.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>seed</th><th>episodes</th><th>final val NAV</th><th>trade count</th></tr></thead>
+              <tbody>
+                {#each shuffledSeedEntries as [seed, value]}
+                  <tr>
+                    <th>{seed}</th>
+                    <td>{text(value.episodes_ran)}</td>
+                    <td>{won(value.final_val_metrics?.nav)}</td>
+                    <td>{text(value.final_val_metrics?.trade_count)}</td>
+                  </tr>
+                {:else}
+                  <tr><td colspan="4">표시할 shuffled-label control 증거 없음 · NOT_RUN</td></tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {/if}
     {/if}
   </section>
 {/if}

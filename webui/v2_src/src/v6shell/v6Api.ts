@@ -280,19 +280,38 @@ export interface V6IndexRegimeMarket {
 export interface V6ReportEntry {
   readonly dataset_run_id?: string;
   readonly train_run_id?: string;
+  readonly schema?: string;
+  readonly family?: string;
+  readonly revision_ordinal?: number;
+  readonly revision_sha256?: string;
+  readonly parent_sha256?: string;
+  readonly materialization_sha256?: string;
   readonly verdict?: string;
   readonly test_state?: string;
   readonly index_overlay_state?: string;
+  readonly report_state?: string;
   readonly generated_utc?: string;
   readonly builder_version?: string;
   readonly report_sha256?: string;
   readonly size_bytes?: number;
   readonly integrity?: string;
+  readonly integrity_reasons?: readonly string[];
+  readonly failures?: readonly string[];
 }
 
 export interface V6Reports {
   readonly schema_version?: string;
+  readonly schema?: string;
+  readonly family?: string;
   readonly status?: string;
+  readonly report_state?: string;
+  readonly catalog_sha256?: string;
+  readonly revision_ordinal?: number;
+  readonly revision_sha256?: string;
+  readonly parent_sha256?: string;
+  readonly materialization_sha256?: string;
+  readonly integrity_reasons?: readonly string[];
+  readonly failures?: readonly string[];
   readonly reports?: readonly V6ReportEntry[];
 }
 
@@ -390,8 +409,18 @@ export interface V6ResearchDoc {
   readonly reason?: string;
 }
 
-export function v6ReportHtmlUrl(dataset: string, train: string, download = false): string {
-  return `/api/v6/report-html?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}${download ? '&download=1' : ''}`;
+export function v6ReportHtmlUrl(dataset: string, train: string): string;
+export function v6ReportHtmlUrl(dataset: string, train: string, download: boolean): string;
+export function v6ReportHtmlUrl(dataset: string, train: string, reportSha256?: string, download?: boolean): string;
+export function v6ReportHtmlUrl(
+  dataset: string,
+  train: string,
+  reportSha256OrDownload?: string | boolean,
+  download = false,
+): string {
+  const reportSha256 = typeof reportSha256OrDownload === 'string' ? reportSha256OrDownload : undefined;
+  const shouldDownload = typeof reportSha256OrDownload === 'boolean' ? reportSha256OrDownload : download;
+  return `/api/v6/report-html?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}${reportSha256 === undefined ? '' : `&report_sha256=${encodeURIComponent(reportSha256)}`}${shouldDownload ? '&download=1' : ''}`;
 }
 
 export const getV6Status = (): Promise<V6ApiResult<V6Status>> => getV6('/api/v6/status');
@@ -409,7 +438,10 @@ export const getV6InsightFlow = (window?: number, limit?: number): Promise<V6Api
 export const getV6InsightRegime = (): Promise<V6ApiResult<V6InsightRegime>> => getV6('/api/v6/insight/regime');
 export const getV6IndexSeries = (market: 'KOSPI' | 'KOSDAQ'): Promise<V6ApiResult<V6IndexSeries>> =>
   getV6(`/api/v6/index-series?market=${encodeURIComponent(market)}`);
-export const getV6Reports = (): Promise<V6ApiResult<V6Reports>> => getV6('/api/v6/reports');
+export const getV6Reports = (dataset?: string, train?: string): Promise<V6ApiResult<V6Reports>> =>
+  getV6(dataset === undefined || train === undefined
+    ? '/api/v6/reports'
+    : `/api/v6/reports?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}`);
 export const getV6ProjectReports = (): Promise<V6ApiResult<V6ProjectReports>> => getV6('/api/v6/project-reports');
 export const getV6ResearchRegistry = (): Promise<V6ApiResult<V6ResearchRegistry>> => getV6('/api/v6/research-registry');
 export const getV6ResearchDoc = (doc: string): Promise<V6ApiResult<V6ResearchDoc>> =>

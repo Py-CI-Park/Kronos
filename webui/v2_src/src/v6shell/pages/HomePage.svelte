@@ -3,6 +3,7 @@
   import ProcessStepper from '../ProcessStepper.svelte';
   import { V6_RL_STEPS } from '../registry';
   import { getV6DataReadiness, getV6Experiment, getV6ResearchRegistry, getV6RunDetail, getV6Runs, getV6Status, newestDraftPreregistration, type V6DataReadiness, type V6Experiment, type V6ResearchRegistry, type V6RunDetail, type V6Runs, type V6Status } from '../v6Api';
+  import { TYPE1_FACTS, classifyType1State, type1StateLabel } from '../type1Presentation';
 
   let status = $state<V6Status | null>(null);
   let runs = $state<V6Runs | null>(null);
@@ -31,6 +32,13 @@
   function progressOf(state: string | undefined): number { return ['FROZEN', 'HAS_RUNS', 'HAS_REPORTS', 'PRESENT', 'OK'].includes(state ?? '') ? 100 : state === 'PARTIAL' ? 60 : 0; }
   function resourceError(resource: string): string | undefined { return errors[resource]; }
   function display(resource: string, value: unknown): string { return loading ? 'LOADING' : resourceError(resource) ? 'UNAVAILABLE' : text(value); }
+  const type1Evidence = (value: unknown): string => {
+    const label = type1StateLabel(classifyType1State(value, loading));
+    return label === 'EMPTY' ? 'MISSING' : label;
+  };
+  const type1Plumbing = $derived(type1Evidence(experiment?.prereg));
+  const type1Market = $derived(type1Evidence(readiness?.fivemin_db));
+  const type1Oos = TYPE1_FACTS.evaluation.freshOos;
   const sparkline = $derived.by(() => {
     const perSeed = newestDetail?.manifest?.per_seed ?? {};
     const first = Object.keys(perSeed).sort()[0];
@@ -73,6 +81,24 @@
     <button type="button" class="kpi" onclick={() => navigate('rl', 'step', 'training')}><span>학습 상태</span><strong>{display('runs', runs?.training_state ?? status?.journey.training.state)}</strong><small>실행 {display('runs', runs?.runs?.length)}개</small>{#if sparkline}<svg class="spark" viewBox="0 0 120 32" aria-label={`최신 실행 seed ${sparkline.seed}의 episode별 validation NAV 곡선`}><line x1="0" y1={sparkline.baselineY} x2="120" y2={sparkline.baselineY} class="spark-base" /><polyline points={sparkline.points} class="spark-line" /></svg>{/if}<i><b style={`width: ${progressOf(status?.journey.training.state)}%`}></b></i><em>{loading ? 'LOADING' : resourceError('runs') || resourceError('status') ? 'UNAVAILABLE' : text(status?.journey.training.state)}</em></button>
     <button type="button" class="kpi" onclick={() => navigate('rl', 'step', 'report')}><span>최신 판정</span><strong class={verdictClass()}>{loading ? 'LOADING' : latestVerdict()}</strong><small>가장 최근 API 실행의 판정</small><i><b style={`width: ${progressOf(status?.journey.report.state)}%`}></b></i><em>{loading ? 'LOADING' : resourceError('runs') ? 'UNAVAILABLE' : '보고서로 이동'}</em></button>
   </div>
+  <section class="type1-lane" aria-labelledby="type1-lane-title">
+    <div>
+      <p class="eyebrow">TYPE1 · SEQUENTIAL RL</p>
+      <h2 id="type1-lane-title">순차 의사결정 연구 lane</h2>
+      <p>Type1은 {TYPE1_FACTS.identity.algorithm} 기반의 순차 RL 연구입니다. {TYPE1_FACTS.identity.m3e} 현재 M3E 판정은 <strong>NO_GO</strong>이며 두 모델의 증거나 판정을 합치지 않습니다.</p>
+    </div>
+    <dl>
+      <div><dt>plumbing</dt><dd>{resourceError('experiment') ? 'UNAVAILABLE' : type1Plumbing}</dd></div>
+      <div><dt>market source</dt><dd>{resourceError('readiness') ? 'UNAVAILABLE' : type1Market}</dd></div>
+      <div><dt>fresh OOS</dt><dd>{type1Oos}</dd></div>
+    </dl>
+    <div class="type1-links" aria-label="Type1 evidence navigation">
+      <button type="button" onclick={() => navigate('rl', 'step', 'data')}>데이터 증거</button>
+      <button type="button" onclick={() => navigate('rl', 'step', 'experiment')}>고정 계약</button>
+      <button type="button" onclick={() => navigate('rl', 'step', 'training')}>학습·평가</button>
+    </div>
+    <p class="type1-note">읽기 전용 증거 화면입니다. fresh OOS를 열거나 실행하는 control은 제공하지 않으며, 어떤 수익성·live 주장도 따르지 않습니다.</p>
+  </section>
   <div class="research-grid">
     <section class="research-card draft-card" aria-labelledby="draft-title">
       <p class="eyebrow">NEXT PREREGISTRATION</p>
@@ -99,4 +125,5 @@
 <style>
   .home { width: 100%; min-width: 0; }.eyebrow { margin: 0; color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .1em; }h1,h2 { color: var(--fg-strong); }h1 { margin: 6px 0; font-size: clamp(1.9rem, 4vw, 2.6rem); }header > p:last-child { color: var(--muted); }.notice { margin: 16px 0 0; padding: 12px; border: 1px solid var(--border-strong); border-radius: 10px; color: var(--muted); }.unavailable { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; border-color: var(--danger); color: var(--danger); }.unavailable button, .quick button { border: 1px solid var(--accent); border-radius: 7px; padding: 8px 10px; background: transparent; color: var(--accent-strong); font: inherit; cursor: pointer; }.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; margin-top: 22px; }.kpi { min-width: 0; min-height: 184px; display: flex; flex-direction: column; align-items: start; border: 1px solid var(--border-strong); border-radius: 12px; padding: 18px; background: var(--surface-raised); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }.kpi:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-tint); }.kpi:focus-visible, .quick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }.kpi > span, small, em { color: var(--muted); font-size: .76rem; }.kpi strong { margin: 8px 0; color: var(--fg-strong); font-size: 1.6rem; overflow-wrap: anywhere; }.kpi strong.danger { color: var(--danger); }.kpi strong.warn { color: var(--warn); }.kpi i { width: 100%; height: 4px; margin-top: auto; overflow: hidden; border-radius: 99px; background: var(--surface-sunken); }.kpi b { display: block; height: 100%; background: var(--accent); }.kpi em { margin-top: 9px; font-style: normal; }.lower-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; margin-top: 18px; }.journey, .quick { min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 18px; background: var(--surface); }.journey h2, .quick h2 { margin-top: 0; font-size: 1.1rem; }.quick { display: flex; flex-direction: column; gap: 8px; }.quick a { border: 1px solid var(--border-strong); border-radius: 7px; padding: 8px 10px; color: var(--fg); text-decoration: none; }footer { margin-top: 16px; color: var(--muted); font-size: .8rem; }.spark { width: 100%; height: 34px; margin-top: 8px; }.spark-line { fill: none; stroke: var(--accent); stroke-width: 1.6; }.spark-base { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 4 3; }
   .research-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; margin-top:18px; }.research-card,.accounting-card { min-width:0; border:1px solid var(--border-strong); border-radius:12px; padding:18px; background:var(--surface-raised); }.draft-card { border-color:var(--warn); }.research-card h2,.accounting-card h2 { margin:6px 0 12px; font-size:1.15rem; }.research-card dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:0; }.research-card dl div { min-width:0; }.research-card dt,.verdict-row span,.note,.blocker,.accounting-card p { color:var(--muted); font-size:.82rem; }.research-card dd { margin:3px 0 0; overflow-wrap:anywhere; }.warn { color:var(--warn); }.blocker { margin:16px 0 0; line-height:1.55; }.verdict-row { display:grid; gap:3px; padding:10px 0; border-top:1px solid var(--border); min-width:0; }.verdict-row strong,.verdict-row em { overflow-wrap:anywhere; }.verdict-row em { color:var(--warn); font-style:normal; }.note { line-height:1.5; }.accounting-card { margin-top:16px; }.accounting-card > div { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }.accounting-card > div strong { color:var(--fg-strong); font-size:1.25rem; }.accounting-card > div span { color:var(--muted); font-size:.78rem; line-height:1.4; }.accounting-card p { line-height:1.55; }.accounting-card p:last-child { margin-bottom:0; }@media (max-width:520px) { .research-card dl { grid-template-columns:1fr; }.accounting-card > div { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  .type1-lane { display:grid;grid-template-columns:minmax(0,1.4fr) minmax(220px,.9fr);gap:16px;margin-top:18px;border:1px solid var(--warn);border-radius:12px;padding:18px;background:var(--surface-raised); }.type1-lane h2 { margin:6px 0 10px;font-size:1.15rem; }.type1-lane p { color:var(--muted);line-height:1.55; }.type1-lane strong { color:var(--warn); }.type1-lane dl { display:grid;gap:8px;margin:0;align-content:start; }.type1-lane dl div { display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding:6px 0; }.type1-lane dt { color:var(--muted);font-size:.8rem; }.type1-lane dd { margin:0;overflow-wrap:anywhere; }.type1-links { display:flex;flex-wrap:wrap;gap:8px;align-content:start; }.type1-links button { border:1px solid var(--accent);border-radius:7px;padding:8px 10px;background:transparent;color:var(--accent-strong);font:inherit;cursor:pointer; }.type1-links button:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }.type1-note { grid-column:1/-1;margin:0;font-size:.82rem; }@media (max-width:620px) { .type1-lane { grid-template-columns:1fr; } }
 </style>
