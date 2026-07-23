@@ -1,0 +1,7 @@
+# Kronos Type 1 research runtime lock (CPython 3.11, win_amd64)
+# Exact versions observed and verified on the local research runner.
+numpy==2.2.6
+torch==2.9.0+cu128
+gymnasium==1.2.3
+stable-baselines3==2.8.0
+sb3-contrib==2.8.0

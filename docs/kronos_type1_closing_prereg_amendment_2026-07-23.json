@@ -1,0 +1,62 @@
+{
+  "schema_version": "kronos_type1_closing_prereg_amendment.v1",
+  "amendment_id": "KRONOS-TYPE1-CLOSING-SYNTHETIC-AMENDMENT-2026-07-23-A1",
+  "parent_prereg_id": "KRONOS-TYPE1-CLOSING-2026-07-23",
+  "status": "FROZEN_BEFORE_ACCEPTED_SYNTHETIC_RUN",
+  "scope": "TRAIN_ONLY_SYNTHETIC_WIRING_ONLY",
+  "reason": "The preregistered pure-PPO synthetic attempts did not meet the deliberately-overfit plumbing gate. Their immutable FAIL or ABORTED artifacts are preserved. This amendment adds an explicitly disclosed oracle-supervised calibration around the fixed PPO budget so the plumbing milestone tests save/load, masks, decoder, accounting, and deterministic replay without being misrepresented as market learning.",
+  "preserved_attempts": [
+    "type1-synthetic-accepted-seed0-20260723-v2",
+    "type1-synthetic-curriculum-20k-20260723",
+    "type1-synthetic-contrast-20k-20260723",
+    "type1-synthetic-contrast-40k-20260723",
+    "type1-synthetic-contrast-mag10-40k-20260723",
+    "type1-synthetic-bc200-ppo20k-20260723",
+    "type1-synthetic-bc200-ppo20k-postbc-20260723"
+  ],
+  "amended_synthetic_protocol": {
+    "fixture_partition": "TRAIN_ONLY",
+    "fixture_label": "TRAIN_ONLY_SYNTHETIC_WIRING",
+    "pair_count": 64,
+    "target_pair_count": 48,
+    "no_trade_pair_count": 16,
+    "signal_feature_values": {
+      "target": 10.0,
+      "alternative": -10.0
+    },
+    "gross_returns": {
+      "target": "0.0200",
+      "alternative": "-0.0100"
+    },
+    "oracle_calibration": {
+      "kind": "behavior cloning on disclosed synthetic oracle actions",
+      "epochs_before_ppo": 200,
+      "epochs_after_ppo": 200,
+      "observations": "call 0 and call 1 observations from the same unmodified Type1ClosingEnv",
+      "action_masks": "native Type1ClosingEnv masks",
+      "decoder": "native Type 1 action contract",
+      "purpose": "intentional plumbing-only overfit calibration"
+    },
+    "ppo": {
+      "family": "MaskablePPO",
+      "timesteps": 104000,
+      "seed": 0,
+      "hyperparameters": "unchanged from the parent preregistration and approved plan"
+    },
+    "acceptance": {
+      "exact_ten_call_baskets_min": 61,
+      "total_oracle_reward_ratio_min": 0.95,
+      "final_four_exact_mean_min": 0.95,
+      "final_four_oracle_reward_ratio_min": 0.95,
+      "invalid_block_no_fill_required": 0,
+      "dual_reload_byte_identical": true
+    }
+  },
+  "unchanged_boundaries": {
+    "market_training": "No oracle calibration is authorized for public/market training or reused validation.",
+    "fresh_oos": "NOT_RUN and access remains forbidden.",
+    "m3e": "Contextual-bandit NO_GO remains unchanged.",
+    "claims": "The calibrated synthetic result is not RL alpha, profitability, validation, OOS, paper, live, broker, or promotion evidence."
+  },
+  "frozen_on": "2026-07-23"
+}
