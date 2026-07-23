@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from stom_rl.daily_type1_authority import (  # noqa: E402
-    ANCHOR, AUTHORITY_ID, INTEGRITY_LABEL, MARKETS, PUBLIC_END, SCHEMA,
+    ANCHOR, AUTHORITY_ID, INTEGRITY_LABEL, MARKET_QUERY_IDS, MARKETS, PUBLIC_END, SCHEMA,
     SIGNING_DOMAIN, _field, _median, _symbol, _typed_exclusion, _typed_row_for_historical, _value,
     canonical_json, sha256_canonical, validate_authority,
 )
@@ -115,7 +115,7 @@ def build_authority(*, typed_current: list[Mapping[str, Any]], typed_delisted_ch
     rows.sort(key=lambda row: (-row["median_traded_value"], row["symbol"]))
     raw = {
         "calendar": _capture({"bld": "index-calendar", "market": "KOSPI", "index_code": "1001", "from": "2017-01-01", "to": PUBLIC_END}, calendar),
-        "historical_anchor": _capture({"calls": [{"bld": SURFACES["historical_anchor"], "trdDd": "20171228", "mktId": market} for market in MARKETS]}, historical_anchor),
+        "historical_anchor": _capture({"calls": [{"bld": SURFACES["historical_anchor"], "trdDd": "20171228", "mktId": MARKET_QUERY_IDS[market]} for market in MARKETS]}, historical_anchor),
         "typed_current": _capture({"class": "전종목기본정보", "fetch_args": ["ALL"], "bld": SURFACES["typed_current"]}, typed_current),
         "typed_delisted_chunks": [_capture({"bld": SURFACES["typed_delisted"], "strtDd": bound["from"].replace("-", ""), "endDd": bound["to"].replace("-", ""), "mktId": "ALL", "isuCd": "ALL", "isuCd2": "ALL", "share": "1", "csvxls_isNo": "true"}, chunk) for bound, chunk in zip(delisted_chunk_bounds, typed_delisted_chunks)],
         "traded_value_by_session": {date: _capture({"bld": "market-ohlcv", "trdDd": date, "mktId": "ALL"}, values[date]) for date in ranking_sessions},
@@ -199,7 +199,7 @@ def collect_from_krx(quant_insight_root: Path) -> dict[str, Any]:
             ]
             historical = []
             for market in MARKETS:
-                historical.extend(_records(전종목시세().fetch("20171228", market)))
+                historical.extend(_records(전종목시세().fetch("20171228", MARKET_QUERY_IDS[market])))
             index = stock.get_index_ohlcv_by_date("20170101", PUBLIC_END.replace("-", ""), "1001")
             calendar = [{"TRD_DD": str(day)[:10]} for day in index.index]
             ranking = sorted(row["TRD_DD"] for row in calendar if row["TRD_DD"] <= ANCHOR)[-60:]

@@ -19,6 +19,7 @@ PUBLIC_END = "2025-06-30"
 ANCHOR = "2017-12-29"
 AUTHORITY_ID = "type1-krx-authority-20260723-002"
 MARKETS = ("KOSPI", "KOSDAQ")
+MARKET_QUERY_IDS = {"KOSPI": "STK", "KOSDAQ": "KSQ"}
 
 
 class AuthorityError(ValueError):
@@ -200,7 +201,7 @@ def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
     _require(
         historical_query == {
             "calls": [
-                {"bld": "dbms/MDC/STAT/standard/MDCSTAT01501", "trdDd": "20171228", "mktId": market}
+                {"bld": "dbms/MDC/STAT/standard/MDCSTAT01501", "trdDd": "20171228", "mktId": MARKET_QUERY_IDS[market]}
                 for market in MARKETS
             ]
         },

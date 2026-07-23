@@ -47,6 +47,10 @@ def test_frozen_ranking_reconstructs_from_typed_anchor_only():
     assert authority["stable_symbols"].index("001504") < authority["stable_symbols"].index("001505")
     assert "777777" not in rows
     assert authority["raw_responses"]["typed_current"]["query"]["bld"].endswith("MDCSTAT01901")
+    assert authority["raw_responses"]["historical_anchor"]["query"]["calls"] == [
+        {"bld": "dbms/MDC/STAT/standard/MDCSTAT01501", "trdDd": "20171228", "mktId": "STK"},
+        {"bld": "dbms/MDC/STAT/standard/MDCSTAT01501", "trdDd": "20171228", "mktId": "KSQ"},
+    ]
 
 def test_isin_join_prevents_reused_short_code_from_overwriting_anchor_type():
     current, chunks, historical, calendar, values, bounds = _inputs()
