@@ -1,4 +1,8 @@
-"""Immutable Type1 reused-validation report catalog; it never reads fresh OOS data."""
+"""Immutable report authority for the replacement Type1 public run.
+
+This module deliberately has no fresh-OOS inputs.  A report is a hash-addressed
+revision, not a request for the latest report in a directory.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -6,290 +10,329 @@ import html
 import json
 import os
 import re
+import sqlite3
+import stat
 from pathlib import Path
 from typing import Any, Mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PREREG_PATH = REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_2026-07-23.json"
 REPORT_ROOT = "type1_reports"
-REVISION_SCHEMA = "kronos_type1_report_revision.v1"
-MATERIALIZATION_SCHEMA = "kronos_type1_report_materialization.v1"
-TIP_SCHEMA = "kronos_type1_committed_report_tip.v1"
-BUILDER_VERSION = "kronos_type1_report_builder.v1"
-IDENTITY = {"report_family": "TYPE1", "dataset_id": "type1-close-20260803-001", "train_id": "type1-public-001", "train_run_id": "train_type1-public-001", "domain": "kronos.type1", "algorithm_family": "MASKABLE_PPO"}
+REVISION_SCHEMA = "kronos_type1_report_revision.v2"
+MATERIALIZATION_SCHEMA = "kronos_type1_report_materialization.v2"
+TIP_SCHEMA = "kronos_type1_committed_report_tip.v2"
+BUILDER_VERSION = "kronos_type1_report_builder.v2"
+IDENTITY = {"report_family": "TYPE1", "dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002", "domain": "kronos.type1", "algorithm_family": "MASKABLE_PPO"}
 POLICY = {"price_basis": "EXACT_15_20_BAR_CLOSE_PROXY", "official_close": False, "accounting": "FIXED_NOTIONAL_NON_SELF_FINANCING", "primary_cost_rate": "0.0023", "initial_nav_krw": "60000000", "slot_notional_krw": "5000000", "maximum_slots": 10, "seeds": [0, 1, 2, 3, 4], "checkpoint_selection": False, "synthetic_oracle_calibration": False}
 LOCKS = {"promotion_allowed": False, "model_build_allowed": False, "paper_forward_allowed": False, "live_broker_order_allowed": False, "profitability_claim_allowed": False, "go_summary_allowed": False}
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _EVENT = re.compile(r"([0-9]{8})-([0-9a-f]{64})\.json\Z")
 _OBJECT = re.compile(r"([A-Za-z0-9][A-Za-z0-9_.-]{0,80})-([0-9a-f]{64})\.html\Z")
+# Names are fixed; callers cannot substitute a path for any authority artifact.
 _SOURCE_LOCAL_PATHS = {
+    "type1_identity": Path("type1_identity.json"),
+    "public_run_seal": Path("p6_public_run_seal.json"),
+    "deployment_lock": Path("deployment_lock.json"),
+    "attempt_parent": Path("attempt_parent.json"),
+    "authority": Path("authority.json"),
     "dataset_manifest": Path("..") / "dataset_manifest.json",
     "public_rows": Path("..") / "public_rows.json",
     "run_manifest": Path("run_manifest.json"),
     "run_receipt": Path("receipt.json"),
-    **{
-        f"{kind}_seed_{seed}_{artifact}": Path(kind) / f"seed_{seed}" / filename
-        for kind in ("primary", "shuffled_reward")
-        for seed in range(5)
-        for artifact, filename in (
-            ("model", "final_model.zip"),
-            ("normalizer", "normalizer.pkl"),
-        )
-    },
+    **{f"{kind}_seed_{seed}_{artifact}": Path(kind) / f"seed_{seed}" / filename
+       for kind in ("primary", "shuffled_reward") for seed in range(5)
+       for artifact, filename in (("model", "final_model.zip"), ("normalizer", "normalizer.pkl"))},
 }
 
-
 class Type1ReportError(ValueError):
-    """Raised when the immutable Type1 report catalog is invalid or blocked."""
-
+    """Raised when a Type1 immutable report authority is invalid or blocked."""
 
 def _canonical(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
-
 
 def _require_sha(value: Any, label: str) -> str:
     if not isinstance(value, str) or _SHA.fullmatch(value) is None:
         raise Type1ReportError(f"{label} must be lowercase SHA-256")
     return value
 
+def _is_reparse(path: Path) -> bool:
+    try:
+        mode = os.lstat(path).st_mode
+        attrs = os.lstat(path).st_file_attributes if hasattr(os.lstat(path), "st_file_attributes") else 0
+    except OSError as exc:
+        raise Type1ReportError("authority path is unreadable") from exc
+    return stat.S_ISLNK(mode) or bool(attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+def _safe_child(root: Path, relative: Path) -> Path:
+    """Lexically contain a path and reject every symlink/junction component."""
+    if relative.is_absolute() or any(part in ("", ".", "..") for part in relative.parts):
+        raise Type1ReportError("authority path escapes fixed root")
+    root = root.absolute()
+    for ancestor in (root, *root.parents):
+        if _is_reparse(ancestor):
+            raise Type1ReportError("authority root contains a reparse point")
+    candidate = root
+    for part in relative.parts:
+        candidate = candidate / part
+        if candidate.exists() and _is_reparse(candidate):
+            raise Type1ReportError("authority path contains reparse point")
+    try:
+        candidate.absolute().relative_to(root)
+    except ValueError as exc:
+        raise Type1ReportError("authority path escapes fixed root") from exc
+    return candidate
+
+def _read_bytes(path: Path, label: str, *, maximum: int = 64 * 1024 * 1024) -> bytes:
+    if _is_reparse(path) or not path.is_file():
+        raise Type1ReportError(f"required report source is missing: {label}")
+    try:
+        size = path.stat().st_size
+        if size < 0 or size > maximum:
+            raise Type1ReportError(f"required report source is oversized: {label}")
+        with path.open("rb") as handle:
+            raw = handle.read(maximum + 1)
+    except OSError as exc:
+        raise Type1ReportError(f"required report source is unreadable: {label}") from exc
+    if len(raw) != size or len(raw) > maximum:
+        raise Type1ReportError(f"required report source changed while read: {label}")
+    return raw
 
 def _read_canonical(path: Path, label: str) -> tuple[dict[str, Any], bytes]:
     try:
-        raw = path.read_bytes()
+        raw = _read_bytes(path, label)
         value = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, Type1ReportError) as exc:
         raise Type1ReportError(f"{label} is invalid") from exc
     if not isinstance(value, dict) or raw != _canonical(value):
         raise Type1ReportError(f"{label} is not canonical JSON")
     return value, raw
-
+def _read_json(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(_read_bytes(path, label).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, Type1ReportError) as exc:
+        raise Type1ReportError(f"{label} is invalid") from exc
+    if not isinstance(value, dict):
+        raise Type1ReportError(f"{label} is invalid")
+    return value
 
 def _write_new(path: Path, raw: bytes) -> None:
+    # A failure after O_EXCL is indeterminate.  Never unlink or retry it.
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o644)
     except FileExistsError as exc:
         raise Type1ReportError("immutable catalog entry already exists") from exc
     try:
         with os.fdopen(fd, "wb") as handle:
-            handle.write(raw)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except Exception:
-        try:
-            path.unlink()
-        except OSError:
-            pass
-        raise
-
+            handle.write(raw); handle.flush(); os.fsync(handle.fileno())
+    except Exception as exc:
+        raise Type1ReportError("indeterminate immutable create; catalog is blocked") from exc
 
 def _root(run_dir: str | Path, *, create: bool = False) -> Path:
-    directory = Path(run_dir)
-    if not directory.is_dir() or directory.is_symlink():
+    directory = Path(run_dir).absolute()
+    if not directory.is_dir() or _is_reparse(directory):
         raise Type1ReportError("run directory is required")
-    root = directory / REPORT_ROOT
+    root = _safe_child(directory, Path(REPORT_ROOT))
     if create:
-        root.mkdir(exist_ok=True)
-        (root / "events").mkdir(exist_ok=True)
-        (root / "objects").mkdir(exist_ok=True)
-    if not root.is_dir() or root.is_symlink() or not (root / "events").is_dir() or not (root / "objects").is_dir():
+        try:
+            root.mkdir(exist_ok=True); _safe_child(root, Path("events")).mkdir(exist_ok=True); _safe_child(root, Path("objects")).mkdir(exist_ok=True)
+        except OSError as exc:
+            raise Type1ReportError("cannot create report catalog root") from exc
+    if not root.is_dir() or _is_reparse(root):
         raise Type1ReportError("report catalog root is invalid")
+    for name in ("events", "objects"):
+        child = _safe_child(root, Path(name))
+        if not child.is_dir() or _is_reparse(child):
+            raise Type1ReportError("report catalog root is invalid")
     return root
 
+def _mutex(root: Path) -> sqlite3.Connection:
+    db = _safe_child(root, Path("current_parent.sqlite3"))
+    if db.exists() and _is_reparse(db):
+        raise Type1ReportError("current-parent authority is invalid")
+    try:
+        con = sqlite3.connect(str(db), timeout=30, isolation_level=None)
+        con.execute("PRAGMA journal_mode=WAL"); con.execute("PRAGMA synchronous=FULL")
+        con.execute("CREATE TABLE IF NOT EXISTS current_parent (singleton INTEGER PRIMARY KEY CHECK(singleton=1), event_sha256 TEXT NOT NULL, state TEXT NOT NULL)")
+        return con
+    except sqlite3.Error as exc:
+        raise Type1ReportError("current-parent authority is unavailable") from exc
 
 def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
-    """Hash the exact fixed Type1 evidence paths; report input cannot choose paths."""
-    directory = Path(run_dir)
+    directory = Path(run_dir).absolute()
+    if not directory.is_dir() or _is_reparse(directory):
+        raise Type1ReportError("run directory is required")
     paths = {
-        "protocol": PROTOCOL_PATH,
-        "preregistration": PREREG_PATH,
-        **{label: directory / relative for label, relative in _SOURCE_LOCAL_PATHS.items()},
+        "amendment": _safe_child(REPO_ROOT, Path("docs") / AMENDMENT_PATH.name),
+        "protocol": _safe_child(REPO_ROOT, Path("docs") / PROTOCOL_PATH.name),
+        "preregistration": _safe_child(REPO_ROOT, Path("docs") / PREREG_PATH.name),
+        "builder_source": _safe_child(REPO_ROOT, Path("stom_rl") / Path(__file__).name),
+        **{label: _safe_child(directory, relative) for label, relative in _SOURCE_LOCAL_PATHS.items() if label not in {"dataset_manifest", "public_rows"}},
+        "dataset_manifest": _safe_child(directory.parent, Path("dataset_manifest.json")),
+        "public_rows": _safe_child(directory.parent, Path("public_rows.json")),
     }
-    hashes: dict[str, str] = {}
-    for label, path in paths.items():
-        if path.is_symlink() or not path.is_file():
-            raise Type1ReportError(f"required report source is missing: {label}")
-        try:
-            hashes[label] = _sha(path.read_bytes())
-        except OSError as exc:
-            raise Type1ReportError(f"required report source is unreadable: {label}") from exc
-    return hashes
-
+    fixed = {label: (_read_json(paths[label], label) if label in {"amendment", "protocol", "preregistration"} else _read_canonical(paths[label], label)[0]) for label in ("amendment", "protocol", "preregistration", "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")}
+    replacement = fixed["amendment"].get("replacement_identity")
+    if not isinstance(replacement, Mapping) or any(replacement.get(key) != IDENTITY[key] for key in ("dataset_id", "train_id", "train_run_id")):
+        raise Type1ReportError("recovery amendment does not bind replacement identity")
+    if fixed["protocol"].get("protocol_id") != "KRONOS-TYPE1-G002-PUBLIC-2026-07-23" or fixed["preregistration"].get("prereg_id") != "KRONOS-TYPE1-CLOSING-2026-07-23":
+        raise Type1ReportError("protocol or preregistration authority is invalid")
+    for label in ("type1_identity", "public_run_seal", "attempt_parent", "authority"):
+        candidate = fixed[label].get("identity", fixed[label])
+        if not isinstance(candidate, Mapping) or any(candidate.get(key) != IDENTITY[key] for key in ("dataset_id", "train_id", "train_run_id")):
+            raise Type1ReportError(f"{label} does not bind replacement identity")
+    if fixed["deployment_lock"].get("false_research_locks", fixed["deployment_lock"].get("locks")) != LOCKS:
+        raise Type1ReportError("deployment lock does not preserve Type1 no-go locks")
+    return {label: _sha(_read_bytes(path, label)) for label, path in paths.items()}
+def _verify_current_parent(root: Path, events: list[tuple[dict[str, Any], str]], state: str) -> None:
+    db = _safe_child(root, Path("current_parent.sqlite3"))
+    if not db.is_file() or _is_reparse(db):
+        raise Type1ReportError("current-parent authority is missing")
+    try:
+        con = sqlite3.connect(str(db))
+        row = con.execute("SELECT event_sha256,state FROM current_parent WHERE singleton=1").fetchone()
+        con.close()
+    except sqlite3.Error as exc:
+        raise Type1ReportError("current-parent authority is unreadable") from exc
+    expected = events[-1][1] if events else None
+    expected_state = "COMMITTED" if state == "COMMITTED" else ("MATERIALIZED" if events and len(events) % 2 == 0 else ("REVISION" if events else "EMPTY"))
+    if row is None or row[0] != expected or row[1] != expected_state:
+        raise Type1ReportError("current-parent authority mismatch")
 
 def _validate_revision(value: Mapping[str, Any]) -> None:
-    required = {"schema_version", "revision_id", "revision_ordinal", "identity", "policy", "result", "source_sha256", "false_research_locks", "claims", "catalog_ordinal", "previous_event_sha256", "previous_revision_event_sha256"}
-    if set(value) != required:
-        raise Type1ReportError("revision fields are not exact")
-    if value.get("schema_version") != REVISION_SCHEMA or value.get("identity") != IDENTITY or value.get("policy") != POLICY:
-        raise Type1ReportError("revision does not match frozen Type1 contract")
-    if not isinstance(value.get("revision_id"), str) or not re.fullmatch(r"type1-r[0-9]{4,}", value["revision_id"]):
-        raise Type1ReportError("revision ID is invalid")
-    ordinal = value.get("revision_ordinal")
-    if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 1:
-        raise Type1ReportError("revision ordinal is invalid")
+    required = {"schema_version", "revision_id", "revision_ordinal", "identity", "policy", "result", "source_sha256", "evidence", "false_research_locks", "claims", "catalog_ordinal", "previous_event_sha256", "previous_revision_event_sha256"}
+    if set(value) != required or value.get("schema_version") != REVISION_SCHEMA or value.get("identity") != IDENTITY or value.get("policy") != POLICY:
+        raise Type1ReportError("revision does not match frozen replacement Type1 contract")
+    if not isinstance(value.get("revision_id"), str) or not re.fullmatch(r"type1-r[0-9]{4,}", value["revision_id"]): raise Type1ReportError("revision ID is invalid")
+    if type(value.get("revision_ordinal")) is not int or value["revision_ordinal"] < 1: raise Type1ReportError("revision ordinal is invalid")
     result = value.get("result")
-    if not isinstance(result, Mapping) or result.get("run_state") not in {"COMPLETE", "FAILED", "BLOCKED"} or result.get("training_state") not in {"COMPLETE", "FAILED", "NOT_RUN"} or result.get("reused_validation_state") not in {"COMPLETE", "FAILED", "NOT_RUN"} or result.get("verdict") != "NO_GO" or result.get("fresh_oos_state") not in {"NOT_RUN", "ACCUMULATING_NOT_RUN", "BLOCKED"} or result.get("fresh_oos_read_performed") is not False or not isinstance(result.get("failures"), list):
-        raise Type1ReportError("revision result violates Type1 research boundary")
-    sources = value.get("source_sha256")
-    if not isinstance(sources, Mapping) or not sources:
-        raise Type1ReportError("revision source hashes are required")
+    states = {"COMPLETE", "FAILED", "BLOCKED", "NOT_RUN"}
+    if not isinstance(result, Mapping) or result.get("run_state") not in states or result.get("training_state") not in states or result.get("reused_validation_state") not in states or result.get("verdict") != "NO_GO" or result.get("fresh_oos_state") not in {"NOT_RUN", "ACCUMULATING_NOT_RUN", "BLOCKED"} or result.get("fresh_oos_read_performed") is not False or not isinstance(result.get("failures"), list): raise Type1ReportError("revision result violates Type1 boundary")
+    for state in ("run_state", "training_state", "reused_validation_state"):
+        if result[state] in {"FAILED", "BLOCKED", "NOT_RUN"} and not result["failures"]: raise Type1ReportError("failed, blocked, or not-run state requires failure reason")
+    sources, evidence = value.get("source_sha256"), value.get("evidence")
+    required_evidence = {"type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "amendment", "protocol", "preregistration", "authority", "builder_source"}
+    if not isinstance(sources, Mapping) or not isinstance(evidence, Mapping) or set(evidence) != required_evidence: raise Type1ReportError("replacement authority evidence is incomplete")
     for label, digest in sources.items():
-        if not isinstance(label, str) or not label or not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", label):
-            raise Type1ReportError("source label is invalid")
+        if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", label): raise Type1ReportError("source label is invalid")
         _require_sha(digest, "source SHA")
-    if value.get("false_research_locks") != LOCKS or not isinstance(value.get("claims"), Mapping):
-        raise Type1ReportError("revision locks or claims are invalid")
-
+    for label in required_evidence:
+        if evidence[label] != sources.get(label): raise Type1ReportError("authority evidence does not bind fixed source")
+    if value.get("false_research_locks") != LOCKS or not isinstance(value.get("claims"), Mapping): raise Type1ReportError("revision locks or claims are invalid")
 
 def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
-    result = revision["result"]
-    failures = "".join(f"<li>{html.escape(str(item), quote=True)}</li>" for item in result["failures"]) or "<li>None recorded.</li>"
-    hashes = "".join(f"<li><code>{html.escape(str(k), quote=True)}</code>: <code>{html.escape(str(v), quote=True)}</code></li>" for k, v in sorted(revision["source_sha256"].items()))
-    sections = (
-        ("overview", "Overview", f"<p class=\"verdict\">{html.escape(str(result['verdict']))}</p><p>Scientific state: {html.escape(str(result['run_state']))}. Reused-validation cannot yield GO.</p>"),
-        ("identity", "Type1 identity and scope", "<p>Research-only MASKABLE_PPO evidence. This is not official close, daily, paper, broker, live, funded, investment advice, alpha, or profitability evidence.</p>"),
-        ("protocol", "Protocol and accounting", "<p>EXACT_15_20_BAR_CLOSE_PROXY; two-session chronological pairs; 23 bp (0.0023) fixed-notional non-self-financing accounting: 60M KRW initial NAV, 5M KRW slots, maximum 10 slots.</p>"),
-        ("training", "Five-seed training", "<p>Five fixed seeds 0, 1, 2, 3, 4; exactly 200000 timesteps per member. No checkpoint selection, member selection, or synthetic oracle calibration.</p>"),
-        ("validation", "Reused-validation controls", "<p>Comparators and controls are reused-validation evidence only. TRAIN_ONLY_SYNTHETIC_WIRING is never market learning or calibration.</p>"),
-        ("custody", "Fresh OOS and custody", f"<p class=\"warning\">Fresh OOS: {html.escape(str(result['fresh_oos_state']))}; no fresh OOS read was performed. Sealed custody remains unopened.</p>"),
-        ("integrity", "Failures and integrity", f"<p>Revision SHA-256: <code>{revision_sha}</code></p><h3>Failures</h3><ul>{failures}</ul><h3>Source hashes</h3><ul>{hashes}</ul>"),
+    r = revision["result"]; failures = "".join(f"<li>{html.escape(str(x))}</li>" for x in r["failures"]) or "<li>None recorded.</li>"
+    hashes = "".join(f"<li><code>{html.escape(k)}</code>: <code>{html.escape(v)}</code></li>" for k,v in sorted(revision["source_sha256"].items()))
+    observed = f"<p>Observed completion — run: {html.escape(str(r['run_state']))}; training: {html.escape(str(r['training_state']))}; reused validation: {html.escape(str(r['reused_validation_state']))}.</p>"
+    sections = (("overview","Overview",f"<p class=verdict>NO_GO</p>{observed}"),("identity","Type1 identity and scope","<p>Replacement Type1 research-only evidence; not official close, alpha, profitability, paper, broker, live, or funded evidence.</p>"),("protocol","Protocol and accounting","<p>Exact 15:20 close proxy and fixed-notional non-self-financing 23bp accounting.</p>"),("training","Training plan and observed completion",f"<p>Planned: five seeds × 200000 timesteps. This is a plan, not a completion claim.</p>{observed}"),("validation","Reused-validation controls","<p>Reused validation can yield NO_GO only.</p>"),("custody","Fresh OOS and custody",f"<p>Fresh OOS: {html.escape(str(r['fresh_oos_state']))}; payload was not read.</p>"),("integrity","Failures and integrity",f"<p>Revision SHA-256: <code>{revision_sha}</code></p><ul>{failures}</ul><ul>{hashes}</ul>"))
+    tabs="".join(f'<a role="tab" aria-controls="{k}" href="#{k}">{t}</a>' for k,t,_ in sections)
+    body="".join(f'<section role="tabpanel" id="{k}"><h2>{t}</h2>{c}</section>' for k,t,c in sections)
+    text = (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<title>Type1 immutable report</title><style>'
+        'body{font-family:system-ui,sans-serif;max-width:960px;margin:2rem;line-height:1.5}'
+        'nav{display:flex;gap:.7rem;flex-wrap:wrap}'
+        'section{border-top:1px solid #cbd5e1;margin-top:1rem}'
+        '.verdict{font-weight:bold;padding:.6rem;background:#7f1d1d;color:white}'
+        'code{overflow-wrap:anywhere}'
+        '@media(max-width:600px){body{margin:1rem}nav{display:grid;grid-template-columns:1fr}}'
+        '</style></head><body><h1>Type1 immutable reused-validation evidence</h1>'
+        '<nav role="tablist" aria-label="Report sections">'
+        f'{tabs}</nav><main>{body}</main></body></html>'
     )
-    tabs = "".join(f'<a href="#{key}">{title}</a>' for key, title, _ in sections)
-    body = "".join(f'<section id="{key}"><h2>{title}</h2>{content}</section>' for key, title, content in sections)
-    return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Type1 immutable reused-validation report</title><style>body{font-family:system-ui,sans-serif;max-width:960px;margin:2rem;line-height:1.5}nav{display:flex;gap:.7rem;flex-wrap:wrap}section{border-top:1px solid #cbd5e1;margin-top:1rem}.verdict,.warning{font-weight:bold;padding:.6rem;background:#7f1d1d;color:white}code{overflow-wrap:anywhere}</style></head><body><h1>Type1 immutable reused-validation evidence</h1><nav aria-label=\"Report tabs\">" + tabs + "</nav><main>" + body + "</main></body></html>").encode("utf-8")
-
+    return text.encode("utf-8")
 
 def verify_report_catalog(run_dir: str | Path) -> dict[str, Any]:
-    root = _root(run_dir)
-    events_dir, objects_dir = root / "events", root / "objects"
-    try:
-        names = list(events_dir.iterdir())
-    except OSError as exc:
-        raise Type1ReportError("events directory is unreadable") from exc
-    event_paths: list[tuple[int, str, Path]] = []
-    for path in names:
-        match = _EVENT.fullmatch(path.name)
-        if match is None or path.is_symlink() or not path.is_file():
-            raise Type1ReportError("orphan or malformed event")
-        event_paths.append((int(match.group(1)), match.group(2), path))
-    event_paths.sort()
-    events: list[tuple[dict[str, Any], str]] = []
-    revisions: dict[str, tuple[dict[str, Any], str]] = {}
-    materialized: dict[str, tuple[dict[str, Any], str]] = {}
-    previous: str | None = None
-    for position, (ordinal, filename_sha, path) in enumerate(event_paths, 1):
-        if ordinal != position:
-            raise Type1ReportError("event ordinal gap")
-        event, raw = _read_canonical(path, "event")
-        digest = _sha(raw)
-        if digest != filename_sha or event.get("catalog_ordinal") != ordinal or event.get("previous_event_sha256") != previous:
-            raise Type1ReportError("event identity or chain mismatch")
-        if position % 2:
+    root=_root(run_dir); events_dir=_safe_child(root,Path("events")); objects_dir=_safe_child(root,Path("objects"))
+    try: paths=list(events_dir.iterdir())
+    except OSError as exc: raise Type1ReportError("events directory is unreadable") from exc
+    if len(paths)>100000: raise Type1ReportError("event count exceeds bound")
+    indexed=[]
+    for p in paths:
+        m=_EVENT.fullmatch(p.name)
+        if not m or _is_reparse(p) or not p.is_file(): raise Type1ReportError("orphan or malformed event")
+        indexed.append((int(m.group(1)),m.group(2),p))
+    indexed.sort(); events=[]; revisions={}; materialized={}; previous=None
+    for pos,(ordinal,name,p) in enumerate(indexed,1):
+        if ordinal!=pos: raise Type1ReportError("event ordinal gap")
+        event,raw=_read_canonical(p,"event"); digest=_sha(raw)
+        if digest!=name or event.get("catalog_ordinal")!=ordinal or event.get("previous_event_sha256")!=previous: raise Type1ReportError("event identity or chain mismatch")
+        if pos%2:
             _validate_revision(event)
-            if event.get("previous_revision_event_sha256") != (events[-2][1] if len(events) >= 2 else None):
-                raise Type1ReportError("revision predecessor mismatch")
-            if event["revision_id"] in revisions or event["revision_ordinal"] != (position + 1) // 2:
-                raise Type1ReportError("duplicate or noncontiguous revision")
-            revisions[event["revision_id"]] = (event, digest)
-            if event["source_sha256"] != report_source_sha256(run_dir):
-                raise Type1ReportError("revision source hashes differ from fixed evidence paths")
+            if event.get("previous_revision_event_sha256") != (events[-2][1] if len(events)>=2 else None) or event["revision_id"] in revisions or event["revision_ordinal"]!=(pos+1)//2: raise Type1ReportError("revision predecessor mismatch")
+            if event["source_sha256"] != report_source_sha256(run_dir): raise Type1ReportError("revision source hashes differ from fixed evidence paths")
+            revisions[event["revision_id"]]=(event,digest)
         else:
-            if set(event) != {"schema_version", "catalog_ordinal", "previous_event_sha256", "revision_event_sha256", "builder_version", "builder_sha256", "object_id", "html_sha256", "byte_size"}:
-                raise Type1ReportError("materialization fields are not exact")
-            if event.get("schema_version") != MATERIALIZATION_SCHEMA or event.get("revision_event_sha256") != events[-1][1] or event.get("builder_version") != BUILDER_VERSION or event.get("builder_sha256") != _sha(BUILDER_VERSION.encode()):
-                raise Type1ReportError("materialization does not bind preceding revision")
-            object_id = event.get("object_id")
-            if not isinstance(object_id, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,80}", object_id) is None or object_id in materialized:
-                raise Type1ReportError("materialization object ID is invalid")
-            _require_sha(event.get("html_sha256"), "HTML SHA")
-            if not isinstance(event.get("byte_size"), int) or event["byte_size"] < 1:
-                raise Type1ReportError("materialization byte size is invalid")
-            materialized[object_id] = (event, digest)
-        events.append((event, digest)); previous = digest
-    try:
-        object_paths = list(objects_dir.iterdir())
-    except OSError as exc:
-        raise Type1ReportError("objects directory is unreadable") from exc
-    if len(object_paths) != len(materialized):
-        raise Type1ReportError("orphan or missing object")
-    for path in object_paths:
-        match = _OBJECT.fullmatch(path.name)
-        if match is None or path.is_symlink() or not path.is_file() or match.group(1) not in materialized:
-            raise Type1ReportError("orphan or malformed object")
-        event, _ = materialized[match.group(1)]
-        try: raw = path.read_bytes()
-        except OSError as exc: raise Type1ReportError("object is unreadable") from exc
-        if match.group(2) != event["html_sha256"] or _sha(raw) != event["html_sha256"] or len(raw) != event["byte_size"]:
-            raise Type1ReportError("object hash mismatch")
-    tip_path = root / "committed_report_tip.json"
+            required={"schema_version","catalog_ordinal","previous_event_sha256","revision_event_sha256","builder_version","builder_source_sha256","object_id","html_sha256","byte_size"}
+            if set(event)!=required or event.get("schema_version")!=MATERIALIZATION_SCHEMA or event.get("revision_event_sha256")!=events[-1][1] or event.get("builder_version")!=BUILDER_VERSION or event.get("builder_source_sha256")!=report_source_sha256(run_dir)["builder_source"]: raise Type1ReportError("materialization does not bind preceding revision")
+            oid=event.get("object_id"); _require_sha(event.get("html_sha256"),"HTML SHA")
+            if not isinstance(oid,str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,80}",oid) or oid in materialized or type(event.get("byte_size")) is not int or event["byte_size"]<1: raise Type1ReportError("materialization is invalid")
+            materialized[oid]=(event,digest)
+        events.append((event,digest)); previous=digest
+    opaths=list(objects_dir.iterdir())
+    if len(opaths)!=len(materialized): raise Type1ReportError("orphan or missing object")
+    for p in opaths:
+        m=_OBJECT.fullmatch(p.name)
+        if not m or _is_reparse(p) or not p.is_file() or m.group(1) not in materialized: raise Type1ReportError("orphan or malformed object")
+        event,_=materialized[m.group(1)]; raw=_read_bytes(p,"object")
+        if m.group(2)!=event["html_sha256"] or _sha(raw)!=event["html_sha256"] or len(raw)!=event["byte_size"]: raise Type1ReportError("object hash mismatch")
+    tip_path=_safe_child(root,Path("committed_report_tip.json"))
     if not tip_path.exists():
-        return {"state": "DRAFT", "event_count": len(events), "events": events, "root": root}
-    if tip_path.is_symlink() or not tip_path.is_file():
-        raise Type1ReportError("committed tip is invalid")
-    tip, tip_raw = _read_canonical(tip_path, "committed tip")
-    if set(tip) != {"schema_version", "identity", "event_count", "final_event_sha256", "latest_revision_event_sha256", "materialization_event_sha256", "object_id", "html_sha256"}:
-        raise Type1ReportError("committed tip fields are not exact")
-    if tip.get("schema_version") != TIP_SCHEMA or tip.get("identity") != IDENTITY or tip.get("event_count") != len(events) or not events or tip.get("final_event_sha256") != events[-1][1] or len(events) % 2 or tip.get("latest_revision_event_sha256") != events[-2][1] or tip.get("materialization_event_sha256") != events[-1][1]:
-        raise Type1ReportError("committed tip does not bind latest materialization")
-    event = events[-1][0]
-    if tip.get("object_id") != event.get("object_id") or tip.get("html_sha256") != event.get("html_sha256"):
-        raise Type1ReportError("committed tip object mismatch")
-    return {"state": "COMMITTED", "event_count": len(events), "events": events, "root": root, "tip": tip, "tip_sha256": _sha(tip_raw), "revision": events[-2][0], "materialization": event}
+        if events:
+            _verify_current_parent(root, events, "DRAFT")
+        return {"state":"DRAFT","event_count":len(events),"events":events,"root":root,"revisions":revisions}
+    tip,tip_raw=_read_canonical(tip_path,"committed tip")
+    required={"schema_version","identity","event_count","final_event_sha256","latest_revision_event_sha256","materialization_event_sha256","object_id","html_sha256"}
+    if set(tip)!=required or tip.get("schema_version")!=TIP_SCHEMA or tip.get("identity")!=IDENTITY or tip.get("event_count")!=len(events) or not events or len(events)%2 or tip.get("final_event_sha256")!=events[-1][1] or tip.get("latest_revision_event_sha256")!=events[-2][1] or tip.get("materialization_event_sha256")!=events[-1][1] or tip.get("object_id")!=events[-1][0].get("object_id") or tip.get("html_sha256")!=events[-1][0].get("html_sha256"): raise Type1ReportError("committed tip is invalid")
+    _verify_current_parent(root, events, "COMMITTED")
+    return {"state":"COMMITTED","event_count":len(events),"events":events,"root":root,"revisions":revisions,"tip":tip,"tip_sha256":_sha(tip_raw),"revision":events[-2][0],"materialization":events[-1][0]}
 
+def _assert_parent(con: sqlite3.Connection, expected: str|None, state: str) -> None:
+    row=con.execute("SELECT event_sha256,state FROM current_parent WHERE singleton=1").fetchone()
+    if (row is None and expected is not None) or (row is not None and (row[0]!=expected or row[1]!=state)): raise Type1ReportError("current-parent authority mismatch")
 
-def insert_report_revision(run_dir: str | Path, revision: Mapping[str, Any]) -> dict[str, Any]:
-    root = _root(run_dir, create=True)
-    snapshot = verify_report_catalog(run_dir)
-    if snapshot["state"] == "COMMITTED" or len(snapshot["events"]) % 2:
-        raise Type1ReportError("catalog is not open for a revision")
-    event = dict(revision)
-    expected_ordinal = len(snapshot["events"]) + 1
-    expected_previous = snapshot["events"][-1][1] if snapshot["events"] else None
-    expected_revision_previous = snapshot["events"][-2][1] if snapshot["events"] else None
-    for key, expected in (("catalog_ordinal", expected_ordinal), ("previous_event_sha256", expected_previous), ("previous_revision_event_sha256", expected_revision_previous)):
-        if key in event and event[key] != expected:
-            raise Type1ReportError(f"{key} does not match catalog predecessor")
-        event[key] = expected
-    if event.get("revision_ordinal") != (len(snapshot["events"]) // 2) + 1:
-        raise Type1ReportError("revision ordinal does not match catalog")
-    if any(item[0].get("revision_id") == event.get("revision_id") for item in snapshot["events"][::2]):
-        raise Type1ReportError("revision ID already exists")
-    _validate_revision(event)
-    if event["source_sha256"] != report_source_sha256(run_dir):
-        raise Type1ReportError("revision source hashes differ from fixed evidence paths")
-    raw = _canonical(event); digest = _sha(raw)
-    _write_new(root / "events" / f"{event['catalog_ordinal']:08d}-{digest}.json", raw)
-    return {"event_sha256": digest, "catalog_ordinal": event["catalog_ordinal"], "revision_id": event["revision_id"]}
-
-
-def materialize_report_revision(run_dir: str | Path, revision_event_sha256: str) -> dict[str, Any]:
-    _require_sha(revision_event_sha256, "revision event SHA")
-    snapshot = verify_report_catalog(run_dir)
-    if snapshot["state"] == "COMMITTED" or not snapshot["events"] or len(snapshot["events"]) % 2 == 0 or snapshot["events"][-1][1] != revision_event_sha256:
-        raise Type1ReportError("only the latest unmaterialized revision may be materialized")
-    root = snapshot["root"]; revision = snapshot["events"][-1][0]
-    html_bytes = _render(revision, revision_event_sha256); html_sha = _sha(html_bytes); object_id = revision["revision_id"]
-    object_path = root / "objects" / f"{object_id}-{html_sha}.html"
-    _write_new(object_path, html_bytes)
-    event = {"schema_version": MATERIALIZATION_SCHEMA, "catalog_ordinal": len(snapshot["events"]) + 1, "previous_event_sha256": revision_event_sha256, "revision_event_sha256": revision_event_sha256, "builder_version": BUILDER_VERSION, "builder_sha256": _sha(BUILDER_VERSION.encode()), "object_id": object_id, "html_sha256": html_sha, "byte_size": len(html_bytes)}
-    raw = _canonical(event); digest = _sha(raw)
+def insert_report_revision(run_dir: str|Path, revision: Mapping[str,Any])->dict[str,Any]:
+    root=_root(run_dir,create=True); con=_mutex(root)
     try:
-        _write_new(root / "events" / f"{event['catalog_ordinal']:08d}-{digest}.json", raw)
+        con.execute("BEGIN IMMEDIATE"); snap=verify_report_catalog(run_dir)
+        if snap["state"]=="COMMITTED" or len(snap["events"])%2: raise Type1ReportError("catalog is not open for a revision")
+        expected=snap["events"][-1][1] if snap["events"] else None; _assert_parent(con,expected,"MATERIALIZED" if expected else "EMPTY")
+        event=dict(revision); event.update({"catalog_ordinal":len(snap["events"])+1,"previous_event_sha256":expected,"previous_revision_event_sha256":snap["events"][-2][1] if snap["events"] else None})
+        if event.get("revision_ordinal")!=(len(snap["events"])//2)+1: raise Type1ReportError("revision ordinal does not match catalog")
+        _validate_revision(event)
+        if event["source_sha256"]!=report_source_sha256(run_dir): raise Type1ReportError("revision source hashes differ from fixed evidence paths")
+        raw=_canonical(event); digest=_sha(raw); _write_new(_safe_child(root,Path("events")/f"{event['catalog_ordinal']:08d}-{digest}.json"),raw)
+        con.execute("INSERT OR REPLACE INTO current_parent(singleton,event_sha256,state) VALUES(1,?,?)",(digest,"REVISION")); con.execute("COMMIT")
+        return {"event_sha256":digest,"catalog_ordinal":event["catalog_ordinal"],"revision_id":event["revision_id"]}
     except Exception:
-        raise Type1ReportError("materialization event failed; orphan object blocks catalog")
-    return {"event_sha256": digest, "object_id": object_id, "html_sha256": html_sha, "byte_size": len(html_bytes)}
+        con.execute("ROLLBACK"); raise
+    finally: con.close()
 
+def materialize_report_revision(run_dir: str|Path, revision_event_sha256:str)->dict[str,Any]:
+    _require_sha(revision_event_sha256,"revision event SHA"); root=_root(run_dir); con=_mutex(root)
+    try:
+        con.execute("BEGIN IMMEDIATE"); snap=verify_report_catalog(run_dir)
+        if snap["state"]=="COMMITTED" or not snap["events"] or len(snap["events"])%2==0 or snap["events"][-1][1]!=revision_event_sha256: raise Type1ReportError("only current unmaterialized revision may be materialized")
+        _assert_parent(con,revision_event_sha256,"REVISION"); revision=snap["events"][-1][0]; data=_render(revision,revision_event_sha256); h=_sha(data); oid=revision["revision_id"]
+        _write_new(_safe_child(root,Path("objects")/f"{oid}-{h}.html"),data)
+        event={"schema_version":MATERIALIZATION_SCHEMA,"catalog_ordinal":len(snap["events"])+1,"previous_event_sha256":revision_event_sha256,"revision_event_sha256":revision_event_sha256,"builder_version":BUILDER_VERSION,"builder_source_sha256":report_source_sha256(run_dir)["builder_source"],"object_id":oid,"html_sha256":h,"byte_size":len(data)}; raw=_canonical(event); digest=_sha(raw)
+        _write_new(_safe_child(root,Path("events")/f"{event['catalog_ordinal']:08d}-{digest}.json"),raw); con.execute("UPDATE current_parent SET event_sha256=?,state=? WHERE singleton=1",(digest,"MATERIALIZED")); con.execute("COMMIT")
+        return {"event_sha256":digest,"object_id":oid,"html_sha256":h,"byte_size":len(data)}
+    except Exception:
+        con.execute("ROLLBACK"); raise
+    finally: con.close()
 
-def commit_report_tip(run_dir: str | Path, materialization_event_sha256: str) -> dict[str, Any]:
-    _require_sha(materialization_event_sha256, "materialization event SHA")
-    snapshot = verify_report_catalog(run_dir)
-    if snapshot["state"] == "COMMITTED" or not snapshot["events"] or len(snapshot["events"]) % 2 or snapshot["events"][-1][1] != materialization_event_sha256:
-        raise Type1ReportError("only the latest materialization may be committed")
-    root = snapshot["root"]; materialization = snapshot["events"][-1][0]
-    tip = {"schema_version": TIP_SCHEMA, "identity": IDENTITY, "event_count": len(snapshot["events"]), "final_event_sha256": materialization_event_sha256, "latest_revision_event_sha256": snapshot["events"][-2][1], "materialization_event_sha256": materialization_event_sha256, "object_id": materialization["object_id"], "html_sha256": materialization["html_sha256"]}
-    _write_new(root / "committed_report_tip.json", _canonical(tip))
-    return dict(tip)
+def commit_report_tip(run_dir: str|Path, materialization_event_sha256:str)->dict[str,Any]:
+    _require_sha(materialization_event_sha256,"materialization event SHA"); root=_root(run_dir); con=_mutex(root)
+    try:
+        con.execute("BEGIN IMMEDIATE"); snap=verify_report_catalog(run_dir)
+        if snap["state"]=="COMMITTED" or not snap["events"] or len(snap["events"])%2 or snap["events"][-1][1]!=materialization_event_sha256: raise Type1ReportError("only current materialization may be committed")
+        _assert_parent(con,materialization_event_sha256,"MATERIALIZED"); m=snap["events"][-1][0]
+        tip={"schema_version":TIP_SCHEMA,"identity":IDENTITY,"event_count":len(snap["events"]),"final_event_sha256":materialization_event_sha256,"latest_revision_event_sha256":snap["events"][-2][1],"materialization_event_sha256":materialization_event_sha256,"object_id":m["object_id"],"html_sha256":m["html_sha256"]}; _write_new(_safe_child(root,Path("committed_report_tip.json")),_canonical(tip)); con.execute("UPDATE current_parent SET state='COMMITTED' WHERE singleton=1"); con.execute("COMMIT"); return dict(tip)
+    except Exception:
+        con.execute("ROLLBACK"); raise
+    finally: con.close()

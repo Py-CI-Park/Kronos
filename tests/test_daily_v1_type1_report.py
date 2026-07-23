@@ -15,6 +15,9 @@ def _sources(run):
     (run.parent / "public_rows.json").write_bytes(b"rows")
     (run / "run_manifest.json").write_bytes(b"run")
     (run / "receipt.json").write_bytes(b"receipt")
+    for name in ("type1_identity.json", "p6_public_run_seal.json", "attempt_parent.json", "authority.json"):
+        (run / name).write_text(json.dumps({"identity": IDENTITY}, sort_keys=True, separators=(",", ":")))
+    (run / "deployment_lock.json").write_text(json.dumps({"locks": LOCKS}, sort_keys=True, separators=(",", ":")))
     for kind in ("primary", "shuffled_reward"):
         for seed in range(5):
             member = run / kind / f"seed_{seed}"
@@ -25,12 +28,17 @@ def _sources(run):
 
 
 def _revision(run, number=1, *, failed=False):
+    sources = _sources(run)
+    evidence = {label: sources[label] for label in (
+        "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent",
+        "amendment", "protocol", "preregistration", "authority", "builder_source",
+    )}
     return {
-        "schema_version": "kronos_type1_report_revision.v1",
+        "schema_version": "kronos_type1_report_revision.v2",
         "revision_id": f"type1-r{number:04d}", "revision_ordinal": number,
         "identity": IDENTITY, "policy": POLICY,
         "result": {"run_state": "FAILED" if failed else "COMPLETE", "training_state": "FAILED" if failed else "COMPLETE", "reused_validation_state": "FAILED" if failed else "COMPLETE", "verdict": "NO_GO", "fresh_oos_state": "NOT_RUN", "fresh_oos_read_performed": False, "failures": ["CONTROL_GATE_FAILED"] if failed else []},
-        "source_sha256": _sources(run), "false_research_locks": LOCKS,
+        "source_sha256": sources, "evidence": evidence, "false_research_locks": LOCKS,
         "claims": {"symbols": ["000660"], "synthetic": "TRAIN_ONLY_SYNTHETIC_WIRING"},
     }
 
@@ -46,9 +54,9 @@ def test_catalog_is_alternating_immutable_and_failure_visible(tmp_path):
     assert snapshot["event_count"] == 4
     assert tip["latest_revision_event_sha256"] == second["event_sha256"]
     assert snapshot["revision"]["result"]["verdict"] == "NO_GO"
-    report = (tmp_path / "type1_reports" / "objects" / f"type1-r0002-{second_materialized['html_sha256']}.html").read_text()
+    report = (tmp_path / "type1_reports" / "objects" / f"type1-r0002-{second_materialized['html_sha256']}.html").read_text(encoding="utf-8")
     assert "NOT_RUN" in report and "000660" in json.dumps(snapshot["revision"])
-    for label in ("Overview", "Type1 identity", "Protocol and accounting", "Five-seed", "Reused-validation", "Fresh OOS", "Failures and integrity"):
+    for label in ("Overview", "Type1 identity", "Protocol and accounting", "Training plan and observed completion", "Reused-validation", "Fresh OOS", "Failures and integrity"):
         assert label in report
     with pytest.raises(Type1ReportError):
         insert_report_revision(tmp_path, _revision(tmp_path, 3))

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import stat
@@ -48,6 +49,13 @@ RUN_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 PROJECT_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 PROJECT_REPORT_SCHEMA: Final = "kronos_v7_project_report.v2"
 KNOWN_V7_REPORT_SCHEMA: Final = "kronos_v7_report.v1"
+TYPE1_REPLACEMENT_IDENTITY: Final = {
+    "dataset_id": "type1-close-20260803-002",
+    "train_id": "type1-public-002",
+    "train_run_id": "train_type1-public-002",
+}
+TYPE1_MAX_OBJECT_BYTES: Final = 8 * 1024 * 1024
+TYPE1_MAX_CATALOG_EVENTS: Final = 256
 
 
 def _response(payload: Mapping[str, Any], status_code: int = 200) -> Response:
@@ -248,12 +256,21 @@ def _m3e_report_chain(run_dir: Path, report_manifest: Mapping[str, Any]) -> tupl
         reasons.append("PREREG_NOT_FOUND_OR_SHA_MISMATCH")
     elif report_manifest.get("prereg_sha256") != _sha256_file(prereg_path):
         reasons.append("PREREG_SHA_MISMATCH")
+    if run_manifest.get("trainer_version") != "kronos_v8_m3e_contextual_bandit.v1":
+        reasons.append("M3E_ALGORITHM_MISMATCH")
+    if run_manifest.get("seeds") != [0, 1, 2, 3, 4] or not isinstance(run_manifest.get("members"), list) or len(run_manifest["members"]) != 5:
+        reasons.append("M3E_FIVE_SEEDS_MISMATCH")
+    if not isinstance(run_manifest.get("verdict"), Mapping) or run_manifest["verdict"].get("value") != "NO_GO":
+        reasons.append("M3E_VERDICT_MISMATCH")
+    policy = run_manifest.get("policy")
+    if not isinstance(policy, Mapping) or policy.get("primary_cost_rate") != 0.0023:
+        reasons.append("M3E_23BP_POLICY_MISMATCH")
     custody_uid = run_manifest.get("custody_uid")
     if not isinstance(custody_uid, str) or not custody_uid or Path(custody_uid).name != custody_uid:
         reasons.append("CUSTODY_UID_INVALID")
     else:
-        custody_path = M3E_CUSTODY_ROOT / custody_uid / "public" / "train_validation_manifest.json"
-        if custody_path.is_symlink():
+        custody_path = _safe_contained_file(M3E_CUSTODY_ROOT, custody_uid, "public", "train_validation_manifest.json")
+        if custody_path is None:
             reasons.append("PUBLIC_CUSTODY_MANIFEST_INVALID")
         else:
             custody = _read_json(custody_path)
@@ -444,46 +461,63 @@ def _project_report_dir(project_id: str) -> Path | None:
     if project_dir.is_symlink() or not resolved.is_dir():
         return None
     return resolved
-def _safe_contained_file(root: Path, *parts: str) -> Path | None:
-    """Return a regular, non-reparse file below ``root`` without following links."""
+def _has_reparse_point(path: Path) -> bool:
+    try:
+        return path.is_symlink() or bool(getattr(path.lstat(), "st_file_attributes", 0) & 0x400)
+    except OSError:
+        return True
+
+
+def _safe_contained_path(root: Path, *parts: str, directory: bool) -> Path | None:
+    """Resolve a fixed-root path only after rejecting every link/reparse component."""
     if not parts or any(not isinstance(part, str) or not part or part in {".", ".."} or "/" in part or "\\" in part for part in parts):
         return None
     try:
         root_resolved = root.resolve(strict=True)
-        if root.is_symlink() or not root_resolved.is_dir():
+        if _has_reparse_point(root) or not root_resolved.is_dir():
             return None
-        candidate = root.joinpath(*parts)
         current = root
         for part in parts:
             current = current / part
-            if current.is_symlink() or getattr(current.lstat(), "st_file_attributes", 0) & 0x400:
+            if _has_reparse_point(current):
                 return None
-        resolved = candidate.resolve(strict=True)
+        resolved = current.resolve(strict=True)
         resolved.relative_to(root_resolved)
-        mode = resolved.stat().st_mode
+        return resolved if (resolved.is_dir() if directory else stat.S_ISREG(resolved.stat().st_mode)) else None
     except (OSError, ValueError):
         return None
-    return resolved if stat.S_ISREG(mode) else None
+
+
+def _safe_contained_file(root: Path, *parts: str) -> Path | None:
+    return _safe_contained_path(root, *parts, directory=False)
 
 
 def _safe_contained_dir(root: Path, *parts: str) -> Path | None:
-    if not parts or any(not isinstance(part, str) or not part or part in {".", ".."} or "/" in part or "\\" in part for part in parts):
-        return None
+    return _safe_contained_path(root, *parts, directory=True)
+
+
+def _guarded_read(root: Path, *parts: str, maximum_bytes: int) -> tuple[bytes | None, str | None]:
+    """Read one stable regular file under a fixed root without link/reparse traversal."""
+    path = _safe_contained_file(root, *parts)
+    if path is None:
+        return None, "MISSING"
     try:
-        root_resolved = root.resolve(strict=True)
-        if root.is_symlink() or not root_resolved.is_dir():
-            return None
-        candidate = root.joinpath(*parts)
-        current = root
-        for part in parts:
-            current = current / part
-            if current.is_symlink() or getattr(current.lstat(), "st_file_attributes", 0) & 0x400:
-                return None
-        resolved = candidate.resolve(strict=True)
-        resolved.relative_to(root_resolved)
-    except (OSError, ValueError):
-        return None
-    return resolved if resolved.is_dir() else None
+        before = path.stat()
+        if before.st_size > maximum_bytes:
+            return None, "TOO_LARGE"
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "rb") as handle:
+            raw = handle.read(maximum_bytes + 1)
+        if _safe_contained_file(root, *parts) != path:
+            return None, "READ_FAILED"
+        after = path.stat()
+    except OSError:
+        return None, "READ_FAILED"
+    if len(raw) > maximum_bytes:
+        return None, "TOO_LARGE"
+    if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+        return None, "READ_FAILED"
+    return raw, None
 
 
 def _type1_report_dir(dataset_run_id: str, train_run_id: str) -> Path | None:
@@ -502,14 +536,33 @@ def _type1_catalog_snapshot(run_dir: Path) -> tuple[dict[str, Any] | None, list[
     return (snapshot, []) if snapshot.get("state") == "COMMITTED" else (None, ["TYPE1_COMMITTED_TIP_MISSING"])
 
 
+def _type1_materializations(run_dir: Path) -> tuple[list[dict[str, Any]] | None, list[str]]:
+    snapshot, reasons = _type1_catalog_snapshot(run_dir)
+    events = snapshot.get("events") if snapshot is not None else None
+    if not isinstance(events, list) or not events or len(events) > TYPE1_MAX_CATALOG_EVENTS or len(events) % 2:
+        return None, reasons or ["TYPE1_CATALOG_INVALID"]
+    rows: list[dict[str, Any]] = []
+    for index in range(0, len(events), 2):
+        revision, revision_event_sha = events[index]
+        materialization, materialization_event_sha = events[index + 1]
+        if not isinstance(revision, Mapping) or not isinstance(materialization, Mapping) or not isinstance(revision_event_sha, str) or not isinstance(materialization_event_sha, str):
+            return None, ["TYPE1_CATALOG_INVALID"]
+        identity = revision.get("identity")
+        if not isinstance(identity, Mapping) or any(identity.get(key) != value for key, value in TYPE1_REPLACEMENT_IDENTITY.items()) or materialization.get("revision_event_sha256") != revision_event_sha:
+            return None, ["TYPE1_REPLACEMENT_IDENTITY_MISMATCH"]
+        rows.append({"revision": dict(revision), "revision_event_sha256": revision_event_sha, "materialization": dict(materialization), "materialization_event_sha256": materialization_event_sha})
+    return rows, []
+
+
 def _type1_report_entry(run_dir: Path) -> dict[str, Any]:
     dataset_run_id, train_run_id = run_dir.parent.name, run_dir.name
-    snapshot, reasons = _type1_catalog_snapshot(run_dir)
-    if snapshot is None:
+    rows, reasons = _type1_materializations(run_dir)
+    if rows is None:
         return {"dataset_run_id": dataset_run_id, "train_run_id": train_run_id, "report_family": "TYPE1", "compatibility_state": "NATIVE", "availability": "BLOCKED", "integrity": "BLOCKED", "chain_integrity": "CHAIN_INVALID", "integrity_reasons": reasons, "chain_reasons": reasons, "verdict": "NO_GO", "test_state": "NOT_RUN", "report_state": "MISSING"}
-    revision, materialization, tip = snapshot["revision"], snapshot["materialization"], snapshot["tip"]
-    result = revision["result"]
-    return {"dataset_run_id": dataset_run_id, "train_run_id": train_run_id, "report_family": "TYPE1", "compatibility_state": "NATIVE", "availability": "COMMITTED", "integrity": "OK", "chain_integrity": "CHAIN_OK", "integrity_reasons": [], "chain_reasons": [], "verdict": result["verdict"], "test_state": result["fresh_oos_state"], "generated_utc": "IMMUTABLE", "builder_version": materialization["builder_version"], "report_sha256": materialization["html_sha256"], "size_bytes": materialization["byte_size"], "report_state": "PRESENT", "training_state": result["training_state"], "validation_state": result["reused_validation_state"], "evaluation_state": f"TEST_{result['fresh_oos_state']}", "result": dict(result), "catalog": {"event_count": snapshot["event_count"], "revision_id": revision["revision_id"], "revision_ordinal": revision["revision_ordinal"], "committed_tip_sha256": snapshot["tip_sha256"], "revision_event_sha256": tip["latest_revision_event_sha256"], "materialization_event_sha256": tip["materialization_event_sha256"], "html_sha256": tip["html_sha256"], "report_url": f"/api/v6/report-html?dataset={dataset_run_id}&train={train_run_id}"}}
+    reports = [{"revision_id": row["revision"]["revision_id"], "revision_ordinal": row["revision"]["revision_ordinal"], "revision_event_sha256": row["revision_event_sha256"], "materialization_event_sha256": row["materialization_event_sha256"], "report_sha256": row["materialization"]["html_sha256"], "size_bytes": row["materialization"]["byte_size"], "builder_version": row["materialization"]["builder_version"], "result": dict(row["revision"]["result"]), "report_url": f"/api/v6/report-html?dataset={dataset_run_id}&train={train_run_id}&report_sha256={row['materialization']['html_sha256']}"} for row in rows]
+    latest = rows[-1]
+    result, materialization = latest["revision"]["result"], latest["materialization"]
+    return {"dataset_run_id": dataset_run_id, "train_run_id": train_run_id, "report_family": "TYPE1", "compatibility_state": "NATIVE", "availability": "COMMITTED", "integrity": "OK", "chain_integrity": "CHAIN_OK", "integrity_reasons": [], "chain_reasons": [], "verdict": result["verdict"], "test_state": result["fresh_oos_state"], "generated_utc": "IMMUTABLE", "builder_version": materialization["builder_version"], "report_sha256": materialization["html_sha256"], "size_bytes": materialization["byte_size"], "report_state": "PRESENT", "training_state": result["training_state"], "validation_state": result["reused_validation_state"], "evaluation_state": f"TEST_{result['fresh_oos_state']}", "result": dict(result), "reports": reports, "catalog": {"event_count": len(rows) * 2, "revision_id": latest["revision"]["revision_id"], "revision_ordinal": latest["revision"]["revision_ordinal"], "html_sha256": materialization["html_sha256"], "report_url": reports[-1]["report_url"]}}
 
 
 def _report_family(run_dir: Path, manifest: Mapping[str, Any] | None) -> str:
@@ -524,25 +577,30 @@ def _report_family(run_dir: Path, manifest: Mapping[str, Any] | None) -> str:
     return "LEGACY" if manifest is not None and manifest.get("source_sha256") is None and manifest.get("false_research_locks") is None else "UNKNOWN"
 
 
-def _type1_report_response(run_dir: Path, download: bool) -> Response:
-    snapshot, reasons = _type1_catalog_snapshot(run_dir)
-    if snapshot is None:
-        return _response({"status": "BLOCKED", "reason": reasons[0], "reasons": reasons}, 404 if reasons[0] == "TYPE1_COMMITTED_TIP_MISSING" else 409)
-    tip = snapshot["tip"]
-    path = _safe_contained_file(run_dir / "type1_reports", "objects", f"{tip['object_id']}-{tip['html_sha256']}.html")
-    if path is None:
-        return _response({"status": "BLOCKED", "reason": "TYPE1_OBJECT_MISSING"}, 404)
-    try:
-        report_bytes = path.read_bytes()
-    except OSError:
-        return _response({"status": "BLOCKED", "reason": "TYPE1_OBJECT_MISSING"}, 404)
+def _type1_report_response(run_dir: Path, report_sha256: str | None, download: bool) -> Response:
+    if report_sha256 is None:
+        return _error(400, "BAD_REQUEST")
+    rows, reasons = _type1_materializations(run_dir)
+    if rows is None:
+        return _response({"status": "BLOCKED", "reason": reasons[0], "reasons": reasons}, 409)
+    row = next((candidate for candidate in rows if candidate["materialization"]["html_sha256"] == report_sha256), None)
+    if row is None:
+        return _response({"status": "BLOCKED", "reason": "TYPE1_REPORT_NOT_FOUND"}, 404)
+    materialization = row["materialization"]
+    report_bytes, error = _guarded_read(run_dir / "type1_reports", "objects", f"{materialization['object_id']}-{report_sha256}.html", maximum_bytes=TYPE1_MAX_OBJECT_BYTES)
+    if error == "TOO_LARGE":
+        return _response({"status": "BLOCKED", "reason": "TYPE1_OBJECT_TOO_LARGE"}, 413)
+    if error is not None or report_bytes is None:
+        return _response({"status": "ERROR", "error": {"code": "REPORT_READ_FAILED"}}, 500)
+    if len(report_bytes) != materialization["byte_size"] or hashlib.sha256(report_bytes).hexdigest() != report_sha256:
+        return _response({"status": "BLOCKED", "reason": "TYPE1_OBJECT_INTEGRITY_MISMATCH"}, 409)
     response = Response(report_bytes, status=200, mimetype="text/html")
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
-    response.headers["ETag"] = f'"{tip["html_sha256"]}"'
+    response.headers["ETag"] = f'"{report_sha256}"'
     response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     if download:
-        response.headers["Content-Disposition"] = f'attachment; filename="kronos-type1-report-{run_dir.parent.name}-{run_dir.name}.html"'
+        response.headers["Content-Disposition"] = f'attachment; filename="kronos-type1-report-{run_dir.parent.name}-{run_dir.name}-{report_sha256}.html"'
     return response
 
 
@@ -733,20 +791,19 @@ def _result_docs() -> list[dict[str, Any]]:
     docs.sort(key=lambda item: item["doc"], reverse=True)
     return docs
 
-def _report_query() -> tuple[str, str, bool]:
-    allowed = {"dataset", "train", "download"}
+def _report_query() -> tuple[str, str, str | None, bool]:
+    allowed = {"dataset", "train", "report_sha256", "download"}
     if not {"dataset", "train"} <= set(request.args) or set(request.args) - allowed:
         raise ValueError("invalid report query")
-    if any(len(request.args.getlist(name)) > 1 for name in allowed):
+    if any(len(request.args.getlist(name)) != 1 for name in allowed if name in request.args):
         raise ValueError("duplicated report query values")
     dataset_run_id = request.args["dataset"]
     train_run_id = request.args["train"]
+    report_sha256 = request.args.get("report_sha256")
     download = request.args.get("download", "")
-    if download not in {"", "1"}:
-        raise ValueError("invalid download flag")
-    if RUN_ID_PATTERN.fullmatch(dataset_run_id) is None or RUN_ID_PATTERN.fullmatch(train_run_id) is None:
-        raise ValueError("invalid report run ids")
-    return dataset_run_id, train_run_id, download == "1"
+    if not dataset_run_id or not train_run_id or download not in {"", "1"} or RUN_ID_PATTERN.fullmatch(dataset_run_id) is None or RUN_ID_PATTERN.fullmatch(train_run_id) is None or (report_sha256 is not None and re.fullmatch(r"[0-9a-f]{64}", report_sha256) is None):
+        raise ValueError("invalid report query")
+    return dataset_run_id, train_run_id, report_sha256, download == "1"
 
 
 def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any]:
@@ -764,10 +821,12 @@ def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any
             "states": {"training_state": entry.get("training_state", "MISSING"), "validation_state": entry.get("validation_state", "NOT_RECORDED"), "test_state": entry["test_state"], "evaluation_state": entry.get("evaluation_state", "TEST_NOT_RUN")},
         }
     manifest_path = RUNS_ROOT / dataset_run_id / train_run_id / "run_manifest.json"
+    raw, manifest_error = _guarded_read(RUNS_ROOT, dataset_run_id, train_run_id, "run_manifest.json", maximum_bytes=TYPE1_MAX_OBJECT_BYTES)
+    if manifest_error is not None or raw is None:
+        return {"status": "BLOCKED", "reason": "RUN_MANIFEST_MISSING"}
     try:
-        raw = manifest_path.read_bytes()
         manifest = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return {"status": "BLOCKED", "reason": "RUN_MANIFEST_MISSING"}
     events_tail, events_tail_diagnostics = _events_tail(manifest_path.with_name("events.jsonl"))
     return {
@@ -1168,12 +1227,21 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
     def reports_handler() -> Response:
         if request.method != "GET":
             return _method_not_allowed()
-        if request.args:
-            return _error(400, "BAD_REQUEST")
+        if not request.args:
+            reports = _report_entries()
+        else:
+            try:
+                dataset_run_id, train_run_id, report_sha256, download = _report_query()
+            except ValueError:
+                return _error(400, "BAD_REQUEST")
+            if report_sha256 is not None or download:
+                return _error(400, "BAD_REQUEST")
+            run_dir = _type1_report_dir(dataset_run_id, train_run_id)
+            reports = [_type1_report_entry(run_dir)] if run_dir is not None else []
         return _response({
             "schema_version": "kronos_v6_reports.v1",
             "status": "OK",
-            "reports": _report_entries(),
+            "reports": reports,
         })
     def project_reports_handler() -> Response:
         if request.method != "GET":
@@ -1222,7 +1290,7 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
         if request.method != "GET":
             return _method_not_allowed()
         try:
-            dataset_run_id, train_run_id, download = _report_query()
+            dataset_run_id, train_run_id, report_sha256, download = _report_query()
         except ValueError:
             return _error(400, "BAD_REQUEST")
         run_dir = _safe_contained_dir(RUNS_ROOT, dataset_run_id, train_run_id)
@@ -1232,7 +1300,9 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
         manifest = _read_json(manifest_path) if manifest_path is not None else None
         family = _report_family(run_dir, manifest)
         if family == "TYPE1":
-            return _type1_report_response(run_dir, download)
+            return _type1_report_response(run_dir, report_sha256, download)
+        if report_sha256 is not None:
+            return _error(400, "BAD_REQUEST")
         report_path = _safe_contained_file(run_dir, "report.html")
         if manifest_path is None or report_path is None:
             return _response({"status": "BLOCKED", "reason": "REPORT_NOT_FOUND"}, 404)

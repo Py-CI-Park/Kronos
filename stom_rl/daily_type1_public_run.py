@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -23,6 +24,10 @@ from stom_rl.daily_type1_contract import FEATURES, INITIAL_NAV_KRW, SEEDS, SLOT_
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PUBLIC_TRAIN_START = "2018-01-02"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_2026-07-23.json"
+REPLACEMENT_DATASET_ID = "type1-close-20260803-002"
+REPLACEMENT_TRAIN_ID = "type1-public-002"
+REPLACEMENT_RUN_ID = "train_type1-public-002"
 PUBLIC_TRAIN_END = "2023-12-29"
 REUSED_VALIDATION_START = "2024-01-02"
 REUSED_VALIDATION_END = "2025-06-30"
@@ -135,41 +140,75 @@ def materialize_public_rows(loader: Callable[..., Sequence[Mapping[str, Any]]], 
 def _file_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
-def _dataset_symbols(rows_path: Path, manifest_path: Path, universe_manifest_path: Path) -> tuple[str, ...]:
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(manifest, Mapping):
-        raise ValueError("dataset manifest must be a JSON object")
-    if manifest.get("schema_version") != "kronos_type1_g002_public_data.v1":
-        raise ValueError("dataset manifest schema is not the frozen G002 public schema")
-    if manifest.get("dataset_id") != "type1-close-20260803-001":
-        raise ValueError("dataset manifest identity is not the frozen Type1 identity")
+def _read_json_object(path: Path, label: str) -> Mapping[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be a JSON object")
+    return value
+
+
+def _verified_inputs(
+    rows_path: Path,
+    manifest_path: Path,
+    authority_path: Path,
+    materializer_manifest_path: Path,
+    amendment_path: Path = AMENDMENT_PATH,
+) -> tuple[tuple[str, ...], Mapping[str, Any]]:
+    """Verify all immutable replacement inputs before any model construction."""
+    from stom_rl.daily_type1_authority import validate_authority
+
+    amendment = _read_json_object(amendment_path, "recovery amendment")
+    expected = {
+        "authority_id": "type1-krx-authority-20260723-001",
+        "dataset_id": REPLACEMENT_DATASET_ID, "train_id": REPLACEMENT_TRAIN_ID,
+        "train_run_id": REPLACEMENT_RUN_ID, "custody_uid": "type1-fresh-oos-20260803-002",
+        "report_family": "kronos.type1.report.v1",
+    }
+    if amendment.get("replacement_identity") != expected:
+        raise ValueError("recovery amendment replacement identity mismatch")
+    authority_envelope = _read_json_object(authority_path, "KRX authority")
+    validate_authority(authority_envelope)
+    authority = authority_envelope["authority"]
+    manifest = _read_json_object(manifest_path, "dataset manifest")
+    materializer = _read_json_object(materializer_manifest_path, "materializer manifest")
+    if manifest.get("dataset_id") != REPLACEMENT_DATASET_ID or materializer.get("dataset_id") != REPLACEMENT_DATASET_ID:
+        raise ValueError("dataset/materializer is not the replacement immutable identity")
     if manifest.get("output_sha256") != _file_hash(rows_path):
-        raise ValueError("public rows hash differs from the dataset manifest")
+        raise ValueError("public rows hash differs from dataset manifest")
+    authority_sha, amendment_sha = _file_hash(authority_path), _file_hash(amendment_path)
+    for value, label in ((manifest, "dataset"), (materializer, "materializer")):
+        if value.get("authority_sha256") != authority_sha or value.get("amendment_sha256") != amendment_sha:
+            raise ValueError(f"{label} immutable authority/amendment binding mismatch")
+        if value.get("stable_symbols") not in (None, authority["stable_symbols"]):
+            raise ValueError(f"{label} stable symbols differ from KRX authority")
     if manifest.get("fresh_oos") != {"state": "NOT_RUN", "read_performed": False}:
         raise ValueError("dataset manifest does not prove untouched fresh OOS")
-    universe = manifest.get("universe")
-    if not isinstance(universe, Mapping):
-        raise ValueError("dataset manifest lacks its universe binding")
-    symbols = universe.get("symbols")
-    if symbols is None:
-        if universe.get("manifest_sha256") != _file_hash(universe_manifest_path):
-            raise ValueError("universe manifest hash differs from the dataset binding")
-        universe_manifest = json.loads(universe_manifest_path.read_text(encoding="utf-8"))
-        entries = universe_manifest.get("universe") if isinstance(universe_manifest, Mapping) else None
-        if not isinstance(entries, list):
-            raise ValueError("universe manifest is malformed")
-        symbols = [entry.get("code") for entry in entries if isinstance(entry, Mapping)]
-    if (
-        not isinstance(symbols, list)
-        or len(symbols) != STABLE_SLOTS
-        or len(set(symbols)) != STABLE_SLOTS
-        or any(not isinstance(symbol, str) or len(symbol) != 6 or not symbol.isdigit() for symbol in symbols)
-    ):
-        raise ValueError("dataset manifest must bind exactly 500 stable six-digit symbols")
-    return tuple(symbols)
+    return tuple(authority["stable_symbols"]), {
+        "dataset_id": REPLACEMENT_DATASET_ID, "train_id": REPLACEMENT_TRAIN_ID,
+        "train_run_id": REPLACEMENT_RUN_ID, "amendment_sha256": amendment_sha,
+        "authority_sha256": authority_sha, "materializer_sha256": _file_hash(materializer_manifest_path),
+        "source_database_identity": materializer.get("source_database_identity"),
+        "materializer_source_sha256": materializer.get("materializer_source_sha256"),
+        "preregistration_sha256": manifest.get("preregistration_sha256"),
+        "parent_protocol_sha256": _file_hash(PROTOCOL_PATH),
+        "runner_source_sha256": _file_hash(Path(__file__)),
+        "authority_sessions": authority["sessions"],
+    }
 
 
 
+def _contained_run_root(out_root: str | Path, run_id: str) -> Path:
+    base = Path(out_root).resolve(strict=False)
+    if not run_id or Path(run_id).name != run_id:
+        raise ValueError("run_id must be one non-empty path component")
+    candidate = (base / run_id).resolve(strict=False)
+    if os.path.commonpath((str(base), str(candidate))) != str(base):
+        raise ValueError("run output escapes authorized public root")
+    return candidate
+
+
+def _write_receipt(path: Path, receipt: Mapping[str, Any]) -> None:
+    path.write_bytes(canonical_json_bytes(receipt))
 def _protocol() -> Mapping[str, Any]:
     value = json.loads(PROTOCOL_PATH.read_text(encoding="utf-8"))
     if value.get("protocol_id") != "KRONOS-TYPE1-G002-PUBLIC-2026-07-23":
@@ -184,7 +223,7 @@ def _member(operations: PublicRunOperations, pairs: Sequence[Mapping[str, Any]],
     artifacts = dict(operations.save_final(model, normalizer, destination))
     if set(artifacts) != {"model_sha256", "normalizer_sha256"}:
         raise ValueError("final artifact receipt must contain model_sha256 and normalizer_sha256 only")
-    metrics = dict(operations.evaluate(model, validation_pairs, seed=seed))
+    metrics = dict(operations.evaluate_saved(destination, validation_pairs, seed=seed) if hasattr(operations, "evaluate_saved") else operations.evaluate(model, validation_pairs, seed=seed))
     actual_timesteps = getattr(model, "num_timesteps", TIMESTEPS_PER_SEED)
     return {
         "seed": seed,
@@ -210,14 +249,27 @@ def _iqm(members: Mapping[str, Mapping[str, Any]]) -> Any:
     return 0.3 * ordered[1] + 0.4 * ordered[2] + 0.3 * ordered[3]
 
 
-def run_public_experiment(rows: Sequence[Mapping[str, Any]], *, out_root: str | Path, run_id: str, operations: PublicRunOperations, config: RunConfig = RunConfig()) -> dict[str, Any]:
+def run_public_experiment(
+    rows: Sequence[Mapping[str, Any]], *, out_root: str | Path, run_id: str,
+    operations: PublicRunOperations, config: RunConfig = RunConfig(),
+    identity: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Run the mandatory five primary and five shuffled public-only members."""
-    if not run_id or Path(run_id).name != run_id:
-        raise ValueError("run_id must be one non-empty path component")
-    train_rows, validation_rows = split_public_rows(rows)
-    root = Path(out_root) / run_id
+    root = _contained_run_root(out_root, run_id)
     root.mkdir(parents=True, exist_ok=False)
+    receipt_path = root / "receipt.json"
+    _write_receipt(receipt_path, {
+        "execution_status": "RUNNING", "verdict": "NO_GO",
+        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+        "production_authoritative": identity is not None,
+    })
+    train_rows, validation_rows = split_public_rows(rows)
     protocol = _protocol()
+    if identity is not None:
+        if identity.get("train_id") != REPLACEMENT_TRAIN_ID or identity.get("train_run_id") != REPLACEMENT_RUN_ID:
+            raise ValueError("production train identity mismatch")
+        if isinstance(operations, _ProductionOperations):
+            operations.bind_authority_sessions(identity["authority_sessions"])
     train_pairs = operations.build_pairs(train_rows, split="train")
     validation_pairs = operations.build_pairs(validation_rows, split="reused_validation")
     if not train_pairs or not validation_pairs:
@@ -238,10 +290,11 @@ def run_public_experiment(rows: Sequence[Mapping[str, Any]], *, out_root: str | 
     if timestep_mismatches:
         controls["integrity_ok"] = False
         controls["integrity_reasons"] = list(controls.get("integrity_reasons", ())) + timestep_mismatches
-    execution_status = "BLOCK" if controls.get("integrity_ok") is False else "COMPLETE"
+    execution_status = "COMPLETE" if identity is not None and controls.get("integrity_ok") is not False else "BLOCK"
     manifest = {
         "schema_version": "kronos_type1_g002_public_run.v1",
         "protocol": {"id": protocol["protocol_id"], "sha256": _file_hash(PROTOCOL_PATH)},
+        "identities": dict(identity) if identity is not None else {"production_authoritative": False},
         "features": list(FEATURES),
         "public_splits": {
             "train": {
@@ -256,6 +309,10 @@ def run_public_experiment(rows: Sequence[Mapping[str, Any]], *, out_root: str | 
                 "actual_start": min(_row_date(row) for row in validation_rows),
                 "actual_end": max(_row_date(row) for row in validation_rows),
             },
+        },
+        "session_pairing": {
+            "authority_bound": identity is not None,
+            "trailing_embargo": list((identity or {}).get("authority_sessions", {}).get("trailing_embargo", [])),
         },
         "training": {"seeds": list(config.seeds), "timesteps_per_seed": config.timesteps_per_seed, "device": "cpu", "validation_visible_to_training": False, "eval_callback": False, "early_stopping": False, "best_model_selection": False, "checkpoint_selection": False, "member_selection": False, "saved_artifact": FINAL_MODEL_ONLY, "synthetic_oracle_calibration": False},
         "members": {"primary": primary, "shuffled_reward": shuffled},
@@ -278,6 +335,12 @@ class _ProductionOperations:
     def __init__(self, *, stable_symbols: Sequence[str] | None = None) -> None:
         self._normalizer: Any | None = None
         self._stable_symbols = tuple(stable_symbols) if stable_symbols is not None else None
+        self._authority_sessions: Mapping[str, Any] | None = None
+
+    def bind_authority_sessions(self, sessions: Mapping[str, Any]) -> None:
+        if not {"ordered", "pairs", "trailing_embargo"} <= set(sessions):
+            raise ValueError("authority session ordinals are malformed")
+        self._authority_sessions = sessions
 
     def build_pairs(self, rows: Sequence[Mapping[str, Any]], *, split: str, shuffled_seed: int | None = None) -> Sequence[Mapping[str, Any]]:
         from stom_rl.daily_type1_market import (
@@ -310,7 +373,14 @@ class _ProductionOperations:
         by_date: dict[date, dict[str, Any]] = {}
         for row in parsed:
             by_date.setdefault(row.decision_date, {})[row.symbol] = row
-        sessions = tuple(sorted(by_date))
+        raw_sessions = (
+            self._authority_sessions["ordered"]
+            if self._authority_sessions is not None else [item.isoformat() for item in sorted(by_date)]
+        )
+        sessions = tuple(date.fromisoformat(item) for item in raw_sessions if (
+            PUBLIC_TRAIN_START <= item <= PUBLIC_TRAIN_END if split == "train"
+            else REUSED_VALIDATION_START <= item <= REUSED_VALIDATION_END
+        ))
         if len(sessions) < 2:
             raise ValueError("public split requires at least two sessions")
         pair_sessions = tuple(
@@ -381,12 +451,29 @@ class _ProductionOperations:
         return train_model(pairs, TrainingConfig(seed=seed), timesteps=timesteps)
 
     def save_final(self, model: Any, normalizer: Any, path: Path) -> Mapping[str, str]:
+        if self._normalizer is None:
+            raise ValueError("market Type7 normalizer was not fitted")
         model_path = path / "final_model"
-        normalizer_path = path / "normalizer.pkl"
+        normalizer_path = path / "normalizer.json"
         model.save(str(model_path))
-        normalizer.save(str(normalizer_path))
-        saved_model = model_path.with_suffix(".zip")
-        return {"model_sha256": _file_hash(saved_model), "normalizer_sha256": _file_hash(normalizer_path)}
+        normalizer_path.write_bytes(canonical_json_bytes({
+            "kind": "market_type7_train_only", "digest": self._normalizer.digest(),
+            "scales": [{"center": str(item.center), "scale": str(item.scale)} for item in self._normalizer.scales],
+        }))
+        return {"model_sha256": _file_hash(model_path.with_suffix(".zip")), "normalizer_sha256": _file_hash(normalizer_path)}
+
+    def evaluate_saved(self, path: Path, pairs: Sequence[Mapping[str, Any]], *, seed: int) -> Mapping[str, Any]:
+        from sb3_contrib import MaskablePPO
+        from stom_rl.daily_type1_market import FeatureScale, TrainOnlyNormalizer
+        raw = _read_json_object(path / "normalizer.json", "market Type7 normalizer")
+        normalizer = TrainOnlyNormalizer(tuple(
+            FeatureScale(Decimal(item["center"]), Decimal(item["scale"])) for item in raw["scales"]
+        ))
+        if raw.get("kind") != "market_type7_train_only" or raw.get("digest") != normalizer.digest():
+            raise ValueError("persisted market Type7 normalizer failed verification")
+        from stom_rl.daily_type1_env import Type1ClosingEnv
+        model = MaskablePPO.load(str(path / "final_model.zip"), env=Type1ClosingEnv(pairs), device="cpu")
+        return self.evaluate(model, pairs, seed=seed)
 
     def evaluate(self, model: Any, pairs: Sequence[Mapping[str, Any]], *, seed: int) -> Mapping[str, Any]:
         from stom_rl.daily_type1_env import Type1ClosingEnv
@@ -510,9 +597,11 @@ class _ProductionOperations:
         }
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run frozen G002 Type 1 public-only MaskablePPO research.")
-    parser.add_argument("--rows-json", required=True, help="Public-only canonical JSON row array; fresh/test paths are rejected.")
-    parser.add_argument("--dataset-manifest", required=True, help="Frozen public-only dataset manifest binding all 500 stable symbols.")
-    parser.add_argument("--universe-manifest", required=True, help="Checked universe manifest whose SHA is bound by the dataset manifest.")
+    parser.add_argument("--rows-json", required=True, help="Replacement public-only canonical JSON row array.")
+    parser.add_argument("--dataset-manifest", required=True, help="Replacement immutable dataset manifest.")
+    parser.add_argument("--authority", required=True, help="Frozen verified KRX authority envelope.")
+    parser.add_argument("--materializer-manifest", required=True, help="Replacement materializer manifest.")
+    parser.add_argument("--amendment", default=str(AMENDMENT_PATH), help="Frozen recovery amendment.")
     parser.add_argument("--out-root", required=True)
     parser.add_argument("--run-id", required=True)
     return parser
@@ -520,22 +609,35 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    rows_path = reject_nonpublic_path(args.rows_json)
-    manifest_path = reject_nonpublic_path(args.dataset_manifest)
-    universe_manifest_path = reject_nonpublic_path(args.universe_manifest)
-    rows = json.loads(rows_path.read_text(encoding="utf-8"))
-    if not isinstance(rows, list):
-        raise ValueError("--rows-json must contain a JSON array")
-    stable_symbols = _dataset_symbols(rows_path, manifest_path, universe_manifest_path)
-    result = run_public_experiment(
-        rows,
-        out_root=args.out_root,
-        run_id=args.run_id,
-        operations=_ProductionOperations(stable_symbols=stable_symbols),
-        config=RunConfig(),
-    )
-    print(json.dumps({"output_dir": str(result["output_dir"]), "execution_status": result["manifest"]["execution_status"], "verdict": "NO_GO"}, sort_keys=True))
-    return 0
+    root: Path | None = None
+    try:
+        rows_path = reject_nonpublic_path(args.rows_json)
+        manifest_path = reject_nonpublic_path(args.dataset_manifest)
+        authority_path = reject_nonpublic_path(args.authority)
+        materializer_path = reject_nonpublic_path(args.materializer_manifest)
+        amendment_path = reject_nonpublic_path(args.amendment)
+        rows = json.loads(rows_path.read_text(encoding="utf-8"))
+        if not isinstance(rows, list):
+            raise ValueError("--rows-json must contain a JSON array")
+        stable_symbols, identity = _verified_inputs(
+            rows_path, manifest_path, authority_path, materializer_path, amendment_path,
+        )
+        root = _contained_run_root(args.out_root, args.run_id)
+        result = run_public_experiment(
+            rows, out_root=args.out_root, run_id=args.run_id,
+            operations=_ProductionOperations(stable_symbols=stable_symbols), config=RunConfig(),
+            identity=identity,
+        )
+        print(json.dumps({"output_dir": str(result["output_dir"]), "execution_status": result["manifest"]["execution_status"], "verdict": "NO_GO"}, sort_keys=True))
+        return 0 if result["manifest"]["execution_status"] == "COMPLETE" else 1
+    except Exception as exc:
+        if root is not None and root.is_dir() and (root / "receipt.json").exists():
+            _write_receipt(root / "receipt.json", {
+                "execution_status": "BLOCK", "verdict": "NO_GO", "reason": str(exc),
+                "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+            })
+        print(json.dumps({"execution_status": "BLOCK", "error": str(exc), "verdict": "NO_GO"}, sort_keys=True))
+        return 1
 
 
 if __name__ == "__main__":

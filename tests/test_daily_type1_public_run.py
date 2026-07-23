@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from decimal import Decimal
@@ -20,6 +21,10 @@ from stom_rl.daily_type1_public_run import (
     run_public_experiment,
     split_public_rows,
     _ProductionOperations,
+    REPLACEMENT_DATASET_ID,
+    REPLACEMENT_RUN_ID,
+    REPLACEMENT_TRAIN_ID,
+    _verified_inputs,
 )
 
 
@@ -58,13 +63,61 @@ def _rows():
 
 def test_parser_exposes_no_smoke_seed_or_selection_escape_hatches():
     parser = build_parser()
-    args = parser.parse_args(["--rows-json", "public.json", "--dataset-manifest", "manifest.json", "--universe-manifest", "universe.json", "--out-root", "out", "--run-id", "g002"])
+    args = parser.parse_args([
+        "--rows-json", "public.json",
+        "--dataset-manifest", "manifest.json",
+        "--authority", "authority.json",
+        "--materializer-manifest", "materializer.json",
+        "--out-root", "out",
+        "--run-id", "g002",
+    ])
     assert args.run_id == "g002"
     assert args.dataset_manifest == "manifest.json"
-    assert args.universe_manifest == "universe.json"
+    assert args.authority == "authority.json"
+    assert args.materializer_manifest == "materializer.json"
+    assert "--universe-manifest" not in parser.format_help()
     assert "--seeds" not in parser.format_help()
     assert "--smoke" not in parser.format_help()
     assert "best" not in parser.format_help().lower()
+def test_replacement_input_binding_exposes_required_identity_and_source_hashes(tmp_path: Path, monkeypatch):
+    import stom_rl.daily_type1_authority as authority_module
+
+    symbols = [f"{index:06d}" for index in range(500)]
+    authority_path = tmp_path / "authority.json"
+    authority_path.write_text(json.dumps({"authority": {
+        "stable_symbols": symbols,
+        "sessions": {"ordered": [], "pairs": [], "trailing_embargo": []},
+    }}), encoding="utf-8")
+    amendment_path = Path(__file__).parents[1] / "docs" / "kronos_type1_g002_recovery_amendment_2026-07-23.json"
+    authority_sha = hashlib.sha256(authority_path.read_bytes()).hexdigest()
+    amendment_sha = hashlib.sha256(amendment_path.read_bytes()).hexdigest()
+    rows_path = tmp_path / "rows.json"
+    rows_path.write_text("[]", encoding="utf-8")
+    manifest_path = tmp_path / "dataset.json"
+    manifest_path.write_text(json.dumps({
+        "dataset_id": REPLACEMENT_DATASET_ID,
+        "output_sha256": hashlib.sha256(rows_path.read_bytes()).hexdigest(),
+        "authority_sha256": authority_sha, "amendment_sha256": amendment_sha,
+        "stable_symbols": symbols,
+        "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
+        "preregistration_sha256": "a" * 64,
+    }), encoding="utf-8")
+    materializer_path = tmp_path / "materializer.json"
+    materializer_path.write_text(json.dumps({
+        "dataset_id": REPLACEMENT_DATASET_ID,
+        "authority_sha256": authority_sha, "amendment_sha256": amendment_sha,
+        "stable_symbols": symbols, "source_database_identity": {"path": "public"},
+        "materializer_source_sha256": "b" * 64,
+    }), encoding="utf-8")
+    monkeypatch.setattr(authority_module, "validate_authority", lambda _: None)
+    _, identity = _verified_inputs(rows_path, manifest_path, authority_path, materializer_path, amendment_path)
+    assert identity["dataset_id"] == REPLACEMENT_DATASET_ID
+    assert (identity["train_id"], identity["train_run_id"]) == (REPLACEMENT_TRAIN_ID, REPLACEMENT_RUN_ID)
+    assert identity["source_database_identity"] == {"path": "public"}
+    assert identity["materializer_source_sha256"] == "b" * 64
+    assert identity["preregistration_sha256"] == "a" * 64
+    assert len(identity["runner_source_sha256"]) == 64
+
 
 
 def test_fixed_production_budget_and_members_are_exhaustive(tmp_path: Path):
@@ -79,8 +132,9 @@ def test_fixed_production_budget_and_members_are_exhaustive(tmp_path: Path):
     assert manifest["training"]["best_model_selection"] is False
     assert manifest["training"]["synthetic_oracle_calibration"] is False
     assert manifest["fresh_oos"] == {"state": "NOT_RUN", "metrics": None}
-    assert manifest["execution_status"] == "COMPLETE"
+    assert manifest["execution_status"] == "BLOCK"
     assert manifest["verdict"] == "NO_GO"
+    assert manifest["identities"] == {"production_authoritative": False}
     assert (result["output_dir"] / "run_manifest.json").read_bytes() == json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
