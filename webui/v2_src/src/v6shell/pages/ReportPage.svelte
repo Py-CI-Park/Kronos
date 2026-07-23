@@ -10,18 +10,22 @@
     getV6RunDetail,
     getV6Runs,
     getV6Status,
+    v6ExactReportHtmlUrl,
+    initialReportSelection,
     v6ProjectReportHtmlUrl,
-    v6ReportHtmlUrl,
     type V6ProjectReportEntry,
     type V6ProjectReports,
     type V6ReportEntry,
+    type V6ReportRevision,
     type V6Reports,
     type V6ResearchRegistry,
     type V6RunDetail,
     type V6Runs,
     type V6Status,
   } from '../v6Api';
-  import { classifyType1State, isType1Identity } from '../type1Presentation';
+  import { classifyType1State } from '../type1Presentation';
+
+  type SelectedRevision = V6ReportRevision & Pick<V6ReportEntry, 'dataset_run_id' | 'train_run_id' | 'family' | 'report_family'>;
 
   let status = $state<V6Status | null>(null);
   let runs = $state<V6Runs | null>(null);
@@ -29,9 +33,9 @@
   let reports = $state<V6Reports | null>(null);
   let projectReports = $state<V6ProjectReports | null>(null);
   let registry = $state<V6ResearchRegistry | null>(null);
-  let selectedReport = $state<V6ReportEntry | null>(null);
+  let selectedReport = $state<SelectedRevision | null>(initialReportSelection());
   let selectedProject = $state<V6ProjectReportEntry | null>(null);
-  let viewerReport = $state<V6ReportEntry | null>(null);
+  let viewerReport = $state<SelectedRevision | null>(null);
   let docName = $state<string | null>(null);
   let docHtml = $state('');
   let docLoading = $state(false);
@@ -47,28 +51,26 @@
   const text = (value: unknown) => value === undefined || value === null || value === '' ? 'MISSING' : String(value);
   const short = (value: unknown) => text(value).slice(0, 12);
   const kb = (value: number | undefined) => typeof value === 'number' ? `${(value / 1024).toFixed(0)} KB` : 'MISSING';
-  const record = (report: V6ReportEntry | null | undefined): Record<string, unknown> => (report ?? {}) as Record<string, unknown>;
-  const type1 = (report: V6ReportEntry | null | undefined) => isType1Identity(record(report));
-  const field = (report: V6ReportEntry | null | undefined, key: string) => record(report)[key];
-  const reportState = (report: V6ReportEntry | null | undefined) => classifyType1State(record(report));
+  const revisionState = (revision: V6ReportRevision) => classifyType1State({
+    ...revision.result,
+    ...revision,
+    verdict: revision.result?.verdict,
+    test_state: revision.result?.fresh_oos_state,
+  });
+  const revisionDisplayState = (revision: V6ReportRevision) =>
+    revisionState(revision) === 'EMPTY' && !revision.report_sha256 ? 'BLOCKED' : revisionState(revision);
   const badgeClass = (value: string | undefined) => value === 'NO_GO' || value === 'TAMPERED' || value === 'BLOCKED' ? 'danger' : value === 'INCONCLUSIVE' || value === 'NOT_RUN' ? 'warn' : value?.startsWith('GO_CANDIDATE') ? 'warn' : 'muted';
-  const reportUrl = (report: V6ReportEntry, download = false): string | null => {
-    const sha = report.report_sha256;
-    return type1(report) ? sha ? v6ReportHtmlUrl(report.dataset_run_id ?? '', report.train_run_id ?? '', sha, download) : null : v6ReportHtmlUrl(report.dataset_run_id ?? '', report.train_run_id ?? '', undefined, download);
-  };
-  const revisionHistory = (report: V6ReportEntry) => {
-    const direct = report.failures;
-    if (direct?.length) return direct;
-    const catalog = field(report, 'catalog');
-    if (!catalog || typeof catalog !== 'object') return [] as unknown[];
-    const value = (catalog as Record<string, unknown>).failed_revisions ?? (catalog as Record<string, unknown>).history;
-    return Array.isArray(value) ? value : [];
-  };
+  const revisionsFor = (entry: V6ReportEntry): readonly V6ReportRevision[] => entry.revisions ?? entry.reports ?? [];
+  const selectedRevision = (entry: V6ReportEntry, revision: V6ReportRevision): SelectedRevision => ({ ...revision, dataset_run_id: entry.dataset_run_id, train_run_id: entry.train_run_id, family: entry.family, report_family: entry.report_family });
+  const revisionUrl = (revision: SelectedRevision, download = false): string | null =>
+    v6ExactReportHtmlUrl(revision.dataset_run_id, revision.train_run_id, revision.report_sha256, download);
+  const revisionUsable = (entry: V6ReportEntry, revision: V6ReportRevision): boolean =>
+    entry.integrity === 'OK' && revision.integrity === 'OK' && Boolean(revision.report_sha256) && revisionDisplayState(revision) !== 'BLOCKED' && revisionDisplayState(revision) !== 'TAMPERED';
+  const revisionReasons = (revision: V6ReportRevision): readonly string[] =>
+    [...(revision.failures ?? []), ...(revision.result?.failures ?? [])];
   const projectUrl = (project: V6ProjectReportEntry, download = false) => v6ProjectReportHtmlUrl(project.project_id ?? '', download);
   const projectUsable = (project: V6ProjectReportEntry) => project.integrity === 'CHAIN_OK';
   const selectedDataset = () => runs?.datasets?.find((dataset) => dataset.run_id === selectedReport?.dataset_run_id);
-  const selectedRun = () => selectedReport ? runs?.runs?.find((run) => run.run_id === selectedReport.train_run_id && run.dataset_run_id === selectedReport.dataset_run_id) : undefined;
-  const selectedVerdict = () => detail?.manifest?.verdict_candidate ?? selectedRun()?.verdict_candidate;
 
   async function copy(value: unknown) {
     try {
@@ -94,20 +96,18 @@
     }
   }
 
-  async function selectReport(report: V6ReportEntry, openViewer = false) {
-    selectedReport = report;
+  async function selectRevision(entry: V6ReportEntry, revision: V6ReportRevision, openViewer = false) {
+    if (!revisionUsable(entry, revision)) return;
+    const selected = selectedRevision(entry, revision);
+    selectedReport = selected;
     if (openViewer) {
       selectedProject = null;
-      viewerReport = report;
+      viewerReport = selected;
     }
     detail = null;
     detailError = null;
-    if (!report.dataset_run_id || !report.train_run_id) {
-      detailError = 'UNAVAILABLE: 실행 식별자가 없어 provenance를 불러올 수 없습니다.';
-      return;
-    }
     detailLoading = true;
-    const response = await getV6RunDetail(report.dataset_run_id, report.train_run_id);
+    const response = await getV6RunDetail(selected.dataset_run_id ?? '', selected.train_run_id ?? '');
     detailLoading = false;
     if (response.ok && response.data) detail = response.data;
     else detailError = `UNAVAILABLE: ${response.error ?? '실행 상세를 불러올 수 없습니다.'}`;
@@ -140,16 +140,8 @@
     const [statusResponse, runsResponse] = await Promise.all([getV6Status(), getV6Runs()]);
     await Promise.all([loadProjects(), loadReports(), loadRegistry()]);
     if (statusResponse.ok && statusResponse.data) status = statusResponse.data;
-    if (runsResponse.ok && runsResponse.data) {
-      runs = runsResponse.data;
-      const immutable = reports?.reports?.find((report) => type1(report)) ?? reports?.reports?.[0];
-      const newest = immutable ?? (runsResponse.data.runs?.[0] ? { dataset_run_id: runsResponse.data.runs[0].dataset_run_id, train_run_id: runsResponse.data.runs[0].run_id } : undefined);
-      if (newest?.dataset_run_id && newest.train_run_id) {
-        await selectReport(newest);
-      }
-    } else {
-      coreError = `UNAVAILABLE: ${runsResponse.error ?? statusResponse.error ?? '기본 연구 데이터를 불러올 수 없습니다.'}`;
-    }
+    if (runsResponse.ok && runsResponse.data) runs = runsResponse.data;
+    else coreError = `UNAVAILABLE: ${runsResponse.error ?? statusResponse.error ?? '기본 연구 데이터를 불러올 수 없습니다.'}`;
     loading = false;
   }
 
@@ -229,30 +221,56 @@
       {/if}
     </section>
 
-    <section id="selected-verdict" class="verdict" class:danger={text(selectedVerdict()?.value) === 'NO_GO'} aria-live="polite">
-      <p class="eyebrow">선택된 실행의 판정</p><h2>{text(selectedVerdict()?.value)}</h2>
-      {#each (selectedVerdict()?.reasons ?? []) as reason}<p>{text(reason)}</p>{:else}<p>판정 사유가 기록되지 않았습니다.</p>{/each}
+    <section id="selected-verdict" class="verdict" class:danger={selectedReport?.result?.verdict === 'NO_GO'} aria-live="polite">
+      <p class="eyebrow">명시적으로 선택된 revision의 판정</p>
+      {#if selectedReport}
+        <h2>{text(selectedReport.result?.verdict)}</h2>
+        {#each (selectedReport.result?.failures ?? []) as reason}<p>{text(reason)}</p>{:else}<p>이 revision에 판정 사유가 기록되지 않았습니다.</p>{/each}
+      {:else}
+        <h2>선택 없음</h2><p>카탈로그에서 무결한 정확한 report SHA를 선택하면 이 영역과 provenance를 표시합니다.</p>
+      {/if}
     </section>
 
     <section class="card catalog" aria-labelledby="report-catalog-title">
-      <h2 id="report-catalog-title">연구 보고서 카탈로그 <span class="chip">{reports?.reports?.length ?? 'UNAVAILABLE'}건</span></h2>
-      <p class="note">실행별 self-contained HTML 보고서입니다. 판정 토큰은 원문 그대로이며 SHA 불일치 보고서는 열람이 차단됩니다.</p>
+      <h2 id="report-catalog-title">연구 보고서 카탈로그 <span class="chip">{reports?.reports?.length ?? 'UNAVAILABLE'} 실행</span></h2>
+      <p class="note">모든 revision을 보존해 표시합니다. viewer·다운로드·provenance는 사용자가 무결한 정확한 report SHA를 명시적으로 선택할 때만 열립니다.</p>
       {#if reportError}
         <section class="unavailable" role="alert">{reportError}<button onclick={loadReports}>다시 시도</button></section>
       {:else if reports?.reports?.length}
         <div class="report-grid">
           {#each reports.reports as report}
-            <article class:selected={selectedReport?.dataset_run_id === report.dataset_run_id && selectedReport?.train_run_id === report.train_run_id} class:mismatch={report.integrity !== 'OK' || reportState(report)==='TAMPERED'} class="report-card">
-              <span class="badge {badgeClass(type1(report) ? reportState(report) ?? report.verdict : report.verdict)}">{text(type1(report) ? reportState(report) ?? report.verdict : report.verdict)}</span><h3>{text(report.dataset_run_id)}</h3><p class="run">{text(report.train_run_id)}{#if type1(report)} · Type1 sequential MaskablePPO{/if}</p>
-              <dl><dt>생성</dt><dd>{text(report.generated_utc)}</dd><dt>test OOS</dt><dd>{text(report.test_state)}</dd>{#if type1(report)}<dt>revision</dt><dd>{text(report.revision_ordinal)} · <code>{short(report.revision_sha256)}…</code></dd><dt>parent</dt><dd><code>{short(report.parent_sha256)}…</code></dd><dt>materialization</dt><dd><code>{short(report.materialization_sha256)}…</code></dd>{/if}<dt>SHA</dt><dd><code title={text(report.report_sha256)}>{short(report.report_sha256)}…</code><button class="mini" onclick={() => copy(report.report_sha256)}>복사</button></dd><dt>무결성</dt><dd>{text(report.integrity)} · {text(field(report,'chain_integrity'))}</dd></dl>
-              {#if type1(report)}<p class="note">Type1은 명시된 report SHA로만 열람합니다. SHA 없음, BLOCKED 또는 TAMPERED면 latest-tip 또는 다른 family로 대체하지 않습니다.</p>{#if revisionHistory(report).length}<p class="mismatch-note">이전 실패 revision 보존: {revisionHistory(report).map(text).join(' · ')}</p>{/if}{/if}
-              {#if report.integrity === 'OK' && (!type1(report) || (report.report_sha256 && reportState(report)!=='BLOCKED' && reportState(report)!=='TAMPERED'))}{#if reportUrl(report)}<div class="actions"><button onclick={() => selectReport(report, true)}>보고서 보기</button><button onclick={() => selectReport(report)}>provenance 선택</button><a href={reportUrl(report) ?? undefined} target="_blank" rel="noopener">새 창</a><a href={reportUrl(report, true) ?? undefined}>다운로드</a></div>{/if}{:else}<p class="mismatch-note">{text(reportState(report) ?? report.integrity)} · 열람 차단됨 · Type1 latest fallback 없음</p>{/if}
-            </article>
+            <section class="report-card" class:mismatch={report.integrity !== 'OK'}>
+              <h3>{text(report.dataset_run_id)}</h3><p class="run">{text(report.train_run_id)} · {text(report.report_family ?? report.family)}</p>
+              <p class="note">run custody: {text(report.integrity)} · {text(report.chain_integrity)} · {text(report.availability)}</p>
+              {#each revisionsFor(report) as revision}
+                {@const selected = selectedRevision(report, revision)}
+                {@const usable = revisionUsable(report, revision)}
+                <article class:selected={selectedReport?.revision_event_sha256 === revision.revision_event_sha256} class:mismatch={!usable} class="report-card">
+                  <span class="badge {badgeClass(revisionDisplayState(revision) ?? revision.result?.verdict)}">{text(revisionDisplayState(revision) ?? revision.result?.verdict)}</span>
+                  <dl>
+                    <dt>revision</dt><dd>{text(revision.revision_ordinal)} · <code title={text(revision.revision_event_sha256)}>{short(revision.revision_event_sha256)}…</code></dd>
+                    <dt>parent</dt><dd><code title={text(revision.parent_sha256)}>{short(revision.parent_sha256)}…</code></dd>
+                    <dt>materialization</dt><dd><code title={text(revision.materialization_sha256)}>{short(revision.materialization_sha256)}…</code></dd>
+                    <dt>report SHA</dt><dd><code title={text(revision.report_sha256)}>{short(revision.report_sha256)}…</code>{#if revision.report_sha256}<button class="mini" onclick={() => copy(revision.report_sha256)}>복사</button>{/if}</dd>
+                    <dt>OOS</dt><dd>{text(revision.result?.fresh_oos_state)}</dd>
+                    <dt>무결성</dt><dd>{text(revision.integrity)}</dd>
+                  </dl>
+                  {#if revisionReasons(revision).length}<p class="mismatch-note">BLOCKED/aborted evidence: {revisionReasons(revision).join(' · ')}</p>{/if}
+                  {#if usable && revisionUrl(selected)}
+                    <div class="actions"><button onclick={() => selectRevision(report, revision, true)}>보고서 보기</button><button onclick={() => selectRevision(report, revision)}>provenance 선택</button><a href={revisionUrl(selected) ?? undefined} target="_blank" rel="noopener">새 창</a><a href={revisionUrl(selected, true) ?? undefined}>다운로드</a></div>
+                  {:else}
+                    <p class="mismatch-note">{text(revisionDisplayState(revision) ?? revision.integrity)} · 열람 차단됨 · exact-SHA 및 동일 family revision으로 대체하지 않음</p>
+                  {/if}
+                </article>
+              {:else}
+                <p class="mismatch-note">revision catalog가 비어 있습니다. run-level 최신 판정이나 SHA를 대체 사용하지 않습니다.</p>
+              {/each}
+            </section>
           {/each}
         </div>
-        {#if viewerReport && reportUrl(viewerReport)}
-          <div class="viewer-head"><h3>{text(viewerReport.dataset_run_id)} / {text(viewerReport.train_run_id)} · {type1(viewerReport) ? `SHA ${short(viewerReport.report_sha256)}` : 'catalog report'}</h3><button onclick={() => { viewerReport = null; }}>닫기</button></div>
-          <iframe class="viewer" sandbox="" src={reportUrl(viewerReport) ?? undefined} title="연구 실행 보고서 뷰어"></iframe>
+        {#if viewerReport && revisionUrl(viewerReport)}
+          <div class="viewer-head"><h3>{text(viewerReport.dataset_run_id)} / {text(viewerReport.train_run_id)} · SHA {short(viewerReport.report_sha256)}</h3><button onclick={() => { viewerReport = null; }}>닫기</button></div>
+          <iframe class="viewer" sandbox="" src={revisionUrl(viewerReport) ?? undefined} title="연구 실행 보고서 뷰어"></iframe>
         {/if}
       {:else}<p>생성된 보고서가 없습니다. 실행 종료 후 보고서를 생성합니다.</p>{/if}
     </section>
@@ -269,7 +287,7 @@
       {#if docName}<div class="viewer-head"><h3>{text(docName)}</h3><button onclick={() => { docName = null; docHtml = ''; }}>닫기</button></div>{#if docLoading}<p class="note" aria-live="polite">문서를 불러오는 중…</p>{:else}<article class="doc-body">{@html docHtml}</article>{/if}{/if}
     </section>
 
-    {#if detailError}<section class="panel unavailable" role="alert">{detailError}{#if selectedReport}<button onclick={() => selectReport(selectedReport)}>다시 시도</button>{/if}</section>{/if}
+    {#if detailError}<section class="panel unavailable" role="alert">{detailError}</section>{/if}
     {#if detailLoading}<p class="note" aria-live="polite">선택된 실행의 provenance를 불러오는 중…</p>{/if}
     {#if selectedReport}
       <section id="evidence-chain" class="chains" aria-label="Selected run SHA chain">

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { v6ReportHtmlUrl } from './v6Api';
+import { initialReportSelection, v6ExactReportHtmlUrl, v6ReportHtmlUrl } from './v6Api';
 import {
   TYPE1_FACTS,
   classifyType1State,
@@ -43,13 +44,22 @@ test('Type1 lifecycle state remains fail-closed for adverse and missing evidence
   assert.equal(type1StateLabel('NOT_RUN'), 'NOT RUN');
 });
 
-test('report URL supports immutable revisions without breaking legacy download calls', () => {
+test('report URLs require an explicit SHA for report-page viewing', () => {
   assert.equal(
-    v6ReportHtmlUrl('dataset 1', 'train/1', 'sha 256/한글', true),
+    v6ExactReportHtmlUrl('dataset 1', 'train/1', 'sha 256/한글', true),
     '/api/v6/report-html?dataset=dataset%201&train=train%2F1&report_sha256=sha%20256%2F%ED%95%9C%EA%B8%80&download=1',
   );
+  assert.equal(v6ExactReportHtmlUrl('dataset 1', 'train/1', undefined), null);
   assert.equal(
     v6ReportHtmlUrl('dataset 1', 'train/1', true),
     '/api/v6/report-html?dataset=dataset%201&train=train%2F1&download=1',
   );
+});
+
+test('report page begins without an implicit report selection', () => {
+  assert.equal(initialReportSelection(), null);
+  const source = readFileSync(new URL('./pages/ReportPage.svelte', import.meta.url), 'utf8');
+  assert.match(source, /const revisionsFor = \(entry: V6ReportEntry\): readonly V6ReportRevision\[\] => entry\.revisions \?\? entry\.reports \?\? \[\]/);
+  assert.match(source, /v6ExactReportHtmlUrl/);
+  assert.doesNotMatch(source, /await selectReport\(/);
 });

@@ -3,6 +3,11 @@
   "genesis_commitment_sha256": "4127aeb000000000000000000000000000000000000000000000000000002301",
   "cases": [
     {
+      "domain": "access_ledger",
+      "parts_hex": ["7b7d"],
+      "sha256": "f9756641eabab1d4060fe5524086f7b0b3ec9e4718e1e55471ac7934adc015de"
+    },
+    {
       "domain": "commitment",
       "parts_hex": ["0000000000000001", "7b7d"],
       "sha256": "a28876db38c5313fb3aa86f2e6a3953b5f9c1f25ac5b0d44b34c0da0cb8ba326"

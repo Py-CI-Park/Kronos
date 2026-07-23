@@ -24,9 +24,22 @@ REVISION_SCHEMA = "kronos_type1_report_revision.v2"
 MATERIALIZATION_SCHEMA = "kronos_type1_report_materialization.v2"
 TIP_SCHEMA = "kronos_type1_committed_report_tip.v2"
 BUILDER_VERSION = "kronos_type1_report_builder.v2"
-IDENTITY = {"report_family": "TYPE1", "dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002", "domain": "kronos.type1", "algorithm_family": "MASKABLE_PPO"}
+REPLACEMENT_OUTER_IDENTITY = {
+    "authority_id": "type1-krx-authority-20260723-001",
+    "dataset_id": "type1-close-20260803-002",
+    "train_id": "type1-public-002",
+    "train_run_id": "train_type1-public-002",
+    "custody_uid": "type1-fresh-oos-20260803-002",
+    "report_family": "kronos.type1.report.v1",
+}
+IDENTITY = {
+    **REPLACEMENT_OUTER_IDENTITY,
+    "domain": "kronos.type1",
+    "algorithm_family": "MASKABLE_PPO",
+}
 POLICY = {"price_basis": "EXACT_15_20_BAR_CLOSE_PROXY", "official_close": False, "accounting": "FIXED_NOTIONAL_NON_SELF_FINANCING", "primary_cost_rate": "0.0023", "initial_nav_krw": "60000000", "slot_notional_krw": "5000000", "maximum_slots": 10, "seeds": [0, 1, 2, 3, 4], "checkpoint_selection": False, "synthetic_oracle_calibration": False}
 LOCKS = {"promotion_allowed": False, "model_build_allowed": False, "paper_forward_allowed": False, "live_broker_order_allowed": False, "profitability_claim_allowed": False, "go_summary_allowed": False}
+M3E_STATEMENT = "LINUCB_CONTEXTUAL_BANDIT_NO_GO_FIVE_SEEDS_23BP_FRESH_OOS_NOT_RUN_UNCHANGED"
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _EVENT = re.compile(r"([0-9]{8})-([0-9a-f]{64})\.json\Z")
 _OBJECT = re.compile(r"([A-Za-z0-9][A-Za-z0-9_.-]{0,80})-([0-9a-f]{64})\.html\Z")
@@ -121,16 +134,18 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 def _write_new(path: Path, raw: bytes) -> None:
-    # A failure after O_EXCL is indeterminate.  Never unlink or retry it.
+    """Create and durably write an immutable object; accept only an exact orphan retry."""
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o644)
-    except FileExistsError as exc:
-        raise Type1ReportError("immutable catalog entry already exists") from exc
+    except FileExistsError:
+        if _read_bytes(path, "existing immutable catalog entry", maximum=len(raw)) != raw:
+            raise Type1ReportError("immutable catalog entry already exists")
+        return
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(raw); handle.flush(); os.fsync(handle.fileno())
     except Exception as exc:
-        raise Type1ReportError("indeterminate immutable create; catalog is blocked") from exc
+        raise Type1ReportError("indeterminate immutable create; retry exact operation to recover") from exc
 
 def _root(run_dir: str | Path, *, create: bool = False) -> Path:
     directory = Path(run_dir).absolute()
@@ -161,6 +176,63 @@ def _mutex(root: Path) -> sqlite3.Connection:
         return con
     except sqlite3.Error as exc:
         raise Type1ReportError("current-parent authority is unavailable") from exc
+def _identity_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    candidate = value.get("identity", value)
+    if not isinstance(candidate, Mapping) or any(
+        candidate.get(key) != expected for key, expected in REPLACEMENT_OUTER_IDENTITY.items()
+    ):
+        raise Type1ReportError("authority artifact does not bind exact replacement outer identity")
+    return candidate
+
+
+def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
+    amendment = fixed["amendment"]
+    if amendment.get("replacement_identity") != REPLACEMENT_OUTER_IDENTITY:
+        raise Type1ReportError("recovery amendment does not bind exact replacement identity")
+    if amendment.get("parent_protocol_id") != "KRONOS-TYPE1-G002-PUBLIC-2026-07-23":
+        raise Type1ReportError("recovery amendment protocol ancestry is invalid")
+    corrections = amendment.get("report_and_api_corrections")
+    if not isinstance(corrections, Mapping) or corrections.get("m3e_truth") != M3E_STATEMENT:
+        raise Type1ReportError("recovery amendment M3E truth is invalid")
+
+    protocol, preregistration = fixed["protocol"], fixed["preregistration"]
+    if (protocol.get("protocol_id"), protocol.get("parent_prereg_id")) != (
+        "KRONOS-TYPE1-G002-PUBLIC-2026-07-23", "KRONOS-TYPE1-CLOSING-2026-07-23",
+    ):
+        raise Type1ReportError("protocol ancestry is invalid")
+    boundary, training = protocol.get("scientific_boundary"), protocol.get("training")
+    if not isinstance(boundary, Mapping) or not isinstance(training, Mapping) or (
+        boundary.get("price_basis"), boundary.get("primary_round_trip_cost_rate"),
+        boundary.get("fresh_oos_state"), boundary.get("fresh_oos_read_performed"),
+        training.get("seeds"), boundary.get("terminal_verdict"),
+    ) != ("EXACT_15_20_BAR_CLOSE_PROXY", "0.0023", "NOT_RUN", False, [0, 1, 2, 3, 4], "NO_GO"):
+        raise Type1ReportError("protocol Type1 boundary is invalid")
+    m3e = preregistration.get("m3e_context")
+    if preregistration.get("prereg_id") != "KRONOS-TYPE1-CLOSING-2026-07-23" or not isinstance(m3e, Mapping) or (
+        m3e.get("classification"), m3e.get("verdict"), m3e.get("fresh_oos_status")
+    ) != ("CONTEXTUAL_BANDIT_RESEARCH_EXPERIMENT", "NO_GO", "NOT_RUN"):
+        raise Type1ReportError("preregistration M3E boundary is invalid")
+
+    for label in ("type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority"):
+        _identity_mapping(fixed[label])
+    seal = fixed["public_run_seal"]
+    fresh = seal.get("fresh_oos", seal)
+    if not isinstance(fresh, Mapping) or (
+        fresh.get("state", fresh.get("fresh_oos_state")), fresh.get("payload_read", fresh.get("fresh_oos_read_performed"))
+    ) != ("NOT_RUN", False):
+        raise Type1ReportError("P6 public run seal has unsafe fresh-OOS state")
+    lock = fixed["deployment_lock"]
+    if lock.get("false_research_locks", lock.get("locks")) != LOCKS:
+        raise Type1ReportError("deployment lock does not preserve Type1 no-go locks")
+    parent = fixed["attempt_parent"]
+    prior = parent.get("parent_identity", parent.get("parent_attempt", parent.get("previous_attempt")))
+    if not isinstance(prior, Mapping) or (
+        prior.get("dataset_id"), prior.get("train_id"), prior.get("train_run_id")
+    ) != ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001"):
+        raise Type1ReportError("attempt parent does not preserve aborted -001 ancestry")
+    authority = fixed["authority"]
+    if authority.get("authority_id", _identity_mapping(authority).get("authority_id")) != REPLACEMENT_OUTER_IDENTITY["authority_id"]:
+        raise Type1ReportError("authority source does not bind replacement authority ID")
 
 def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
     directory = Path(run_dir).absolute()
@@ -176,30 +248,28 @@ def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
         "public_rows": _safe_child(directory.parent, Path("public_rows.json")),
     }
     fixed = {label: (_read_json(paths[label], label) if label in {"amendment", "protocol", "preregistration"} else _read_canonical(paths[label], label)[0]) for label in ("amendment", "protocol", "preregistration", "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")}
-    replacement = fixed["amendment"].get("replacement_identity")
-    if not isinstance(replacement, Mapping) or any(replacement.get(key) != IDENTITY[key] for key in ("dataset_id", "train_id", "train_run_id")):
-        raise Type1ReportError("recovery amendment does not bind replacement identity")
-    if fixed["protocol"].get("protocol_id") != "KRONOS-TYPE1-G002-PUBLIC-2026-07-23" or fixed["preregistration"].get("prereg_id") != "KRONOS-TYPE1-CLOSING-2026-07-23":
-        raise Type1ReportError("protocol or preregistration authority is invalid")
-    for label in ("type1_identity", "public_run_seal", "attempt_parent", "authority"):
-        candidate = fixed[label].get("identity", fixed[label])
-        if not isinstance(candidate, Mapping) or any(candidate.get(key) != IDENTITY[key] for key in ("dataset_id", "train_id", "train_run_id")):
-            raise Type1ReportError(f"{label} does not bind replacement identity")
-    if fixed["deployment_lock"].get("false_research_locks", fixed["deployment_lock"].get("locks")) != LOCKS:
-        raise Type1ReportError("deployment lock does not preserve Type1 no-go locks")
+    _validate_authority_sources(fixed)
     return {label: _sha(_read_bytes(path, label)) for label, path in paths.items()}
 def _verify_current_parent(root: Path, events: list[tuple[dict[str, Any], str]], state: str) -> None:
     db = _safe_child(root, Path("current_parent.sqlite3"))
     if not db.is_file() or _is_reparse(db):
         raise Type1ReportError("current-parent authority is missing")
+    expected = events[-1][1] if events else None
+    expected_state = "COMMITTED" if state == "COMMITTED" else ("MATERIALIZED" if events and len(events) % 2 == 0 else ("REVISION" if events else "EMPTY"))
+    previous = events[-2][1] if len(events) > 1 else None
+    previous_state = "MATERIALIZED" if len(events) > 1 and (len(events) - 1) % 2 == 0 else ("REVISION" if events else "EMPTY")
     try:
         con = sqlite3.connect(str(db))
         row = con.execute("SELECT event_sha256,state FROM current_parent WHERE singleton=1").fetchone()
+        # A fully validated final event/tip can outlive its SQLite parent update
+        # after O_EXCL/fsync success. Recover only that immediate exact orphan.
+        if expected and ((row is None and previous is None) or (row is not None and row == (previous, previous_state))):
+            con.execute("INSERT OR REPLACE INTO current_parent(singleton,event_sha256,state) VALUES(1,?,?)", (expected, expected_state))
+            con.commit()
+            row = (expected, expected_state)
         con.close()
     except sqlite3.Error as exc:
         raise Type1ReportError("current-parent authority is unreadable") from exc
-    expected = events[-1][1] if events else None
-    expected_state = "COMMITTED" if state == "COMMITTED" else ("MATERIALIZED" if events and len(events) % 2 == 0 else ("REVISION" if events else "EMPTY"))
     if row is None or row[0] != expected or row[1] != expected_state:
         raise Type1ReportError("current-parent authority mismatch")
 
@@ -228,9 +298,17 @@ def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
     r = revision["result"]; failures = "".join(f"<li>{html.escape(str(x))}</li>" for x in r["failures"]) or "<li>None recorded.</li>"
     hashes = "".join(f"<li><code>{html.escape(k)}</code>: <code>{html.escape(v)}</code></li>" for k,v in sorted(revision["source_sha256"].items()))
     observed = f"<p>Observed completion — run: {html.escape(str(r['run_state']))}; training: {html.escape(str(r['training_state']))}; reused validation: {html.escape(str(r['reused_validation_state']))}.</p>"
-    sections = (("overview","Overview",f"<p class=verdict>NO_GO</p>{observed}"),("identity","Type1 identity and scope","<p>Replacement Type1 research-only evidence; not official close, alpha, profitability, paper, broker, live, or funded evidence.</p>"),("protocol","Protocol and accounting","<p>Exact 15:20 close proxy and fixed-notional non-self-financing 23bp accounting.</p>"),("training","Training plan and observed completion",f"<p>Planned: five seeds × 200000 timesteps. This is a plan, not a completion claim.</p>{observed}"),("validation","Reused-validation controls","<p>Reused validation can yield NO_GO only.</p>"),("custody","Fresh OOS and custody",f"<p>Fresh OOS: {html.escape(str(r['fresh_oos_state']))}; payload was not read.</p>"),("integrity","Failures and integrity",f"<p>Revision SHA-256: <code>{revision_sha}</code></p><ul>{failures}</ul><ul>{hashes}</ul>"))
-    tabs="".join(f'<a role="tab" aria-controls="{k}" href="#{k}">{t}</a>' for k,t,_ in sections)
-    body="".join(f'<section role="tabpanel" id="{k}"><h2>{t}</h2>{c}</section>' for k,t,c in sections)
+    sections = (
+        ("overview", "Overview", f"<p class=verdict>NO_GO</p>{observed}"),
+        ("identity", "Type1 identity and scope", "<p>Replacement Type1 research-only evidence; not official close, alpha, profitability, paper, broker, live, or funded evidence.</p>"),
+        ("protocol", "Protocol and accounting", "<p>Exact 15:20 close proxy and fixed-notional non-self-financing 23bp accounting.</p>"),
+        ("training", "Training plan and observed completion", f"<p>Planned: five seeds × 200000 timesteps. This is a plan, not a completion claim.</p>{observed}"),
+        ("validation", "Reused-validation controls", "<p>Reused validation can yield NO_GO only.</p>"),
+        ("custody", "Fresh OOS and custody", f"<p>Fresh OOS: {html.escape(str(r['fresh_oos_state']))}; payload was not read.</p><p>M3E: {M3E_STATEMENT}</p>"),
+        ("integrity", "Failures and integrity", f"<p>Revision SHA-256: <code>{revision_sha}</code></p><ul>{failures}</ul><ul>{hashes}</ul>"),
+    )
+    links = "".join(f'<a href="#{key}">{title}</a>' for key, title, _ in sections)
+    body = "".join(f'<section id="{key}" aria-labelledby="{key}-heading"><h2 id="{key}-heading">{title}</h2>{content}</section>' for key, title, content in sections)
     text = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<title>Type1 immutable report</title><style>'
@@ -241,8 +319,7 @@ def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
         'code{overflow-wrap:anywhere}'
         '@media(max-width:600px){body{margin:1rem}nav{display:grid;grid-template-columns:1fr}}'
         '</style></head><body><h1>Type1 immutable reused-validation evidence</h1>'
-        '<nav role="tablist" aria-label="Report sections">'
-        f'{tabs}</nav><main>{body}</main></body></html>'
+        f'<nav aria-label="Report sections">{links}</nav><main>{body}</main></body></html>'
     )
     return text.encode("utf-8")
 

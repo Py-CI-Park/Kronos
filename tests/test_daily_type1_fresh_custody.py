@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
 
 from stom_rl.daily_type1_contract import canonical_json_bytes
 from stom_rl import daily_type1_fresh_custody as custody
@@ -29,15 +30,22 @@ def _calendar():
 
 class Authority:
     def __init__(self,key,calendar): self.key,self.calendar,self.responses,self.access=key,calendar,{}, {"state":"UNUSED"}; self.disable_calls=self.consume_calls=self.deny_calls=0
+    @staticmethod
+    def _receipt(label):
+        raw=canonical_json_bytes({"receipt_type":label,"schema_version":"kronos_type1_authority_receipt.v1"})
+        return {"receipt_sha256":hashlib.sha256(raw).hexdigest(),"receipt":raw}
     def commitment(self,ordinal):
         value=self.responses.get(ordinal)
         if isinstance(value,Exception): raise value
         return value
-    def key_enable(self,*_): return {"key_id":KEY_ID,"key_enable_receipt_sha256":"c"*64,"access_ledger_genesis_sha256":"d"*64,"rfc3161_receipt_sha256":"e"*64}
-    def key_disable(self,*_): self.disable_calls+=1; return {"receipt_sha256":"f"*64}
+    def key_enable(self,access_ledger_id,*_):
+        key_raw=self.key.public_key().public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)
+        enabled=self._receipt("KEY_ENABLED"); stamp=self._receipt("RFC3161")
+        return {"access_ledger_id":access_ledger_id,"key_id":KEY_ID,"authority_public_key_sha256":hashlib.sha256(key_raw).hexdigest(),"key_enable_receipt_sha256":enabled["receipt_sha256"],"access_ledger_genesis_sha256":"d"*64,"rfc3161_receipt_sha256":stamp["receipt_sha256"],"key_enable_receipt":enabled["receipt"],"rfc3161_receipt":stamp["receipt"]}
+    def key_disable(self,*_): self.disable_calls+=1; return self._receipt("KEY_DISABLED")
     def access_snapshot(self,*_): return self.access
-    def consume_observed(self,*_): self.consume_calls+=1; self.access={"state":"CONSUMED"}; return {"receipt_sha256":"1"*64}
-    def issue_deny(self,*_): self.deny_calls+=1; return {"receipt_sha256":"2"*64}
+    def consume_observed(self,*_): self.consume_calls+=1; result=self._receipt("CONSUMED"); self.access={"state":"CONSUMED","receipt_sha256":result["receipt_sha256"]}; return result
+    def issue_deny(self,*_): self.deny_calls+=1; return self._receipt("DENIED")
 
 
 def _envelope(key,ordinal,calendar,prior):
@@ -95,6 +103,10 @@ def test_tamper_profile_and_concurrent_replay_fail_closed_or_read_only(tmp_path)
     ledger,authority,key,calendar=_ledger(tmp_path); raw=_envelope(key,1,calendar,custody.GENESIS_COMMITMENT_SHA256); authority.responses[1]=raw
     with ThreadPoolExecutor(max_workers=2) as pool: outcomes=list(pool.map(lambda _: ledger.reconcile_ordinal(authority,1),range(2)))
     assert outcomes[0]==outcomes[1]
+    assert ledger._commitment_count()==1
+    db=sqlite3.connect(ledger.database)
+    assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0]==2
+    db.close()
     db=sqlite3.connect(ledger.database)
     with pytest.raises(sqlite3.IntegrityError,match="append only"):
         db.execute("UPDATE events SET digest=? WHERE sequence=2",("0"*64,))
@@ -110,11 +122,20 @@ def test_reopen_after_recovery_fault_keeps_durable_intent(tmp_path):
     authority.access={"state":"RESERVED","receipt_sha256":"4"*64}
     original=authority.key_disable
     authority.key_disable=lambda *_: (_ for _ in ()).throw(custody.AuthorityUnavailable("fault"))
-    with pytest.raises(custody.Type1FreshCustodyError,match="pending"): ledger.recover(authority)
+    with pytest.raises(custody.Type1FreshCustodyError,match="key disable recovery pending"): ledger.recover(authority)
     reopened=custody.Type1FreshCustodyLedger(ledger.database,dataset_id=DATASET,custody_uid=CUSTODY,prereg_sha256=PREREG,calendar=calendar,authority_principal_uri=PRINCIPAL,authority_key_id=KEY_ID,authority_public_key=key.public_key(),protocol_sha256=PROTOCOL)
     assert reopened.status()["recovery_state"]=="PENDING"
     authority.key_disable=original
     assert reopened.recover(authority) is not None
+def test_recovery_consume_fault_is_reported_as_pending(tmp_path):
+    ledger,authority,key,calendar=_ledger(tmp_path); _fill(ledger,authority,key,calendar); ledger.seal(authority)
+    authority.access={"state":"RESERVED","receipt_sha256":"4"*64}
+    original=authority.consume_observed
+    authority.consume_observed=lambda *_: (_ for _ in ()).throw(custody.AuthorityUnavailable("fault"))
+    with pytest.raises(custody.Type1FreshCustodyError,match="consume recovery pending"): ledger.recover(authority)
+    assert ledger.status()["recovery_state"]=="PENDING"
+    authority.consume_observed=original
+    assert ledger.recover(authority) is not None
 
 def test_base64url_is_canonical():
     signature=bytes(range(64)); encoded=base64.urlsafe_b64encode(signature).decode().rstrip("=")

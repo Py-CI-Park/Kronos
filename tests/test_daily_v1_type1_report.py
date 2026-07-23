@@ -3,7 +3,7 @@ import json
 import pytest
 
 from stom_rl.daily_v1_type1_report import (
-    IDENTITY, LOCKS, POLICY, Type1ReportError, commit_report_tip,
+    IDENTITY, LOCKS, POLICY, REPLACEMENT_OUTER_IDENTITY, Type1ReportError, commit_report_tip,
     insert_report_revision, materialize_report_revision, report_source_sha256,
     verify_report_catalog,
 )
@@ -15,9 +15,12 @@ def _sources(run):
     (run.parent / "public_rows.json").write_bytes(b"rows")
     (run / "run_manifest.json").write_bytes(b"run")
     (run / "receipt.json").write_bytes(b"receipt")
-    for name in ("type1_identity.json", "p6_public_run_seal.json", "attempt_parent.json", "authority.json"):
-        (run / name).write_text(json.dumps({"identity": IDENTITY}, sort_keys=True, separators=(",", ":")))
-    (run / "deployment_lock.json").write_text(json.dumps({"locks": LOCKS}, sort_keys=True, separators=(",", ":")))
+    outer = {"identity": IDENTITY}
+    (run / "type1_identity.json").write_text(json.dumps(outer, sort_keys=True, separators=(",", ":")))
+    (run / "p6_public_run_seal.json").write_text(json.dumps({**outer, "fresh_oos": {"state": "NOT_RUN", "payload_read": False}}, sort_keys=True, separators=(",", ":")))
+    (run / "deployment_lock.json").write_text(json.dumps({**outer, "locks": LOCKS}, sort_keys=True, separators=(",", ":")))
+    (run / "attempt_parent.json").write_text(json.dumps({**outer, "parent_identity": {"dataset_id": "type1-close-20260803-001", "train_id": "type1-public-001", "train_run_id": "train_type1-public-001"}}, sort_keys=True, separators=(",", ":")))
+    (run / "authority.json").write_text(json.dumps({**outer, "authority_id": REPLACEMENT_OUTER_IDENTITY["authority_id"]}, sort_keys=True, separators=(",", ":")))
     for kind in ("primary", "shuffled_reward"):
         for seed in range(5):
             member = run / kind / f"seed_{seed}"
@@ -84,3 +87,23 @@ def test_catalog_rehashes_fixed_source_paths(tmp_path):
     (tmp_path / "run_manifest.json").write_bytes(b"tampered")
     with pytest.raises(Type1ReportError, match="source hashes"):
         verify_report_catalog(tmp_path)
+def test_catalog_rejects_semantic_outer_identity_tamper(tmp_path):
+    _sources(tmp_path)
+    source = tmp_path / "authority.json"
+    value = json.loads(source.read_text())
+    value["identity"]["custody_uid"] = "copied-under-wrong-path"
+    source.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")))
+    with pytest.raises(Type1ReportError, match="outer identity"):
+        report_source_sha256(tmp_path)
+
+
+def test_report_uses_seven_ordinary_anchor_linked_sections(tmp_path):
+    revision = insert_report_revision(tmp_path, _revision(tmp_path))
+    object_event = materialize_report_revision(tmp_path, revision["event_sha256"])
+    report = (tmp_path / "type1_reports" / "objects" / f"type1-r0001-{object_event['html_sha256']}.html").read_text(encoding="utf-8")
+    assert report.count("<section ") == 7
+    assert 'role="tab"' not in report and 'role="tabpanel"' not in report
+    for section in ("overview", "identity", "protocol", "training", "validation", "custody", "integrity"):
+        assert f'href="#{section}"' in report
+        assert f'id="{section}"' in report
+    assert "LINUCB_CONTEXTUAL_BANDIT_NO_GO_FIVE_SEEDS_23BP_FRESH_OOS_NOT_RUN_UNCHANGED" in report

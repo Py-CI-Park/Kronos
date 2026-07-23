@@ -277,26 +277,47 @@ export interface V6IndexRegimeMarket {
   readonly window_days?: number;
 }
 
+
+export interface V6ReportRevisionResult {
+  readonly verdict?: string;
+  readonly fresh_oos_state?: string;
+  readonly training_state?: string;
+  readonly reused_validation_state?: string;
+  readonly failures?: readonly string[];
+  readonly integrity?: string;
+  readonly integrity_reasons?: readonly string[];
+}
+
+export interface V6ReportRevision {
+  readonly revision_id?: string;
+  readonly revision_ordinal?: number;
+  readonly revision_event_sha256?: string;
+  readonly parent_sha256?: string | null;
+  readonly materialization_sha256?: string;
+  readonly report_sha256?: string;
+  readonly report_url?: string;
+  readonly size_bytes?: number;
+  readonly builder_version?: string;
+  readonly result?: V6ReportRevisionResult;
+  readonly failures?: readonly string[];
+  readonly integrity?: string;
+}
+
 export interface V6ReportEntry {
   readonly dataset_run_id?: string;
   readonly train_run_id?: string;
   readonly schema?: string;
   readonly family?: string;
-  readonly revision_ordinal?: number;
-  readonly revision_sha256?: string;
-  readonly parent_sha256?: string;
-  readonly materialization_sha256?: string;
-  readonly verdict?: string;
-  readonly test_state?: string;
-  readonly index_overlay_state?: string;
-  readonly report_state?: string;
-  readonly generated_utc?: string;
-  readonly builder_version?: string;
-  readonly report_sha256?: string;
-  readonly size_bytes?: number;
+  readonly report_family?: string;
+  readonly compatibility_state?: string;
+  readonly availability?: string;
   readonly integrity?: string;
+  readonly chain_integrity?: string;
   readonly integrity_reasons?: readonly string[];
-  readonly failures?: readonly string[];
+  readonly chain_reasons?: readonly string[];
+  readonly revisions?: readonly V6ReportRevision[];
+  /** Compatibility alias for early catalog responses; revisions is authoritative. */
+  readonly reports?: readonly V6ReportRevision[];
 }
 
 export interface V6Reports {
@@ -304,14 +325,7 @@ export interface V6Reports {
   readonly schema?: string;
   readonly family?: string;
   readonly status?: string;
-  readonly report_state?: string;
   readonly catalog_sha256?: string;
-  readonly revision_ordinal?: number;
-  readonly revision_sha256?: string;
-  readonly parent_sha256?: string;
-  readonly materialization_sha256?: string;
-  readonly integrity_reasons?: readonly string[];
-  readonly failures?: readonly string[];
   readonly reports?: readonly V6ReportEntry[];
 }
 
@@ -422,6 +436,18 @@ export function v6ReportHtmlUrl(
   const shouldDownload = typeof reportSha256OrDownload === 'boolean' ? reportSha256OrDownload : download;
   return `/api/v6/report-html?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}${reportSha256 === undefined ? '' : `&report_sha256=${encodeURIComponent(reportSha256)}`}${shouldDownload ? '&download=1' : ''}`;
 }
+
+export function v6ExactReportHtmlUrl(
+  dataset: string | undefined,
+  train: string | undefined,
+  reportSha256: string | undefined,
+  download = false,
+): string | null {
+  if (!dataset || !train || !reportSha256) return null;
+  return v6ReportHtmlUrl(dataset, train, reportSha256, download);
+}
+
+export const initialReportSelection = (): null => null;
 
 export const getV6Status = (): Promise<V6ApiResult<V6Status>> => getV6('/api/v6/status');
 export const getV6Universe = (limit: number): Promise<V6ApiResult<V6Universe>> =>

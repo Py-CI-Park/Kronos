@@ -521,7 +521,10 @@ def _guarded_read(root: Path, *parts: str, maximum_bytes: int) -> tuple[bytes | 
 
 
 def _type1_report_dir(dataset_run_id: str, train_run_id: str) -> Path | None:
-    if RUN_ID_PATTERN.fullmatch(dataset_run_id) is None or RUN_ID_PATTERN.fullmatch(train_run_id) is None:
+    if (
+        dataset_run_id != TYPE1_REPLACEMENT_IDENTITY["dataset_id"]
+        or train_run_id != TYPE1_REPLACEMENT_IDENTITY["train_run_id"]
+    ):
         return None
     run_dir = _safe_contained_dir(RUNS_ROOT, dataset_run_id, train_run_id)
     return run_dir if run_dir is not None and _safe_contained_dir(run_dir, "type1_reports") is not None else None
@@ -554,15 +557,152 @@ def _type1_materializations(run_dir: Path) -> tuple[list[dict[str, Any]] | None,
     return rows, []
 
 
+def _type1_revision_record(
+    dataset_run_id: str, train_run_id: str, row: Mapping[str, Any],
+) -> dict[str, Any]:
+    revision = row["revision"]
+    materialization = row["materialization"]
+    result = revision["result"]
+    report_sha256 = materialization["html_sha256"]
+    return {
+        "record_type": "TYPE1_REVISION",
+        "revision_id": revision["revision_id"],
+        "revision_ordinal": revision["revision_ordinal"],
+        "revision_event_sha256": row["revision_event_sha256"],
+        "parent_event_sha256": revision["previous_event_sha256"],
+        "parent_revision_event_sha256": revision["previous_revision_event_sha256"],
+        "materialization": {
+            "event_sha256": row["materialization_event_sha256"],
+            "catalog_ordinal": materialization["catalog_ordinal"],
+            "object_id": materialization["object_id"],
+            "builder_version": materialization["builder_version"],
+        },
+        "report_sha256": report_sha256,
+        "size_bytes": materialization["byte_size"],
+        "result": dict(result),
+        "failures": list(result["failures"]),
+        "integrity": "OK",
+        "integrity_reasons": [],
+        "report_url": (
+            f"/api/v6/report-html?dataset={dataset_run_id}&train={train_run_id}"
+            f"&report_sha256={report_sha256}"
+        ),
+    }
+
+
 def _type1_report_entry(run_dir: Path) -> dict[str, Any]:
     dataset_run_id, train_run_id = run_dir.parent.name, run_dir.name
     rows, reasons = _type1_materializations(run_dir)
+    custody = {
+        "identity": dict(TYPE1_REPLACEMENT_IDENTITY),
+        "catalog_state": "COMMITTED" if rows is not None else "INVALID",
+        "event_count": len(rows) * 2 if rows is not None else 0,
+    }
     if rows is None:
-        return {"dataset_run_id": dataset_run_id, "train_run_id": train_run_id, "report_family": "TYPE1", "compatibility_state": "NATIVE", "availability": "BLOCKED", "integrity": "BLOCKED", "chain_integrity": "CHAIN_INVALID", "integrity_reasons": reasons, "chain_reasons": reasons, "verdict": "NO_GO", "test_state": "NOT_RUN", "report_state": "MISSING"}
-    reports = [{"revision_id": row["revision"]["revision_id"], "revision_ordinal": row["revision"]["revision_ordinal"], "revision_event_sha256": row["revision_event_sha256"], "materialization_event_sha256": row["materialization_event_sha256"], "report_sha256": row["materialization"]["html_sha256"], "size_bytes": row["materialization"]["byte_size"], "builder_version": row["materialization"]["builder_version"], "result": dict(row["revision"]["result"]), "report_url": f"/api/v6/report-html?dataset={dataset_run_id}&train={train_run_id}&report_sha256={row['materialization']['html_sha256']}"} for row in rows]
-    latest = rows[-1]
-    result, materialization = latest["revision"]["result"], latest["materialization"]
-    return {"dataset_run_id": dataset_run_id, "train_run_id": train_run_id, "report_family": "TYPE1", "compatibility_state": "NATIVE", "availability": "COMMITTED", "integrity": "OK", "chain_integrity": "CHAIN_OK", "integrity_reasons": [], "chain_reasons": [], "verdict": result["verdict"], "test_state": result["fresh_oos_state"], "generated_utc": "IMMUTABLE", "builder_version": materialization["builder_version"], "report_sha256": materialization["html_sha256"], "size_bytes": materialization["byte_size"], "report_state": "PRESENT", "training_state": result["training_state"], "validation_state": result["reused_validation_state"], "evaluation_state": f"TEST_{result['fresh_oos_state']}", "result": dict(result), "reports": reports, "catalog": {"event_count": len(rows) * 2, "revision_id": latest["revision"]["revision_id"], "revision_ordinal": latest["revision"]["revision_ordinal"], "html_sha256": materialization["html_sha256"], "report_url": reports[-1]["report_url"]}}
+        return {
+            "record_type": "TYPE1_CUSTODY",
+            "dataset_run_id": dataset_run_id,
+            "train_run_id": train_run_id,
+            "report_family": "TYPE1",
+            "availability": "BLOCKED",
+            "integrity": "BLOCKED",
+            "integrity_reasons": reasons,
+            "chain_integrity": "CHAIN_INVALID",
+            "chain_reasons": reasons,
+            "custody": custody,
+            "revisions": [],
+        }
+    return {
+        "record_type": "TYPE1_CUSTODY",
+        "dataset_run_id": dataset_run_id,
+        "train_run_id": train_run_id,
+        "report_family": "TYPE1",
+        "availability": "COMMITTED",
+        "integrity": "OK",
+        "integrity_reasons": [],
+        "chain_integrity": "CHAIN_OK",
+        "chain_reasons": [],
+        "custody": custody,
+        "revisions": [
+            _type1_revision_record(dataset_run_id, train_run_id, row) for row in rows
+        ],
+    }
+
+
+def _type1_preserved_attempts_entry() -> dict[str, Any] | None:
+    amendment = _read_json(DOCS_ROOT / "kronos_type1_g002_recovery_amendment_2026-07-23.json")
+    preserved = amendment.get("preserved_ineligible_evidence") if amendment is not None else None
+    if (
+        not isinstance(preserved, Mapping)
+        or amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v1"
+        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-001"
+        or preserved.get("dataset_id") != "type1-close-20260803-001"
+        or preserved.get("train_id") != "type1-public-001"
+        or preserved.get("train_run_id") != "train_type1-public-001"
+        or preserved.get("scientific_eligibility") != "INELIGIBLE_BLOCKED"
+        or preserved.get("reuse_for_science") is not False
+        or preserved.get("model_files_created") != 0
+        or preserved.get("fresh_oos_read") is not False
+    ):
+        return None
+    attempts: list[dict[str, Any]] = []
+    dataset_root = _safe_contained_dir(RUNS_ROOT, preserved["dataset_id"])
+    if dataset_root is None:
+        return None
+    for attempt_id in (
+        "train_type1-public-001-aborted-preflight-v1",
+        "train_type1-public-001-aborted-universe-v2",
+    ):
+        receipt_path = (
+            _safe_contained_file(dataset_root, attempt_id, "aborted_receipt.json")
+            if dataset_root is not None else None
+        )
+        receipt = _read_json(receipt_path) if receipt_path is not None else None
+        valid = isinstance(receipt, Mapping) and (
+            receipt.get("schema_version") == "kronos_type1_g002_aborted_preflight.v1"
+            and receipt.get("attempt_id") == attempt_id
+            and receipt.get("state") == "ABORTED"
+            and receipt.get("verdict") == "NO_GO"
+            and receipt.get("fresh_oos") == {
+                "state": "NOT_RUN", "read_performed": False, "metrics": None,
+            }
+            and isinstance(receipt.get("reason"), str)
+            and receipt.get("model_artifacts_created") == 0
+            and receipt.get("reused_for_science") is False
+        )
+        attempts.append({
+            "record_type": "TYPE1_PRESERVED_ABORTED_ATTEMPT",
+            "attempt_id": attempt_id,
+            "availability": "PRESENT" if valid else "MISSING",
+            "integrity": "OK" if valid else "BLOCKED",
+            "integrity_reasons": [] if valid else ["ABORTED_RECEIPT_MISSING_OR_INVALID"],
+            "state": "ABORTED" if valid else "MISSING",
+            "result": {
+                "verdict": "NO_GO",
+                "fresh_oos_state": "NOT_RUN",
+                "fresh_oos_read_performed": False,
+                "failures": [receipt["reason"]] if valid else ["ABORTED_RECEIPT_MISSING_OR_INVALID"],
+            },
+        })
+    return {
+        "record_type": "TYPE1_PRESERVED_INELIGIBLE_CUSTODY",
+        "dataset_run_id": preserved["dataset_id"],
+        "train_run_id": preserved["train_run_id"],
+        "report_family": "TYPE1",
+        "availability": "BLOCKED",
+        "integrity": "OK" if all(attempt["integrity"] == "OK" for attempt in attempts) else "BLOCKED",
+        "integrity_reasons": [
+            "ABORTED_RECEIPT_MISSING_OR_INVALID"
+        ] if any(attempt["integrity"] != "OK" for attempt in attempts) else [],
+        "custody": {
+            "amendment_id": amendment["amendment_id"],
+            "scientific_eligibility": preserved["scientific_eligibility"],
+            "reuse_for_science": preserved["reuse_for_science"],
+            "model_files_created": preserved["model_files_created"],
+            "fresh_oos_read": preserved["fresh_oos_read"],
+        },
+        "attempts": attempts,
+    }
 
 
 def _report_family(run_dir: Path, manifest: Mapping[str, Any] | None) -> str:
@@ -578,6 +718,11 @@ def _report_family(run_dir: Path, manifest: Mapping[str, Any] | None) -> str:
 
 
 def _type1_report_response(run_dir: Path, report_sha256: str | None, download: bool) -> Response:
+    if (
+        run_dir.parent.name != TYPE1_REPLACEMENT_IDENTITY["dataset_id"]
+        or run_dir.name != TYPE1_REPLACEMENT_IDENTITY["train_run_id"]
+    ):
+        return _response({"status": "BLOCKED", "reason": "TYPE1_REPLACEMENT_IDENTITY_MISMATCH"}, 409)
     if report_sha256 is None:
         return _error(400, "BAD_REQUEST")
     rows, reasons = _type1_materializations(run_dir)
@@ -630,6 +775,9 @@ def _build_report_entries() -> list[dict[str, Any]]:
         dataset_run_id, train_run_id = run_dir.parent.name, run_dir.name
         if _type1_report_dir(dataset_run_id, train_run_id) is not None:
             entries.append(_type1_report_entry(run_dir))
+    preserved_entry = _type1_preserved_attempts_entry()
+    if preserved_entry is not None:
+        entries.append(preserved_entry)
     for run_dir in sorted(run_dirs):
         dataset_run_id = run_dir.parent.name
         train_run_id = run_dir.name
@@ -813,12 +961,21 @@ def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any
         return {
             "schema_version": "kronos_v6_run_detail.v1",
             "status": "OK" if entry["availability"] == "COMMITTED" else "BLOCKED",
-            "dataset_run_id": dataset_run_id, "train_run_id": train_run_id,
-            "identity": {"report_family": "TYPE1", "dataset_id": dataset_run_id, "train_id": train_run_id, "train_run_id": train_run_id, "domain": "kronos.type1", "algorithm_family": "MASKABLE_PPO"},
-            "result": entry.get("result", {"verdict": "NO_GO", "fresh_oos_state": "NOT_RUN"}),
-            "catalog": entry.get("catalog", {}), "manifest": {}, "events_tail": [],
+            "dataset_run_id": dataset_run_id,
+            "train_run_id": train_run_id,
+            "identity": {
+                "report_family": "TYPE1",
+                "dataset_id": dataset_run_id,
+                "train_id": train_run_id,
+                "train_run_id": train_run_id,
+                "domain": "kronos.type1",
+                "algorithm_family": "MASKABLE_PPO",
+            },
+            "report_custody": entry,
+            "manifest": {},
+            "events_tail": [],
             "events_tail_diagnostics": {"state": "TYPE1_IMMUTABLE_CATALOG"},
-            "states": {"training_state": entry.get("training_state", "MISSING"), "validation_state": entry.get("validation_state", "NOT_RECORDED"), "test_state": entry["test_state"], "evaluation_state": entry.get("evaluation_state", "TEST_NOT_RUN")},
+            "states": {},
         }
     manifest_path = RUNS_ROOT / dataset_run_id / train_run_id / "run_manifest.json"
     raw, manifest_error = _guarded_read(RUNS_ROOT, dataset_run_id, train_run_id, "run_manifest.json", maximum_bytes=TYPE1_MAX_OBJECT_BYTES)
@@ -1237,9 +1394,19 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             if report_sha256 is not None or download:
                 return _error(400, "BAD_REQUEST")
             run_dir = _type1_report_dir(dataset_run_id, train_run_id)
-            reports = [_type1_report_entry(run_dir)] if run_dir is not None else []
+            preserved_entry = _type1_preserved_attempts_entry()
+            if run_dir is not None:
+                reports = [_type1_report_entry(run_dir)]
+            elif (
+                preserved_entry is not None
+                and dataset_run_id == preserved_entry["dataset_run_id"]
+                and train_run_id == preserved_entry["train_run_id"]
+            ):
+                reports = [preserved_entry]
+            else:
+                reports = []
         return _response({
-            "schema_version": "kronos_v6_reports.v1",
+            "schema_version": "kronos_v6_reports.v2",
             "status": "OK",
             "reports": reports,
         })
@@ -1293,6 +1460,13 @@ def create_v6_platform_blueprint(*, name: str = "v6_platform", url_prefix: str =
             dataset_run_id, train_run_id, report_sha256, download = _report_query()
         except ValueError:
             return _error(400, "BAD_REQUEST")
+        preserved_entry = _type1_preserved_attempts_entry()
+        if (
+            preserved_entry is not None
+            and dataset_run_id == preserved_entry["dataset_run_id"]
+            and train_run_id == preserved_entry["train_run_id"]
+        ):
+            return _response({"status": "BLOCKED", "reason": "PRESERVED_INELIGIBLE_REPORT_NOT_SERVABLE"}, 409)
         run_dir = _safe_contained_dir(RUNS_ROOT, dataset_run_id, train_run_id)
         if run_dir is None:
             return _response({"status": "BLOCKED", "reason": "REPORT_NOT_FOUND"}, 404)

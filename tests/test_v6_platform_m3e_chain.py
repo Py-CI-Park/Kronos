@@ -21,8 +21,17 @@ def fixture(tmp_path, monkeypatch):
     write_json(prereg, {"schema_version": "kronos_v8_prereg.v1", "prereg_id": "M3E", "status": "FROZEN"})
     run = {
         "schema_version": "kronos_v8_m3e_validation_run.v1",
+        "trainer_version": "kronos_v8_m3e_contextual_bandit.v1",
         "prereg": {"id": "M3E", "sha256": sha(prereg)},
         "custody_uid": "custody-1",
+        "seeds": [0, 1, 2, 3, 4],
+        "members": [{"seed": seed} for seed in range(5)],
+        "policy": {
+            "price_basis": "EXACT_15_20_BAR_CLOSE_PROXY",
+            "official_close": False,
+            "primary_cost_rate": 0.0023,
+        },
+        "verdict": {"value": "NO_GO"},
         "test": {"state": "NOT_RUN"},
         "false_research_locks": dict(v6_platform_api.SIX_FALSE_LOCKS),
     }
