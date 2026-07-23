@@ -58,6 +58,11 @@ TYPE1_REPLACEMENT_IDENTITY: Final = {
 }
 TYPE1_MAX_OBJECT_BYTES: Final = 8 * 1024 * 1024
 TYPE1_MAX_CATALOG_EVENTS: Final = 256
+TYPE1_PRESERVED_ATTEMPTS: Final = (
+    ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001", "INELIGIBLE_BLOCKED"),
+    ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002", "INELIGIBLE_BLOCKED"),
+    ("type1-close-20260803-003", "type1-public-003", "train_type1-public-003", "NON_MATERIALIZED_INELIGIBLE"),
+)
 
 
 def _response(payload: Mapping[str, Any], status_code: int = 200) -> Response:
@@ -241,6 +246,8 @@ def _m3e_report_chain(run_dir: Path, report_manifest: Mapping[str, Any]) -> tupl
         reasons.append("REPORT_SCHEMA_MISMATCH")
     if report_manifest.get("test_state") != "NOT_RUN":
         reasons.append("REPORT_TEST_STATE_MISMATCH")
+    if report_manifest.get("verdict") != "NO_GO":
+        reasons.append("REPORT_VERDICT_MISMATCH")
     if run_manifest is None:
         reasons.append("RUN_MANIFEST_MISSING")
         return "CHAIN_INVALID", reasons
@@ -248,8 +255,12 @@ def _m3e_report_chain(run_dir: Path, report_manifest: Mapping[str, Any]) -> tupl
         reasons.append("RUN_MANIFEST_SHA_MISMATCH")
     if run_manifest.get("schema_version") != "kronos_v8_m3e_validation_run.v1":
         reasons.append("RUN_MANIFEST_SCHEMA_MISMATCH")
-    if run_manifest.get("test") != {"state": "NOT_RUN"}:
+    run_test = run_manifest.get("test")
+    run_test_state = run_test.get("state") if isinstance(run_test, Mapping) else None
+    if not isinstance(run_test, Mapping) or dict(run_test) != {"state": "NOT_RUN"}:
         reasons.append("RUN_TEST_STATE_MISMATCH")
+    if report_manifest.get("test_state") != run_test_state:
+        reasons.append("REPORT_RUN_TEST_STATE_CONTRADICTION")
     if run_manifest.get("false_research_locks") != SIX_FALSE_LOCKS:
         reasons.append("FALSE_RESEARCH_LOCKS_MISMATCH")
     prereg_ref = run_manifest.get("prereg")
@@ -260,10 +271,20 @@ def _m3e_report_chain(run_dir: Path, report_manifest: Mapping[str, Any]) -> tupl
         reasons.append("PREREG_SHA_MISMATCH")
     if run_manifest.get("trainer_version") != "kronos_v8_m3e_contextual_bandit.v1":
         reasons.append("M3E_ALGORITHM_MISMATCH")
-    if run_manifest.get("seeds") != [0, 1, 2, 3, 4] or not isinstance(run_manifest.get("members"), list) or len(run_manifest["members"]) != 5:
+    members = run_manifest.get("members")
+    if (
+        run_manifest.get("seeds") != [0, 1, 2, 3, 4]
+        or not isinstance(members, list)
+        or len(members) != 5
+        or [member.get("seed") if isinstance(member, Mapping) else None for member in members] != [0, 1, 2, 3, 4]
+    ):
         reasons.append("M3E_FIVE_SEEDS_MISMATCH")
-    if not isinstance(run_manifest.get("verdict"), Mapping) or run_manifest["verdict"].get("value") != "NO_GO":
+    run_verdict = run_manifest.get("verdict")
+    run_verdict_value = run_verdict.get("value") if isinstance(run_verdict, Mapping) else None
+    if not isinstance(run_verdict, Mapping) or run_verdict_value != "NO_GO":
         reasons.append("M3E_VERDICT_MISMATCH")
+    if report_manifest.get("verdict") != run_verdict_value:
+        reasons.append("REPORT_RUN_VERDICT_CONTRADICTION")
     policy = run_manifest.get("policy")
     if not isinstance(policy, Mapping) or policy.get("primary_cost_rate") != 0.0023:
         reasons.append("M3E_23BP_POLICY_MISMATCH")
@@ -634,18 +655,15 @@ def _type1_report_entry(run_dir: Path) -> dict[str, Any]:
 def _type1_preserved_attempt_entries() -> list[dict[str, Any]]:
     amendment = _read_json(DOCS_ROOT / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json")
     preserved = amendment.get("preserved_aborted_evidence") if amendment is not None else None
-    expected_attempts = (
-        ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001", "INELIGIBLE_BLOCKED"),
-        ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002", "INELIGIBLE_BLOCKED"),
-        ("type1-close-20260803-003", "type1-public-003", "train_type1-public-003", "NON_MATERIALIZED_INELIGIBLE"),
-    )
-    if (
-        not isinstance(amendment, Mapping)
-        or not isinstance(preserved, list)
+    invalid_reason: str | None = None
+    if amendment is None:
+        invalid_reason = "AMENDMENT_MISSING_OR_MALFORMED"
+    elif (
+        not isinstance(preserved, list)
         or amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v3"
         or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
         or amendment.get("replacement_identity") != TYPE1_REPLACEMENT_IDENTITY
-        or len(preserved) != len(expected_attempts)
+        or len(preserved) != len(TYPE1_PRESERVED_ATTEMPTS)
         or amendment.get("quarantined_authorities") != [{
             "authority_id": "type1-krx-authority-20260723-002",
             "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
@@ -662,25 +680,30 @@ def _type1_preserved_attempt_entries() -> list[dict[str, Any]]:
             "MDCSTAT23801 instrument-master metadata only; this does not extend price, calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30.",
         )
     ):
-        return []
-    entries: list[dict[str, Any]] = []
-    for evidence, (dataset_id, train_id, train_run_id, status) in zip(preserved, expected_attempts):
-        if not isinstance(evidence, Mapping) or (
+        invalid_reason = "AMENDMENT_INTEGRITY_MISMATCH"
+    elif any(
+        not isinstance(evidence, Mapping)
+        or (
             evidence.get("dataset_id"),
             evidence.get("train_id"),
             evidence.get("train_run_id"),
             evidence.get("status"),
             evidence.get("models_created"),
-        ) != (dataset_id, train_id, train_run_id, status, 0):
-            return []
-        if dataset_id == "type1-close-20260803-003" and evidence.get("fresh_oos") != {
-            "status": "NOT_RUN", "no_read": True,
-        }:
-            return []
+        ) != expected
+        or (
+            expected[0] == "type1-close-20260803-003"
+            and evidence.get("fresh_oos") != {"status": "NOT_RUN", "no_read": True}
+        )
+        for evidence, expected in zip(preserved, TYPE1_PRESERVED_ATTEMPTS)
+    ):
+        invalid_reason = "AMENDMENT_PRESERVED_EVIDENCE_MISMATCH"
+
+    entries: list[dict[str, Any]] = []
+    for dataset_id, train_id, train_run_id, status in TYPE1_PRESERVED_ATTEMPTS:
         custody = {
-            "amendment_id": amendment["amendment_id"],
-            "scientific_eligibility": evidence["status"],
-            "model_files_created": evidence["models_created"],
+            "amendment_id": amendment.get("amendment_id", "MISSING") if amendment is not None else "MISSING",
+            "scientific_eligibility": status,
+            "model_files_created": 0,
             "fresh_oos_state": "NOT_RUN",
             "fresh_oos_read": False,
             "immutable_history": True,
@@ -695,12 +718,14 @@ def _type1_preserved_attempt_entries() -> list[dict[str, Any]]:
             })
         entries.append({
             "record_type": "TYPE1_PRESERVED_INELIGIBLE_CUSTODY",
-            "dataset_run_id": evidence["dataset_id"],
-            "train_run_id": evidence["train_run_id"],
+            "dataset_run_id": dataset_id,
+            "train_run_id": train_run_id,
             "report_family": "TYPE1",
             "availability": "BLOCKED",
-            "integrity": "OK",
-            "integrity_reasons": [],
+            "integrity": "INVALID" if invalid_reason is not None else "OK",
+            "integrity_reasons": [invalid_reason] if invalid_reason is not None else [],
+            "chain_integrity": "CHAIN_INVALID" if invalid_reason is not None else "CHAIN_OK",
+            "chain_reasons": [invalid_reason] if invalid_reason is not None else [],
             "custody": custody,
             "attempts": [],
         })

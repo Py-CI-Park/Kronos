@@ -554,7 +554,11 @@ def test_v6_reports_and_prereg_registry_retain_invalid_artifacts(client, monkeyp
     monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
     monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
 
-    report = client.get("/api/v6/reports").get_json()["reports"][0]
+    report = next(
+        item
+        for item in client.get("/api/v6/reports").get_json()["reports"]
+        if item["dataset_run_id"] == "dataset-r1"
+    )
     prereg = client.get("/api/v6/research-registry").get_json()["preregistrations"][0]
 
     assert report["integrity"] == "INVALID"
@@ -570,17 +574,18 @@ def test_v6_valid_report_chain_round_trips_opaque_run_and_not_run_test(client, m
     monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
 
     catalog = client.get("/api/v6/reports").get_json()["reports"]
+    entry = next(item for item in catalog if item["dataset_run_id"] == "dataset-r1")
     runs = client.get("/api/v6/runs").get_json()["runs"]
     detail = client.get("/api/v6/run-detail?dataset=dataset-r1&train=train-1").get_json()
     viewer = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-1")
     status = client.get("/api/v6/status").get_json()
 
-    assert catalog[0]["chain_integrity"] == "CHAIN_OK"
-    assert catalog[0]["chain_reasons"] == []
+    assert entry["chain_integrity"] == "CHAIN_OK"
+    assert entry["chain_reasons"] == []
     assert runs[0]["run_id"] == "train-1"
     assert runs[0]["test_state"] == "NOT_RUN"
-    assert catalog[0]["test_state"] == "NOT_RUN"
-    assert catalog[0]["evaluation_state"] == "TEST_NOT_RUN"
+    assert entry["test_state"] == "NOT_RUN"
+    assert entry["evaluation_state"] == "TEST_NOT_RUN"
     assert runs[0]["evaluation_state"] == "TEST_NOT_RUN"
     assert detail["train_run_id"] == "train-1"
     assert detail["states"]["test_state"] == "NOT_RUN"
@@ -616,7 +621,11 @@ def test_v6_report_source_chain_tampering_fails_closed(client, monkeypatch, tmp_
     monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
     monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
 
-    entry = client.get("/api/v6/reports").get_json()["reports"][0]
+    entry = next(
+        item
+        for item in client.get("/api/v6/reports").get_json()["reports"]
+        if item["dataset_run_id"] == "dataset-r1"
+    )
     blocked = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-1")
 
     assert entry["chain_integrity"] == "CHAIN_INVALID"
@@ -625,6 +634,35 @@ def test_v6_report_source_chain_tampering_fails_closed(client, monkeypatch, tmp_
     assert blocked.get_json()["reason"] == expected_reason
 
 
+def test_v6_reports_get_does_not_mutate_invalid_type1_catalog(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    type1_reports = (
+        runs_root
+        / v6_platform_api.TYPE1_REPLACEMENT_IDENTITY["dataset_id"]
+        / v6_platform_api.TYPE1_REPLACEMENT_IDENTITY["train_run_id"]
+        / "type1_reports"
+    )
+    type1_reports.mkdir(parents=True)
+    before = {
+        path.relative_to(runs_root): (path.is_dir(), path.stat().st_mtime_ns)
+        for path in runs_root.rglob("*")
+    }
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+
+    response = client.get("/api/v6/reports")
+
+    after = {
+        path.relative_to(runs_root): (path.is_dir(), path.stat().st_mtime_ns)
+        for path in runs_root.rglob("*")
+    }
+    entry = next(
+        report for report in response.get_json()["reports"]
+        if report.get("record_type") == "TYPE1_CUSTODY"
+    )
+    assert response.status_code == 200
+    assert before == after
+    assert entry["availability"] == "BLOCKED"
+    assert entry["integrity_reasons"] == ["TYPE1_CATALOG_INVALID"]
 def test_v6_reports_empty_and_report_html_guards(client, monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", tmp_path / "missing-runs")
 
@@ -662,30 +700,49 @@ def test_v6_reports_empty_and_report_html_guards(client, monkeypatch, tmp_path) 
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    ("amendment_state", "expected_reason"),
     [
-        ("authority_metadata_cutoff", "2026-07-25"),
-        ("authority_metadata_scope", "metadata includes post-cutoff prices"),
+        ("missing", "AMENDMENT_MISSING_OR_MALFORMED"),
+        ("malformed", "AMENDMENT_MISSING_OR_MALFORMED"),
+        ("tampered", "AMENDMENT_INTEGRITY_MISMATCH"),
     ],
 )
-def test_v6_reports_omit_type1_history_for_tampered_authority_metadata(client, monkeypatch, tmp_path, field, value) -> None:
-    amendment = json.loads(
-        (v6_platform_api.DOCS_ROOT / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    amendment["authority_contract"][field] = value
+def test_v6_reports_retain_invalid_type1_history_with_blocked_html(
+    client, monkeypatch, tmp_path, amendment_state, expected_reason,
+) -> None:
     docs_root = tmp_path / "docs"
     docs_root.mkdir()
-    (docs_root / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json").write_text(
-        json.dumps(amendment), encoding="utf-8"
-    )
+    amendment_path = docs_root / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json"
+    if amendment_state == "malformed":
+        amendment_path.write_text("{not-json", encoding="utf-8")
+    elif amendment_state == "tampered":
+        amendment = json.loads(
+            (v6_platform_api.DOCS_ROOT / amendment_path.name).read_text(encoding="utf-8")
+        )
+        amendment["authority_contract"]["authority_metadata_cutoff"] = "2026-07-25"
+        amendment_path.write_text(json.dumps(amendment), encoding="utf-8")
     monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs_root)
     monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", tmp_path / "missing-runs")
 
     reports = client.get("/api/v6/reports").get_json()["reports"]
-    assert not [entry for entry in reports if entry["record_type"] == "TYPE1_PRESERVED_INELIGIBLE_CUSTODY"]
+    blocked = client.get(
+        "/api/v6/report-html?dataset=type1-close-20260803-001&train=train_type1-public-001"
+    )
 
+    preserved = [entry for entry in reports if entry["record_type"] == "TYPE1_PRESERVED_INELIGIBLE_CUSTODY"]
+    assert [entry["dataset_run_id"] for entry in preserved] == [
+        "type1-close-20260803-001",
+        "type1-close-20260803-002",
+        "type1-close-20260803-003",
+    ]
+    assert all(entry["availability"] == "BLOCKED" for entry in preserved)
+    assert all(entry["integrity"] == "INVALID" for entry in preserved)
+    assert all(entry["integrity_reasons"] == [expected_reason] for entry in preserved)
+    assert blocked.status_code == 409
+    assert blocked.get_json() == {
+        "status": "BLOCKED",
+        "reason": "PRESERVED_INELIGIBLE_REPORT_NOT_SERVABLE",
+    }
 
 def test_v6_report_html_blocks_sha_mismatch(client, monkeypatch, tmp_path) -> None:
     runs_root = tmp_path / "runs"

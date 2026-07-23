@@ -136,6 +136,30 @@ def test_recovery_consume_fault_is_reported_as_pending(tmp_path):
     assert ledger.status()["recovery_state"]=="PENDING"
     authority.consume_observed=original
     assert ledger.recover(authority) is not None
+def test_block_intent_reopens_through_disable_and_deny_faults(tmp_path):
+    ledger,authority,key,calendar=_ledger(tmp_path)
+    authority.responses[1]=b"not a commitment"
+    original_disable,original_deny=authority.key_disable,authority.issue_deny
+    authority.key_disable=lambda *_: (_ for _ in ()).throw(custody.AuthorityUnavailable("disable fault"))
+    with pytest.raises(custody.AuthorityUnavailable): ledger.reconcile_ordinal(authority,1)
+    assert ledger.status()["custody_state"]=="BLOCK_RECOVERY"
+    reopened=custody.Type1FreshCustodyLedger(ledger.database,dataset_id=DATASET,custody_uid=CUSTODY,prereg_sha256=PREREG,calendar=calendar,authority_principal_uri=PRINCIPAL,authority_key_id=KEY_ID,authority_public_key=key.public_key(),protocol_sha256=PROTOCOL)
+    authority.key_disable=original_disable
+    authority.issue_deny=lambda *_: (_ for _ in ()).throw(custody.AuthorityUnavailable("deny fault"))
+    with pytest.raises(custody.AuthorityUnavailable): reopened.reconcile_ordinal(authority,1)
+    assert reopened.status()["deny_state"]=="PENDING"
+    authority.issue_deny=original_deny
+    with pytest.raises(custody.CustodyBlocked): reopened.reconcile_ordinal(authority,1)
+    assert reopened.status()["fresh_oos_status"]=="NOT_RUN"
+    assert authority.disable_calls==1 and authority.deny_calls==1
+
+def test_full_seal_projection_rejects_coordinated_sidecar_substitution(tmp_path):
+    ledger,authority,key,calendar=_ledger(tmp_path); _fill(ledger,authority,key,calendar); ledger.seal(authority)
+    raw=json.loads(Path(ledger.database+".seal").read_text(encoding="utf-8"))
+    raw["key_state"]="DISABLED"
+    Path(ledger.database+".seal").write_bytes(canonical_json_bytes(raw))
+    with pytest.raises(custody.Type1FreshCustodyError,match="tampered|differs"):
+        ledger.status()
 
 def test_base64url_is_canonical():
     signature=bytes(range(64)); encoded=base64.urlsafe_b64encode(signature).decode().rstrip("=")

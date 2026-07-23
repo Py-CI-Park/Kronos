@@ -103,6 +103,7 @@ class Type1FreshCustodyLedger:
         self.database=str(database); self.dataset_id=dataset_id; self.custody_uid=custody_uid; self.prereg_sha256=prereg_sha256; self.calendar=tuple(calendar); self.authority_principal_uri=authority_principal_uri; self.authority_key_id=authority_key_id; self.authority_public_key=_public_key(authority_public_key); self.protocol_sha256=protocol_sha256
         self._validate_calendar(); self._initialize(); self._verify_full()
     def reconcile_ordinal(self,authority:MetadataAuthority,ordinal:int)->bytes|None:
+        self._resume_block(authority)
         self._assert_healthy(); _positive_int(ordinal,"ordinal")
         try: raw=authority.commitment(ordinal)
         except AuthorityUnavailable: return None
@@ -124,6 +125,7 @@ class Type1FreshCustodyLedger:
             return receipt
         except (Type1FreshCustodyError,IndexError): self._block(authority,"COMMITMENT_CONFLICT_OR_INVALID")
     def seal(self,authority:MetadataAuthority)->bytes:
+        self._resume_block(authority)
         self._assert_healthy()
         if self._phase("sidecar_published") and self._sidecar_matches(): return self._finalize_seal()
         if self._commitment_count()!=len(self.calendar): raise Type1FreshCustodyError("complete calendar required")
@@ -140,6 +142,7 @@ class Type1FreshCustodyLedger:
             self._set_phase("sidecar_published",{"seal_sha256":hashlib.sha256(raw).hexdigest(),"seal_domain_sha256":digest},"SIDECAR_PUBLISHED",tip,digest,"PRESEAL")
         return self._finalize_seal()
     def recover(self,authority:MetadataAuthority)->bytes|None:
+        self._resume_block(authority)
         self._assert_integrity()
         if not self._sealed() or self._blocked(): return None
         final=self._failure_receipt()
@@ -198,13 +201,24 @@ class Type1FreshCustodyLedger:
         elif self._sealed(): state,public,key,access,deny="SEALED","SEALED_NOT_RUN","ENABLED","UNUSED","ABSENT"
         else: state,public,key,access,deny="ACCUMULATING","ACCUMULATING_NOT_RUN","UNAVAILABLE","UNKNOWN","ABSENT"
         return {"schema_version":STATUS_SCHEMA,"dataset_id":self.dataset_id,"custody_uid":self.custody_uid,"prereg_sha256":self.prereg_sha256,"expected_pair_count":len(self.calendar),"committed_pair_count":self._commitment_count(),"custody_state":state,"authority_state":"AVAILABLE" if self._sealed() else "ABSENT","key_state":key,"gate_receipt_state":"ISSUED" if self._phase("gate_receipt") else "ABSENT","access_state":access,"deny_state":deny,"fresh_oos_status":"NOT_RUN","public_status":public,"recovery_state":"COMPLETE" if self._phase("failure_final") else ("PENDING" if pending or blocking else "NONE"),"reason_code":self._setting("reason_code") or "NONE"}
+    def _resume_block(self,authority:MetadataAuthority)->None:
+        intent=self._phase_json("block_intent")
+        if intent is not None:
+            if set(intent)!={"reason"} or not isinstance(intent["reason"],str) or not intent["reason"]:
+                raise Type1FreshCustodyError("block intent is invalid")
+            self._block(authority,intent["reason"])
+
     def _block(self,authority:MetadataAuthority,reason:str)->None:
         intent=self._phase_json("block_intent")
-        if intent is None: self._set_phase("block_intent",{"reason":reason},"BLOCK_INTENT",None,None,reason); self._set_plain("reason_code",reason)
+        if intent is None:
+            self._set_phase("block_intent",{"reason":reason},"BLOCK_INTENT",None,None,reason)
+        elif intent != {"reason":reason}:
+            raise Type1FreshCustodyError("block reason differs")
         access_id=self._sealed_access_id_or_pending()
         disabled=self._phase_json("key_disabled_block")
         if disabled is None:
-            disabled=self._receipt_result(authority.key_disable(access_id,reason),"disable"); self._set_phase("key_disabled_block",disabled,"KEY_DISABLED",None,disabled["receipt_sha256"],reason)
+            disabled=self._receipt_result(authority.key_disable(access_id,reason),"disable")
+            self._set_phase("key_disabled_block",disabled,"KEY_DISABLED",None,disabled["receipt_sha256"],reason)
         if not self._phase("denied"):
             denied=self._receipt_result(authority.issue_deny(access_id,_domain_digest("block",self._tip().encode())),"deny")
             self._set_phase("denied",denied,"DENIED",None,denied["receipt_sha256"],reason)
@@ -309,8 +323,14 @@ class Type1FreshCustodyLedger:
     def _sidecar(self)->bytes:
         with open(self.database+".seal","rb") as src: return src.read()
     def _sidecar_matches(self)->bool:
-        try: return self._sidecar()==self._seal_bytes() if self._sealed() else self._sidecar()==canonical_json_bytes(self._seal_record(self._phase_json("seal_intent"),self._phase_json("key_enabled")))
-        except (OSError,Type1FreshCustodyError): return False
+        try:
+            raw=self._sidecar()
+            if self._sealed():
+                return raw==self._seal_bytes()
+            phase=self._phase_json("sidecar_published")
+            return phase is not None and phase=={"seal_sha256":hashlib.sha256(raw).hexdigest(),"seal_domain_sha256":_domain_digest("seal",raw)}
+        except (OSError,Type1FreshCustodyError):
+            return False
     def _calendar_sha(self)->str: return hashlib.sha256(canonical_json_bytes(self.calendar)).hexdigest()
     def _key_fingerprint(self)->str: return hashlib.sha256(self.authority_public_key.public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)).hexdigest()
     def _access_ledger_id(self,tip:str)->str: return _domain_digest("access_ledger",canonical_json_bytes({"dataset_id":self.dataset_id,"custody_uid":self.custody_uid,"prereg_sha256":self.prereg_sha256,"calendar_sha256":self._calendar_sha(),"commitment_tip_sha256":tip,"authority_key_id":self.authority_key_id,"authority_public_key_sha256":self._key_fingerprint()}))
@@ -353,20 +373,56 @@ class Type1FreshCustodyLedger:
             item=parse_and_verify_commitment_envelope(envelope,expected_dataset_id=self.dataset_id,expected_custody_uid=self.custody_uid,expected_prereg_sha256=self.prereg_sha256,expected_principal_uri=self.authority_principal_uri,expected_key_id=self.authority_key_id,public_key=self.authority_public_key)
             if ordinal!=item.statement["ordinal"] or digest!=item.digest or item.statement["previous_commitment_sha256"]!=prior or tuple(item.statement[x] for x in ("decision_session","settlement_session"))!=self.calendar[ordinal-1] or receipt!=canonical_json_bytes({"schema_version":EVENT_SCHEMA,"ordinal":ordinal,"commitment_sha256":digest}): raise Type1FreshCustodyError("commitment projection is tampered")
             prior=digest
-        required_events={"seal_intent":"SEAL_INTENT","key_enabled":"KEY_ENABLED","sidecar_published":"SIDECAR_PUBLISHED","recovery_intent":"RECOVERY_INTENT","key_disabled_recovery":"KEY_DISABLED","consumed":"CONSUMED","failure_final":"FAILURE_FINAL","block_intent":"BLOCK_INTENT","key_disabled_block":"KEY_DISABLED","denied":"DENIED","gate_receipt":"GATE_RECORDED"}
-        actual={e["event_type"] for e in events}
-        if any(name in settings and event not in actual for name,event in required_events.items()): raise Type1FreshCustodyError("phase event projection is tampered")
+        phase_events={"seal_intent":"SEAL_INTENT","key_enabled":"KEY_ENABLED","sidecar_published":"SIDECAR_PUBLISHED","recovery_intent":"RECOVERY_INTENT","key_disabled_recovery":"KEY_DISABLED","consumed":"CONSUMED","failure_final":"FAILURE_FINAL","block_intent":"BLOCK_INTENT","key_disabled_block":"KEY_DISABLED","denied":"DENIED","gate_receipt":"GATE_RECORDED"}
+        allowed={"GENESIS","COMMITMENT_RECORDED","SEALED",*phase_events.values()}
+        if any(e.get("event_type") not in allowed for e in events):
+            raise Type1FreshCustodyError("unknown event state")
+        commitment_events=[e for e in events if e["event_type"]=="COMMITMENT_RECORDED"]
+        if len([e for e in events if e["event_type"]=="GENESIS"])!=1 or len(commitment_events)!=len(rows) or any((e["ordinal"],e["commitment_sha256"],e["authority_receipt_sha256"],e["reason_code"])!=(o,d,d,"AUTHENTICATED") for e,(o,d,_,_) in zip(commitment_events,rows)):
+            raise Type1FreshCustodyError("event projection is tampered")
+        for name,event in phase_events.items():
+            matches=[e for e in events if e["event_type"]==event]
+            if name=="key_disabled_recovery":
+                matches=[e for e in matches if e["reason_code"]=="POST_RESERVED_RECOVERY"]
+            elif name=="key_disabled_block":
+                block_intent=self._phase_json("block_intent")
+                matches=[e for e in matches if block_intent is not None and e["reason_code"]==block_intent["reason"]]
+            if name in settings:
+                if len(matches)!=1: raise Type1FreshCustodyError("phase event projection is tampered")
+            elif matches: raise Type1FreshCustodyError("orphan phase event")
+        if self._phase("key_enabled") and not self._phase("seal_intent") or self._phase("sidecar_published") and not self._phase("key_enabled") or self._sealed() and not self._phase("sidecar_published") or self._phase("recovery_intent") and not self._sealed() or self._phase("key_disabled_recovery") and not self._phase("recovery_intent") or self._phase("consumed") and not self._phase("key_disabled_recovery") or self._phase("failure_final") and not self._phase("consumed") or self._phase("key_disabled_block") and not self._phase("block_intent") or self._phase("denied") and not self._phase("key_disabled_block"):
+            raise Type1FreshCustodyError("phase ordering is invalid")
+        for name in ("key_disabled_recovery","key_disabled_block","consumed","denied"):
+            phase=self._phase_json(name)
+            if phase is not None:
+                if set(phase)!={"receipt_sha256","receipt_b64"}: raise Type1FreshCustodyError("receipt phase fields are invalid")
+                raw=base64.b64decode(phase["receipt_b64"],validate=True)
+                if base64.b64encode(raw).decode()!=phase["receipt_b64"] or hashlib.sha256(raw).hexdigest()!=phase["receipt_sha256"]: raise Type1FreshCustodyError("full receipt projection is tampered")
+                _canonical_object(raw,name+" receipt")
+        if self._phase("key_enabled"):
+            enabled=self._phase_json("key_enabled")
+            for name in ("key_enable_receipt","rfc3161_receipt"):
+                raw=base64.b64decode(enabled[name],validate=True)
+                if base64.b64encode(raw).decode()!=enabled[name] or hashlib.sha256(raw).hexdigest()!=enabled[name+"_sha256"]: raise Type1FreshCustodyError("full seal receipt projection is tampered")
+                _canonical_object(raw,name)
         if self._phase("gate_receipt"):
-            raw=base64.b64decode(self._phase_json("gate_receipt")["raw_b64"]); gate=_canonical_object(raw,"gate receipt")
+            phase=self._phase_json("gate_receipt"); raw=base64.b64decode(phase["raw_b64"],validate=True); gate=_canonical_object(raw,"gate receipt")
+            if base64.b64encode(raw).decode()!=phase["raw_b64"] or phase["digest"]!=_domain_digest("gate",canonical_json_bytes(gate)): raise Type1FreshCustodyError("gate receipt is tampered")
             _keys(gate,{"schema_version","statement","signature"},"gate receipt")
             try: self.authority_public_key.verify(_b64(gate["signature"]),HASH_DOMAINS["gate"]+canonical_json_bytes(gate["statement"]))
             except (InvalidSignature,ValueError,TypeError) as exc: raise Type1FreshCustodyError("gate receipt is tampered") from exc
         if self._phase("failure_final"):
             failure=_canonical_object(self._failure_receipt(),"failure receipt")
-            if set(failure)!={"schema_version","custody_uid","access_ledger_id","seal_sha256","reservation_receipt_sha256","consumed_receipt_sha256","key_disable_receipt_sha256","reason","retry_allowed"} or failure["schema_version"]!=FAILURE_RECEIPT_SCHEMA: raise Type1FreshCustodyError("failure receipt is tampered")
+            if set(failure)!={"schema_version","custody_uid","access_ledger_id","seal_sha256","reservation_receipt_sha256","consumed_receipt_sha256","key_disable_receipt_sha256","reason","retry_allowed"} or failure["schema_version"]!=FAILURE_RECEIPT_SCHEMA or failure["consumed_receipt_sha256"]!=self._phase_json("consumed")["receipt_sha256"] or failure["key_disable_receipt_sha256"]!=self._phase_json("key_disabled_recovery")["receipt_sha256"]: raise Type1FreshCustodyError("failure receipt is tampered")
+        if self._phase("sidecar_published"):
+            raw=self._sidecar(); phase=self._phase_json("sidecar_published")
+            if phase!={"seal_sha256":hashlib.sha256(raw).hexdigest(),"seal_domain_sha256":_domain_digest("seal",raw)}: raise Type1FreshCustodyError("sidecar projection is tampered")
+            side_event=[e for e in events if e["event_type"]=="SIDECAR_PUBLISHED"][0]; intent=self._phase_json("seal_intent"); expected=self._seal_record(intent,self._phase_json("key_enabled")); expected["ledger_tip_sha256"]=side_event["previous_event_sha256"]
+            if raw!=canonical_json_bytes(expected) or side_event["commitment_sha256"]!=intent["commitment_tip_sha256"] or side_event["authority_receipt_sha256"]!=_domain_digest("seal",raw): raise Type1FreshCustodyError("seal projection is tampered")
         if self._sealed():
-            seal=_canonical_object(self._seal_bytes(),"seal"); expected={"schema_version","dataset_id","custody_uid","prereg_sha256","freeze_start","decision_end","freeze_end","pair_count","first_ordinal","last_ordinal","commitment_tip_sha256","commitment_merkle_root_sha256","ledger_tip_sha256","access_ledger_id","authority_key_id","authority_public_key_sha256","key_id","key_enable_receipt_sha256","access_ledger_genesis_sha256","rfc3161_receipt_sha256","key_enable_receipt","rfc3161_receipt","key_state","access_state","deny_state","fresh_oos_status"}; _keys(seal,expected,"seal")
-            if seal["commitment_tip_sha256"]!=self._commitment_digest(self._commitment_count()) or seal["commitment_merkle_root_sha256"]!=self._merkle_root() or seal["access_ledger_id"]!=self._access_ledger_id(seal["commitment_tip_sha256"]) or seal["authority_public_key_sha256"]!=self._key_fingerprint() or not self._sidecar_matches(): raise Type1FreshCustodyError("seal projection is tampered")
+            if self._seal_bytes()!=self._sidecar(): raise Type1FreshCustodyError("sealed sidecar differs")
+            sealed=[e for e in events if e["event_type"]=="SEALED"]
+            if len(sealed)!=1 or sealed[0]["authority_receipt_sha256"]!=_domain_digest("seal",self._seal_bytes()): raise Type1FreshCustodyError("seal finalization projection is tampered")
     def _verify_storage(self)->None:
         db=self._connection(); quick=db.execute("PRAGMA quick_check").fetchone()[0]; integrity=db.execute("PRAGMA integrity_check").fetchone()[0]; journal=db.execute("PRAGMA journal_mode").fetchone()[0]; sync=db.execute("PRAGMA synchronous").fetchone()[0]; db.close()
         if quick!="ok" or integrity!="ok" or journal.lower()!="wal" or sync!=2: raise Type1FreshCustodyError("SQLite custody profile invalid")

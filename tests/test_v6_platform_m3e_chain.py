@@ -50,6 +50,7 @@ def fixture(tmp_path, monkeypatch):
         "public_custody_manifest_sha256": sha(custody_path),
         "public_custody_sha256": "a" * 64,
         "test_state": "NOT_RUN",
+        "verdict": "NO_GO",
     }
     monkeypatch.setattr(v6_platform_api, "DOCS_ROOT", docs)
     monkeypatch.setattr(v6_platform_api, "PREREG_GLOBS", ("kronos_v*_prereg_*.json",))
@@ -68,6 +69,24 @@ def test_m3e_report_chain_is_verified_and_tamper_fails_closed(tmp_path, monkeypa
     assert state == "CHAIN_INVALID"
     assert "PUBLIC_CUSTODY_MANIFEST_SHA_MISMATCH" in reasons
     assert "PUBLIC_CUSTODY_SHA_MISMATCH" in reasons
+
+def test_m3e_report_verdict_and_run_identity_contradictions_fail_closed(tmp_path, monkeypatch):
+    run_dir, report, _ = fixture(tmp_path, monkeypatch)
+
+    report["verdict"] = "GO"
+    state, reasons = v6_platform_api._report_chain(run_dir, report)
+    assert state == "CHAIN_INVALID"
+    assert "REPORT_VERDICT_MISMATCH" in reasons
+    assert "REPORT_RUN_VERDICT_CONTRADICTION" in reasons
+
+    run_path = run_dir / "run_manifest.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run["trainer_version"] = "kronos_v8_m3e_other.v1"
+    write_json(run_path, run)
+    report["verdict"] = "NO_GO"
+    state, reasons = v6_platform_api._report_chain(run_dir, report)
+    assert state == "CHAIN_INVALID"
+    assert "M3E_ALGORITHM_MISMATCH" in reasons
 
 def test_m3e_run_states_distinguish_training_validation_and_untouched_test():
     states = v6_platform_api._run_states({

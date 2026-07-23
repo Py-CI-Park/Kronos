@@ -43,6 +43,28 @@ IDENTITY = {
 POLICY = {"price_basis": "EXACT_15_20_BAR_CLOSE_PROXY", "official_close": False, "accounting": "FIXED_NOTIONAL_NON_SELF_FINANCING", "primary_cost_rate": "0.0023", "initial_nav_krw": "60000000", "slot_notional_krw": "5000000", "maximum_slots": 10, "seeds": [0, 1, 2, 3, 4], "checkpoint_selection": False, "synthetic_oracle_calibration": False}
 LOCKS = {"promotion_allowed": False, "model_build_allowed": False, "paper_forward_allowed": False, "live_broker_order_allowed": False, "profitability_claim_allowed": False, "go_summary_allowed": False}
 M3E_STATEMENT = "LINUCB_CONTEXTUAL_BANDIT_NO_GO_FIVE_SEEDS_23BP_FRESH_OOS_NOT_RUN_UNCHANGED"
+RUNNER_MANIFEST_SCHEMA = "kronos_type1_g002_public_run.v1"
+RUNNER_RECEIPT = {
+    "execution_status": "COMPLETE",
+    "verdict": "NO_GO",
+    "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+}
+REPORT_RESULT = {
+    "run_state": "COMPLETE",
+    "training_state": "COMPLETE",
+    "reused_validation_state": "COMPLETE",
+    "verdict": "NO_GO",
+    "fresh_oos_state": "NOT_RUN",
+    "fresh_oos_read_performed": False,
+    "failures": [],
+}
+REPORT_CLAIMS = {
+    "execution_outcome": "NO_GO_ONLY",
+    "fresh_oos": "NOT_RUN_NO_READ",
+    "m3e": M3E_STATEMENT,
+    "profitability": "NOT_CLAIMED",
+    "live": "NOT_CLAIMED",
+}
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _EVENT = re.compile(r"([0-9]{8})-([0-9a-f]{64})\.json\Z")
 _OBJECT = re.compile(r"([A-Za-z0-9][A-Za-z0-9_.-]{0,80})-([0-9a-f]{64})\.html\Z")
@@ -309,27 +331,71 @@ def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
     _validate_authority_sources(fixed)
     return {label: _sha(_read_bytes(path, label)) for label, path in paths.items()}
 def _verify_current_parent(root: Path, events: list[tuple[dict[str, Any], str]], state: str) -> None:
+    """Read-only check of the SQLite CAS parent; reconciliation is runner-owned."""
     db = _safe_child(root, Path("current_parent.sqlite3"))
     if not db.is_file() or _is_reparse(db):
         raise Type1ReportError("current-parent authority is missing")
     expected = events[-1][1] if events else None
     expected_state = "COMMITTED" if state == "COMMITTED" else ("MATERIALIZED" if events and len(events) % 2 == 0 else ("REVISION" if events else "EMPTY"))
-    previous = events[-2][1] if len(events) > 1 else None
-    previous_state = "MATERIALIZED" if len(events) > 1 and (len(events) - 1) % 2 == 0 else ("REVISION" if events else "EMPTY")
     try:
-        con = sqlite3.connect(str(db))
-        row = con.execute("SELECT event_sha256,state FROM current_parent WHERE singleton=1").fetchone()
-        # A fully validated final event/tip can outlive its SQLite parent update
-        # after O_EXCL/fsync success. Recover only that immediate exact orphan.
-        if expected and ((row is None and previous is None) or (row is not None and row == (previous, previous_state))):
-            con.execute("INSERT OR REPLACE INTO current_parent(singleton,event_sha256,state) VALUES(1,?,?)", (expected, expected_state))
-            con.commit()
-            row = (expected, expected_state)
-        con.close()
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            row = con.execute("SELECT event_sha256,state FROM current_parent WHERE singleton=1").fetchone()
+        finally:
+            con.close()
     except sqlite3.Error as exc:
         raise Type1ReportError("current-parent authority is unreadable") from exc
     if row is None or row[0] != expected or row[1] != expected_state:
         raise Type1ReportError("current-parent authority mismatch")
+
+def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -> None:
+    root = Path(run_dir).absolute()
+    manifest = _read_canonical(_safe_child(root, Path("run_manifest.json")), "run manifest")[0]
+    receipt = _read_canonical(_safe_child(root, Path("receipt.json")), "run receipt")[0]
+    if (
+        manifest.get("schema_version") != RUNNER_MANIFEST_SCHEMA
+        or not isinstance(manifest.get("identities"), Mapping)
+        or {key: manifest["identities"].get(key) for key in IDENTITY} != IDENTITY
+        or manifest.get("execution_status") != "COMPLETE"
+        or manifest.get("verdict") != "NO_GO"
+        or manifest.get("fresh_oos") != RUNNER_RECEIPT["fresh_oos"]
+        or manifest.get("false_research_locks") != LOCKS
+        or receipt != {**RUNNER_RECEIPT, "manifest_sha256": sources.get("run_manifest")}
+    ):
+        raise Type1ReportError("runner manifest or receipt violates the frozen no-go contract")
+    training = manifest.get("training")
+    if not isinstance(training, Mapping) or training != {
+        "seeds": [0, 1, 2, 3, 4],
+        "timesteps_per_seed": 200000,
+        "device": "cpu",
+        "validation_visible_to_training": False,
+        "eval_callback": False,
+        "early_stopping": False,
+        "best_model_selection": False,
+        "checkpoint_selection": False,
+        "member_selection": False,
+        "saved_artifact": "FINAL_MODEL_ONLY",
+        "synthetic_oracle_calibration": False,
+    }:
+        raise Type1ReportError("runner training contract is invalid")
+    controls = manifest.get("controls")
+    members = manifest.get("members")
+    if not isinstance(controls, Mapping) or controls.get("integrity_ok") is not True or not isinstance(members, Mapping) or set(members) != {"primary", "shuffled_reward"}:
+        raise Type1ReportError("runner controls or member families are invalid")
+    for kind in ("primary", "shuffled_reward"):
+        family = members[kind]
+        if not isinstance(family, Mapping) or set(family) != {"0", "1", "2", "3", "4"}:
+            raise Type1ReportError("runner member evidence is missing or extra")
+        for seed in range(5):
+            member = family[str(seed)]
+            model_key = f"{kind}_seed_{seed}_model"
+            normalizer_key = f"{kind}_seed_{seed}_normalizer"
+            if not isinstance(member, Mapping) or member.get("seed") != seed or member.get("timesteps") != 200000 or member.get("actual_sb3_timesteps") != 200000 or member.get("device") != "cpu" or member.get("artifact") != "FINAL_MODEL_ONLY":
+                raise Type1ReportError("runner member step or device receipt is invalid")
+            artifacts, reload_receipt = member.get("artifacts"), member.get("reload_receipt")
+            expected_artifacts = {"model_sha256": sources.get(model_key), "normalizer_sha256": sources.get(normalizer_key)}
+            if artifacts != expected_artifacts or not isinstance(reload_receipt, Mapping) or reload_receipt != {**expected_artifacts, "deterministic": True}:
+                raise Type1ReportError("runner final artifact or reload receipt is invalid")
 
 def _validate_revision(value: Mapping[str, Any]) -> None:
     required = {"schema_version", "revision_id", "revision_ordinal", "identity", "policy", "result", "source_sha256", "evidence", "false_research_locks", "claims", "catalog_ordinal", "previous_event_sha256", "previous_revision_event_sha256"}
@@ -337,20 +403,19 @@ def _validate_revision(value: Mapping[str, Any]) -> None:
         raise Type1ReportError("revision does not match frozen replacement Type1 contract")
     if not isinstance(value.get("revision_id"), str) or not re.fullmatch(r"type1-r[0-9]{4,}", value["revision_id"]): raise Type1ReportError("revision ID is invalid")
     if type(value.get("revision_ordinal")) is not int or value["revision_ordinal"] < 1: raise Type1ReportError("revision ordinal is invalid")
-    result = value.get("result")
-    states = {"COMPLETE", "FAILED", "BLOCKED", "NOT_RUN"}
-    if not isinstance(result, Mapping) or result.get("run_state") not in states or result.get("training_state") not in states or result.get("reused_validation_state") not in states or result.get("verdict") != "NO_GO" or result.get("fresh_oos_state") not in {"NOT_RUN", "ACCUMULATING_NOT_RUN", "BLOCKED"} or result.get("fresh_oos_read_performed") is not False or not isinstance(result.get("failures"), list): raise Type1ReportError("revision result violates Type1 boundary")
-    for state in ("run_state", "training_state", "reused_validation_state"):
-        if result[state] in {"FAILED", "BLOCKED", "NOT_RUN"} and not result["failures"]: raise Type1ReportError("failed, blocked, or not-run state requires failure reason")
+    if value.get("result") != REPORT_RESULT:
+        raise Type1ReportError("report completion must be derived from validated runner evidence")
     sources, evidence = value.get("source_sha256"), value.get("evidence")
     required_evidence = {"type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "amendment", "protocol", "preregistration", "authority", "builder_source"}
-    if not isinstance(sources, Mapping) or not isinstance(evidence, Mapping) or set(evidence) != required_evidence: raise Type1ReportError("replacement authority evidence is incomplete")
+    if not isinstance(sources, Mapping) or not isinstance(evidence, Mapping) or set(evidence) != required_evidence:
+        raise Type1ReportError("replacement authority evidence is incomplete")
     for label, digest in sources.items():
         if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", label): raise Type1ReportError("source label is invalid")
         _require_sha(digest, "source SHA")
     for label in required_evidence:
         if evidence[label] != sources.get(label): raise Type1ReportError("authority evidence does not bind fixed source")
-    if value.get("false_research_locks") != LOCKS or not isinstance(value.get("claims"), Mapping): raise Type1ReportError("revision locks or claims are invalid")
+    if value.get("false_research_locks") != LOCKS or value.get("claims") != REPORT_CLAIMS:
+        raise Type1ReportError("revision locks or claims are invalid")
 
 def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
     r = revision["result"]; failures = "".join(f"<li>{html.escape(str(x))}</li>" for x in r["failures"]) or "<li>None recorded.</li>"
@@ -381,7 +446,7 @@ def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
     )
     return text.encode("utf-8")
 
-def verify_report_catalog(run_dir: str | Path) -> dict[str, Any]:
+def verify_report_catalog(run_dir: str | Path, *, verify_parent: bool = True) -> dict[str, Any]:
     root=_root(run_dir); events_dir=_safe_child(root,Path("events")); objects_dir=_safe_child(root,Path("objects"))
     try: paths=list(events_dir.iterdir())
     except OSError as exc: raise Type1ReportError("events directory is unreadable") from exc
@@ -399,7 +464,9 @@ def verify_report_catalog(run_dir: str | Path) -> dict[str, Any]:
         if pos%2:
             _validate_revision(event)
             if event.get("previous_revision_event_sha256") != (events[-2][1] if len(events)>=2 else None) or event["revision_id"] in revisions or event["revision_ordinal"]!=(pos+1)//2: raise Type1ReportError("revision predecessor mismatch")
-            if event["source_sha256"] != report_source_sha256(run_dir): raise Type1ReportError("revision source hashes differ from fixed evidence paths")
+            sources = report_source_sha256(run_dir)
+            if event["source_sha256"] != sources: raise Type1ReportError("revision source hashes differ from fixed evidence paths")
+            _validate_runner_evidence(run_dir, sources)
             revisions[event["revision_id"]]=(event,digest)
         else:
             required={"schema_version","catalog_ordinal","previous_event_sha256","revision_event_sha256","builder_version","builder_source_sha256","object_id","html_sha256","byte_size"}
@@ -417,18 +484,54 @@ def verify_report_catalog(run_dir: str | Path) -> dict[str, Any]:
         if m.group(2)!=event["html_sha256"] or _sha(raw)!=event["html_sha256"] or len(raw)!=event["byte_size"]: raise Type1ReportError("object hash mismatch")
     tip_path=_safe_child(root,Path("committed_report_tip.json"))
     if not tip_path.exists():
-        if events:
+        if events and verify_parent:
             _verify_current_parent(root, events, "DRAFT")
         return {"state":"DRAFT","event_count":len(events),"events":events,"root":root,"revisions":revisions}
     tip,tip_raw=_read_canonical(tip_path,"committed tip")
     required={"schema_version","identity","event_count","final_event_sha256","latest_revision_event_sha256","materialization_event_sha256","object_id","html_sha256"}
     if set(tip)!=required or tip.get("schema_version")!=TIP_SCHEMA or tip.get("identity")!=IDENTITY or tip.get("event_count")!=len(events) or not events or len(events)%2 or tip.get("final_event_sha256")!=events[-1][1] or tip.get("latest_revision_event_sha256")!=events[-2][1] or tip.get("materialization_event_sha256")!=events[-1][1] or tip.get("object_id")!=events[-1][0].get("object_id") or tip.get("html_sha256")!=events[-1][0].get("html_sha256"): raise Type1ReportError("committed tip is invalid")
-    _verify_current_parent(root, events, "COMMITTED")
+    if verify_parent:
+        _verify_current_parent(root, events, "COMMITTED")
     return {"state":"COMMITTED","event_count":len(events),"events":events,"root":root,"revisions":revisions,"tip":tip,"tip_sha256":_sha(tip_raw),"revision":events[-2][0],"materialization":events[-1][0]}
 
 def _assert_parent(con: sqlite3.Connection, expected: str|None, state: str) -> None:
     row=con.execute("SELECT event_sha256,state FROM current_parent WHERE singleton=1").fetchone()
     if (row is None and expected is not None) or (row is not None and (row[0]!=expected or row[1]!=state)): raise Type1ReportError("current-parent authority mismatch")
+def _reconcile_committed_tip(con: sqlite3.Connection, run_dir: str | Path) -> dict[str, Any] | None:
+    """Repair only a tip file whose exact materialization CAS update was interrupted."""
+    snapshot = verify_report_catalog(run_dir, verify_parent=False)
+    if snapshot["state"] != "COMMITTED":
+        return None
+    expected = snapshot["tip"]["materialization_event_sha256"]
+    row = con.execute("SELECT event_sha256,state FROM current_parent WHERE singleton=1").fetchone()
+    if row == (expected, "COMMITTED"):
+        return snapshot["tip"]
+    if row != (expected, "MATERIALIZED"):
+        raise Type1ReportError("tip reconciliation requires the exact materialized parent")
+    updated = con.execute(
+        "UPDATE current_parent SET state='COMMITTED' WHERE singleton=1 AND event_sha256=? AND state='MATERIALIZED'",
+        (expected,),
+    ).rowcount
+    if updated != 1:
+        raise Type1ReportError("tip reconciliation CAS failed")
+    return snapshot["tip"]
+
+def reconcile_report_tip(run_dir: str | Path) -> dict[str, Any]:
+    """Explicit runner command for the sole recoverable MATERIALIZED-to-COMMITTED orphan."""
+    root = _root(run_dir)
+    con = _mutex(root)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        tip = _reconcile_committed_tip(con, run_dir)
+        if tip is None:
+            raise Type1ReportError("no committed tip orphan is available for reconciliation")
+        con.execute("COMMIT")
+        return dict(tip)
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
 
 def insert_report_revision(run_dir: str|Path, revision: Mapping[str,Any])->dict[str,Any]:
     root=_root(run_dir,create=True); con=_mutex(root)
@@ -439,7 +542,9 @@ def insert_report_revision(run_dir: str|Path, revision: Mapping[str,Any])->dict[
         event=dict(revision); event.update({"catalog_ordinal":len(snap["events"])+1,"previous_event_sha256":expected,"previous_revision_event_sha256":snap["events"][-2][1] if snap["events"] else None})
         if event.get("revision_ordinal")!=(len(snap["events"])//2)+1: raise Type1ReportError("revision ordinal does not match catalog")
         _validate_revision(event)
-        if event["source_sha256"]!=report_source_sha256(run_dir): raise Type1ReportError("revision source hashes differ from fixed evidence paths")
+        sources = report_source_sha256(run_dir)
+        if event["source_sha256"]!=sources: raise Type1ReportError("revision source hashes differ from fixed evidence paths")
+        _validate_runner_evidence(run_dir, sources)
         raw=_canonical(event); digest=_sha(raw); _write_new(_safe_child(root,Path("events")/f"{event['catalog_ordinal']:08d}-{digest}.json"),raw)
         con.execute("INSERT OR REPLACE INTO current_parent(singleton,event_sha256,state) VALUES(1,?,?)",(digest,"REVISION")); con.execute("COMMIT")
         return {"event_sha256":digest,"catalog_ordinal":event["catalog_ordinal"],"revision_id":event["revision_id"]}
@@ -464,7 +569,12 @@ def materialize_report_revision(run_dir: str|Path, revision_event_sha256:str)->d
 def commit_report_tip(run_dir: str|Path, materialization_event_sha256:str)->dict[str,Any]:
     _require_sha(materialization_event_sha256,"materialization event SHA"); root=_root(run_dir); con=_mutex(root)
     try:
-        con.execute("BEGIN IMMEDIATE"); snap=verify_report_catalog(run_dir)
+        con.execute("BEGIN IMMEDIATE")
+        recovered = _reconcile_committed_tip(con, run_dir)
+        if recovered is not None:
+            con.execute("COMMIT")
+            return dict(recovered)
+        snap=verify_report_catalog(run_dir)
         if snap["state"]=="COMMITTED" or not snap["events"] or len(snap["events"])%2 or snap["events"][-1][1]!=materialization_event_sha256: raise Type1ReportError("only current materialization may be committed")
         _assert_parent(con,materialization_event_sha256,"MATERIALIZED"); m=snap["events"][-1][0]
         tip={"schema_version":TIP_SCHEMA,"identity":IDENTITY,"event_count":len(snap["events"]),"final_event_sha256":materialization_event_sha256,"latest_revision_event_sha256":snap["events"][-2][1],"materialization_event_sha256":materialization_event_sha256,"object_id":m["object_id"],"html_sha256":m["html_sha256"]}; _write_new(_safe_child(root,Path("committed_report_tip.json")),_canonical(tip)); con.execute("UPDATE current_parent SET state='COMMITTED' WHERE singleton=1"); con.execute("COMMIT"); return dict(tip)

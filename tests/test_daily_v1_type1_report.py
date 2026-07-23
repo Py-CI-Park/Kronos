@@ -1,13 +1,14 @@
 import json
 
 import pytest
+import sqlite3
 import stom_rl.daily_v1_type1_report as type1_report
 
 from stom_rl.daily_v1_type1_report import (
-    AMENDMENT_PATH, IDENTITY, LOCKS, M3E_STATEMENT, POLICY,
-    REPLACEMENT_OUTER_IDENTITY, Type1ReportError, commit_report_tip,
-    insert_report_revision, materialize_report_revision, report_source_sha256,
-    verify_report_catalog,
+    AMENDMENT_PATH, IDENTITY, LOCKS, M3E_STATEMENT, POLICY, REPORT_CLAIMS,
+    REPORT_RESULT, REPLACEMENT_OUTER_IDENTITY, Type1ReportError,
+    commit_report_tip, insert_report_revision, materialize_report_revision,
+    reconcile_report_tip, report_source_sha256, verify_report_catalog,
 )
 
 
@@ -15,24 +16,53 @@ def _sources(run):
     run.mkdir(parents=True, exist_ok=True)
     (run.parent / "dataset_manifest.json").write_bytes(b"dataset")
     (run.parent / "public_rows.json").write_bytes(b"rows")
-    (run / "run_manifest.json").write_bytes(b"run")
-    (run / "receipt.json").write_bytes(b"receipt")
     outer = {"identity": IDENTITY}
     (run / "type1_identity.json").write_text(json.dumps(outer, sort_keys=True, separators=(",", ":")))
     (run / "p6_public_run_seal.json").write_text(json.dumps({**outer, "fresh_oos": {"state": "NOT_RUN", "payload_read": False}}, sort_keys=True, separators=(",", ":")))
     (run / "deployment_lock.json").write_text(json.dumps({**outer, "locks": LOCKS}, sort_keys=True, separators=(",", ":")))
     (run / "attempt_parent.json").write_text(json.dumps({**outer, "parent_identity": {"dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002"}}, sort_keys=True, separators=(",", ":")))
     (run / "authority.json").write_text(json.dumps({**outer, "authority_id": REPLACEMENT_OUTER_IDENTITY["authority_id"]}, sort_keys=True, separators=(",", ":")))
+    members = {}
     for kind in ("primary", "shuffled_reward"):
+        members[kind] = {}
         for seed in range(5):
             member = run / kind / f"seed_{seed}"
             member.mkdir(parents=True, exist_ok=True)
-            (member / "final_model.zip").write_bytes(f"{kind}-{seed}-model".encode())
-            (member / "normalizer.pkl").write_bytes(f"{kind}-{seed}-normalizer".encode())
+            model = f"{kind}-{seed}-model".encode()
+            normalizer = f"{kind}-{seed}-normalizer".encode()
+            (member / "final_model.zip").write_bytes(model)
+            (member / "normalizer.pkl").write_bytes(normalizer)
+            model_sha = type1_report._sha(model)
+            normalizer_sha = type1_report._sha(normalizer)
+            artifacts = {"model_sha256": model_sha, "normalizer_sha256": normalizer_sha}
+            members[kind][str(seed)] = {
+                "seed": seed, "timesteps": 200000, "actual_sb3_timesteps": 200000,
+                "device": "cpu", "artifact": "FINAL_MODEL_ONLY", "artifacts": artifacts,
+                "reload_receipt": {**artifacts, "deterministic": True}, "validation": {},
+            }
+    manifest = {
+        "schema_version": "kronos_type1_g002_public_run.v1", "identities": IDENTITY,
+        "training": {"seeds": [0, 1, 2, 3, 4], "timesteps_per_seed": 200000,
+                     "device": "cpu", "validation_visible_to_training": False,
+                     "eval_callback": False, "early_stopping": False,
+                     "best_model_selection": False, "checkpoint_selection": False,
+                     "member_selection": False, "saved_artifact": "FINAL_MODEL_ONLY",
+                     "synthetic_oracle_calibration": False},
+        "members": members, "controls": {"integrity_ok": True},
+        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+        "false_research_locks": LOCKS, "execution_status": "COMPLETE", "verdict": "NO_GO",
+    }
+    (run / "run_manifest.json").write_bytes(type1_report._canonical(manifest))
+    (run / "receipt.json").write_bytes(type1_report._canonical({}))
+    sources = report_source_sha256(run)
+    (run / "receipt.json").write_bytes(type1_report._canonical({
+        "manifest_sha256": sources["run_manifest"], "execution_status": "COMPLETE",
+        "verdict": "NO_GO", "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+    }))
     return report_source_sha256(run)
 
 
-def _revision(run, number=1, *, failed=False):
+def _revision(run, number=1):
     sources = _sources(run)
     evidence = {label: sources[label] for label in (
         "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent",
@@ -42,16 +72,16 @@ def _revision(run, number=1, *, failed=False):
         "schema_version": "kronos_type1_report_revision.v2",
         "revision_id": f"type1-r{number:04d}", "revision_ordinal": number,
         "identity": IDENTITY, "policy": POLICY,
-        "result": {"run_state": "FAILED" if failed else "COMPLETE", "training_state": "FAILED" if failed else "COMPLETE", "reused_validation_state": "FAILED" if failed else "COMPLETE", "verdict": "NO_GO", "fresh_oos_state": "NOT_RUN", "fresh_oos_read_performed": False, "failures": ["CONTROL_GATE_FAILED"] if failed else []},
+        "result": REPORT_RESULT,
         "source_sha256": sources, "evidence": evidence, "false_research_locks": LOCKS,
-        "claims": {"symbols": ["000660"], "synthetic": "TRAIN_ONLY_SYNTHETIC_WIRING"},
+        "claims": REPORT_CLAIMS,
     }
 
 
-def test_catalog_is_alternating_immutable_and_failure_visible(tmp_path):
+def test_catalog_is_alternating_immutable_and_no_go_visible(tmp_path):
     first = insert_report_revision(tmp_path, _revision(tmp_path))
     first_materialized = materialize_report_revision(tmp_path, first["event_sha256"])
-    second = insert_report_revision(tmp_path, _revision(tmp_path, 2, failed=True))
+    second = insert_report_revision(tmp_path, _revision(tmp_path, 2))
     second_materialized = materialize_report_revision(tmp_path, second["event_sha256"])
     tip = commit_report_tip(tmp_path, second_materialized["event_sha256"])
     snapshot = verify_report_catalog(tmp_path)
@@ -60,7 +90,7 @@ def test_catalog_is_alternating_immutable_and_failure_visible(tmp_path):
     assert tip["latest_revision_event_sha256"] == second["event_sha256"]
     assert snapshot["revision"]["result"]["verdict"] == "NO_GO"
     report = (tmp_path / "type1_reports" / "objects" / f"type1-r0002-{second_materialized['html_sha256']}.html").read_text(encoding="utf-8")
-    assert "NOT_RUN" in report and "000660" in json.dumps(snapshot["revision"])
+    assert "NOT_RUN" in report and "NO_GO_ONLY" in json.dumps(snapshot["revision"])
     for label in ("Overview", "Type1 identity", "Protocol and accounting", "Training plan and observed completion", "Reused-validation", "Fresh OOS", "Failures and integrity"):
         assert label in report
     with pytest.raises(Type1ReportError):
@@ -169,3 +199,91 @@ def test_report_uses_seven_ordinary_anchor_linked_sections(tmp_path):
         assert f'id="{section}"' in report
     assert M3E_STATEMENT == "LINUCB_CONTEXTUAL_BANDIT_NO_GO_FIVE_SEEDS_23BP_FRESH_OOS_NOT_RUN_UNCHANGED"
     assert M3E_STATEMENT in report
+def _rebind_revision(run, revision):
+    sources = report_source_sha256(run)
+    revision["source_sha256"] = sources
+    revision["evidence"] = {
+        label: sources[label] for label in (
+            "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent",
+            "amendment", "protocol", "preregistration", "authority", "builder_source",
+        )
+    }
+
+def _mutate_manifest(run, mutate):
+    manifest_path = run / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mutate(manifest)
+    manifest_path.write_bytes(type1_report._canonical(manifest))
+    sources = report_source_sha256(run)
+    (run / "receipt.json").write_bytes(type1_report._canonical({
+        "manifest_sha256": sources["run_manifest"], "execution_status": "COMPLETE",
+        "verdict": "NO_GO", "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+    }))
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda manifest: manifest["members"]["primary"]["0"].update({"actual_sb3_timesteps": 199999}),
+        lambda manifest: manifest["members"]["shuffled_reward"]["4"].update({"device": "cuda"}),
+        lambda manifest: manifest["members"]["primary"].pop("4"),
+        lambda manifest: manifest["members"]["primary"].update({"5": dict(manifest["members"]["primary"]["4"])}),
+        lambda manifest: manifest["controls"].update({"integrity_ok": False}),
+        lambda manifest: manifest.update({"fresh_oos": {"state": "RUN", "metrics": {}}}),
+    ],
+)
+def test_report_rejects_invalid_runner_member_or_oos_evidence(tmp_path, mutate):
+    revision = _revision(tmp_path)
+    _mutate_manifest(tmp_path, mutate)
+    _rebind_revision(tmp_path, revision)
+    with pytest.raises(Type1ReportError):
+        insert_report_revision(tmp_path, revision)
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("policy", dict(POLICY, primary_cost_rate="0.0022")),
+        ("result", dict(REPORT_RESULT, fresh_oos_read_performed=True)),
+        ("claims", dict(REPORT_CLAIMS, execution_outcome="GO")),
+        ("claims", {"profitability": "PROFITABLE"}),
+        ("false_research_locks", dict(LOCKS, live_broker_order_allowed=True)),
+    ],
+)
+def test_report_rejects_contradictory_completion_claims_cost_and_locks(tmp_path, field, value):
+    revision = _revision(tmp_path)
+    revision[field] = value
+    with pytest.raises(Type1ReportError):
+        insert_report_revision(tmp_path, revision)
+
+def test_verification_is_pure_and_tip_reconciliation_is_explicit_cas(tmp_path):
+    revision = insert_report_revision(tmp_path, _revision(tmp_path))
+    materialization = materialize_report_revision(tmp_path, revision["event_sha256"])
+    tip = commit_report_tip(tmp_path, materialization["event_sha256"])
+    db = tmp_path / "type1_reports" / "current_parent.sqlite3"
+    con = sqlite3.connect(db)
+    con.execute("UPDATE current_parent SET state='MATERIALIZED' WHERE singleton=1")
+    con.commit()
+    con.close()
+    with pytest.raises(Type1ReportError, match="current-parent"):
+        verify_report_catalog(tmp_path)
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT event_sha256,state FROM current_parent").fetchone() == (
+        materialization["event_sha256"], "MATERIALIZED"
+    )
+    con.close()
+    assert reconcile_report_tip(tmp_path) == tip
+    assert verify_report_catalog(tmp_path)["state"] == "COMMITTED"
+
+def test_materialized_orphan_and_stale_writer_cas_fail_closed(tmp_path):
+    revision = insert_report_revision(tmp_path, _revision(tmp_path))
+    materialization = materialize_report_revision(tmp_path, revision["event_sha256"])
+    db = tmp_path / "type1_reports" / "current_parent.sqlite3"
+    con = sqlite3.connect(db)
+    con.execute("UPDATE current_parent SET event_sha256=?,state='REVISION'", (revision["event_sha256"],))
+    con.commit()
+    con.close()
+    with pytest.raises(Type1ReportError, match="current-parent"):
+        verify_report_catalog(tmp_path)
+    with pytest.raises(Type1ReportError, match="no committed tip orphan"):
+        reconcile_report_tip(tmp_path)
+    with pytest.raises(Type1ReportError):
+        commit_report_tip(tmp_path, materialization["event_sha256"])
