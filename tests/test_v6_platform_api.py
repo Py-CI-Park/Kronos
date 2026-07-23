@@ -524,7 +524,7 @@ def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_pa
     download = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1&download=1")
 
     assert catalog["schema_version"] == "kronos_v6_reports.v2"
-    assert len(catalog["reports"]) == 3
+    assert len(catalog["reports"]) == 4
     entry = next(report for report in catalog["reports"] if report["dataset_run_id"] == "dataset-r1")
     assert entry["dataset_run_id"] == "dataset-r1"
     assert entry["train_run_id"] == "train-r1"
