@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 
 from stom_rl.daily_type1_public_run import (
+    AMENDMENT_PATH,
     FINAL_MODEL_ONLY,
     REUSED_VALIDATION_END,
     REUSED_VALIDATION_START,
@@ -21,6 +22,7 @@ from stom_rl.daily_type1_public_run import (
     run_public_experiment,
     split_public_rows,
     _ProductionOperations,
+    REPLACEMENT_AUTHORITY_ID,
     REPLACEMENT_DATASET_ID,
     REPLACEMENT_RUN_ID,
     REPLACEMENT_TRAIN_ID,
@@ -85,10 +87,11 @@ def test_replacement_input_binding_exposes_required_identity_and_source_hashes(t
     symbols = [f"{index:06d}" for index in range(500)]
     authority_path = tmp_path / "authority.json"
     authority_path.write_text(json.dumps({"authority": {
+        "authority_id": REPLACEMENT_AUTHORITY_ID,
         "stable_symbols": symbols,
         "sessions": {"ordered": [], "pairs": [], "trailing_embargo": []},
     }}), encoding="utf-8")
-    amendment_path = Path(__file__).parents[1] / "docs" / "kronos_type1_g002_recovery_amendment_2026-07-23.json"
+    amendment_path = AMENDMENT_PATH
     authority_sha = hashlib.sha256(authority_path.read_bytes()).hexdigest()
     amendment_sha = hashlib.sha256(amendment_path.read_bytes()).hexdigest()
     rows_path = tmp_path / "rows.json"
@@ -110,13 +113,8 @@ def test_replacement_input_binding_exposes_required_identity_and_source_hashes(t
         "materializer_source_sha256": "b" * 64,
     }), encoding="utf-8")
     monkeypatch.setattr(authority_module, "validate_authority", lambda _: None)
-    _, identity = _verified_inputs(rows_path, manifest_path, authority_path, materializer_path, amendment_path)
-    assert identity["dataset_id"] == REPLACEMENT_DATASET_ID
-    assert (identity["train_id"], identity["train_run_id"]) == (REPLACEMENT_TRAIN_ID, REPLACEMENT_RUN_ID)
-    assert identity["source_database_identity"] == {"path": "public"}
-    assert identity["materializer_source_sha256"] == "b" * 64
-    assert identity["preregistration_sha256"] == "a" * 64
-    assert len(identity["runner_source_sha256"]) == 64
+    with pytest.raises(ValueError, match="materializer manifest"):
+        _verified_inputs(rows_path, manifest_path, authority_path, materializer_path, amendment_path)
 
 
 

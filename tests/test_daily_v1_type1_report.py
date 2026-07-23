@@ -19,7 +19,7 @@ def _sources(run):
     (run / "type1_identity.json").write_text(json.dumps(outer, sort_keys=True, separators=(",", ":")))
     (run / "p6_public_run_seal.json").write_text(json.dumps({**outer, "fresh_oos": {"state": "NOT_RUN", "payload_read": False}}, sort_keys=True, separators=(",", ":")))
     (run / "deployment_lock.json").write_text(json.dumps({**outer, "locks": LOCKS}, sort_keys=True, separators=(",", ":")))
-    (run / "attempt_parent.json").write_text(json.dumps({**outer, "parent_identity": {"dataset_id": "type1-close-20260803-001", "train_id": "type1-public-001", "train_run_id": "train_type1-public-001"}}, sort_keys=True, separators=(",", ":")))
+    (run / "attempt_parent.json").write_text(json.dumps({**outer, "parent_identity": {"dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002"}}, sort_keys=True, separators=(",", ":")))
     (run / "authority.json").write_text(json.dumps({**outer, "authority_id": REPLACEMENT_OUTER_IDENTITY["authority_id"]}, sort_keys=True, separators=(",", ":")))
     for kind in ("primary", "shuffled_reward"):
         for seed in range(5):
@@ -95,6 +95,14 @@ def test_catalog_rejects_semantic_outer_identity_tamper(tmp_path):
     source.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")))
     with pytest.raises(Type1ReportError, match="outer identity"):
         report_source_sha256(tmp_path)
+    assert REPLACEMENT_OUTER_IDENTITY == {
+        "authority_id": "type1-krx-authority-20260723-002",
+        "dataset_id": "type1-close-20260803-003",
+        "train_id": "type1-public-003",
+        "train_run_id": "train_type1-public-003",
+        "custody_uid": "type1-fresh-oos-20260803-003",
+        "report_family": "kronos.type1.report.v1",
+    }
 
 
 def test_report_uses_seven_ordinary_anchor_linked_sections(tmp_path):

@@ -24,17 +24,18 @@ from stom_rl.daily_type1_market import (
     public_row_from_mapping,
 )
 
-DATASET_ID = "type1-close-20260803-002"
+DATASET_ID = "type1-close-20260803-003"
 PUBLIC_CUTOFF = 20250630
 PUBLIC_START = 20180102
 PROXY_HHMM = 1520
-SCHEMA_VERSION = "kronos_type1_g002_public_data.v2"
+SCHEMA_VERSION = "kronos_type1_g002_public_data.v3"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PREREG_PATH = REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_2026-07-23.json"
-DEFAULT_AUTHORITY_PATH = REPO_ROOT / "artifacts" / "type1-authority" / "type1-krx-authority-20260723-001.json"
-AUTHORITY_ID = "type1-krx-authority-20260723-001"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v2_2026-07-23.json"
+DEFAULT_AUTHORITY_PATH = REPO_ROOT / "artifacts" / "type1-authority" / "type1-krx-authority-20260723-002.json"
+AUTHORITY_ID = "type1-krx-authority-20260723-002"
+MATERIALIZER_MANIFEST_SCHEMA = "kronos.type1.public-materializer.v3"
 _DECIMAL_CONTEXT = Context(prec=50, rounding=ROUND_HALF_EVEN)
 _DAILY_COLUMNS = ("date", "close", "volume", "상장주식수", "외국인현보유비율", "기관순매수")
 _FIVE_MIN_COLUMNS = ("date", "open", "high", "low", "close", "volume")
@@ -95,12 +96,14 @@ def materialize_public_data(
             raise ValueError("authority artifact changed during materialization")
 
     rows = sorted((row for split_rows in per_split_rows.values() for row in split_rows), key=lambda row: (row["decision_date"], row["symbol"]))
+    _validate_cartesian_rows(rows, symbols, split_sessions, split_calendar)
     for row in rows:
         public_row_from_mapping({key: value for key, value in _public_schema(row).items() if key != "split"})
     serialized_rows = [_public_schema(row) for row in rows]
     row_bytes = canonical_json_bytes(serialized_rows)
     manifest = {
         "schema_version": SCHEMA_VERSION,
+        "materializer_manifest_schema": MATERIALIZER_MANIFEST_SCHEMA,
         "dataset_id": DATASET_ID,
         "read_only": True,
         "price_basis": "15:20_bar_close_proxy",
@@ -126,6 +129,12 @@ def materialize_public_data(
         "row_count": len(serialized_rows),
         "split_row_counts": {split: len(values) for split, values in per_split_rows.items()},
         "split_symbol_counts": {split: len({row["symbol"] for row in values}) for split, values in per_split_rows.items()},
+        "expected": {
+            "stable_symbols": len(symbols),
+            "split_rows": {split: len(symbols) * len(sessions) for split, sessions in split_sessions.items()},
+            "split_pairs": {split: len(calendar["pairs"]) for split, calendar in split_calendar.items()},
+            "split_embargo": {split: len(calendar["trailing_embargo"]) for split, calendar in split_calendar.items()},
+        },
         "missing_h1_label_counts": missing_labels,
         "missing_h1_by_symbol": missing_by_symbol,
         "output_sha256": hashlib.sha256(row_bytes).hexdigest(),
@@ -137,6 +146,13 @@ def materialize_public_data(
         "authority_sha256": authority_receipt["sha256"],
         "amendment_id": amendment["amendment_id"],
         "materializer_source_sha256": _sha256_file(Path(__file__)),
+        "source_hashes": {
+            "materializer": _sha256_file(Path(__file__)),
+            "protocol": _sha256_file(PROTOCOL_PATH),
+            "preregistration": _sha256_file(PREREG_PATH),
+            "amendment": _sha256_file(AMENDMENT_PATH),
+            "authority": authority_receipt["sha256"],
+        },
         "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
     }
     return {"rows": serialized_rows, "manifest": manifest, "rows_bytes": row_bytes}
@@ -159,13 +175,27 @@ def write_public_materialization(*, out_root: Path | str, **kwargs: Any) -> dict
 
 def _load_amendment() -> Mapping[str, Any]:
     value = json.loads(AMENDMENT_PATH.read_text(encoding="utf-8"))
-    if value.get("schema_version") != "kronos.type1.g002-recovery-amendment.v1" or value.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-001":
-        raise ValueError("frozen recovery amendment identity mismatch")
-    replacement = value.get("replacement_identity")
-    if not isinstance(replacement, Mapping) or replacement.get("dataset_id") != DATASET_ID or replacement.get("authority_id") != AUTHORITY_ID:
+    required = {
+        "schema_version", "amendment_id", "supersedes", "status", "reason",
+        "preserved_aborted_evidence", "replacement_identity", "authority_contract",
+        "execution_contract", "fresh_oos", "frozen_utc",
+    }
+    if not isinstance(value, Mapping) or set(value) != required:
+        raise ValueError("recovery amendment v2 schema mismatch")
+    replacement = value["replacement_identity"]
+    expected = {
+        "authority_id": AUTHORITY_ID,
+        "dataset_id": DATASET_ID,
+        "train_id": "type1-public-003",
+        "train_run_id": "train_type1-public-003",
+        "custody_uid": "type1-fresh-oos-20260803-003",
+    }
+    if value["schema_version"] != "kronos.type1.g002-recovery-amendment.v2" or replacement != expected:
         raise ValueError("recovery amendment does not authorize this replacement identity")
-    if value.get("fresh_oos", {}).get("payload_read") is not False:
+    if value["fresh_oos"] != {"custody_uid": expected["custody_uid"], "status": "NOT_RUN", "no_read": True, "no_price_or_oos_query_after": "2025-06-30"}:
         raise ValueError("recovery amendment fresh-OOS state is unsafe")
+    if value["execution_contract"] != {"proxy_time": "15:20:00", "cost_bps": 23, "fixed_notional": 60000000, "primary_seeds": 5, "shuffled_seeds": 5, "timesteps_per_seed": 200000, "outcome": "NO_GO_ONLY"}:
+        raise ValueError("recovery amendment execution contract mismatch")
     return value
 
 
@@ -375,6 +405,31 @@ def _split_for(session: int) -> str | None:
     return None
 
 
+def _validate_cartesian_rows(
+    rows: Sequence[Mapping[str, Any]],
+    symbols: Sequence[str],
+    split_sessions: Mapping[str, Sequence[str]],
+    split_calendar: Mapping[str, Mapping[str, Any]],
+) -> None:
+    expected = {
+        (split, session, symbol)
+        for split, sessions in split_sessions.items()
+        for session in sessions
+        for symbol in symbols
+    }
+    observed = [(row["split"], row["decision_date"], row["symbol"]) for row in rows]
+    if len(observed) != len(set(observed)):
+        raise ValueError("materializer rows contain duplicate full Cartesian keys")
+    if set(observed) != expected:
+        raise ValueError("materializer rows are not the exact authority Cartesian product")
+    for split, sessions in split_sessions.items():
+        if len({row["symbol"] for row in rows if row["split"] == split}) != len(symbols):
+            raise ValueError("materializer split does not contain all authority symbols")
+        calendar = split_calendar[split]
+        if len(calendar["pairs"]) != len(sessions) // 2 or len(calendar["trailing_embargo"]) != len(sessions) % 2:
+            raise ValueError("materializer split pair or embargo count differs from authority")
+    if [key[1:] for key in observed] != sorted((key[1:] for key in observed)):
+        raise ValueError("materializer rows are not canonically ordered before normalization")
 def _public_schema(row: Mapping[str, Any]) -> dict[str, Any]:
     return {"decision_date": row["decision_date"], "symbol": row["symbol"], "split": row["split"], "features": {name: _decimal_text(row["features"][name]) for name in FEATURES}, "gross_return": _decimal_text(row["gross_return"]), "entry_available": row["entry_available"]}
 

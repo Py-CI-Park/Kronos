@@ -18,18 +18,21 @@ from typing import Any, Mapping
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PREREG_PATH = REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_2026-07-23.json"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v2_2026-07-23.json"
 REPORT_ROOT = "type1_reports"
 REVISION_SCHEMA = "kronos_type1_report_revision.v2"
 MATERIALIZATION_SCHEMA = "kronos_type1_report_materialization.v2"
 TIP_SCHEMA = "kronos_type1_committed_report_tip.v2"
 BUILDER_VERSION = "kronos_type1_report_builder.v2"
+REPLACEMENT_IDENTITY = {
+    "authority_id": "type1-krx-authority-20260723-002",
+    "dataset_id": "type1-close-20260803-003",
+    "train_id": "type1-public-003",
+    "train_run_id": "train_type1-public-003",
+    "custody_uid": "type1-fresh-oos-20260803-003",
+}
 REPLACEMENT_OUTER_IDENTITY = {
-    "authority_id": "type1-krx-authority-20260723-001",
-    "dataset_id": "type1-close-20260803-002",
-    "train_id": "type1-public-002",
-    "train_run_id": "train_type1-public-002",
-    "custody_uid": "type1-fresh-oos-20260803-002",
+    **REPLACEMENT_IDENTITY,
     "report_family": "kronos.type1.report.v1",
 }
 IDENTITY = {
@@ -187,13 +190,36 @@ def _identity_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
     amendment = fixed["amendment"]
-    if amendment.get("replacement_identity") != REPLACEMENT_OUTER_IDENTITY:
-        raise Type1ReportError("recovery amendment does not bind exact replacement identity")
-    if amendment.get("parent_protocol_id") != "KRONOS-TYPE1-G002-PUBLIC-2026-07-23":
-        raise Type1ReportError("recovery amendment protocol ancestry is invalid")
-    corrections = amendment.get("report_and_api_corrections")
-    if not isinstance(corrections, Mapping) or corrections.get("m3e_truth") != M3E_STATEMENT:
-        raise Type1ReportError("recovery amendment M3E truth is invalid")
+    if (
+        amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v2"
+        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-002"
+        or amendment.get("supersedes") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-001"
+        or amendment.get("status") != "FROZEN_BEFORE_REPLACEMENT_MATERIALIZATION_OR_TRAINING"
+        or amendment.get("replacement_identity") != REPLACEMENT_IDENTITY
+    ):
+        raise Type1ReportError("recovery amendment does not bind exact frozen v3 replacement identity")
+    execution = amendment.get("execution_contract")
+    fresh_oos = amendment.get("fresh_oos")
+    preserved = amendment.get("preserved_aborted_evidence")
+    if (
+        not isinstance(execution, Mapping)
+        or execution.get("outcome") != "NO_GO_ONLY"
+        or execution.get("cost_bps") != 23
+        or execution.get("primary_seeds") != 5
+        or execution.get("shuffled_seeds") != 5
+        or not isinstance(fresh_oos, Mapping)
+        or fresh_oos != {
+            "custody_uid": REPLACEMENT_IDENTITY["custody_uid"],
+            "status": "NOT_RUN",
+            "no_read": True,
+            "no_price_or_oos_query_after": "2025-06-30",
+        }
+        or preserved != [
+            {"dataset_id": "type1-close-20260803-001", "train_id": "type1-public-001", "train_run_id": "train_type1-public-001", "status": "INELIGIBLE_BLOCKED", "models_created": 0},
+            {"dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002", "status": "INELIGIBLE_BLOCKED", "models_created": 0},
+        ]
+    ):
+        raise Type1ReportError("recovery amendment frozen no-go or aborted history is invalid")
 
     protocol, preregistration = fixed["protocol"], fixed["preregistration"]
     if (protocol.get("protocol_id"), protocol.get("parent_prereg_id")) != (
@@ -228,8 +254,8 @@ def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
     prior = parent.get("parent_identity", parent.get("parent_attempt", parent.get("previous_attempt")))
     if not isinstance(prior, Mapping) or (
         prior.get("dataset_id"), prior.get("train_id"), prior.get("train_run_id")
-    ) != ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001"):
-        raise Type1ReportError("attempt parent does not preserve aborted -001 ancestry")
+    ) != ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002"):
+        raise Type1ReportError("attempt parent does not preserve aborted -002 ancestry")
     authority = fixed["authority"]
     if authority.get("authority_id", _identity_mapping(authority).get("authority_id")) != REPLACEMENT_OUTER_IDENTITY["authority_id"]:
         raise Type1ReportError("authority source does not bind replacement authority ID")

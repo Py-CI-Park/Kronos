@@ -55,9 +55,9 @@ def _write_report_sources(run):
     (run / "attempt_parent.json").write_text(json.dumps({
         "identity": IDENTITY,
         "parent_identity": {
-            "dataset_id": "type1-close-20260803-001",
-            "train_id": "type1-public-001",
-            "train_run_id": "train_type1-public-001",
+            "dataset_id": "type1-close-20260803-002",
+            "train_id": "type1-public-002",
+            "train_run_id": "train_type1-public-002",
         },
     }, sort_keys=True, separators=(",", ":")))
     (run / "authority.json").write_text(json.dumps({
@@ -96,6 +96,13 @@ def test_replacement_type1_catalog_is_revision_complete_and_preserves_old_attemp
     entry = payload["reports"][0]
     assert entry["record_type"] == "TYPE1_CUSTODY"
     assert entry["availability"] == "COMMITTED"
+    assert entry["custody"]["identity"] == {
+        "authority_id": "type1-krx-authority-20260723-002",
+        "dataset_id": "type1-close-20260803-003",
+        "train_id": "type1-public-003",
+        "train_run_id": "train_type1-public-003",
+        "custody_uid": "type1-fresh-oos-20260803-003",
+    }
     assert not {"verdict", "test_state", "report_sha256", "report_url", "result", "reports", "catalog"} & set(entry)
     assert [row["revision_ordinal"] for row in entry["revisions"]] == [1, 2]
     first, second = entry["revisions"]
@@ -111,17 +118,24 @@ def test_replacement_type1_catalog_is_revision_complete_and_preserves_old_attemp
     assert b"NOT_RUN" in response.data and b"Replacement Type1" in response.data
     assert client.get(f"/api/v6/report-html?dataset={IDENTITY['dataset_id']}&train={IDENTITY['train_run_id']}").status_code == 400
     assert client.get(f"/api/v6/report-html?dataset={IDENTITY['dataset_id']}&train={IDENTITY['train_run_id']}&report_sha256={'0' * 64}").status_code == 404
-    old = client.get("/api/v6/reports?dataset=type1-close-20260803-001&train=train_type1-public-001").get_json()["reports"][0]
-    assert old["record_type"] == "TYPE1_PRESERVED_INELIGIBLE_CUSTODY"
-    assert old["availability"] == "BLOCKED" and len(old["attempts"]) == 2
-    assert [attempt["attempt_id"] for attempt in old["attempts"]] == [
-        "train_type1-public-001-aborted-preflight-v1",
-        "train_type1-public-001-aborted-universe-v2",
+    preserved = [
+        client.get(f"/api/v6/reports?dataset=type1-close-20260803-00{ordinal}&train=train_type1-public-00{ordinal}").get_json()["reports"][0]
+        for ordinal in (1, 2)
     ]
-    assert all(attempt["availability"] == "MISSING" for attempt in old["attempts"])
-    blocked = client.get("/api/v6/report-html?dataset=type1-close-20260803-001&train=train_type1-public-001&report_sha256=" + "0" * 64)
-    assert blocked.status_code == 409
-    assert blocked.get_json()["reason"] == "PRESERVED_INELIGIBLE_REPORT_NOT_SERVABLE"
+    assert all(entry["record_type"] == "TYPE1_PRESERVED_INELIGIBLE_CUSTODY" for entry in preserved)
+    assert all(entry["availability"] == "BLOCKED" for entry in preserved)
+    assert [entry["custody"]["scientific_eligibility"] for entry in preserved] == ["INELIGIBLE_BLOCKED", "INELIGIBLE_BLOCKED"]
+    assert all(entry["custody"]["immutable_history"] is True for entry in preserved)
+    catalog = client.get("/api/v6/reports").get_json()["reports"]
+    assert {(entry["dataset_run_id"], entry["train_run_id"]) for entry in catalog if entry["record_type"].startswith("TYPE1_")} == {
+        ("type1-close-20260803-001", "train_type1-public-001"),
+        ("type1-close-20260803-002", "train_type1-public-002"),
+        (IDENTITY["dataset_id"], IDENTITY["train_run_id"]),
+    }
+    for ordinal in (1, 2):
+        blocked = client.get(f"/api/v6/report-html?dataset=type1-close-20260803-00{ordinal}&train=train_type1-public-00{ordinal}&report_sha256={'0' * 64}")
+        assert blocked.status_code == 409
+        assert blocked.get_json()["reason"] == "PRESERVED_INELIGIBLE_REPORT_NOT_SERVABLE"
     assert not old_run.exists() and run.name == IDENTITY["train_run_id"]
 
 

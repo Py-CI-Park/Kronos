@@ -524,8 +524,8 @@ def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_pa
     download = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1&download=1")
 
     assert catalog["schema_version"] == "kronos_v6_reports.v2"
-    assert len(catalog["reports"]) == 1
-    entry = catalog["reports"][0]
+    assert len(catalog["reports"]) == 3
+    entry = next(report for report in catalog["reports"] if report["dataset_run_id"] == "dataset-r1")
     assert entry["dataset_run_id"] == "dataset-r1"
     assert entry["train_run_id"] == "train-r1"
     assert entry["verdict"] == "NO_GO"
@@ -628,8 +628,13 @@ def test_v6_report_source_chain_tampering_fails_closed(client, monkeypatch, tmp_
 def test_v6_reports_empty_and_report_html_guards(client, monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", tmp_path / "missing-runs")
 
-    assert client.get("/api/v6/reports").get_json()["reports"] == []
-    assert client.get("/api/v6/status").get_json()["journey"]["report"]["state"] == "NOT_RUN"
+    reports = client.get("/api/v6/reports").get_json()["reports"]
+    assert {report["dataset_run_id"] for report in reports} == {
+        "type1-close-20260803-001",
+        "type1-close-20260803-002",
+    }
+    assert all(report["availability"] == "BLOCKED" for report in reports)
+    assert client.get("/api/v6/status").get_json()["journey"]["report"]["state"] == "HAS_REPORTS"
     missing = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1")
     assert missing.status_code == 404
     assert missing.get_json() == {"status": "BLOCKED", "reason": "REPORT_NOT_FOUND"}
@@ -653,7 +658,8 @@ def test_v6_report_html_blocks_sha_mismatch(client, monkeypatch, tmp_path) -> No
     catalog = client.get("/api/v6/reports").get_json()
     blocked = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1")
 
-    assert catalog["reports"][0]["integrity"] == "SHA_MISMATCH"
+    entry = next(report for report in catalog["reports"] if report["dataset_run_id"] == "dataset-r1")
+    assert entry["integrity"] == "SHA_MISMATCH"
     assert blocked.status_code == 409
     assert blocked.get_json() == {"status": "BLOCKED", "reason": "REPORT_SHA_MISMATCH"}
 

@@ -8,6 +8,7 @@ injected for deterministic tests.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -24,10 +25,13 @@ from stom_rl.daily_type1_contract import FEATURES, INITIAL_NAV_KRW, SEEDS, SLOT_
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PUBLIC_TRAIN_START = "2018-01-02"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_2026-07-23.json"
-REPLACEMENT_DATASET_ID = "type1-close-20260803-002"
-REPLACEMENT_TRAIN_ID = "type1-public-002"
-REPLACEMENT_RUN_ID = "train_type1-public-002"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v2_2026-07-23.json"
+REPLACEMENT_DATASET_ID = "type1-close-20260803-003"
+REPLACEMENT_TRAIN_ID = "type1-public-003"
+REPLACEMENT_RUN_ID = "train_type1-public-003"
+REPLACEMENT_AUTHORITY_ID = "type1-krx-authority-20260723-002"
+REPLACEMENT_CUSTODY_UID = "type1-fresh-oos-20260803-003"
+AUTHORIZED_RUN_ROOT = REPO_ROOT / "artifacts" / "type1-public-runs"
 PUBLIC_TRAIN_END = "2023-12-29"
 REUSED_VALIDATION_START = "2024-01-02"
 REUSED_VALIDATION_END = "2025-06-30"
@@ -154,42 +158,66 @@ def _verified_inputs(
     materializer_manifest_path: Path,
     amendment_path: Path = AMENDMENT_PATH,
 ) -> tuple[tuple[str, ...], Mapping[str, Any]]:
-    """Verify all immutable replacement inputs before any model construction."""
+    """Verify every frozen source and raw authority Cartesian product before training."""
     from stom_rl.daily_type1_authority import validate_authority
 
     amendment = _read_json_object(amendment_path, "recovery amendment")
-    expected = {
-        "authority_id": "type1-krx-authority-20260723-001",
-        "dataset_id": REPLACEMENT_DATASET_ID, "train_id": REPLACEMENT_TRAIN_ID,
-        "train_run_id": REPLACEMENT_RUN_ID, "custody_uid": "type1-fresh-oos-20260803-002",
-        "report_family": "kronos.type1.report.v1",
+    expected_identity = {
+        "authority_id": REPLACEMENT_AUTHORITY_ID, "dataset_id": REPLACEMENT_DATASET_ID,
+        "train_id": REPLACEMENT_TRAIN_ID, "train_run_id": REPLACEMENT_RUN_ID,
+        "custody_uid": REPLACEMENT_CUSTODY_UID,
     }
-    if amendment.get("replacement_identity") != expected:
-        raise ValueError("recovery amendment replacement identity mismatch")
+    required_amendment = {
+        "schema_version", "amendment_id", "supersedes", "status", "reason",
+        "preserved_aborted_evidence", "replacement_identity", "authority_contract",
+        "execution_contract", "fresh_oos", "frozen_utc",
+    }
+    if set(amendment) != required_amendment or amendment["schema_version"] != "kronos.type1.g002-recovery-amendment.v2" or amendment["replacement_identity"] != expected_identity:
+        raise ValueError("recovery amendment v2 replacement identity mismatch")
+    if amendment["fresh_oos"] != {"custody_uid": REPLACEMENT_CUSTODY_UID, "status": "NOT_RUN", "no_read": True, "no_price_or_oos_query_after": "2025-06-30"}:
+        raise ValueError("recovery amendment does not prove untouched fresh OOS")
+    if amendment["execution_contract"] != {"proxy_time": "15:20:00", "cost_bps": 23, "fixed_notional": 60000000, "primary_seeds": 5, "shuffled_seeds": 5, "timesteps_per_seed": 200000, "outcome": "NO_GO_ONLY"}:
+        raise ValueError("recovery amendment execution contract mismatch")
     authority_envelope = _read_json_object(authority_path, "KRX authority")
     validate_authority(authority_envelope)
     authority = authority_envelope["authority"]
+    if authority.get("authority_id") != REPLACEMENT_AUTHORITY_ID:
+        raise ValueError("wrong effective-dated KRX authority")
     manifest = _read_json_object(manifest_path, "dataset manifest")
     materializer = _read_json_object(materializer_manifest_path, "materializer manifest")
-    if manifest.get("dataset_id") != REPLACEMENT_DATASET_ID or materializer.get("dataset_id") != REPLACEMENT_DATASET_ID:
-        raise ValueError("dataset/materializer is not the replacement immutable identity")
-    if manifest.get("output_sha256") != _file_hash(rows_path):
-        raise ValueError("public rows hash differs from dataset manifest")
+    required_manifest = {
+        "schema_version", "materializer_manifest_schema", "dataset_id", "read_only", "price_basis",
+        "official_close", "public_cutoff", "sql_predicates", "source_databases", "source_database_identity",
+        "authority", "row_count", "split_row_counts", "split_symbol_counts", "expected",
+        "missing_h1_label_counts", "missing_h1_by_symbol", "output_sha256", "protocol_sha256",
+        "parent_protocol_sha256", "prereg_sha256", "preregistration_sha256", "amendment_sha256",
+        "authority_sha256", "amendment_id", "materializer_source_sha256", "source_hashes", "fresh_oos",
+    }
+    if set(manifest) != required_manifest or set(materializer) != required_manifest or manifest != materializer:
+        raise ValueError("materializer manifest schema or canonical content differs")
+    if manifest["dataset_id"] != REPLACEMENT_DATASET_ID or manifest["materializer_manifest_schema"] != "kronos.type1.public-materializer.v3":
+        raise ValueError("dataset/materializer is not the frozen v3 identity")
+    if manifest["output_sha256"] != _file_hash(rows_path):
+        raise ValueError("public rows hash differs from materializer manifest")
     authority_sha, amendment_sha = _file_hash(authority_path), _file_hash(amendment_path)
-    for value, label in ((manifest, "dataset"), (materializer, "materializer")):
-        if value.get("authority_sha256") != authority_sha or value.get("amendment_sha256") != amendment_sha:
-            raise ValueError(f"{label} immutable authority/amendment binding mismatch")
-        if value.get("stable_symbols") not in (None, authority["stable_symbols"]):
-            raise ValueError(f"{label} stable symbols differ from KRX authority")
-    if manifest.get("fresh_oos") != {"state": "NOT_RUN", "read_performed": False}:
+    required_hashes = {
+        "materializer": _file_hash(REPO_ROOT / "stom_rl" / "daily_type1_public_data.py"),
+        "protocol": _file_hash(PROTOCOL_PATH),
+        "preregistration": _file_hash(REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"),
+        "amendment": amendment_sha, "authority": authority_sha,
+    }
+    if manifest["source_hashes"] != required_hashes or manifest["authority_sha256"] != authority_sha or manifest["amendment_sha256"] != amendment_sha:
+        raise ValueError("materializer source bindings differ from frozen sources")
+    if manifest["fresh_oos"] != {"state": "NOT_RUN", "read_performed": False}:
         raise ValueError("dataset manifest does not prove untouched fresh OOS")
-    return tuple(authority["stable_symbols"]), {
-        "dataset_id": REPLACEMENT_DATASET_ID, "train_id": REPLACEMENT_TRAIN_ID,
-        "train_run_id": REPLACEMENT_RUN_ID, "amendment_sha256": amendment_sha,
-        "authority_sha256": authority_sha, "materializer_sha256": _file_hash(materializer_manifest_path),
-        "source_database_identity": materializer.get("source_database_identity"),
-        "materializer_source_sha256": materializer.get("materializer_source_sha256"),
-        "preregistration_sha256": manifest.get("preregistration_sha256"),
+    symbols = tuple(authority["stable_symbols"])
+    _validate_raw_rows(json.loads(rows_path.read_text(encoding="utf-8")), symbols, authority["sessions"], manifest)
+    return symbols, {
+        **expected_identity, "amendment_sha256": amendment_sha, "authority_sha256": authority_sha,
+        "materializer_sha256": _file_hash(materializer_manifest_path),
+        "source_database_identity": manifest["source_database_identity"],
+        "materializer_source_sha256": manifest["materializer_source_sha256"],
+        "preregistration_sha256": manifest["preregistration_sha256"],
         "parent_protocol_sha256": _file_hash(PROTOCOL_PATH),
         "runner_source_sha256": _file_hash(Path(__file__)),
         "authority_sessions": authority["sessions"],
@@ -197,10 +225,39 @@ def _verified_inputs(
 
 
 
-def _contained_run_root(out_root: str | Path, run_id: str) -> Path:
+def _validate_raw_rows(
+    rows: Any, symbols: Sequence[str], sessions: Mapping[str, Any], manifest: Mapping[str, Any]
+) -> None:
+    if not isinstance(rows, list) or len(symbols) != STABLE_SLOTS or len(set(symbols)) != STABLE_SLOTS:
+        raise ValueError("raw public rows or authority stable symbols are invalid")
+    split_sessions = {
+        "train": [item for item in sessions["ordered"] if PUBLIC_TRAIN_START <= item <= PUBLIC_TRAIN_END],
+        "reused_validation": [item for item in sessions["ordered"] if REUSED_VALIDATION_START <= item <= REUSED_VALIDATION_END],
+    }
+    expected = {(split, session, symbol) for split, dates in split_sessions.items() for session in dates for symbol in symbols}
+    keys = []
+    for row in rows:
+        if not isinstance(row, Mapping) or set(row) != {"decision_date", "symbol", "split", "features", "gross_return", "entry_available"}:
+            raise ValueError("raw row schema is not exact before normalization")
+        keys.append((row["split"], row["decision_date"], row["symbol"]))
+    if len(keys) != len(set(keys)) or set(keys) != expected:
+        raise ValueError("raw rows are not the exact 500-symbol authority Cartesian product")
+    expected_counts = {
+        "stable_symbols": STABLE_SLOTS,
+        "split_rows": {name: STABLE_SLOTS * len(dates) for name, dates in split_sessions.items()},
+        "split_pairs": {name: len(dates) // 2 for name, dates in split_sessions.items()},
+        "split_embargo": {name: len(dates) % 2 for name, dates in split_sessions.items()},
+    }
+    if manifest["expected"] != expected_counts or manifest["row_count"] != len(keys):
+        raise ValueError("materializer expected row, pair, or embargo counts differ")
+    if manifest["split_row_counts"] != expected_counts["split_rows"] or manifest["split_symbol_counts"] != {"train": STABLE_SLOTS, "reused_validation": STABLE_SLOTS}:
+        raise ValueError("materializer split counts differ from raw authority product")
+def _contained_run_root(out_root: str | Path, run_id: str, *, production: bool = False) -> Path:
     base = Path(out_root).resolve(strict=False)
     if not run_id or Path(run_id).name != run_id:
         raise ValueError("run_id must be one non-empty path component")
+    if production and (run_id != REPLACEMENT_RUN_ID or base != AUTHORIZED_RUN_ROOT.resolve(strict=False)):
+        raise ValueError("production run_id and output root must equal the frozen authorized identity")
     candidate = (base / run_id).resolve(strict=False)
     if os.path.commonpath((str(base), str(candidate))) != str(base):
         raise ValueError("run output escapes authorized public root")
@@ -225,13 +282,19 @@ def _member(operations: PublicRunOperations, pairs: Sequence[Mapping[str, Any]],
         raise ValueError("final artifact receipt must contain model_sha256 and normalizer_sha256 only")
     metrics = dict(operations.evaluate_saved(destination, validation_pairs, seed=seed) if hasattr(operations, "evaluate_saved") else operations.evaluate(model, validation_pairs, seed=seed))
     actual_timesteps = getattr(model, "num_timesteps", TIMESTEPS_PER_SEED)
+    device = str(getattr(model, "device", "cpu"))
     return {
         "seed": seed,
         "timesteps": TIMESTEPS_PER_SEED,
         "actual_sb3_timesteps": actual_timesteps,
-        "device": "cpu",
+        "device": device,
         "artifact": FINAL_MODEL_ONLY,
         "artifacts": artifacts,
+        "reload_receipt": {
+            "model_sha256": artifacts["model_sha256"],
+            "normalizer_sha256": artifacts["normalizer_sha256"],
+            "deterministic": metrics.get("deterministic") is True,
+        },
         "validation": metrics,
     }
 
@@ -255,14 +318,6 @@ def run_public_experiment(
     identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the mandatory five primary and five shuffled public-only members."""
-    root = _contained_run_root(out_root, run_id)
-    root.mkdir(parents=True, exist_ok=False)
-    receipt_path = root / "receipt.json"
-    _write_receipt(receipt_path, {
-        "execution_status": "RUNNING", "verdict": "NO_GO",
-        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
-        "production_authoritative": identity is not None,
-    })
     train_rows, validation_rows = split_public_rows(rows)
     protocol = _protocol()
     if identity is not None:
@@ -274,6 +329,13 @@ def run_public_experiment(
     validation_pairs = operations.build_pairs(validation_rows, split="reused_validation")
     if not train_pairs or not validation_pairs:
         raise ValueError("public pair construction produced an empty split")
+    root = _contained_run_root(out_root, run_id, production=identity is not None)
+    root.mkdir(parents=True, exist_ok=False)
+    _write_receipt(root / "receipt.json", {
+        "execution_status": "RUNNING", "verdict": "NO_GO",
+        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+        "production_authoritative": identity is not None,
+    })
     primary: dict[str, dict[str, Any]] = {}
     shuffled: dict[str, dict[str, Any]] = {}
     for seed in config.seeds:
@@ -282,15 +344,17 @@ def run_public_experiment(
         shuffled[str(seed)] = _member(operations, shuffled_pairs, validation_pairs, seed=seed, root=root, kind="shuffled_reward")
     controls = dict(operations.controls(train_rows, validation_rows, primary, shuffled))
     timestep_mismatches = [
-        f"{kind}_seed_{seed}_timestep_mismatch"
+        f"{kind}_seed_{seed}_timestep_or_device_mismatch"
         for kind, members in (("primary", primary), ("shuffled_reward", shuffled))
         for seed in config.seeds
-        if members[str(seed)]["actual_sb3_timesteps"] != TIMESTEPS_PER_SEED
+        if type(members[str(seed)]["actual_sb3_timesteps"]) is not int
+        or members[str(seed)]["actual_sb3_timesteps"] != TIMESTEPS_PER_SEED
+        or members[str(seed)]["device"] != "cpu"
     ]
     if timestep_mismatches:
         controls["integrity_ok"] = False
         controls["integrity_reasons"] = list(controls.get("integrity_reasons", ())) + timestep_mismatches
-    execution_status = "COMPLETE" if identity is not None and controls.get("integrity_ok") is not False else "BLOCK"
+    execution_status = "COMPLETE" if identity is not None and isinstance(operations, _ProductionOperations) and controls.get("integrity_ok") is True else "BLOCK"
     manifest = {
         "schema_version": "kronos_type1_g002_public_run.v1",
         "protocol": {"id": protocol["protocol_id"], "sha256": _file_hash(PROTOCOL_PATH)},
@@ -329,6 +393,18 @@ def run_public_experiment(
     return {"output_dir": root, "manifest": manifest, "receipt": receipt}
 
 
+def _pair_bytes(pairs: Sequence[Mapping[str, Any]]) -> bytes:
+    digest = hashlib.sha256()
+    for pair in pairs:
+        for key in ("candidate_values", "candidate_missing", "availability_mask", "post_decision_fill_available"):
+            digest.update(np.asarray(pair[key]).tobytes())
+        digest.update(canonical_json_bytes({
+            "symbols": list(pair["symbols"]),
+            "gross_returns": [None if value is None else str(value) for value in pair["gross_returns"]],
+            "decision_date": pair["decision_date"],
+            "settlement_date": pair["settlement_date"],
+        }))
+    return digest.digest()
 class _ProductionOperations:
     """The sole production bridge from canonical public rows to Type1ClosingEnv."""
 
@@ -521,6 +597,15 @@ class _ProductionOperations:
         normalizer_before = self._normalizer.digest()
         validation_pairs = self.build_pairs(validation_rows, split="reused_validation")
         normalizer_after = self._normalizer.digest()
+        train_input_before = _pair_bytes(train_pairs)
+        mutated_validation = copy.deepcopy(list(validation_rows))
+        for row in mutated_validation:
+            row["features"] = {name: "999999.125" for name in FEATURES}
+            row["gross_return"] = "-0.9999"
+            row["entry_available"] = not bool(row["entry_available"])
+        self.build_pairs(mutated_validation, split="reused_validation")
+        mutation_normalizer = self._normalizer.digest()
+        train_input_after = _pair_bytes(self.build_pairs(train_rows, split="train"))
         samples = [
             (pair["candidate_values"][slot], pair["candidate_missing"][slot], pair["gross_returns"][slot])
             for pair in train_pairs for slot in range(len(pair["symbols"]))
@@ -554,13 +639,17 @@ class _ProductionOperations:
 
         primary_match, shuffled_match = matched(primary, True), matched(shuffled, False)
         reasons = []
-        if normalizer_before != normalizer_after:
+        if normalizer_before != normalizer_after or normalizer_before != mutation_normalizer:
             reasons.append("reused_validation_mutated_train_normalizer")
+        if train_input_before != train_input_after:
+            reasons.append("reused_validation_mutated_training_inputs")
         for name, members in (("primary", primary), ("shuffled_reward", shuffled)):
             for seed in SEEDS:
                 member = members.get(str(seed), {})
                 if member.get("actual_sb3_timesteps") != TIMESTEPS_PER_SEED:
                     reasons.append(f"{name}_seed_{seed}_timestep_mismatch")
+                if member.get("reload_receipt", {}).get("deterministic") is not True:
+                    reasons.append(f"{name}_seed_{seed}_reload_receipt_invalid")
                 if member.get("validation", {}).get("block_count", 0) != 0:
                     reasons.append(f"{name}_seed_{seed}_evaluation_block")
                 try:
@@ -590,8 +679,12 @@ class _ProductionOperations:
             "exposure_matched_random": {"replications": 10_000, "seed": 0, "primary": primary_match, "shuffled_reward": shuffled_match},
             "moving_block_bootstrap": bootstrap,
             "shuffle_retraining": {"seeds": list(SEEDS), "timesteps_per_seed": TIMESTEPS_PER_SEED, "all_members_recorded": True},
-            "mutation_invariance": {"train_only_normalizer_unchanged": normalizer_before == normalizer_after,
-                                     "model_and_normalizer_hashes": {name: {str(seed): members[str(seed)]["artifacts"] for seed in SEEDS} for name, members in (("primary", primary), ("shuffled_reward", shuffled))}},
+            "mutation_invariance": {
+                "train_only_normalizer_unchanged": normalizer_before == normalizer_after == mutation_normalizer,
+                "train_pairs_byte_identical": train_input_before == train_input_after,
+                "mutation": {"features": "999999.125", "gross_return": "-0.9999", "availability_flipped": True},
+                "model_and_normalizer_hashes": {name: {str(seed): members[str(seed)]["artifacts"] for seed in SEEDS} for name, members in (("primary", primary), ("shuffled_reward", shuffled))},
+            },
             "scientific_gates_pass": science, "scientific_gate_reasons": [] if science else ["local_control_gate_miss"],
             "train_rows": len(train_rows), "reused_validation_rows": len(validation_rows),
         }
@@ -622,7 +715,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         stable_symbols, identity = _verified_inputs(
             rows_path, manifest_path, authority_path, materializer_path, amendment_path,
         )
-        root = _contained_run_root(args.out_root, args.run_id)
+        root = _contained_run_root(args.out_root, args.run_id, production=True)
         result = run_public_experiment(
             rows, out_root=args.out_root, run_id=args.run_id,
             operations=_ProductionOperations(stable_symbols=stable_symbols), config=RunConfig(),
