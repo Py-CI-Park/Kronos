@@ -412,11 +412,21 @@ def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> Non
         "dataset_manifest_sha256": sources.get("dataset_manifest"),
         "materializer_complete_receipt_sha256": sources.get("materializer_complete_receipt"),
     }
+    expected_members = {
+        f"{kind}/seed_{seed}/final_model.zip": sources.get(f"{kind}_seed_{seed}_model")
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+    }
+    expected_members.update({
+        f"{kind}/seed_{seed}/normalizer.json": sources.get(f"{kind}_seed_{seed}_normalizer")
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+    })
     required = {
         "schema_version", "role", "status", "verdict", "identity",
         "source_logical_path", "destination_logical_path", "move_contract",
-        "run_manifest_sha256", "run_receipt_sha256", "materializer_sha256",
-        "publisher_source_sha256", "fresh_oos",
+        "run_manifest_sha256", "run_receipt_sha256", "member_artifact_sha256",
+        "materializer_sha256", "publisher_source_sha256", "fresh_oos",
     }
     if (
         set(receipt) != required
@@ -432,6 +442,7 @@ def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> Non
         or receipt.get("run_manifest_sha256") != sources.get("run_manifest")
         or receipt.get("run_receipt_sha256") != sources.get("run_receipt")
         or materializer != expected_materializer
+        or receipt.get("member_artifact_sha256") != expected_members
         or receipt.get("fresh_oos") != {
             "run": RUNNER_RECEIPT["fresh_oos"],
             "materializer": MATERIALIZER_FRESH_OOS,
@@ -447,6 +458,12 @@ def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> Non
     for label, digest in expected_materializer.items():
         _require_sha(digest, f"{label} source SHA")
         _require_sha(materializer.get(label), f"{label} publication SHA")
+    members = receipt.get("member_artifact_sha256")
+    if not isinstance(members, Mapping) or len(members) != 20:
+        raise Type1ReportError("publication receipt member artifact hashes are invalid")
+    for label, digest in expected_members.items():
+        _require_sha(digest, f"{label} source SHA")
+        _require_sha(members.get(label), f"{label} publication SHA")
 
 def _verify_current_parent(root: Path, events: list[tuple[dict[str, Any], str]], state: str) -> None:
     """Read-only check of the SQLite CAS parent; reconciliation is runner-owned."""

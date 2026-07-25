@@ -90,6 +90,19 @@ def _write_publication_receipt(run, *, mutate=None):
             "dataset_manifest_sha256": type1_report._sha((run.parent / "dataset_manifest.json").read_bytes()),
             "materializer_complete_receipt_sha256": type1_report._sha((run.parent / "materializer_complete_receipt.json").read_bytes()),
         },
+        "member_artifact_sha256": {
+            f"{kind}/seed_{seed}/final_model.zip": type1_report._sha(
+                (run / kind / f"seed_{seed}" / "final_model.zip").read_bytes()
+            )
+            for kind in ("primary", "shuffled_reward")
+            for seed in range(5)
+        } | {
+            f"{kind}/seed_{seed}/normalizer.json": type1_report._sha(
+                (run / kind / f"seed_{seed}" / "normalizer.json").read_bytes()
+            )
+            for kind in ("primary", "shuffled_reward")
+            for seed in range(5)
+        },
         "publisher_source_sha256": type1_report._sha((type1_report.REPO_ROOT / "stom_rl" / "daily_type1_publication.py").read_bytes()),
         "fresh_oos": {
             "run": {"state": "NOT_RUN", "metrics": None},

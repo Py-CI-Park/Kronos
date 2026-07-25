@@ -1,6 +1,7 @@
 import json
 import pytest
 import stom_rl.daily_v1_type1_report as type1_report
+import stom_rl.daily_type1_publication as publication
 
 from flask import Flask
 
@@ -15,7 +16,8 @@ def _revision(run, revision_id="type1-r0001", revision_ordinal=1, failure="EXPEC
     sources = report_source_sha256(run)
     evidence = {label: sources[label] for label in (
         "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent",
-        "amendment", "protocol", "preregistration", "authority", "builder_source",
+        "publication_receipt", "amendment", "protocol", "preregistration",
+        "authority", "builder_source",
     )}
     return {
         "schema_version": "kronos_type1_report_revision.v2",
@@ -126,8 +128,15 @@ def _write_report_sources(run):
         "execution_status": "COMPLETE",
         "verdict": "NO_GO",
     }
-    (run / "run_manifest.json").write_bytes(type1_report._canonical(manifest))
-    (run / "receipt.json").write_bytes(type1_report._canonical({}))
+    run_manifest_bytes = type1_report._canonical(manifest)
+    (run / "run_manifest.json").write_bytes(run_manifest_bytes)
+    run_receipt_bytes = type1_report._canonical({
+        "manifest_sha256": type1_report._sha(run_manifest_bytes),
+        "execution_status": "COMPLETE",
+        "verdict": "NO_GO",
+        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+    })
+    (run / "receipt.json").write_bytes(run_receipt_bytes)
     authority_sha = type1_report._sha((run / "authority.json").read_bytes())
     amendment_sha = type1_report._sha(type1_report.AMENDMENT_PATH.read_bytes())
     dataset_manifest = {
@@ -157,13 +166,36 @@ def _write_report_sources(run):
             amendment=amendment,
         )
     ))
-    sources = report_source_sha256(run)
-    (run / "receipt.json").write_bytes(type1_report._canonical({
-        "manifest_sha256": sources["run_manifest"],
-        "execution_status": "COMPLETE",
-        "verdict": "NO_GO",
-        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
-    }))
+    materializer_evidence = {
+        "public_rows_sha256": type1_report._sha(rows_bytes),
+        "dataset_manifest_sha256": type1_report._sha(dataset_manifest_bytes),
+        "materializer_complete_receipt_sha256": type1_report._sha(
+            (run.parent / "materializer_complete_receipt.json").read_bytes()
+        ),
+    }
+    member_artifact_sha256 = {
+        f"{kind}/seed_{seed}/final_model.zip": members[kind][str(seed)]["artifacts"]["model_sha256"]
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+    }
+    member_artifact_sha256.update({
+        f"{kind}/seed_{seed}/normalizer.json": members[kind][str(seed)]["artifacts"]["normalizer_sha256"]
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+    })
+    (run / "publication_receipt.json").write_bytes(type1_report._canonical(
+        publication._publication_receipt(
+            source_logical_path=publication.SOURCE_LOGICAL_PATH,
+            destination_logical_path=publication.DESTINATION_LOGICAL_PATH,
+            run_evidence={
+                "run_manifest_sha256": type1_report._sha(run_manifest_bytes),
+                "run_receipt_sha256": type1_report._sha(run_receipt_bytes),
+                "artifact_sha256": member_artifact_sha256,
+            },
+            materializer_evidence=materializer_evidence,
+        )
+    ))
+    report_source_sha256(run)
 
 def _client(monkeypatch, tmp_path):
     root = tmp_path / "runs"
