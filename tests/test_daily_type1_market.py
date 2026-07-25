@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
+import numpy as np
 import pytest
 
 from stom_rl.daily_type1_accounting import SlotOutcome
@@ -76,6 +77,12 @@ def test_decimal_accounting_stop_ridge_random_and_shuffled_controls():
     assert select_top_positive({"000002": Decimal("1"), "000001": Decimal("1"), "000003": Decimal("0")}) == ("000001", "000002")
     ridge = RidgeBaseline.fit([((0.0,) * 7, (0,) * 7, Decimal("0.0123")), ((1.0,) * 7, (0,) * 7, Decimal("0.0223"))])
     assert ridge.predict((0.0,) * 7, (0,) * 7).is_finite()
+    numpy_missing = np.zeros(7, dtype=np.int8)
+    numpy_ridge = RidgeBaseline.fit([
+        (np.zeros(7, dtype=np.float32), numpy_missing, Decimal("0.0123")),
+        (np.ones(7, dtype=np.float32), numpy_missing, Decimal("0.0223")),
+    ])
+    assert numpy_ridge.predict(np.zeros(7, dtype=np.float32), numpy_missing).is_finite()
     available = (("000001", "000002"), ("000003",))
     assert random_baseline(available, replications=2, seed=0) == random_baseline(available, replications=2, seed=0)
     matched = exposure_matched_random(available, (1, 1), replications=2, seed=0)

@@ -293,7 +293,7 @@ class RidgeBaseline:
                 raise ProtocolError("ridge sample schema is malformed")
             if not isinstance(gross_return, Decimal) or not gross_return.is_finite():
                 raise ProtocolError("ridge targets must be finite Decimals")
-            numeric = [Decimal(str(value)) for value in values] + [Decimal(item) for item in missing]
+            numeric = [Decimal(str(value)) for value in values] + [Decimal(int(item)) for item in missing]
             if any(not item.is_finite() for item in numeric) or any(item not in {Decimal(0), Decimal(1)} for item in numeric[len(FEATURES):]):
                 raise ProtocolError("ridge inputs are malformed")
             design.append(numeric + [Decimal(1)])
@@ -314,7 +314,7 @@ class RidgeBaseline:
     def predict(self, values: Sequence[float], missing: Sequence[int]) -> Decimal:
         if len(values) != len(FEATURES) or len(missing) != len(FEATURES) or len(self.coefficients) != len(FEATURES) * 2:
             raise ProtocolError("ridge prediction schema is malformed")
-        inputs = [Decimal(str(value)) for value in values] + [Decimal(item) for item in missing]
+        inputs = [Decimal(str(value)) for value in values] + [Decimal(int(item)) for item in missing]
         if any(not item.is_finite() for item in inputs):
             raise ProtocolError("ridge prediction inputs must be finite")
         with localcontext(_DECIMAL_CONTEXT):
