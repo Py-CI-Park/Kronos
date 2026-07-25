@@ -1,12 +1,14 @@
 """Fail-closed publication move for the completed Type 1 public run.
 
-The publisher performs one mutation only: an atomic same-volume directory rename
-from the frozen staging run into the V6 dashboard discovery root.  It never
+The publisher performs two mutations only: durable creation of the canonical
+publication receipt inside the frozen staging run, followed by an atomic
+same-volume directory rename into the V6 dashboard discovery root.  It never
 copies, deletes, overwrites, or opens fresh-OOS evidence.
 """
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -67,6 +69,8 @@ _MATERIALIZER_ROLES = {
     "dataset_manifest.json": "CANONICAL_DATASET_MANIFEST",
     "materializer_complete_receipt.json": MATERIALIZER_RECEIPT_ROLE,
 }
+_RUN_ROOT_ENTRIES_BEFORE_RECEIPT = frozenset({"receipt.json", "run_manifest.json", "primary", "shuffled_reward"})
+_RUN_ROOT_ENTRIES_WITH_RECEIPT = _RUN_ROOT_ENTRIES_BEFORE_RECEIPT | frozenset({PUBLICATION_RECEIPT_NAME})
 
 
 class Type1PublicationError(ValueError):
@@ -94,6 +98,8 @@ def _publish_verified_run(
     source = Path(source_root)
     destination = Path(destination_root)
     destination_parent = destination.parent
+    if source_logical_path != SOURCE_LOGICAL_PATH or destination_logical_path != DESTINATION_LOGICAL_PATH:
+        raise Type1PublicationError("publication receipt logical paths do not match the authorized contract")
 
     source_exists = _exists_for_identity(source)
     destination_exists = _exists_for_identity(destination)
@@ -114,7 +120,10 @@ def _publish_verified_run(
     _reject_existing_indirection(destination_parent)
     _reject_absent_destination_indirection(destination)
     _reject_tree_indirection(source)
-    run_evidence = _verify_run_root(source, allow_publication_receipt=False)
+
+    receipt_path = source / PUBLICATION_RECEIPT_NAME
+    has_staged_receipt = _exists_for_identity(receipt_path)
+    run_evidence = _verify_run_root(source, allow_publication_receipt=has_staged_receipt)
 
     # The immutable materialization verifier is intentionally called before the
     # move, while the destination parent still contains exactly the three
@@ -127,28 +136,39 @@ def _publish_verified_run(
     materializer = _verify_materializer_artifacts(destination_parent)
 
     _require_same_volume(source, destination_parent)
+    receipt = _publication_receipt(
+        source_logical_path=source_logical_path,
+        destination_logical_path=destination_logical_path,
+        run_evidence=run_evidence,
+        materializer_evidence=materializer,
+    )
+    if has_staged_receipt:
+        _verify_publication_receipt(source, expected_receipt=receipt, recovered=False)
+    else:
+        _write_new_canonical(receipt_path, receipt)
+
+    staged_run = _verify_run_root(source, allow_publication_receipt=True)
+    if staged_run != run_evidence:
+        raise Type1PublicationError("run evidence changed after publication receipt creation")
+    _verify_publication_receipt(source, expected_receipt=receipt, recovered=False)
+    staged_materializer = _verify_materializer_artifacts(destination_parent)
+    if staged_materializer != materializer:
+        raise Type1PublicationError("materializer evidence changed before atomic rename")
+
     try:
         os.rename(source, destination)
     except FileExistsError as exc:
         raise Type1PublicationError("destination appeared before atomic rename; refusing overwrite") from exc
     except OSError as exc:
         raise Type1PublicationError("same-volume atomic directory rename failed") from exc
+    _fsync_rename_parent_directories(source.parent, destination_parent)
 
-    moved_run = _verify_run_root(destination, allow_publication_receipt=False)
+    moved_run = _verify_run_root(destination, allow_publication_receipt=True)
     if moved_run != run_evidence:
         raise Type1PublicationError("run evidence changed across atomic rename")
     moved_materializer = _verify_materializer_artifacts(destination_parent)
     if moved_materializer != materializer:
         raise Type1PublicationError("materializer evidence changed across atomic rename")
-
-    receipt = _publication_receipt(
-        source_logical_path=source_logical_path,
-        destination_logical_path=destination_logical_path,
-        run_evidence=moved_run,
-        materializer_evidence=moved_materializer,
-    )
-    receipt_path = destination / PUBLICATION_RECEIPT_NAME
-    _write_new_canonical(receipt_path, receipt)
     return _verify_publication_receipt(
         destination,
         expected_receipt=receipt,
@@ -200,8 +220,14 @@ def _verify_run_root(root: Path, *, allow_publication_receipt: bool) -> dict[str
     if not root.is_dir():
         raise FileNotFoundError(root)
     _reject_tree_indirection(root)
-    if not allow_publication_receipt and _exists_for_identity(root / PUBLICATION_RECEIPT_NAME):
-        raise Type1PublicationError("publication receipt is allowed only after destination rename")
+    expected_entries = _RUN_ROOT_ENTRIES_WITH_RECEIPT if allow_publication_receipt else _RUN_ROOT_ENTRIES_BEFORE_RECEIPT
+    try:
+        actual_entries = {path.name for path in root.iterdir()}
+    except OSError as exc:
+        raise Type1PublicationError("run root is unreadable") from exc
+    if actual_entries != expected_entries:
+        required = ", ".join(sorted(expected_entries))
+        raise Type1PublicationError(f"run root must contain exactly these top-level entries: {required}")
 
     manifest, manifest_raw = _read_canonical_object(root / "run_manifest.json", "run manifest")
     receipt, receipt_raw = _read_canonical_object(root / "receipt.json", "run receipt")
@@ -363,6 +389,7 @@ def _publication_receipt(
         },
         "run_manifest_sha256": run_evidence["run_manifest_sha256"],
         "run_receipt_sha256": run_evidence["run_receipt_sha256"],
+        "member_artifact_sha256": dict(run_evidence["artifact_sha256"]),
         "materializer_sha256": dict(materializer_evidence),
         "publisher_source_sha256": _sha_file(Path(__file__)),
         "fresh_oos": {
@@ -428,8 +455,49 @@ def _write_new_canonical(path: Path, value: Mapping[str, Any]) -> None:
             handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
+        _fsync_directory_if_supported(path.parent)
     except Exception as exc:
         raise Type1PublicationError("indeterminate publication receipt create; retry recovery is required") from exc
+
+def _fsync_rename_parent_directories(source_parent: Path, destination_parent: Path) -> None:
+    seen: set[Path] = set()
+    for parent in (source_parent, destination_parent):
+        key = parent.absolute()
+        if key in seen:
+            continue
+        seen.add(key)
+        _fsync_directory_if_supported(parent)
+
+
+def _fsync_directory_if_supported(path: Path) -> None:
+    if not path.is_dir():
+        raise Type1PublicationError("publication directory is missing")
+    _reject_existing_indirection(path)
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_DIRECTORY", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        if _is_unsupported_directory_fsync(exc):
+            return
+        raise Type1PublicationError("publication directory cannot be opened for fsync") from exc
+    try:
+        try:
+            os.fsync(fd)
+        except OSError as exc:
+            if _is_unsupported_directory_fsync(exc):
+                return
+            raise Type1PublicationError("publication directory fsync failed") from exc
+    finally:
+        os.close(fd)
+
+
+def _is_unsupported_directory_fsync(exc: OSError) -> bool:
+    unsupported = {errno.EINVAL, errno.EBADF, errno.EACCES, errno.EPERM}
+    for name in ("ENOTSUP", "EOPNOTSUPP"):
+        value = getattr(errno, name, None)
+        if value is not None:
+            unsupported.add(value)
+    return exc.errno in unsupported
 
 
 def _require_same_volume(source: Path, destination_parent: Path) -> None:

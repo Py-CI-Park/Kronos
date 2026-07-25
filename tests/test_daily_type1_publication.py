@@ -191,10 +191,19 @@ def test_success_moves_once_and_writes_canonical_publication_receipt(tmp_path: P
     assert result["mode"] == "PUBLISHED"
     assert not source.exists()
     assert destination.is_dir()
+    assert {path.name for path in destination.iterdir()} == {
+        "receipt.json",
+        "run_manifest.json",
+        "primary",
+        "shuffled_reward",
+        publication.PUBLICATION_RECEIPT_NAME,
+    }
     receipt_path = destination / publication.PUBLICATION_RECEIPT_NAME
     receipt_raw = receipt_path.read_bytes()
     receipt = json.loads(receipt_raw.decode("utf-8"))
     assert canonical_json_bytes(receipt) == receipt_raw
+    assert receipt["schema_version"] == publication.PUBLICATION_SCHEMA_VERSION
+    assert receipt["role"] == publication.PUBLICATION_ROLE
     assert receipt["source_logical_path"] == publication.SOURCE_LOGICAL_PATH
     assert receipt["destination_logical_path"] == publication.DESTINATION_LOGICAL_PATH
     assert receipt["move_contract"] == {
@@ -209,6 +218,8 @@ def test_success_moves_once_and_writes_canonical_publication_receipt(tmp_path: P
         "read_performed": False,
     }
     assert receipt["materializer_sha256"]["dataset_manifest_sha256"] == hashlib.sha256((parent / "dataset_manifest.json").read_bytes()).hexdigest()
+    assert len(receipt["member_artifact_sha256"]) == 20
+    assert receipt["member_artifact_sha256"]["primary/seed_0/final_model.zip"] == hashlib.sha256(b"primary-0-final-model").hexdigest()
     assert receipt["publisher_source_sha256"] == hashlib.sha256(Path(publication.__file__).read_bytes()).hexdigest()
 
 
@@ -305,6 +316,71 @@ def test_exact_retry_recovery_accepts_source_absent_destination_with_valid_recei
     assert not source.exists()
     assert destination.is_dir()
 
+
+def test_rename_before_postcheck_crash_recovers_with_pre_move_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    parent = _materialization_parent(tmp_path)
+    source = tmp_path / "artifacts" / "type1-public-runs" / publication.REPLACEMENT_RUN_ID
+    destination = parent / publication.REPLACEMENT_RUN_ID
+    _write_run(source)
+    original_rename = publication.os.rename
+
+    def crash_after_rename(src: Path, dst: Path) -> None:
+        original_rename(src, dst)
+        raise RuntimeError("simulated crash immediately after rename")
+
+    monkeypatch.setattr(publication.os, "rename", crash_after_rename)
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        _publish(source, destination)
+
+    assert not source.exists()
+    assert destination.is_dir()
+    receipt_before = (destination / publication.PUBLICATION_RECEIPT_NAME).read_bytes()
+
+    monkeypatch.setattr(publication.os, "rename", original_rename)
+    recovered = _publish(source, destination)
+
+    assert recovered["mode"] == "RECOVERED"
+    assert recovered["publication_receipt_sha256"] == hashlib.sha256(receipt_before).hexdigest()
+    assert (destination / publication.PUBLICATION_RECEIPT_NAME).read_bytes() == receipt_before
+
+
+@pytest.mark.parametrize("extra_name,is_dir", [("unexpected.txt", False), ("unexpected_dir", True)])
+def test_unexpected_top_level_staging_content_blocks_before_receipt_creation(tmp_path: Path, extra_name: str, is_dir: bool) -> None:
+    parent = _materialization_parent(tmp_path)
+    source = tmp_path / "artifacts" / "type1-public-runs" / publication.REPLACEMENT_RUN_ID
+    destination = parent / publication.REPLACEMENT_RUN_ID
+    _write_run(source)
+    extra = source / extra_name
+    if is_dir:
+        extra.mkdir()
+    else:
+        extra.write_text("unexpected", encoding="utf-8")
+
+    with pytest.raises(publication.Type1PublicationError, match="top-level entries"):
+        _publish(source, destination)
+
+    assert source.is_dir()
+    assert extra.exists()
+    assert not (source / publication.PUBLICATION_RECEIPT_NAME).exists()
+    assert not destination.exists()
+
+
+def test_unexpected_top_level_destination_content_blocks_recovery_without_delete(tmp_path: Path) -> None:
+    parent = _materialization_parent(tmp_path)
+    source = tmp_path / "artifacts" / "type1-public-runs" / publication.REPLACEMENT_RUN_ID
+    destination = parent / publication.REPLACEMENT_RUN_ID
+    _write_run(source)
+    _publish(source, destination)
+    receipt_before = (destination / publication.PUBLICATION_RECEIPT_NAME).read_bytes()
+    extra = destination / "unexpected.txt"
+    extra.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(publication.Type1PublicationError, match="top-level entries"):
+        _publish(source, destination)
+
+    assert extra.read_text(encoding="utf-8") == "keep"
+    assert (destination / publication.PUBLICATION_RECEIPT_NAME).read_bytes() == receipt_before
 
 def test_retry_with_mismatched_publication_receipt_blocks(tmp_path: Path) -> None:
     parent = _materialization_parent(tmp_path)
