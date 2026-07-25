@@ -7,18 +7,43 @@ from flask import Flask
 
 import webui.v6_platform_api as api
 from stom_rl.daily_v1_type1_report import (
-    IDENTITY, LOCKS, POLICY, REPORT_CLAIMS, REPORT_RESULT, commit_report_tip,
+    IDENTITY, LOCKS, POLICY, REPORT_RESULT, commit_report_tip,
     insert_report_revision, materialize_report_revision, report_source_sha256,
 )
+from tests.test_daily_v1_type1_report import _prepare_recovered_runner
+
+
+_AUTHORITY_SCHEMA = "kronos.type1.krx-public-authority.v2"
+
+
+def _install_synthetic_authority(monkeypatch):
+    import stom_rl.daily_type1_authority as authority_module
+
+    def validate_authority(envelope):
+        if (
+            not isinstance(envelope, dict)
+            or set(envelope) != {"authority", "integrity", "schema"}
+            or envelope.get("schema") != _AUTHORITY_SCHEMA
+            or envelope.get("authority", {}).get("authority_id") != IDENTITY["authority_id"]
+            or envelope.get("authority", {}).get("fresh_oos") != {"status": "NOT_RUN", "no_read": True}
+        ):
+            raise ValueError("synthetic authority envelope is invalid")
+
+    monkeypatch.setattr(authority_module, "validate_authority", validate_authority)
+    monkeypatch.setattr(authority_module, "canonical_json", type1_report._canonical)
+    monkeypatch.setattr(
+        authority_module,
+        "sha256_canonical",
+        lambda value: type1_report._sha(type1_report._canonical(value)),
+    )
 
 
 def _revision(run, revision_id="type1-r0001", revision_ordinal=1, failure="EXPECTED_FAILURE"):
     sources = report_source_sha256(run)
-    evidence = {label: sources[label] for label in (
-        "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent",
-        "publication_receipt", "amendment", "protocol", "preregistration",
-        "authority", "builder_source",
-    )}
+    evidence = {
+        label: sources[label]
+        for label in type1_report._report_evidence_labels_for_sources(sources)
+    }
     return {
         "schema_version": "kronos_type1_report_revision.v2",
         "revision_id": revision_id,
@@ -29,7 +54,7 @@ def _revision(run, revision_id="type1-r0001", revision_ordinal=1, failure="EXPEC
         "source_sha256": sources,
         "evidence": evidence,
         "false_research_locks": LOCKS,
-        "claims": REPORT_CLAIMS,
+        "claims": type1_report._report_claims_for_sources(sources),
     }
 
 def _write_report_sources(run):
@@ -197,13 +222,19 @@ def _write_report_sources(run):
     ))
     report_source_sha256(run)
 
-def _client(monkeypatch, tmp_path):
+def _client(monkeypatch, tmp_path, *, recovered=False):
     root = tmp_path / "runs"
     old_run = root / "type1-close-20260803-001" / "train_type1-public-001"
+
     old_run.parent.mkdir(parents=True)
     run = root / IDENTITY["dataset_id"] / IDENTITY["train_run_id"]
     run.mkdir(parents=True)
-    _write_report_sources(run)
+    if recovered:
+        _install_synthetic_authority(monkeypatch)
+        _prepare_recovered_runner(run)
+        type1_report.initialize_report_authority(run, run / "frozen_authority_envelope.json")
+    else:
+        _write_report_sources(run)
     first = insert_report_revision(run, _revision(run))
     first_materialization = materialize_report_revision(run, first["event_sha256"])
     second = insert_report_revision(run, _revision(run, "type1-r0002", 2, "SECOND_EXPECTED_FAILURE"))
@@ -293,6 +324,133 @@ def test_replacement_type1_catalog_is_revision_complete_and_preserves_old_attemp
         assert blocked.status_code == 409
         assert blocked.get_json()["reason"] == "PRESERVED_INELIGIBLE_REPORT_NOT_SERVABLE"
     assert not old_run.exists() and run.name == IDENTITY["train_run_id"]
+
+
+def test_recovered_type1_lifecycle_run_and_detail_project_complete_no_go_evidence(monkeypatch, tmp_path):
+    client, _, _, _ = _client(monkeypatch, tmp_path, recovered=True)
+
+    runs_payload = client.get("/api/v6/runs").get_json()
+    type1_run = runs_payload["runs"][0]
+    detail = client.get(
+        f"/api/v6/run-detail?dataset={IDENTITY['dataset_id']}&train={IDENTITY['train_run_id']}"
+    ).get_json()
+    manifest = detail["manifest"]
+    status = client.get("/api/v6/status").get_json()
+
+    assert runs_payload["training_state"] == "HAS_RUNS"
+    assert status["journey"]["training"]["state"] == "HAS_RUNS"
+    assert status["journey"]["evaluation"]["state"] == "TEST_NOT_RUN"
+    assert type1_run["dataset_run_id"] == "type1-close-20260803-005"
+    assert type1_run["run_id"] == "train_type1-public-005"
+    assert type1_run["family"] == "TYPE1"
+    assert type1_run["state"] == type1_run["execution_status"] == "COMPLETE"
+    assert type1_run["verdict"] == type1_run["verdict_candidate"]["value"] == "NO_GO"
+    assert type1_run["evidence_mode"] == "RECOVERED_AFTER_BLOCK"
+    assert type1_run["primary_seeds"] == type1_run["shuffled_reward_seeds"] == [0, 1, 2, 3, 4]
+    assert type1_run["seed_counts"] == {"primary": 5, "shuffled_reward": 5}
+    assert type1_run["timesteps_per_seed"] == 200000
+    assert type1_run["fresh_oos"] == {"state": "NOT_RUN", "read_performed": False, "no_read": True}
+    assert type1_run["training_state"] == "COMPLETE"
+    assert type1_run["evaluation_state"] == "TEST_NOT_RUN"
+
+    assert detail["status"] == "OK"
+    assert detail["state"] == detail["execution_status"] == "COMPLETE"
+    assert detail["verdict"] == "NO_GO"
+    assert detail["evidence_mode"] == "RECOVERED_AFTER_BLOCK"
+    assert detail["states"] == {
+        "training_state": "COMPLETE",
+        "validation_state": "REUSED_VALIDATION_COMPLETE",
+        "test_state": "NOT_RUN",
+        "evaluation_state": "TEST_NOT_RUN",
+    }
+    assert manifest["schema_version"] == "kronos_type1_lifecycle_projection.v1"
+    assert manifest["family"] == "TYPE1"
+    assert manifest["state"] == manifest["execution_status"] == "COMPLETE"
+    assert manifest["verdict_candidate"]["value"] == "NO_GO"
+    assert manifest["verdict_candidate"]["outcome"] == "NO_GO_ONLY"
+    assert "RECOVERED_AFTER_BLOCK" in manifest["verdict_candidate"]["reasons"]
+    assert manifest["original_block"]["status"] == "BLOCK"
+    assert manifest["original_block"]["reason"] == "conversion from numpy.int8 to Decimal is not supported"
+    assert manifest["original_block_preserved"] is True
+    assert manifest["retraining_performed"] is False
+    assert manifest["test"] == {"state": "NOT_RUN", "read_performed": False, "no_read": True}
+    assert manifest["fresh_oos"] == {"state": "NOT_RUN", "read_performed": False, "no_read": True}
+    assert "metrics" not in manifest["fresh_oos"]
+    assert len(manifest["per_seed"]) == len(manifest["shuffled_label_control"]) == 5
+    assert [seed["actual_sb3_timesteps"] for seed in manifest["per_seed"].values()] == [200000] * 5
+    assert [seed["actual_sb3_timesteps"] for seed in manifest["shuffled_label_control"].values()] == [200000] * 5
+    assert manifest["aggregation"]["metric"] == "FIVE_SEED_IQM"
+    assert manifest["controls"]["integrity_ok"] is True
+    assert manifest["claims"]["outcome"] == "NO_GO_ONLY"
+    assert "fresh_oos_metrics" not in json.dumps(manifest, sort_keys=True)
+
+
+def test_type1_lifecycle_projection_fails_closed_on_missing_and_tampered_custody(monkeypatch, tmp_path):
+    import shutil
+
+    client, run, _, _ = _client(monkeypatch, tmp_path, recovered=True)
+    prepared_root = run.parents[1]
+    cases = {}
+    for tamper in ("missing_recovery_receipt", "tampered_recovery_manifest"):
+        case_root = tmp_path / tamper
+        shutil.copytree(prepared_root, case_root)
+        case_run = case_root / IDENTITY["dataset_id"] / IDENTITY["train_run_id"]
+        if tamper == "missing_recovery_receipt":
+            (case_run / "recovery_receipt.json").unlink()
+        else:
+            recovery_manifest = json.loads((case_run / "recovery_manifest.json").read_text(encoding="utf-8"))
+            recovery_manifest["training"]["timesteps_per_seed"] = 100
+            (case_run / "recovery_manifest.json").write_text(json.dumps(recovery_manifest), encoding="utf-8")
+        cases[tamper] = case_root
+
+    for case_root in cases.values():
+        monkeypatch.setattr(api, "RUNS_ROOT", case_root)
+        runs = client.get("/api/v6/runs").get_json()["runs"]
+        detail = client.get(
+            f"/api/v6/run-detail?dataset={IDENTITY['dataset_id']}&train={IDENTITY['train_run_id']}"
+        ).get_json()
+
+        assert not any(run["dataset_run_id"] == IDENTITY["dataset_id"] for run in runs)
+        assert detail["status"] == "BLOCKED"
+        assert detail["reason"] == "TYPE1_CATALOG_INVALID"
+        assert detail["manifest"] == {}
+
+
+
+def test_type1_lifecycle_fails_closed_when_authority_verifier_is_missing(monkeypatch, tmp_path):
+    import stom_rl.daily_type1_authority as authority_module
+
+    client, _, _, first_materialization = _client(monkeypatch, tmp_path, recovered=True)
+    calls = {"count": 0}
+
+    def missing_rfc8785(_value):
+        calls["count"] += 1
+        raise authority_module.AuthorityError("rfc8785 is required to verify an authority artifact")
+
+    monkeypatch.setattr(authority_module, "canonical_json", missing_rfc8785)
+
+    runs = client.get("/api/v6/runs").get_json()["runs"]
+    detail = client.get(
+        f"/api/v6/run-detail?dataset={IDENTITY['dataset_id']}&train={IDENTITY['train_run_id']}"
+    ).get_json()
+    report_entry = client.get(
+        f"/api/v6/reports?dataset={IDENTITY['dataset_id']}&train={IDENTITY['train_run_id']}"
+    ).get_json()["reports"][0]
+    report = client.get(
+        f"/api/v6/report-html?dataset={IDENTITY['dataset_id']}&train={IDENTITY['train_run_id']}"
+        f"&report_sha256={first_materialization['html_sha256']}"
+    )
+
+    assert calls["count"] >= 1
+    assert not any(run["dataset_run_id"] == IDENTITY["dataset_id"] for run in runs)
+    assert detail["status"] == "BLOCKED"
+    assert detail["reason"] == "TYPE1_CATALOG_INVALID"
+    assert detail["manifest"] == {}
+    assert report_entry["availability"] == "BLOCKED"
+    assert report_entry["integrity_reasons"] == ["TYPE1_CATALOG_INVALID"]
+    assert report_entry["revisions"] == []
+    assert report.status_code == 409
+    assert report.get_json()["reason"] == "TYPE1_CATALOG_INVALID"
 
 
 @pytest.mark.parametrize(

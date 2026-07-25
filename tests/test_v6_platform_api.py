@@ -461,6 +461,69 @@ def test_v6_runs_lists_dataset_manifest(client, monkeypatch, tmp_path) -> None:
     }]
 
 
+def test_v6_runs_excludes_preserved_type1_lineages_and_preserves_m3e_runs(client, monkeypatch, tmp_path) -> None:
+    runs_root = tmp_path / "runs"
+    old_type1 = runs_root / "type1-close-20260803-001" / "train_type1-public-001"
+    old_type1.mkdir(parents=True)
+    (old_type1 / "run_manifest.json").write_text(
+        json.dumps({"state": "COMPLETE", "test": {"state": "NOT_RUN"}, "verdict_candidate": {"value": "NO_GO"}}),
+        encoding="utf-8",
+    )
+    for dataset_id in (
+        "type1-close-20260803-001",
+        "type1-close-20260803-002",
+        "type1-close-20260803-003",
+        "type1-close-20260803-004",
+        "type1-close-20260803-005",
+        "ordinary-dataset-1",
+        "v8-m3e-20260721-001",
+    ):
+        dataset_manifest_path = runs_root / dataset_id / "dataset_manifest.json"
+        dataset_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_manifest_path.write_text(
+            json.dumps({
+                "dataset_id": dataset_id,
+                "generated_utc": "2026-07-24T00:00:00Z",
+                "split_row_counts": {"train": 10},
+            }),
+            encoding="utf-8",
+        )
+    m3e_manifest_path = runs_root / "v8-m3e-20260721-001" / "train_20260721T154052Z" / "run_manifest.json"
+    m3e_manifest_path.parent.mkdir(parents=True)
+    m3e_manifest = {
+        "schema_version": "kronos_v8_m3e_validation_run.v1",
+        "state": "COMPLETE",
+        "seeds": [0, 1, 2, 3, 4],
+        "members": [{"seed": seed} for seed in range(5)],
+        "ensemble": {},
+        "jackknives": {},
+        "test": {"state": "NOT_RUN"},
+        "verdict": {"value": "NO_GO"},
+    }
+    m3e_manifest_path.write_text(json.dumps(m3e_manifest), encoding="utf-8")
+    monkeypatch.setattr(v6_platform_api, "RUNS_ROOT", runs_root)
+
+    payload = client.get("/api/v6/runs").get_json()
+
+    assert {dataset["run_id"] for dataset in payload["datasets"]} == {
+        "type1-close-20260803-005",
+        "ordinary-dataset-1",
+        "v8-m3e-20260721-001",
+    }
+
+    assert [(run["dataset_run_id"], run["run_id"]) for run in payload["runs"]] == [
+        ("v8-m3e-20260721-001", "train_20260721T154052Z")
+    ]
+    m3e = payload["runs"][0]
+    assert m3e["path"] == m3e_manifest_path.as_posix()
+    assert m3e["state"] == "COMPLETE"
+    assert m3e["seeds"] == [0, 1, 2, 3, 4]
+    assert m3e["training_state"] == "COMPLETE"
+    assert m3e["validation_state"] == "REUSED_VALIDATION_COMPLETE"
+    assert m3e["evaluation_state"] == "TEST_NOT_RUN"
+    assert "family" not in m3e and "report_family" not in m3e
+
+
 def _write_report(runs_root, dataset="dataset-r1", train="train-r1", verdict="NO_GO"):
     run_dir = runs_root / dataset / train
     run_dir.mkdir(parents=True)

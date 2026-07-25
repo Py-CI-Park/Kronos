@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import math
 import re
 import sqlite3
 import stat
@@ -64,6 +65,16 @@ TYPE1_PRESERVED_ATTEMPTS: Final = (
     ("type1-close-20260803-003", "type1-public-003", "train_type1-public-003", "NON_MATERIALIZED_INELIGIBLE"),
     ("type1-close-20260803-004", "type1-public-004", "train_type1-public-004", "MATERIALIZED_NOT_TRAINED_QUARANTINED"),
 )
+TYPE1_SEEDS: Final = (0, 1, 2, 3, 4)
+TYPE1_TIMESTEPS_PER_SEED: Final = 200_000
+TYPE1_LIFECYCLE_SCHEMA: Final = "kronos_type1_lifecycle_projection.v1"
+TYPE1_ORIGINAL_BLOCK_REASON: Final = "conversion from numpy.int8 to Decimal is not supported"
+TYPE1_RECOVERY_SOURCE_FILES: Final = {
+    "blocked_receipt": "receipt.json",
+    "recovery_manifest": "recovery_manifest.json",
+    "recovery_receipt": "recovery_receipt.json",
+    "publication_receipt": "publication_receipt.json",
+}
 
 
 def _response(payload: Mapping[str, Any], status_code: int = 200) -> Response:
@@ -544,11 +555,29 @@ def _guarded_read(root: Path, *parts: str, maximum_bytes: int) -> tuple[bytes | 
     return raw, None
 
 
+def _type1_is_replacement_identity(dataset_run_id: str, train_run_id: str) -> bool:
+    return (
+        dataset_run_id == TYPE1_REPLACEMENT_IDENTITY["dataset_id"]
+        and train_run_id == TYPE1_REPLACEMENT_IDENTITY["train_run_id"]
+    )
+
+
+def _type1_is_preserved_attempt(dataset_run_id: str, train_run_id: str) -> bool:
+    return any(
+        dataset_run_id == dataset_id and train_run_id == preserved_train_run_id
+        for dataset_id, _, preserved_train_run_id, _ in TYPE1_PRESERVED_ATTEMPTS
+    )
+
+
+def _type1_is_preserved_dataset(dataset_run_id: str) -> bool:
+    return any(dataset_run_id == dataset_id for dataset_id, _, _, _ in TYPE1_PRESERVED_ATTEMPTS)
+
+
+def _type1_is_managed_identity(dataset_run_id: str, train_run_id: str) -> bool:
+    return _type1_is_replacement_identity(dataset_run_id, train_run_id) or _type1_is_preserved_attempt(dataset_run_id, train_run_id)
+
 def _type1_report_dir(dataset_run_id: str, train_run_id: str) -> Path | None:
-    if (
-        dataset_run_id != TYPE1_REPLACEMENT_IDENTITY["dataset_id"]
-        or train_run_id != TYPE1_REPLACEMENT_IDENTITY["train_run_id"]
-    ):
+    if not _type1_is_replacement_identity(dataset_run_id, train_run_id):
         return None
     run_dir = _safe_contained_dir(RUNS_ROOT, dataset_run_id, train_run_id)
     return run_dir if run_dir is not None and _safe_contained_dir(run_dir, "type1_reports") is not None else None
@@ -556,9 +585,13 @@ def _type1_report_dir(dataset_run_id: str, train_run_id: str) -> Path | None:
 
 def _type1_catalog_snapshot(run_dir: Path) -> tuple[dict[str, Any] | None, list[str]]:
     try:
-        from stom_rl.daily_v1_type1_report import Type1ReportError, verify_report_catalog
-        snapshot = verify_report_catalog(run_dir)
-    except (ImportError, Type1ReportError, OSError, ValueError):
+        from stom_rl import daily_v1_type1_report as type1_report
+    except ImportError:
+        return None, ["TYPE1_CATALOG_INVALID"]
+
+    try:
+        snapshot = type1_report.verify_report_catalog(run_dir)
+    except (type1_report.Type1ReportError, OSError, ValueError):
         return None, ["TYPE1_CATALOG_INVALID"]
     return (snapshot, []) if snapshot.get("state") == "COMMITTED" else (None, ["TYPE1_COMMITTED_TIP_MISSING"])
 
@@ -579,6 +612,383 @@ def _type1_materializations(run_dir: Path) -> tuple[list[dict[str, Any]] | None,
             return None, ["TYPE1_REPLACEMENT_IDENTITY_MISMATCH"]
         rows.append({"revision": dict(revision), "revision_event_sha256": revision_event_sha, "materialization": dict(materialization), "materialization_event_sha256": materialization_event_sha})
     return rows, []
+def _type1_sha(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _type1_float(value: object) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    return amount if math.isfinite(amount) else None
+
+
+def _type1_fresh_oos_no_read(value: object) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and value.get("state") == "NOT_RUN"
+        and value.get("read_performed") is False
+        and value.get("metrics") is None
+    )
+
+
+def _type1_verified_source_json(
+    run_dir: Path,
+    source_hashes: Mapping[str, Any],
+    source_label: str,
+    filename: str,
+) -> tuple[dict[str, Any] | None, str | None, str | None]:
+    expected_sha = source_hashes.get(source_label)
+    if not _type1_sha(expected_sha):
+        return None, None, f"TYPE1_{source_label.upper()}_SOURCE_MISSING"
+    raw, error = _guarded_read(run_dir, filename, maximum_bytes=TYPE1_MAX_OBJECT_BYTES)
+    if error == "TOO_LARGE":
+        return None, None, f"TYPE1_{source_label.upper()}_TOO_LARGE"
+    if raw is None:
+        return None, None, f"TYPE1_{source_label.upper()}_MISSING"
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if actual_sha != expected_sha:
+        return None, None, f"TYPE1_{source_label.upper()}_SHA_MISMATCH"
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, None, f"TYPE1_{source_label.upper()}_INVALID"
+    if not isinstance(value, Mapping):
+        return None, None, f"TYPE1_{source_label.upper()}_INVALID"
+    return dict(value), actual_sha, None
+
+
+def _type1_verified_recovery_evidence(run_dir: Path) -> tuple[dict[str, Any] | None, list[str]]:
+    snapshot, reasons = _type1_catalog_snapshot(run_dir)
+    if snapshot is None:
+        return None, reasons
+    revision = snapshot.get("revision")
+    materialization = snapshot.get("materialization")
+    source_hashes = revision.get("source_sha256") if isinstance(revision, Mapping) else None
+    if not isinstance(revision, Mapping) or not isinstance(materialization, Mapping) or not isinstance(source_hashes, Mapping):
+        return None, ["TYPE1_RECOVERY_SOURCE_EVIDENCE_MISSING"]
+    if not set(TYPE1_RECOVERY_SOURCE_FILES) <= set(source_hashes):
+        return None, ["TYPE1_RECOVERED_AFTER_BLOCK_EVIDENCE_MISSING"]
+
+    objects: dict[str, Any] = {"snapshot": dict(snapshot), "source_sha256": dict(source_hashes)}
+    for source_label, filename in TYPE1_RECOVERY_SOURCE_FILES.items():
+        value, digest, reason = _type1_verified_source_json(run_dir, source_hashes, source_label, filename)
+        if reason is not None or value is None or digest is None:
+            return None, [reason or "TYPE1_RECOVERY_EVIDENCE_INVALID"]
+        objects[source_label] = value
+        objects[f"{source_label}_sha256"] = digest
+
+    manifest = objects["recovery_manifest"]
+    recovery_receipt = objects["recovery_receipt"]
+    publication_receipt = objects["publication_receipt"]
+    blocked_receipt = objects["blocked_receipt"]
+    identities = manifest.get("identities")
+    training = manifest.get("training")
+    members = manifest.get("members")
+    aggregation = manifest.get("aggregation")
+    controls = manifest.get("controls")
+    original_block = manifest.get("original_block")
+    claims = manifest.get("claims")
+    if (
+        manifest.get("schema_version") != "kronos_type1_g002_public_run_recovery.v1"
+        or manifest.get("role") != "TYPE1_PUBLIC_RUN_RECOVERY"
+        or manifest.get("status") != "COMPLETE"
+        or manifest.get("recovery_status") != "COMPLETE"
+        or manifest.get("recovery_mode") != "APPEND_ONLY_REEVALUATE_SAVED_MODELS"
+        or manifest.get("original_run_id") != TYPE1_REPLACEMENT_IDENTITY["train_run_id"]
+        or manifest.get("reused_original_run_id") is not True
+        or manifest.get("execution_status") != "COMPLETE"
+        or manifest.get("verdict") != "NO_GO"
+        or manifest.get("decision") != "NO_GO"
+        or not isinstance(identities, Mapping)
+        or any(identities.get(key) != value for key, value in TYPE1_REPLACEMENT_IDENTITY.items())
+        or not isinstance(training, Mapping)
+        or training.get("primary_seeds") != list(TYPE1_SEEDS)
+        or training.get("shuffled_reward_seeds") != list(TYPE1_SEEDS)
+        or training.get("timesteps_per_seed") != TYPE1_TIMESTEPS_PER_SEED
+        or training.get("retraining_performed") is not False
+        or not isinstance(members, Mapping)
+        or set(members) != {"primary", "shuffled_reward"}
+        or not isinstance(aggregation, Mapping)
+        or aggregation.get("metric") != "FIVE_SEED_IQM"
+        or not isinstance(controls, Mapping)
+        or controls.get("integrity_ok") is not True
+        or not isinstance(original_block, Mapping)
+        or original_block.get("status") != "BLOCK"
+        or original_block.get("execution_status") != "BLOCK"
+        or original_block.get("verdict") != "NO_GO"
+        or original_block.get("reason") != TYPE1_ORIGINAL_BLOCK_REASON
+        or original_block.get("preserved_byte_identical") is not True
+        or not _type1_fresh_oos_no_read(original_block.get("fresh_oos"))
+        or not _type1_fresh_oos_no_read(manifest.get("fresh_oos"))
+        or manifest.get("false_research_locks") != SIX_FALSE_LOCKS
+        or claims != {"profitability": "NOT_CLAIMED", "live": "NOT_CLAIMED", "fresh_oos": "NOT_RUN_NO_READ", "outcome": "NO_GO_ONLY"}
+    ):
+        return None, ["TYPE1_RECOVERY_MANIFEST_CONTRACT_MISMATCH"]
+
+    expected_seed_keys = {str(seed) for seed in TYPE1_SEEDS}
+    for family in ("primary", "shuffled_reward"):
+        family_members = members.get(family)
+        if not isinstance(family_members, Mapping) or set(family_members) != expected_seed_keys:
+            return None, ["TYPE1_RECOVERY_MEMBER_EVIDENCE_MISMATCH"]
+        for seed in TYPE1_SEEDS:
+            member = family_members.get(str(seed))
+            if (
+                not isinstance(member, Mapping)
+                or member.get("seed") != seed
+                or member.get("timesteps") != TYPE1_TIMESTEPS_PER_SEED
+                or member.get("actual_sb3_timesteps") != TYPE1_TIMESTEPS_PER_SEED
+                or member.get("artifact") != "FINAL_MODEL_ONLY"
+                or not isinstance(member.get("artifacts"), Mapping)
+                or not isinstance(member.get("reload_receipt"), Mapping)
+            ):
+                return None, ["TYPE1_RECOVERY_MEMBER_EVIDENCE_MISMATCH"]
+
+    publication_disclosure = publication_receipt.get("disclosure")
+    if (
+        recovery_receipt.get("schema_version") != "kronos.type1.public-run-recovery-receipt.v1"
+        or recovery_receipt.get("role") != "TYPE1_PUBLIC_RUN_RECOVERY_RECEIPT"
+        or recovery_receipt.get("status") != "COMPLETE"
+        or recovery_receipt.get("execution_status") != "COMPLETE"
+        or recovery_receipt.get("verdict") != "NO_GO"
+        or recovery_receipt.get("decision") != "NO_GO"
+        or recovery_receipt.get("run_id") != TYPE1_REPLACEMENT_IDENTITY["train_run_id"]
+        or recovery_receipt.get("recovery_manifest_sha256") != objects["recovery_manifest_sha256"]
+        or recovery_receipt.get("blocked_receipt_sha256") != objects["blocked_receipt_sha256"]
+        or recovery_receipt.get("blocked_reason") != TYPE1_ORIGINAL_BLOCK_REASON
+        or recovery_receipt.get("original_block_preserved") is not True
+        or recovery_receipt.get("retraining_performed") is not False
+        or recovery_receipt.get("outcome") != "NO_GO_ONLY"
+        or not _type1_fresh_oos_no_read(recovery_receipt.get("fresh_oos"))
+        or publication_receipt.get("schema_version") != "kronos.type1.publication-receipt.v2"
+        or publication_receipt.get("role") != "TYPE1_PUBLICATION_RECEIPT"
+        or publication_receipt.get("status") != "COMPLETE"
+        or publication_receipt.get("verdict") != "NO_GO"
+        or publication_receipt.get("mode") != "recovered"
+        or publication_receipt.get("run_evidence_mode") != "RECOVERED_AFTER_BLOCK"
+        or publication_receipt.get("original_block_reason") != TYPE1_ORIGINAL_BLOCK_REASON
+        or publication_receipt.get("preserved_block_receipt") is not True
+        or publication_receipt.get("retraining_performed") is not False
+        or not _type1_fresh_oos_no_read(publication_receipt.get("fresh_oos"))
+        or publication_receipt.get("false_research_locks") != SIX_FALSE_LOCKS
+        or not isinstance(publication_disclosure, Mapping)
+        or publication_disclosure.get("recovery_manifest_sha256") != objects["recovery_manifest_sha256"]
+        or publication_disclosure.get("blocked_receipt_sha256") != objects["blocked_receipt_sha256"]
+        or not isinstance(publication_disclosure.get("members"), Mapping)
+    ):
+        return None, ["TYPE1_RECOVERY_PUBLICATION_CONTRACT_MISMATCH"]
+    if blocked_receipt != {
+        "execution_status": "BLOCK",
+        "fresh_oos": {"metrics": None, "state": "NOT_RUN"},
+        "reason": TYPE1_ORIGINAL_BLOCK_REASON,
+        "verdict": "NO_GO",
+    }:
+        return None, ["TYPE1_ORIGINAL_BLOCK_RECEIPT_MISMATCH"]
+    return objects, []
+
+
+def _type1_member_projection(member: Mapping[str, Any]) -> dict[str, Any]:
+    validation = member.get("validation")
+    validation_map = validation if isinstance(validation, Mapping) else {}
+    nav_exact = validation_map.get("nav_krw")
+    nav_float = _type1_float(nav_exact)
+    final_metrics: dict[str, Any] = {}
+    if nav_float is not None:
+        final_metrics["nav"] = nav_float
+    if nav_exact is not None:
+        final_metrics["nav_krw"] = str(nav_exact)
+    if isinstance(validation_map.get("block_count"), int):
+        final_metrics["block_count"] = validation_map["block_count"]
+    return {
+        "seed": member.get("seed"),
+        "episodes_ran": member.get("actual_sb3_timesteps"),
+        "timesteps": member.get("timesteps"),
+        "actual_sb3_timesteps": member.get("actual_sb3_timesteps"),
+        "device": member.get("device"),
+        "artifact": member.get("artifact"),
+        "artifacts": dict(member["artifacts"]) if isinstance(member.get("artifacts"), Mapping) else {},
+        "reload_receipt": dict(member["reload_receipt"]) if isinstance(member.get("reload_receipt"), Mapping) else {},
+        "validation": {
+            "state": "REUSED_VALIDATION_COMPLETE",
+            "deterministic": validation_map.get("deterministic"),
+            "nav_krw": str(nav_exact) if nav_exact is not None else None,
+        },
+        "final_val_metrics": final_metrics,
+    }
+
+
+def _type1_controls_projection(controls: Mapping[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key in ("integrity_ok", "scientific_gates_pass", "scientific_gate_reasons", "reused_validation_rows", "train_rows"):
+        if key in controls:
+            result[key] = controls[key]
+    shuffle = controls.get("shuffle_retraining")
+    if isinstance(shuffle, Mapping):
+        result["shuffle_retraining"] = {
+            key: shuffle[key]
+            for key in ("all_members_recorded", "seeds", "timesteps_per_seed")
+            if key in shuffle
+        }
+    stop = controls.get("stop_baseline")
+    if isinstance(stop, Mapping):
+        result["stop_baseline"] = {
+            key: stop[key]
+            for key in ("definition", "nav_krw")
+            if key in stop
+        }
+    exposure = controls.get("exposure_matched_random")
+    if isinstance(exposure, Mapping):
+        compact_exposure: dict[str, Any] = {
+            key: exposure[key]
+            for key in ("replications", "seed")
+            if key in exposure
+        }
+        for family in ("primary", "shuffled_reward"):
+            family_value = exposure.get(family)
+            if isinstance(family_value, Mapping):
+                compact_exposure[family] = {
+                    key: family_value[key]
+                    for key in ("actual_iqm_nav_krw", "matched_p95_nav_krw", "gate_pass")
+                    if key in family_value
+                }
+        result["exposure_matched_random"] = compact_exposure
+    bootstrap = controls.get("moving_block_bootstrap")
+    if isinstance(bootstrap, Mapping):
+        result["moving_block_bootstrap"] = {
+            key: {
+                nested_key: nested[nested_key]
+                for nested_key in ("kind", "replications", "seed", "block_length_pairs", "ci_95")
+                if isinstance(nested, Mapping) and nested_key in nested
+            }
+            for key, nested in bootstrap.items()
+            if isinstance(nested, Mapping)
+        }
+    return result
+
+
+def _type1_manifest_projection(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    recovery_manifest = evidence["recovery_manifest"]
+    snapshot = evidence["snapshot"]
+    members = recovery_manifest["members"]
+    controls = recovery_manifest["controls"]
+    stop = controls.get("stop_baseline") if isinstance(controls, Mapping) else None
+    baselines: dict[str, Any] = {}
+    if isinstance(stop, Mapping):
+        nav = _type1_float(stop.get("nav_krw"))
+        baselines["no_trade"] = {
+            "nav": nav,
+            "nav_krw": stop.get("nav_krw"),
+            "source": "recovery_manifest.controls.stop_baseline",
+        }
+    return {
+        "schema_version": TYPE1_LIFECYCLE_SCHEMA,
+        "schema": TYPE1_LIFECYCLE_SCHEMA,
+        "family": "TYPE1",
+        "report_family": "TYPE1",
+        "model_family": "TYPE1",
+        "algorithm": "Sequential MaskablePPO",
+        "algorithm_family": "MASKABLE_PPO",
+        "dataset_run_id": TYPE1_REPLACEMENT_IDENTITY["dataset_id"],
+        "run_id": TYPE1_REPLACEMENT_IDENTITY["train_run_id"],
+        "train_run_id": TYPE1_REPLACEMENT_IDENTITY["train_run_id"],
+        "state": "COMPLETE",
+        "execution_status": "COMPLETE",
+        "training_state": "COMPLETE",
+        "validation_state": "REUSED_VALIDATION_COMPLETE",
+        "evidence_mode": "RECOVERED_AFTER_BLOCK",
+        "recovery_mode": recovery_manifest["recovery_mode"],
+        "original_block": dict(recovery_manifest["original_block"]),
+        "original_block_preserved": True,
+        "retraining_performed": False,
+        "verdict": "NO_GO",
+        "decision": "NO_GO",
+        "verdict_candidate": {
+            "value": "NO_GO",
+            "outcome": "NO_GO_ONLY",
+            "reasons": [
+                "RECOVERED_AFTER_BLOCK",
+                "ORIGINAL_BLOCK_PRESERVED",
+                "NO_RETRAINING_PERFORMED",
+                "FRESH_OOS_NOT_RUN_NO_READ",
+                "REUSED_VALIDATION_NO_GO_ONLY",
+            ],
+        },
+        "test": {"state": "NOT_RUN", "read_performed": False, "no_read": True},
+        "fresh_oos": {"state": "NOT_RUN", "read_performed": False, "no_read": True},
+        "claims": dict(recovery_manifest["claims"]),
+        "seeds": list(TYPE1_SEEDS),
+        "primary_seeds": list(TYPE1_SEEDS),
+        "shuffled_reward_seeds": list(TYPE1_SEEDS),
+        "timesteps_per_seed": TYPE1_TIMESTEPS_PER_SEED,
+        "training": dict(recovery_manifest["training"]),
+        "per_seed": {
+            str(seed): _type1_member_projection(members["primary"][str(seed)])
+            for seed in TYPE1_SEEDS
+        },
+        "shuffled_label_control": {
+            str(seed): _type1_member_projection(members["shuffled_reward"][str(seed)])
+            for seed in TYPE1_SEEDS
+        },
+        "aggregation": dict(recovery_manifest["aggregation"]),
+        "controls": _type1_controls_projection(controls),
+        "baselines": baselines,
+        "false_research_locks": dict(SIX_FALSE_LOCKS),
+        "evidence": {
+            "recovery_manifest_sha256": evidence["recovery_manifest_sha256"],
+            "recovery_receipt_sha256": evidence["recovery_receipt_sha256"],
+            "publication_receipt_sha256": evidence["publication_receipt_sha256"],
+            "blocked_receipt_sha256": evidence["blocked_receipt_sha256"],
+            "report_tip_sha256": snapshot.get("tip_sha256"),
+            "report_sha256": snapshot.get("materialization", {}).get("html_sha256") if isinstance(snapshot.get("materialization"), Mapping) else None,
+        },
+    }
+
+
+def _type1_lifecycle_states() -> dict[str, str]:
+    return {
+        "training_state": "COMPLETE",
+        "validation_state": "REUSED_VALIDATION_COMPLETE",
+        "test_state": "NOT_RUN",
+        "evaluation_state": "TEST_NOT_RUN",
+    }
+
+
+def _type1_run_projection(run_dir: Path) -> tuple[dict[str, Any] | None, list[str]]:
+    evidence, reasons = _type1_verified_recovery_evidence(run_dir)
+    if evidence is None:
+        return None, reasons
+    manifest = evidence["recovery_manifest"]
+    return {
+        "run_id": TYPE1_REPLACEMENT_IDENTITY["train_run_id"],
+        "dataset_run_id": TYPE1_REPLACEMENT_IDENTITY["dataset_id"],
+        "path": _artifact_path(run_dir / "recovery_manifest.json"),
+        "state": "COMPLETE",
+        "execution_status": "COMPLETE",
+        "family": "TYPE1",
+        "report_family": "TYPE1",
+        "model_family": "TYPE1",
+        "algorithm": "Sequential MaskablePPO",
+        "algorithm_family": "MASKABLE_PPO",
+        "evidence_mode": "RECOVERED_AFTER_BLOCK",
+        "recovery_mode": manifest["recovery_mode"],
+        "original_block_preserved": True,
+        "retraining_performed": False,
+        "verdict": "NO_GO",
+        "verdict_candidate": {"value": "NO_GO", "outcome": "NO_GO_ONLY", "reasons": ["RECOVERED_AFTER_BLOCK", "FRESH_OOS_NOT_RUN_NO_READ"]},
+        "fresh_oos": {"state": "NOT_RUN", "read_performed": False, "no_read": True},
+        "seeds": list(TYPE1_SEEDS),
+        "primary_seeds": list(TYPE1_SEEDS),
+        "shuffled_reward_seeds": list(TYPE1_SEEDS),
+        "seed_counts": {"primary": len(TYPE1_SEEDS), "shuffled_reward": len(TYPE1_SEEDS)},
+        "timesteps_per_seed": TYPE1_TIMESTEPS_PER_SEED,
+        "recovery_manifest_sha256": evidence["recovery_manifest_sha256"],
+        "publication_receipt_sha256": evidence["publication_receipt_sha256"],
+        "generated_utc": None,
+        **_type1_lifecycle_states(),
+    }, []
 
 
 def _type1_revision_record(
@@ -998,27 +1408,59 @@ def _report_query() -> tuple[str, str, str | None, bool]:
 
 
 def _run_detail_payload(dataset_run_id: str, train_run_id: str) -> dict[str, Any]:
-    type1_dir = _type1_report_dir(dataset_run_id, train_run_id)
-    if type1_dir is not None:
+    if _type1_is_replacement_identity(dataset_run_id, train_run_id):
+        type1_dir = _type1_report_dir(dataset_run_id, train_run_id)
+        if type1_dir is None:
+            return {"status": "BLOCKED", "reason": "TYPE1_COMMITTED_CATALOG_MISSING"}
         entry = _type1_report_entry(type1_dir)
+        evidence, reasons = _type1_verified_recovery_evidence(type1_dir)
+        if evidence is None:
+            return {
+                "schema_version": "kronos_v6_run_detail.v1",
+                "status": "BLOCKED",
+                "reason": reasons[0] if reasons else "TYPE1_RECOVERY_EVIDENCE_INVALID",
+                "reasons": reasons,
+                "dataset_run_id": dataset_run_id,
+                "train_run_id": train_run_id,
+                "identity": {
+                    "report_family": "TYPE1",
+                    "dataset_id": dataset_run_id,
+                    "train_id": TYPE1_REPLACEMENT_IDENTITY["train_id"],
+                    "train_run_id": train_run_id,
+                    "domain": "kronos.type1",
+                    "algorithm_family": "MASKABLE_PPO",
+                },
+                "report_custody": entry,
+                "manifest": {},
+                "events_tail": [],
+                "events_tail_diagnostics": {"state": "TYPE1_RECOVERY_EVIDENCE_BLOCKED"},
+                "states": {},
+            }
         return {
             "schema_version": "kronos_v6_run_detail.v1",
-            "status": "OK" if entry["availability"] == "COMMITTED" else "BLOCKED",
+            "status": "OK",
             "dataset_run_id": dataset_run_id,
             "train_run_id": train_run_id,
             "identity": {
                 "report_family": "TYPE1",
                 "dataset_id": dataset_run_id,
-                "train_id": train_run_id,
+                "train_id": TYPE1_REPLACEMENT_IDENTITY["train_id"],
                 "train_run_id": train_run_id,
                 "domain": "kronos.type1",
                 "algorithm_family": "MASKABLE_PPO",
             },
+            "state": "COMPLETE",
+            "execution_status": "COMPLETE",
+            "verdict": "NO_GO",
+            "evidence_mode": "RECOVERED_AFTER_BLOCK",
             "report_custody": entry,
-            "manifest": {},
+            "manifest": _type1_manifest_projection(evidence),
+            "manifest_sha256": evidence["recovery_manifest_sha256"],
+            "recovery_manifest_sha256": evidence["recovery_manifest_sha256"],
+            "publication_receipt_sha256": evidence["publication_receipt_sha256"],
             "events_tail": [],
-            "events_tail_diagnostics": {"state": "TYPE1_IMMUTABLE_CATALOG"},
-            "states": {},
+            "events_tail_diagnostics": {"state": "TYPE1_RECOVERED_AFTER_BLOCK", "source": "recovery_manifest"},
+            "states": _type1_lifecycle_states(),
         }
     manifest_path = RUNS_ROOT / dataset_run_id / train_run_id / "run_manifest.json"
     raw, manifest_error = _guarded_read(RUNS_ROOT, dataset_run_id, train_run_id, "run_manifest.json", maximum_bytes=TYPE1_MAX_OBJECT_BYTES)
@@ -1104,9 +1546,15 @@ def _runs_payload() -> dict[str, Any]:
             continue
         if not isinstance(value, Mapping):
             continue
+        dataset_run_id = path.parent.name
+        manifest_dataset_id = value.get("dataset_id")
+        if _type1_is_preserved_dataset(dataset_run_id) or (
+            isinstance(manifest_dataset_id, str) and _type1_is_preserved_dataset(manifest_dataset_id)
+        ):
+            continue
         split_row_counts = value.get("split_row_counts")
         datasets.append({
-            "run_id": path.parent.name,
+            "run_id": dataset_run_id,
             "path": _artifact_path(path),
             "generated_utc": value.get("generated_utc"),
             "split_row_counts": dict(split_row_counts) if isinstance(split_row_counts, Mapping) else {},
@@ -1114,17 +1562,25 @@ def _runs_payload() -> dict[str, Any]:
         })
 
     runs: list[dict[str, Any]] = []
+    type1_dir = _type1_report_dir(TYPE1_REPLACEMENT_IDENTITY["dataset_id"], TYPE1_REPLACEMENT_IDENTITY["train_run_id"])
+    if type1_dir is not None:
+        type1_run, _ = _type1_run_projection(type1_dir)
+        if type1_run is not None:
+            runs.append(type1_run)
     for path in _run_manifest_candidates():
+        dataset_run_id = path.parent.parent.name
+        train_run_id = path.parent.name
+        if _type1_is_managed_identity(dataset_run_id, train_run_id):
+            continue
         if len(runs) == 50:
             break
         value = _read_json(path)
         if value is None:
             continue
         seeds = value.get("seeds")
-        dataset_run_id = path.parent.parent.name
         states = _run_states(value)
         runs.append({
-            "run_id": path.parent.name,
+            "run_id": train_run_id,
             "dataset_run_id": dataset_run_id,
             "path": _artifact_path(path),
             "state": value.get("state"),
