@@ -213,28 +213,28 @@ def _verified_inputs(
     manifest = _read_json_object(manifest_path, "dataset manifest")
     materializer = _read_json_object(materializer_manifest_path, "materializer manifest")
     if (
-        materializer_complete_receipt_path.name != "materializer_complete_receipt.json"
-        or materializer_complete_receipt_path.resolve(strict=False) == materializer_manifest_path.resolve(strict=False)
+        rows_path.name != "public_rows.json"
+        or manifest_path.name != "dataset_manifest.json"
+        or materializer_manifest_path.resolve(strict=False) != manifest_path.resolve(strict=False)
+        or materializer_complete_receipt_path.name != "materializer_complete_receipt.json"
+        or len({
+            rows_path.resolve(strict=False),
+            manifest_path.resolve(strict=False),
+            materializer_complete_receipt_path.resolve(strict=False),
+        }) != 3
+        or not (
+            rows_path.parent.resolve(strict=False)
+            == manifest_path.parent.resolve(strict=False)
+            == materializer_complete_receipt_path.parent.resolve(strict=False)
+        )
     ):
-        raise ValueError("materializer completion receipt must be a physically distinct canonical path")
-    complete_receipt = _read_json_object(materializer_complete_receipt_path, "materializer completion receipt")
-    required_receipt = {
-        "schema_version", "role", "status", "dataset_id", "materializer_manifest_sha256",
-        "rows_sha256", "authority_sha256", "amendment_sha256", "source_hashes",
-        "materializer_source_sha256", "expected", "price_basis", "fresh_oos",
-    }
-    if (
-        set(complete_receipt) != required_receipt
-        or complete_receipt["role"] != "materializer_complete_receipt"
-        or complete_receipt["status"] != "COMPLETE"
-        or complete_receipt["dataset_id"] != REPLACEMENT_DATASET_ID
-        or complete_receipt["materializer_manifest_sha256"] != _file_hash(materializer_manifest_path)
-        or complete_receipt["rows_sha256"] != _file_hash(rows_path)
-        or complete_receipt["authority_sha256"] != _file_hash(authority_path)
-        or complete_receipt["amendment_sha256"] != _file_hash(amendment_path)
-        or complete_receipt["fresh_oos"] != {"state": "NOT_RUN", "read_performed": False}
-    ):
-        raise ValueError("materializer completion receipt does not cross-bind the manifest")
+        raise ValueError("materializer inputs must be the three physically distinct canonical dataset artifacts")
+    from stom_rl.daily_type1_public_data import verify_public_materialization
+
+    verified_materialization = verify_public_materialization(manifest_path.parent)
+    complete_receipt = verified_materialization["receipt"]
+    if verified_materialization["manifest"] != manifest:
+        raise ValueError("verified materializer manifest differs from the supplied canonical manifest")
     required_manifest = {
         "schema_version", "materializer_manifest_schema", "dataset_id", "read_only", "price_basis",
         "official_close", "public_cutoff", "sql_predicates", "source_databases", "source_database_identity",
@@ -246,10 +246,21 @@ def _verified_inputs(
     if set(manifest) != required_manifest or set(materializer) != required_manifest or manifest != materializer:
         raise ValueError("materializer manifest schema or canonical content differs")
     if (
-        complete_receipt["source_hashes"] != manifest["source_hashes"]
+        complete_receipt["authority_sha256"] != _file_hash(authority_path)
+        or complete_receipt["amendment_sha256"] != _file_hash(amendment_path)
+        or complete_receipt["source_database_identity"] != manifest["source_database_identity"]
         or complete_receipt["materializer_source_sha256"] != manifest["materializer_source_sha256"]
-        or complete_receipt["expected"] != manifest["expected"]
+        or complete_receipt["counts"] != {
+            "rows": manifest["row_count"],
+            "split_rows": manifest["split_row_counts"],
+            "split_symbols": manifest["split_symbol_counts"],
+            "expected": manifest["expected"],
+        }
+        or complete_receipt["calendar"] != manifest["authority"]["sessions"]
+        or complete_receipt["public_cutoff"] != manifest["public_cutoff"]
         or complete_receipt["price_basis"] != manifest["price_basis"]
+        or complete_receipt["execution_contract"] != amendment["execution_contract"]
+        or complete_receipt["fresh_oos"] != {"state": "NOT_RUN", "read_performed": False}
     ):
         raise ValueError("materializer completion receipt source bindings differ")
     if manifest["dataset_id"] != REPLACEMENT_DATASET_ID or manifest["materializer_manifest_schema"] != "kronos.type1.public-materializer.v3":

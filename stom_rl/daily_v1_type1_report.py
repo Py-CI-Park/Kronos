@@ -13,6 +13,7 @@ import re
 import sqlite3
 import stat
 from pathlib import Path
+from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -82,7 +83,7 @@ _SOURCE_LOCAL_PATHS = {
     "run_receipt": Path("receipt.json"),
     **{f"{kind}_seed_{seed}_{artifact}": Path(kind) / f"seed_{seed}" / filename
        for kind in ("primary", "shuffled_reward") for seed in range(5)
-       for artifact, filename in (("model", "final_model.zip"), ("normalizer", "normalizer.pkl"))},
+       for artifact, filename in (("model", "final_model.zip"), ("normalizer", "normalizer.json"))},
 }
 
 class Type1ReportError(ValueError):
@@ -346,28 +347,44 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
         or receipt != {**RUNNER_RECEIPT, "manifest_sha256": sources.get("run_manifest")}
     ):
         raise Type1ReportError("runner manifest or receipt violates the frozen no-go contract")
-    materializer_receipt = _read_canonical(
+    materializer_receipt, _ = _read_canonical(
         _safe_child(root.parent, Path("materializer_complete_receipt.json")),
         "materializer completion receipt",
-    )[0]
-    required_materializer_receipt = {
-        "schema_version", "role", "status", "dataset_id", "materializer_manifest_sha256",
-        "rows_sha256", "authority_sha256", "amendment_sha256", "source_hashes",
-        "materializer_source_sha256", "expected", "price_basis", "fresh_oos",
-    }
+    )
+    dataset_manifest, dataset_manifest_bytes = _read_canonical(
+        _safe_child(root.parent, Path("dataset_manifest.json")),
+        "dataset manifest",
+    )
+    public_rows_bytes = _read_bytes(
+        _safe_child(root.parent, Path("public_rows.json")),
+        "public rows",
+    )
+    try:
+        public_rows = json.loads(public_rows_bytes.decode("utf-8"))
+        if not isinstance(public_rows, list) or public_rows_bytes != _canonical(public_rows):
+            raise ValueError("public rows are not a canonical array")
+        from stom_rl.daily_type1_public_data import RECEIPT_ROLE, _validate_complete_receipt
+
+        _validate_complete_receipt(
+            materializer_receipt,
+            dataset_manifest,
+            dataset_manifest_bytes,
+            public_rows_bytes,
+            {
+                "public_rows.json": "CANONICAL_PUBLIC_ROWS",
+                "dataset_manifest.json": "CANONICAL_DATASET_MANIFEST",
+                "materializer_complete_receipt.json": RECEIPT_ROLE,
+            },
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise Type1ReportError("materializer completion receipt does not prove the v5 dataset boundary") from exc
     if (
-        set(materializer_receipt) != required_materializer_receipt
-        or materializer_receipt.get("schema_version") != "kronos.type1.materializer-complete-receipt.v1"
-        or materializer_receipt.get("role") != "materializer_complete_receipt"
-        or materializer_receipt.get("status") != "COMPLETE"
-        or materializer_receipt.get("dataset_id") != REPLACEMENT_IDENTITY["dataset_id"]
-        or materializer_receipt.get("materializer_manifest_sha256") != sources.get("dataset_manifest")
-        or materializer_receipt.get("rows_sha256") != sources.get("public_rows")
+        materializer_receipt.get("dataset_manifest_sha256") != sources.get("dataset_manifest")
+        or materializer_receipt.get("public_rows_sha256") != sources.get("public_rows")
         or materializer_receipt.get("amendment_sha256") != sources.get("amendment")
         or materializer_receipt.get("authority_sha256") != sources.get("authority")
-        or materializer_receipt.get("fresh_oos") != {"state": "NOT_RUN", "read_performed": False}
     ):
-        raise Type1ReportError("materializer completion receipt does not prove the v5 dataset boundary")
+        raise Type1ReportError("materializer completion receipt does not bind report sources")
     pretraining = manifest.get("pretraining_gate")
     if not isinstance(pretraining, Mapping) or set(pretraining) != {
         "accounting", "block_semantics", "validation_noninterference",
@@ -416,8 +433,47 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
                 raise Type1ReportError("runner member step or device receipt is invalid")
             artifacts, reload_receipt = member.get("artifacts"), member.get("reload_receipt")
             expected_artifacts = {"model_sha256": sources.get(model_key), "normalizer_sha256": sources.get(normalizer_key)}
-            if artifacts != expected_artifacts or not isinstance(reload_receipt, Mapping) or reload_receipt != {**expected_artifacts, "deterministic": True}:
-                raise Type1ReportError("runner final artifact or reload receipt is invalid")
+            evidence = reload_receipt.get("evidence") if isinstance(reload_receipt, Mapping) else None
+            normalizer, _ = _read_canonical(
+                _safe_child(root, Path(kind) / f"seed_{seed}" / "normalizer.json"),
+                f"{kind} seed {seed} normalizer",
+            )
+            try:
+                from stom_rl.daily_type1_market import FeatureScale, TrainOnlyNormalizer
+
+                scales = normalizer.get("scales")
+                rebuilt_normalizer = TrainOnlyNormalizer(tuple(
+                    FeatureScale(Decimal(item["center"]), Decimal(item["scale"]))
+                    for item in scales
+                )) if isinstance(scales, list) and len(scales) == 7 else None
+                rebuilt_digest = rebuilt_normalizer.digest() if rebuilt_normalizer is not None else None
+            except (InvalidOperation, KeyError, TypeError, ValueError):
+                rebuilt_digest = None
+            if (
+                artifacts != expected_artifacts
+                or not isinstance(reload_receipt, Mapping)
+                or set(reload_receipt) != {"model_sha256", "normalizer_sha256", "deterministic", "evidence"}
+                or reload_receipt.get("model_sha256") != expected_artifacts["model_sha256"]
+                or reload_receipt.get("normalizer_sha256") != expected_artifacts["normalizer_sha256"]
+                or reload_receipt.get("deterministic") is not True
+                or not isinstance(evidence, Mapping)
+                or set(evidence) != {
+                    "model_sha256", "normalizer_sha256", "normalizer_digest",
+                    "validation_pairs_sha256", "model_device", "num_timesteps",
+                }
+                or evidence.get("model_sha256") != expected_artifacts["model_sha256"]
+                or evidence.get("normalizer_sha256") != expected_artifacts["normalizer_sha256"]
+                or evidence.get("model_device") != "cpu"
+                or evidence.get("num_timesteps") != 200000
+                or _SHA.fullmatch(str(evidence.get("normalizer_digest", ""))) is None
+                or _SHA.fullmatch(str(evidence.get("validation_pairs_sha256", ""))) is None
+                or set(normalizer) != {"kind", "digest", "scales"}
+                or normalizer.get("kind") != "market_type7_train_only"
+                or normalizer.get("digest") != evidence.get("normalizer_digest")
+                or rebuilt_digest != evidence.get("normalizer_digest")
+                or not isinstance(normalizer.get("scales"), list)
+            ):
+                raise Type1ReportError("runner final artifact or persisted-normalizer replay receipt is invalid")
 
 def _validate_revision(value: Mapping[str, Any]) -> None:
     required = {"schema_version", "revision_id", "revision_ordinal", "identity", "policy", "result", "source_sha256", "evidence", "false_research_locks", "claims", "catalog_ordinal", "previous_event_sha256", "previous_revision_event_sha256"}

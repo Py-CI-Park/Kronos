@@ -13,25 +13,37 @@ from stom_rl.daily_v1_type1_report import (
 
 
 def _sources(run):
+    from stom_rl.daily_type1_public_data import _complete_receipt
+    from stom_rl.daily_type1_market import FeatureScale, TrainOnlyNormalizer
+    from decimal import Decimal
+
     run.mkdir(parents=True, exist_ok=True)
-    (run.parent / "dataset_manifest.json").write_bytes(b"dataset")
-    (run.parent / "public_rows.json").write_bytes(b"rows")
-    (run.parent / "materializer_complete_receipt.json").write_bytes(type1_report._canonical({
-        "schema_version": "kronos.type1.materializer-complete-receipt.v1",
-        "role": "materializer_complete_receipt", "status": "COMPLETE",
-        "dataset_id": IDENTITY["dataset_id"], "materializer_manifest_sha256": "0" * 64,
-        "rows_sha256": "0" * 64, "authority_sha256": "0" * 64,
-        "amendment_sha256": "0" * 64, "source_hashes": {},
-        "materializer_source_sha256": "0" * 64, "expected": {},
-        "price_basis": "EXACT_15_20_BAR_CLOSE_PROXY",
-        "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
-    }))
+    rows_bytes = type1_report._canonical([])
+    (run.parent / "public_rows.json").write_bytes(rows_bytes)
     outer = {"identity": IDENTITY}
-    (run / "type1_identity.json").write_text(json.dumps(outer, sort_keys=True, separators=(",", ":")))
-    (run / "p6_public_run_seal.json").write_text(json.dumps({**outer, "fresh_oos": {"state": "NOT_RUN", "payload_read": False}}, sort_keys=True, separators=(",", ":")))
-    (run / "deployment_lock.json").write_text(json.dumps({**outer, "locks": LOCKS}, sort_keys=True, separators=(",", ":")))
-    (run / "attempt_parent.json").write_text(json.dumps({**outer, "parent_identity": {"dataset_id": "type1-close-20260803-004", "train_id": "type1-public-004", "train_run_id": "train_type1-public-004"}}, sort_keys=True, separators=(",", ":")))
-    (run / "authority.json").write_text(json.dumps({**outer, "authority_id": REPLACEMENT_OUTER_IDENTITY["authority_id"]}, sort_keys=True, separators=(",", ":")))
+    (run / "type1_identity.json").write_bytes(type1_report._canonical(outer))
+    (run / "p6_public_run_seal.json").write_bytes(type1_report._canonical({
+        **outer, "fresh_oos": {"state": "NOT_RUN", "payload_read": False},
+    }))
+    (run / "deployment_lock.json").write_bytes(type1_report._canonical({**outer, "locks": LOCKS}))
+    (run / "attempt_parent.json").write_bytes(type1_report._canonical({
+        **outer,
+        "parent_identity": {
+            "dataset_id": "type1-close-20260803-004",
+            "train_id": "type1-public-004",
+            "train_run_id": "train_type1-public-004",
+        },
+    }))
+    (run / "authority.json").write_bytes(type1_report._canonical({
+        **outer, "authority_id": REPLACEMENT_OUTER_IDENTITY["authority_id"],
+    }))
+    scales = tuple(FeatureScale(Decimal("0"), Decimal("1")) for _ in range(7))
+    normalizer_digest = TrainOnlyNormalizer(scales).digest()
+    normalizer_bytes = type1_report._canonical({
+        "kind": "market_type7_train_only",
+        "digest": normalizer_digest,
+        "scales": [{"center": "0", "scale": "1"} for _ in scales],
+    })
     members = {}
     for kind in ("primary", "shuffled_reward"):
         members[kind] = {}
@@ -39,53 +51,98 @@ def _sources(run):
             member = run / kind / f"seed_{seed}"
             member.mkdir(parents=True, exist_ok=True)
             model = f"{kind}-{seed}-model".encode()
-            normalizer = f"{kind}-{seed}-normalizer".encode()
             (member / "final_model.zip").write_bytes(model)
-            (member / "normalizer.pkl").write_bytes(normalizer)
+            (member / "normalizer.json").write_bytes(normalizer_bytes)
             model_sha = type1_report._sha(model)
-            normalizer_sha = type1_report._sha(normalizer)
+            normalizer_sha = type1_report._sha(normalizer_bytes)
             artifacts = {"model_sha256": model_sha, "normalizer_sha256": normalizer_sha}
+            replay = {
+                **artifacts,
+                "normalizer_digest": normalizer_digest,
+                "validation_pairs_sha256": "1" * 64,
+                "model_device": "cpu",
+                "num_timesteps": 200000,
+            }
             members[kind][str(seed)] = {
-                "seed": seed, "timesteps": 200000, "actual_sb3_timesteps": 200000,
-                "device": "cpu", "artifact": "FINAL_MODEL_ONLY", "artifacts": artifacts,
-                "reload_receipt": {**artifacts, "deterministic": True}, "validation": {},
+                "seed": seed,
+                "timesteps": 200000,
+                "actual_sb3_timesteps": 200000,
+                "device": "cpu",
+                "artifact": "FINAL_MODEL_ONLY",
+                "artifacts": artifacts,
+                "reload_receipt": {**artifacts, "deterministic": True, "evidence": replay},
+                "validation": {},
             }
     manifest = {
-        "schema_version": "kronos_type1_g002_public_run.v1", "identities": IDENTITY,
-        "training": {"seeds": [0, 1, 2, 3, 4], "timesteps_per_seed": 200000,
-                     "device": "cpu", "validation_visible_to_training": False,
-                     "eval_callback": False, "early_stopping": False,
-                     "best_model_selection": False, "checkpoint_selection": False,
-                     "member_selection": False, "saved_artifact": "FINAL_MODEL_ONLY",
-                     "synthetic_oracle_calibration": False},
-        "members": members, "controls": {"integrity_ok": True},
+        "schema_version": "kronos_type1_g002_public_run.v1",
+        "identities": IDENTITY,
+        "training": {
+            "seeds": [0, 1, 2, 3, 4],
+            "timesteps_per_seed": 200000,
+            "device": "cpu",
+            "validation_visible_to_training": False,
+            "eval_callback": False,
+            "early_stopping": False,
+            "best_model_selection": False,
+            "checkpoint_selection": False,
+            "member_selection": False,
+            "saved_artifact": "FINAL_MODEL_ONLY",
+            "synthetic_oracle_calibration": False,
+        },
+        "members": members,
+        "controls": {"integrity_ok": True},
         "pretraining_gate": {
             "accounting": {"cost_bps": 23, "slot_notional_krw": 5000000, "max_slots": 10},
             "block_semantics": "BLOCK",
             "validation_noninterference": {
-                "train_only_normalizer_digest": "0" * 64, "train_pairs_sha256": "1" * 64,
-                "mutated_surfaces": ["features", "gross_return", "entry_available"], "unchanged": True,
+                "train_only_normalizer_digest": normalizer_digest,
+                "train_pairs_sha256": "1" * 64,
+                "mutated_surfaces": ["features", "gross_return", "entry_available"],
+                "unchanged": True,
             },
         },
         "fresh_oos": {"state": "NOT_RUN", "metrics": None},
-        "false_research_locks": LOCKS, "execution_status": "COMPLETE", "verdict": "NO_GO",
+        "false_research_locks": LOCKS,
+        "execution_status": "COMPLETE",
+        "verdict": "NO_GO",
     }
     (run / "run_manifest.json").write_bytes(type1_report._canonical(manifest))
     (run / "receipt.json").write_bytes(type1_report._canonical({}))
-    sources = report_source_sha256(run)
-    (run.parent / "materializer_complete_receipt.json").write_bytes(type1_report._canonical({
-        "schema_version": "kronos.type1.materializer-complete-receipt.v1",
-        "role": "materializer_complete_receipt", "status": "COMPLETE",
-        "dataset_id": IDENTITY["dataset_id"], "materializer_manifest_sha256": sources["dataset_manifest"],
-        "rows_sha256": sources["public_rows"], "authority_sha256": sources["authority"],
-        "amendment_sha256": sources["amendment"], "source_hashes": {},
-        "materializer_source_sha256": "0" * 64, "expected": {},
-        "price_basis": "EXACT_15_20_BAR_CLOSE_PROXY",
+    authority_sha = type1_report._sha((run / "authority.json").read_bytes())
+    amendment_sha = type1_report._sha(AMENDMENT_PATH.read_bytes())
+    dataset_manifest = {
+        "dataset_id": IDENTITY["dataset_id"],
+        "authority": {"authority_id": IDENTITY["authority_id"], "sessions": {"ordered": [], "pairs": [], "trailing_embargo": []}},
+        "authority_sha256": authority_sha,
+        "amendment_id": "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004",
+        "amendment_sha256": amendment_sha,
+        "source_database_identity": {"daily": "fixture", "fivemin": "fixture"},
+        "materializer_source_sha256": "2" * 64,
+        "row_count": 0,
+        "split_row_counts": {"train": 0, "reused_validation": 0},
+        "split_symbol_counts": {"train": 0, "reused_validation": 0},
+        "expected": {},
+        "public_cutoff": "2025-06-30",
+        "price_basis": "15:20_bar_close_proxy",
         "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
-    }))
+    }
+    dataset_manifest_bytes = type1_report._canonical(dataset_manifest)
+    (run.parent / "dataset_manifest.json").write_bytes(dataset_manifest_bytes)
+    amendment = json.loads(AMENDMENT_PATH.read_text(encoding="utf-8"))
+    (run.parent / "materializer_complete_receipt.json").write_bytes(type1_report._canonical(
+        _complete_receipt(
+            manifest=dataset_manifest,
+            manifest_bytes=dataset_manifest_bytes,
+            rows_bytes=rows_bytes,
+            amendment=amendment,
+        )
+    ))
+    sources = report_source_sha256(run)
     (run / "receipt.json").write_bytes(type1_report._canonical({
-        "manifest_sha256": sources["run_manifest"], "execution_status": "COMPLETE",
-        "verdict": "NO_GO", "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+        "manifest_sha256": sources["run_manifest"],
+        "execution_status": "COMPLETE",
+        "verdict": "NO_GO",
+        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
     }))
     return report_source_sha256(run)
 

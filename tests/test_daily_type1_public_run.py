@@ -168,7 +168,7 @@ def test_replacement_input_binding_exposes_v4_identity_and_source_hashes(tmp_pat
         "price_basis": None,
         "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
     }), encoding="utf-8")
-    with pytest.raises(ValueError, match="materializer manifest"):
+    with pytest.raises(ValueError, match="three physically distinct canonical dataset artifacts"):
         _verified_inputs(rows_path, manifest_path, authority_path, materializer_path, completion_receipt, amendment_path)
 
 
