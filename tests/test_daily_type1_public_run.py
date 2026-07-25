@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import stat
 from pathlib import Path
 from decimal import Decimal
 
 import pytest
+import numpy as np
+from stom_rl.daily_type1_contract import canonical_json_bytes
 
 from stom_rl.daily_type1_public_run import (
     AMENDMENT_PATH,
@@ -17,9 +21,14 @@ from stom_rl.daily_type1_public_run import (
     RunConfig,
     TIMESTEPS_PER_SEED,
     build_parser,
+    ORIGINAL_BLOCKED_REASON,
+    ORIGINAL_BLOCK_RECEIPT,
+    RECOVERY_MANIFEST_NAME,
+    RECOVERY_RECEIPT_NAME,
     materialize_public_rows,
     reject_nonpublic_path,
     run_public_experiment,
+    recover_public_experiment,
     split_public_rows,
     _ProductionOperations,
     REPLACEMENT_AUTHORITY_ID,
@@ -63,6 +72,228 @@ def _rows():
         {"decision_date": REUSED_VALIDATION_START, "symbol": "000001"},
         {"decision_date": REUSED_VALIDATION_END, "symbol": "000002"},
     ]
+
+
+class RecoveryFakeOperations:
+    normalizer_digest_value = "normalizer-digest"
+
+    def __init__(self, *, reload_override: dict[str, object] | None = None) -> None:
+        self.reload_override = reload_override or {}
+        self.build_calls: list[tuple[str, int | None]] = []
+        self.evaluate_saved_calls: list[Path] = []
+        self.train_calls: list[tuple[int, int]] = []
+        self.save_calls: list[Path] = []
+        self.pretraining_calls = 0
+        self.control_calls = 0
+        self.numpy_mask_control_seen = False
+
+    def build_pairs(self, rows, *, split, shuffled_seed=None):
+        self.build_calls.append((split, shuffled_seed))
+        return ({
+            "candidate_values": np.asarray([[1.0], [2.0]], dtype=np.float32),
+            "candidate_missing": np.asarray([[0], [0]], dtype=np.int8),
+            "availability_mask": np.asarray([1, 0], dtype=np.int8),
+            "post_decision_fill_available": np.asarray([1, 0], dtype=np.int8),
+            "symbols": ("000001", "000002"),
+            "gross_returns": (Decimal("0.0100"), None),
+            "decision_date": "2024-01-02",
+            "settlement_date": "2024-01-03",
+        },)
+
+    def normalizer_digest(self) -> str:
+        return self.normalizer_digest_value
+
+    def train(self, pairs, *, seed, timesteps):
+        self.train_calls.append((seed, timesteps))
+        raise AssertionError("recovery must not train")
+
+    def save_final(self, model, normalizer, path):
+        self.save_calls.append(path)
+        raise AssertionError("recovery must not save final artifacts")
+
+    def evaluate_saved(self, path, validation_rows, *, seed, expected_pair_bytes, expected_normalizer_digest, expected_normalizer_sha256):
+        self.evaluate_saved_calls.append(path)
+        normalizer = json.loads((path / "normalizer.json").read_text(encoding="utf-8"))
+        evidence = {
+            "model_sha256": hashlib.sha256((path / "final_model.zip").read_bytes()).hexdigest(),
+            "normalizer_sha256": hashlib.sha256((path / "normalizer.json").read_bytes()).hexdigest(),
+            "normalizer_digest": normalizer["digest"],
+            "validation_pairs_sha256": hashlib.sha256(expected_pair_bytes).hexdigest(),
+            "model_device": "cpu",
+            "num_timesteps": TIMESTEPS_PER_SEED,
+        }
+        evidence.update(self.reload_override)
+        return {
+            "nav_krw": 60_000_000 + seed,
+            "deterministic": True,
+            "action_masks_dtype": "int8",
+            "reload_evidence": evidence,
+        }
+
+    def pretraining_gate(self, train_rows, validation_rows, train_pairs, validation_pairs):
+        self.pretraining_calls += 1
+        return {"status": "PASS", "train_rows": len(train_rows), "validation_rows": len(validation_rows)}
+
+    def controls(self, train_rows, validation_rows, primary, shuffled):
+        self.control_calls += 1
+        self.numpy_mask_control_seen = all(
+            member["validation"]["action_masks_dtype"] == "int8"
+            for members in (primary, shuffled)
+            for member in members.values()
+        )
+        return {
+            "integrity_ok": self.numpy_mask_control_seen,
+            "integrity_reasons": [] if self.numpy_mask_control_seen else ["numpy_mask_control_missing"],
+            "mutation_invariance": {"numpy_action_masks": self.numpy_mask_control_seen},
+            "scientific_gates_pass": False,
+            "scientific_gate_reasons": ["local_control_gate_miss"],
+            "shuffle_retraining": {
+                "seeds": list(range(5)),
+                "timesteps_per_seed": TIMESTEPS_PER_SEED,
+                "all_members_recorded": True,
+            },
+        }
+
+
+def _write_recovery_run(out_root: Path) -> Path:
+    root = out_root / REPLACEMENT_RUN_ID
+    root.mkdir()
+    (root / "receipt.json").write_bytes(canonical_json_bytes(ORIGINAL_BLOCK_RECEIPT))
+    for kind in ("primary", "shuffled_reward"):
+        for seed in range(5):
+            member = root / kind / f"seed_{seed}"
+            member.mkdir(parents=True)
+            (member / "final_model.zip").write_bytes(f"{kind}-{seed}-model".encode("utf-8"))
+            (member / "normalizer.json").write_bytes(canonical_json_bytes({
+                "kind": "market_type7_train_only",
+                "digest": RecoveryFakeOperations.normalizer_digest_value,
+            }))
+    return root
+
+
+def _make_symlink_or_skip(link: Path, target: Path, *, is_dir: bool) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=is_dir)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    assert link.is_symlink()
+
+
+def _replace_with_symlink_or_skip(path: Path, target: Path, *, is_dir: bool) -> Path:
+    if path.exists() or path.is_symlink():
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    _make_symlink_or_skip(path, target, is_dir=is_dir)
+    return path
+
+
+def _mark_path_as_reparse(monkeypatch: pytest.MonkeyPatch, target: Path) -> Path:
+    target = target.absolute()
+    original_lstat = Path.lstat
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+
+    class ReparseStat:
+        def __init__(self, wrapped) -> None:
+            self.st_mode = wrapped.st_mode
+            self.st_file_attributes = reparse_flag
+
+    def lstat_with_reparse(self):
+        wrapped = original_lstat(self)
+        if Path(self).absolute() == target:
+            return ReparseStat(wrapped)
+        return wrapped
+
+    monkeypatch.setattr(Path, "lstat", lstat_with_reparse)
+    return target
+
+
+def _install_symlink_indirection(tmp_path: Path, case: str) -> tuple[Path, Path]:
+    if case == "root":
+        target_parent = tmp_path / "target"
+        target_parent.mkdir()
+        target_root = _write_recovery_run(target_parent)
+        root = tmp_path / REPLACEMENT_RUN_ID
+        return root, _replace_with_symlink_or_skip(root, target_root, is_dir=True)
+
+    root = _write_recovery_run(tmp_path)
+    outside_parent = tmp_path / "outside"
+    outside_parent.mkdir()
+    outside_root = _write_recovery_run(outside_parent)
+    if case == "kind":
+        path = root / "primary"
+        target = outside_root / "primary"
+        is_dir = True
+    elif case == "seed":
+        path = root / "primary" / "seed_0"
+        target = outside_root / "primary" / "seed_0"
+        is_dir = True
+    elif case == "model_artifact":
+        path = root / "primary" / "seed_0" / "final_model.zip"
+        target = tmp_path / "outside_final_model.zip"
+        target.write_bytes(b"outside-model")
+        is_dir = False
+    elif case == "normalizer_artifact":
+        path = root / "primary" / "seed_0" / "normalizer.json"
+        target = tmp_path / "outside_normalizer.json"
+        target.write_bytes(canonical_json_bytes({
+            "kind": "market_type7_train_only",
+            "digest": RecoveryFakeOperations.normalizer_digest_value,
+        }))
+        is_dir = False
+    elif case == "original_receipt":
+        path = root / "receipt.json"
+        target = tmp_path / "outside_original_receipt.json"
+        target.write_bytes(canonical_json_bytes(ORIGINAL_BLOCK_RECEIPT))
+        is_dir = False
+    elif case == "recovery_manifest":
+        path = root / RECOVERY_MANIFEST_NAME
+        target = tmp_path / "outside_recovery_manifest.json"
+        target.write_text("{}", encoding="utf-8")
+        is_dir = False
+    elif case == "recovery_receipt":
+        path = root / RECOVERY_RECEIPT_NAME
+        target = tmp_path / "outside_recovery_receipt.json"
+        target.write_text("{}", encoding="utf-8")
+        is_dir = False
+    else:
+        raise AssertionError(f"unknown symlink case: {case}")
+    return root, _replace_with_symlink_or_skip(path, target, is_dir=is_dir)
+
+
+def _install_reparse_indirection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str) -> tuple[Path, Path]:
+    root = _write_recovery_run(tmp_path)
+    if case == "root":
+        path = root
+    elif case == "kind":
+        path = root / "primary"
+    elif case == "seed":
+        path = root / "primary" / "seed_0"
+    elif case == "model_artifact":
+        path = root / "primary" / "seed_0" / "final_model.zip"
+    elif case == "normalizer_artifact":
+        path = root / "primary" / "seed_0" / "normalizer.json"
+    elif case == "original_receipt":
+        path = root / "receipt.json"
+    elif case == "recovery_manifest":
+        path = root / RECOVERY_MANIFEST_NAME
+        path.write_text("{}", encoding="utf-8")
+    elif case == "recovery_receipt":
+        path = root / RECOVERY_RECEIPT_NAME
+        path.write_text("{}", encoding="utf-8")
+    else:
+        raise AssertionError(f"unknown reparse case: {case}")
+    return root, _mark_path_as_reparse(monkeypatch, path)
+
+
+def _recover(root: Path, operations: RecoveryFakeOperations | None = None, rows=None):
+    return recover_public_experiment(
+        _rows() if rows is None else rows,
+        out_root=root.parent,
+        run_id=REPLACEMENT_RUN_ID,
+        operations=operations or RecoveryFakeOperations(),
+    )
 
 
 def test_validation_mutation_preserves_fill_invariant() -> None:
@@ -111,15 +342,262 @@ def test_parser_exposes_no_smoke_seed_or_selection_escape_hatches():
         "--materializer-complete-receipt", "materializer_complete_receipt.json",
         "--out-root", "out",
         "--run-id", "g002",
+        "--recover",
     ])
     assert args.run_id == "g002"
     assert args.dataset_manifest == "manifest.json"
     assert args.authority == "authority.json"
     assert args.materializer_manifest == "materializer.json"
+    assert args.recover is True
     assert "--universe-manifest" not in parser.format_help()
     assert "--seeds" not in parser.format_help()
     assert "--smoke" not in parser.format_help()
     assert "best" not in parser.format_help().lower()
+
+
+def test_recovery_happy_path_is_append_only_no_go_and_preserves_original_receipt(tmp_path: Path):
+    root = _write_recovery_run(tmp_path)
+    original_receipt = (root / "receipt.json").read_bytes()
+    operations = RecoveryFakeOperations()
+
+    result = _recover(root, operations)
+
+    assert operations.train_calls == []
+    assert operations.save_calls == []
+    assert len(operations.evaluate_saved_calls) == 10
+    assert operations.pretraining_calls == 1
+    assert operations.control_calls == 1
+    assert operations.numpy_mask_control_seen is True
+    assert (root / "receipt.json").read_bytes() == original_receipt
+    assert not (root / "run_manifest.json").exists()
+    assert (root / RECOVERY_MANIFEST_NAME).exists()
+    assert (root / RECOVERY_RECEIPT_NAME).exists()
+    manifest = result["manifest"]
+    receipt = result["receipt"]
+    assert manifest["schema_version"] == "kronos_type1_g002_public_run_recovery.v1"
+    assert manifest["status"] == "COMPLETE"
+    assert manifest["recovery_mode"] == "APPEND_ONLY_REEVALUATE_SAVED_MODELS"
+    assert manifest["original_run_id"] == REPLACEMENT_RUN_ID
+    assert manifest["original_block"]["reason"] == ORIGINAL_BLOCKED_REASON
+    assert manifest["original_block"]["preserved_byte_identical"] is True
+    assert manifest["training"]["retraining_performed"] is False
+    assert manifest["training"]["timesteps_per_seed"] == 200_000
+    assert manifest["training"]["device"] == "cpu"
+    assert manifest["fresh_oos"] == {"state": "NOT_RUN", "metrics": None, "read_performed": False}
+    assert manifest["claims"] == {
+        "profitability": "NOT_CLAIMED",
+        "live": "NOT_CLAIMED",
+        "fresh_oos": "NOT_RUN_NO_READ",
+        "outcome": "NO_GO_ONLY",
+    }
+    assert receipt["schema_version"] == "kronos.type1.public-run-recovery-receipt.v1"
+    assert receipt["status"] == "COMPLETE"
+    assert receipt["verdict"] == "NO_GO"
+    assert receipt["outcome"] == "NO_GO_ONLY"
+    assert receipt["retraining_performed"] is False
+    assert receipt["overwrite_performed"] is False
+    assert receipt["move_performed"] is False
+    assert receipt["delete_performed"] is False
+    assert receipt["blocked_reason"] == ORIGINAL_BLOCKED_REASON
+    assert receipt["blocked_receipt_sha256"] == hashlib.sha256(original_receipt).hexdigest()
+    assert receipt["recovery_manifest_sha256"] == hashlib.sha256((root / RECOVERY_MANIFEST_NAME).read_bytes()).hexdigest()
+    assert set(receipt["member_artifact_sha256"]) == {
+        f"{kind}/seed_{seed}/{filename}"
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+        for filename in ("final_model.zip", "normalizer.json")
+    }
+
+
+RECOVERY_INDIRECTION_CASES = [
+    "root",
+    "kind",
+    "seed",
+    "model_artifact",
+    "normalizer_artifact",
+    "original_receipt",
+    "recovery_manifest",
+    "recovery_receipt",
+]
+
+
+@pytest.mark.parametrize("case", RECOVERY_INDIRECTION_CASES)
+def test_recovery_rejects_symlink_indirection_before_reload_or_write(tmp_path: Path, case: str):
+    root, _ = _install_symlink_indirection(tmp_path, case)
+    operations = RecoveryFakeOperations()
+
+    with pytest.raises(ValueError, match="symlink|junction|reparse"):
+        _recover(root, operations)
+
+    assert operations.evaluate_saved_calls == []
+    assert operations.pretraining_calls == 0
+    assert operations.control_calls == 0
+
+
+@pytest.mark.parametrize("case", RECOVERY_INDIRECTION_CASES)
+def test_recovery_rejects_reparse_indirection_before_reload_or_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+):
+    root, _ = _install_reparse_indirection(tmp_path, monkeypatch, case)
+    operations = RecoveryFakeOperations()
+
+    with pytest.raises(ValueError, match="symlink|junction|reparse"):
+        _recover(root, operations)
+
+    assert operations.evaluate_saved_calls == []
+    assert operations.pretraining_calls == 0
+    assert operations.control_calls == 0
+
+
+@pytest.mark.parametrize("case", ["model_artifact", "normalizer_artifact"])
+def test_recovery_rejects_artifact_symlink_before_out_of_root_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+):
+    root, protected_path = _install_symlink_indirection(tmp_path, case)
+    protected_path = protected_path.absolute()
+    operations = RecoveryFakeOperations()
+    original_read_bytes = Path.read_bytes
+
+    def read_bytes_without_artifact_symlink(self):
+        if Path(self).absolute() == protected_path:
+            raise AssertionError("artifact symlink was read before rejection")
+        return original_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes_without_artifact_symlink)
+
+    with pytest.raises(ValueError, match="symlink|junction|reparse"):
+        _recover(root, operations)
+
+    assert operations.evaluate_saved_calls == []
+
+@pytest.mark.parametrize("case", ["missing_artifact", "missing_seed", "extra_artifact", "extra_seed", "run_manifest"])
+def test_recovery_rejects_missing_extra_or_run_manifest_members(tmp_path: Path, case: str):
+    root = _write_recovery_run(tmp_path)
+    if case == "missing_artifact":
+        (root / "primary" / "seed_0" / "final_model.zip").unlink()
+    elif case == "missing_seed":
+        (root / "primary" / "seed_0" / "normalizer.json").unlink()
+        (root / "primary" / "seed_0" / "final_model.zip").unlink()
+        (root / "primary" / "seed_0").rmdir()
+    elif case == "extra_artifact":
+        (root / "primary" / "seed_0" / "debug.txt").write_text("debug", encoding="utf-8")
+    elif case == "extra_seed":
+        (root / "primary" / "seed_5").mkdir()
+    else:
+        (root / "run_manifest.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        _recover(root)
+
+    assert not (root / RECOVERY_MANIFEST_NAME).exists()
+    assert not (root / RECOVERY_RECEIPT_NAME).exists()
+
+
+def test_recovery_rejects_noncanonical_original_block_receipt(tmp_path: Path):
+    root = _write_recovery_run(tmp_path)
+    receipt = dict(ORIGINAL_BLOCK_RECEIPT)
+    receipt["reason"] = "different"
+    (root / "receipt.json").write_bytes(canonical_json_bytes(receipt))
+
+    with pytest.raises(ValueError, match="original BLOCK receipt"):
+        _recover(root)
+
+    assert not (root / RECOVERY_MANIFEST_NAME).exists()
+
+
+def test_recovery_rejects_tampered_member_normalizer_digest(tmp_path: Path):
+    root = _write_recovery_run(tmp_path)
+    (root / "primary" / "seed_0" / "normalizer.json").write_bytes(canonical_json_bytes({
+        "kind": "market_type7_train_only",
+        "digest": "tampered",
+    }))
+
+    with pytest.raises(ValueError, match="reload evidence"):
+        _recover(root)
+
+    assert not (root / RECOVERY_MANIFEST_NAME).exists()
+
+
+def test_numpy_int8_control_gross_return_is_decimal_sanitized():
+    pnl = _ProductionOperations._pnl([
+        {"symbol": "000001", "status": "FILLED", "gross_return": np.int8(1)}
+    ])
+
+    assert pnl == Decimal("4988500.0000")
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"model_device": "cuda"},
+        {"num_timesteps": TIMESTEPS_PER_SEED - 1},
+        {"normalizer_digest": "wrong-digest"},
+        {"validation_pairs_sha256": "0" * 64},
+    ],
+)
+def test_recovery_rejects_wrong_device_timesteps_or_digest(tmp_path: Path, override: dict[str, object]):
+    root = _write_recovery_run(tmp_path)
+    operations = RecoveryFakeOperations(reload_override=override)
+
+    with pytest.raises(ValueError, match="persisted CPU artifacts"):
+        _recover(root, operations)
+
+    assert operations.train_calls == []
+    assert operations.save_calls == []
+    assert not (root / RECOVERY_MANIFEST_NAME).exists()
+
+
+def test_recovery_rejects_fresh_oos_rows_without_read_or_artifact_write(tmp_path: Path):
+    root = _write_recovery_run(tmp_path)
+    rows = [
+        {"decision_date": PUBLIC_TRAIN_START, "fresh_oos": {"state": "AVAILABLE"}},
+        {"decision_date": REUSED_VALIDATION_START},
+    ]
+
+    with pytest.raises(ValueError, match="fresh/test"):
+        _recover(root, rows=rows)
+
+    assert not (root / RECOVERY_MANIFEST_NAME).exists()
+    assert not (root / RECOVERY_RECEIPT_NAME).exists()
+
+
+def test_recovery_manifest_only_retry_creates_matching_receipt(tmp_path: Path):
+    root = _write_recovery_run(tmp_path)
+    first = _recover(root)
+    manifest_bytes = (root / RECOVERY_MANIFEST_NAME).read_bytes()
+    (root / RECOVERY_RECEIPT_NAME).unlink()
+
+    second = _recover(root, RecoveryFakeOperations())
+
+    assert second["manifest"] == first["manifest"]
+    assert (root / RECOVERY_MANIFEST_NAME).read_bytes() == manifest_bytes
+    assert (root / RECOVERY_RECEIPT_NAME).exists()
+    assert second["receipt"]["recovery_manifest_sha256"] == hashlib.sha256(manifest_bytes).hexdigest()
+
+
+def test_recovery_exact_completed_retry_is_idempotent(tmp_path: Path):
+    root = _write_recovery_run(tmp_path)
+    _recover(root)
+    manifest_bytes = (root / RECOVERY_MANIFEST_NAME).read_bytes()
+    receipt_bytes = (root / RECOVERY_RECEIPT_NAME).read_bytes()
+
+    _recover(root, RecoveryFakeOperations())
+
+    assert (root / RECOVERY_MANIFEST_NAME).read_bytes() == manifest_bytes
+    assert (root / RECOVERY_RECEIPT_NAME).read_bytes() == receipt_bytes
+
+
+def test_recovery_existing_manifest_mismatch_fails_closed_without_receipt_overwrite(tmp_path: Path):
+    root = _write_recovery_run(tmp_path)
+    _recover(root)
+    receipt_bytes = (root / RECOVERY_RECEIPT_NAME).read_bytes()
+    (root / RECOVERY_MANIFEST_NAME).write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="non-identical recovery content"):
+        _recover(root, RecoveryFakeOperations())
+
+    assert (root / RECOVERY_RECEIPT_NAME).read_bytes() == receipt_bytes
+
 def test_replacement_input_binding_exposes_v4_identity_and_source_hashes(tmp_path: Path, monkeypatch):
     import stom_rl.daily_type1_authority as authority_module
 

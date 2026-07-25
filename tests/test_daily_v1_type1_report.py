@@ -6,7 +6,8 @@ import stom_rl.daily_v1_type1_report as type1_report
 
 from stom_rl.daily_v1_type1_report import (
     AMENDMENT_PATH, IDENTITY, LOCKS, M3E_STATEMENT, POLICY, REPORT_CLAIMS,
-    REPORT_EVIDENCE_LABELS, REPORT_RESULT, REPLACEMENT_OUTER_IDENTITY,
+    RECOVERED_REPORT_CLAIMS, RECOVERED_REPORT_EVIDENCE_LABELS, REPORT_EVIDENCE_LABELS,
+    REPORT_RESULT, REPLACEMENT_OUTER_IDENTITY,
     Type1ReportError, build_completed_report_revision, commit_report_tip,
     initialize_report_authority, insert_report_revision, materialize_report_revision,
     reconcile_report_tip, report_source_sha256, verify_report_catalog,
@@ -59,50 +60,158 @@ def _write_authority(run, *, authority_id=IDENTITY["authority_id"], integrity="t
     return path
 
 
-def _write_publication_receipt(run, *, mutate=None):
-    receipt = {
-        "schema_version": type1_report.PUBLICATION_RECEIPT_SCHEMA,
-        "role": type1_report.PUBLICATION_RECEIPT_ROLE,
-        "status": "COMPLETE",
-        "verdict": "NO_GO",
-        "identity": {
-            key: IDENTITY[key]
-            for key in ("authority_id", "dataset_id", "train_id", "train_run_id", "custody_uid")
-        },
-        "source_logical_path": type1_report.PUBLICATION_SOURCE_LOGICAL_PATH,
-        "destination_logical_path": type1_report.PUBLICATION_DESTINATION_LOGICAL_PATH,
-        "move_contract": dict(type1_report.PUBLICATION_MOVE_CONTRACT),
-        "run_manifest_sha256": type1_report._sha((run / "run_manifest.json").read_bytes()),
-        "run_receipt_sha256": type1_report._sha((run / "receipt.json").read_bytes()),
-        "materializer_sha256": {
-            "public_rows_sha256": type1_report._sha((run.parent / "public_rows.json").read_bytes()),
-            "dataset_manifest_sha256": type1_report._sha((run.parent / "dataset_manifest.json").read_bytes()),
-            "materializer_complete_receipt_sha256": type1_report._sha((run.parent / "materializer_complete_receipt.json").read_bytes()),
-        },
-        "member_artifact_sha256": {
-            f"{kind}/seed_{seed}/final_model.zip": type1_report._sha(
-                (run / kind / f"seed_{seed}" / "final_model.zip").read_bytes()
-            )
-            for kind in ("primary", "shuffled_reward")
-            for seed in range(5)
-        } | {
-            f"{kind}/seed_{seed}/normalizer.json": type1_report._sha(
-                (run / kind / f"seed_{seed}" / "normalizer.json").read_bytes()
-            )
-            for kind in ("primary", "shuffled_reward")
-            for seed in range(5)
-        },
-        "publisher_source_sha256": type1_report._sha((type1_report.REPO_ROOT / "stom_rl" / "daily_type1_publication.py").read_bytes()),
-        "fresh_oos": {
-            "run": {"state": "NOT_RUN", "metrics": None},
-            "materializer": {"state": "NOT_RUN", "read_performed": False},
-            "read_performed": False,
+def _member_artifact_sha256(run):
+    return {
+        f"{kind}/seed_{seed}/final_model.zip": type1_report._sha(
+            (run / kind / f"seed_{seed}" / "final_model.zip").read_bytes()
+        )
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+    } | {
+        f"{kind}/seed_{seed}/normalizer.json": type1_report._sha(
+            (run / kind / f"seed_{seed}" / "normalizer.json").read_bytes()
+        )
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+    }
+
+
+
+def _materializer_sha256(run):
+    return {
+        "public_rows_sha256": type1_report._sha((run.parent / "public_rows.json").read_bytes()),
+        "dataset_manifest_sha256": type1_report._sha((run.parent / "dataset_manifest.json").read_bytes()),
+        "materializer_complete_receipt_sha256": type1_report._sha((run.parent / "materializer_complete_receipt.json").read_bytes()),
+    }
+
+
+def _materializer_evidence(run):
+    materializer_sha256 = _materializer_sha256(run)
+    materializer_source_sha256 = "2" * 64
+    authority_source = run / "authority.json"
+    if not authority_source.exists():
+        authority_source = run / "frozen_authority_envelope.json"
+    return {
+        **materializer_sha256,
+        "materializer_output_sha256": materializer_sha256["public_rows_sha256"],
+        "materializer_source_sha256": materializer_source_sha256,
+        "materializer_source_hashes": {
+            "protocol": type1_report._sha(type1_report.PROTOCOL_PATH.read_bytes()),
+            "preregistration": type1_report._sha(type1_report.PREREG_PATH.read_bytes()),
+            "amendment": type1_report._sha(type1_report.AMENDMENT_PATH.read_bytes()),
+            "authority": type1_report._sha(authority_source.read_bytes()),
+            "materializer": materializer_source_sha256,
         },
     }
+
+
+def _runner_recovery_source_sha256(run):
+    authority_source = run / "authority.json"
+    if not authority_source.exists():
+        authority_source = run / "frozen_authority_envelope.json"
+    dataset_manifest_sha256 = type1_report._sha((run.parent / "dataset_manifest.json").read_bytes())
+    return {
+        "runner": type1_report._sha((type1_report.REPO_ROOT / "stom_rl" / "daily_type1_public_run.py").read_bytes()),
+        "market": type1_report._sha((type1_report.REPO_ROOT / "stom_rl" / "daily_type1_market.py").read_bytes()),
+        "protocol": type1_report._sha(type1_report.PROTOCOL_PATH.read_bytes()),
+        "amendment": type1_report._sha(type1_report.AMENDMENT_PATH.read_bytes()),
+        "authority": type1_report._sha(authority_source.read_bytes()),
+        "public_rows": type1_report._sha((run.parent / "public_rows.json").read_bytes()),
+        "dataset_manifest": dataset_manifest_sha256,
+        "materializer_manifest": dataset_manifest_sha256,
+        "materializer_complete_receipt": type1_report._sha((run.parent / "materializer_complete_receipt.json").read_bytes()),
+    }
+
+
+def _publication_member_inventory(run):
+    manifest = json.loads((run / "recovery_manifest.json").read_text(encoding="utf-8"))
+    inventory = []
+    for kind in ("primary", "shuffled_reward"):
+        for seed in range(5):
+            member = manifest["members"][kind][str(seed)]
+            evidence = member["reload_receipt"]["evidence"]
+            inventory.append({
+                "family": kind,
+                "seed": seed,
+                "directory": f"{kind}/seed_{seed}",
+                "model_sha256": member["artifacts"]["model_sha256"],
+                "normalizer_sha256": member["artifacts"]["normalizer_sha256"],
+                "normalizer_digest": evidence["normalizer_digest"],
+                "validation_pairs_digest": evidence["validation_pairs_sha256"],
+                "timesteps": 200000,
+                "device": "cpu",
+            })
+    return inventory
+
+
+def _write_publication_receipt(run, *, mutate=None, recovered=False):
+    import stom_rl.daily_type1_publication as publication
+
+    authority_path = run / "frozen_authority_envelope.json"
+    hidden_authority_path = None
+    if authority_path.exists():
+        hidden_authority_path = run.parent / f".{run.name}.frozen_authority_envelope.json"
+        if hidden_authority_path.exists():
+            raise AssertionError("stale hidden authority fixture")
+        authority_path.replace(hidden_authority_path)
+    try:
+        run_evidence = publication._verify_run_root(
+            run,
+            allow_publication_receipt=(run / type1_report.PUBLICATION_RECEIPT_NAME).exists(),
+            run_evidence_mode=(
+                publication._RUN_EVIDENCE_MODE_RECOVERED
+                if recovered
+                else publication._RUN_EVIDENCE_MODE_COMPLETED
+            ),
+        )
+    finally:
+        if hidden_authority_path is not None:
+            hidden_authority_path.replace(authority_path)
+    receipt = publication._publication_receipt(
+        source_logical_path=type1_report.PUBLICATION_SOURCE_LOGICAL_PATH,
+        destination_logical_path=type1_report.PUBLICATION_DESTINATION_LOGICAL_PATH,
+        run_evidence=run_evidence,
+        materializer_evidence=_materializer_evidence(run),
+    )
     if mutate is not None:
         mutate(receipt)
     (run / type1_report.PUBLICATION_RECEIPT_NAME).write_bytes(type1_report._canonical(receipt))
     return receipt
+
+
+def _refresh_completed_publication_receipt_hashes(run):
+    receipt_path = run / type1_report.PUBLICATION_RECEIPT_NAME
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["run_manifest_sha256"] = type1_report._sha((run / "run_manifest.json").read_bytes())
+    receipt["run_receipt_sha256"] = type1_report._sha((run / "receipt.json").read_bytes())
+    receipt["member_artifact_sha256"] = _member_artifact_sha256(run)
+    receipt["materializer_sha256"] = _materializer_sha256(run)
+    receipt_path.write_bytes(type1_report._canonical(receipt))
+
+
+def _refresh_recovered_publication_receipt_hashes(run):
+    receipt_path = run / type1_report.PUBLICATION_RECEIPT_NAME
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    recovery_manifest = json.loads((run / "recovery_manifest.json").read_text(encoding="utf-8"))
+    materializer_evidence = _materializer_evidence(run)
+    materializer_sha256 = _materializer_sha256(run)
+    source_hashes = _runner_recovery_source_sha256(run)
+    receipt["disclosure"] = {
+        "recovery_manifest_sha256": type1_report._sha((run / "recovery_manifest.json").read_bytes()),
+        "blocked_receipt_sha256": type1_report._sha((run / "receipt.json").read_bytes()),
+        "members": _member_artifact_sha256(run),
+    }
+    receipt["identity"] = recovery_manifest["identities"]
+    receipt["recovery_receipt_sha256"] = type1_report._sha((run / "recovery_receipt.json").read_bytes())
+    receipt["materializer_sha256"] = materializer_sha256
+    receipt["materializer_public_rows_sha256"] = materializer_sha256["public_rows_sha256"]
+    receipt["materializer_source_sha256"] = materializer_evidence["materializer_source_sha256"]
+    receipt["materializer_source_hashes"] = materializer_evidence["materializer_source_hashes"]
+    receipt["source_hashes"] = {
+        "publisher_source": type1_report._sha((type1_report.REPO_ROOT / "stom_rl" / "daily_type1_publication.py").read_bytes()),
+        **source_hashes,
+    }
+    receipt_path.write_bytes(type1_report._canonical(receipt))
 
 
 def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_GO"):
@@ -117,6 +226,8 @@ def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_G
     (run.parent / "public_rows.json").write_bytes(rows_bytes)
     scales = tuple(FeatureScale(Decimal("0"), Decimal("1")) for _ in range(7))
     normalizer_digest = TrainOnlyNormalizer(scales).digest()
+    train_pairs_sha256 = "1" * 64
+    validation_pairs_sha256 = "2" * 64
     normalizer_bytes = type1_report._canonical({
         "kind": "market_type7_train_only",
         "digest": normalizer_digest,
@@ -137,7 +248,7 @@ def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_G
             replay = {
                 **artifacts,
                 "normalizer_digest": normalizer_digest,
-                "validation_pairs_sha256": "1" * 64,
+                "validation_pairs_sha256": validation_pairs_sha256,
                 "model_device": "cpu",
                 "num_timesteps": 200000,
             }
@@ -149,7 +260,7 @@ def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_G
                 "artifact": "FINAL_MODEL_ONLY",
                 "artifacts": artifacts,
                 "reload_receipt": {**artifacts, "deterministic": True, "evidence": replay},
-                "validation": {},
+                "validation": {"nav_krw": 60000000 + seed, "deterministic": True},
             }
     manifest = {
         "schema_version": "kronos_type1_g002_public_run.v1",
@@ -174,7 +285,7 @@ def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_G
             "block_semantics": "BLOCK",
             "validation_noninterference": {
                 "train_only_normalizer_digest": normalizer_digest,
-                "train_pairs_sha256": "1" * 64,
+                "train_pairs_sha256": train_pairs_sha256,
                 "mutated_surfaces": ["features", "gross_return", "entry_available"],
                 "unchanged": True,
             },
@@ -219,13 +330,167 @@ def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_G
             amendment=amendment,
         )
     ))
-    _write_publication_receipt(run)
+    if execution_status == "COMPLETE" and verdict == "NO_GO":
+        _write_publication_receipt(run)
+    return authority_path
+def _prepare_recovered_runner(run):
+    authority_path = _prepare_completed_runner(run)
+    completed_manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8"))
+    (run / "run_manifest.json").unlink()
+    (run / type1_report.PUBLICATION_RECEIPT_NAME).unlink()
+    blocked_receipt = dict(type1_report.BLOCKED_RUN_RECEIPT)
+    (run / "receipt.json").write_bytes(type1_report._canonical(blocked_receipt))
+    blocked_receipt_sha256 = type1_report._sha((run / "receipt.json").read_bytes())
+    source_sha256 = _runner_recovery_source_sha256(run)
+    report_sources = {
+        "protocol": source_sha256["protocol"],
+        "amendment": source_sha256["amendment"],
+        "authority": source_sha256["authority"],
+        "public_rows": source_sha256["public_rows"],
+        "dataset_manifest": source_sha256["dataset_manifest"],
+        "materializer_complete_receipt": source_sha256["materializer_complete_receipt"],
+    }
+    authority_envelope = json.loads(authority_path.read_text(encoding="utf-8"))
+    dataset_manifest = json.loads((run.parent / "dataset_manifest.json").read_text(encoding="utf-8"))
+    recovery_identity = {
+        **type1_report.REPLACEMENT_IDENTITY,
+        "amendment_sha256": source_sha256["amendment"],
+        "authority_sha256": source_sha256["authority"],
+        "materializer_sha256": source_sha256["materializer_manifest"],
+        "materializer_complete_receipt_sha256": source_sha256["materializer_complete_receipt"],
+        "source_database_identity": dataset_manifest["source_database_identity"],
+        "materializer_source_sha256": dataset_manifest["materializer_source_sha256"],
+        "preregistration_sha256": type1_report._sha(type1_report.PREREG_PATH.read_bytes()),
+        "parent_protocol_sha256": source_sha256["protocol"],
+        "runner_source_sha256": source_sha256["runner"],
+        "authority_sessions": authority_envelope["authority"]["sessions"],
+    }
+    members = json.loads(type1_report._canonical(completed_manifest["members"]).decode("utf-8"))
+    for kind in ("primary", "shuffled_reward"):
+        for seed in range(5):
+            members[kind][str(seed)]["artifact_paths"] = {
+                "model": f"{kind}/seed_{seed}/final_model.zip",
+                "normalizer": f"{kind}/seed_{seed}/normalizer.json",
+            }
+    validation_pairs_sha256 = members["primary"]["0"]["reload_receipt"]["evidence"]["validation_pairs_sha256"]
+    normalizer_digest = members["primary"]["0"]["reload_receipt"]["evidence"]["normalizer_digest"]
+    recovery_manifest = {
+        "schema_version": type1_report.RECOVERY_MANIFEST_SCHEMA,
+        "role": type1_report.RECOVERY_MANIFEST_ROLE,
+        "status": "COMPLETE",
+        "recovery_status": "COMPLETE",
+        "recovery_mode": type1_report.RECOVERY_MODE,
+        "source_commit": "4ba930c",
+        "original_run_id": IDENTITY["train_run_id"],
+        "reused_original_run_id": True,
+        "original_block": {
+            "path": "receipt.json",
+            "receipt_sha256": blocked_receipt_sha256,
+            "status": "BLOCK",
+            "execution_status": "BLOCK",
+            "verdict": "NO_GO",
+            "reason": type1_report.ORIGINAL_BLOCK_REASON,
+            "fresh_oos": dict(type1_report.RECOVERY_FRESH_OOS),
+            "preserved_byte_identical": True,
+        },
+        "protocol": {
+            "id": "KRONOS-TYPE1-G002-PUBLIC-2026-07-23",
+            "sha256": source_sha256["protocol"],
+        },
+        "identities": recovery_identity,
+        "features": list(type1_report.TYPE1_FEATURES),
+        "public_splits": {
+            "train": {
+                "frozen_start": "2018-01-02",
+                "frozen_end": "2023-12-29",
+                "actual_start": "2018-01-02",
+                "actual_end": "2023-12-29",
+            },
+            "reused_validation": {
+                "frozen_start": "2024-01-02",
+                "frozen_end": "2025-06-30",
+                "actual_start": "2024-01-02",
+                "actual_end": "2025-06-30",
+            },
+        },
+        "session_pairing": {
+            "authority_bound": True,
+            "trailing_embargo": list(recovery_identity["authority_sessions"]["trailing_embargo"]),
+            "validation_pairs_sha256": validation_pairs_sha256,
+            "normalizer_digest": normalizer_digest,
+        },
+        "training": {
+            "primary_seeds": [0, 1, 2, 3, 4],
+            "shuffled_reward_seeds": [0, 1, 2, 3, 4],
+            "timesteps_per_seed": 200000,
+            "device": "cpu",
+            "validation_visible_to_training": False,
+            "eval_callback": False,
+            "early_stopping": False,
+            "best_model_selection": False,
+            "checkpoint_selection": False,
+            "member_selection": False,
+            "saved_artifact": "FINAL_MODEL_ONLY",
+            "synthetic_oracle_calibration": False,
+            "retraining_performed": False,
+        },
+        "members": members,
+        "aggregation": {"metric": "FIVE_SEED_IQM", "primary_nav_krw": "0", "shuffled_nav_krw": "0"},
+        "pretraining_gate": completed_manifest["pretraining_gate"],
+        "controls": completed_manifest["controls"],
+        "source_sha256": source_sha256,
+        "materializer_sha256": source_sha256["materializer_manifest"],
+        "custody_bindings": type1_report._expected_recovery_custody_bindings(run, report_sources, blocked_receipt_sha256),
+        "fresh_oos": dict(type1_report.RECOVERY_FRESH_OOS),
+        "false_research_locks": dict(LOCKS),
+        "execution_status": "COMPLETE",
+        "verdict": "NO_GO",
+        "decision": "NO_GO",
+        "claims": dict(type1_report.RECOVERY_CLAIMS),
+    }
+    (run / "recovery_manifest.json").write_bytes(type1_report._canonical(recovery_manifest))
+    recovery_manifest_sha256 = type1_report._sha((run / "recovery_manifest.json").read_bytes())
+    recovery_receipt = {
+        "schema_version": type1_report.RECOVERY_RECEIPT_SCHEMA,
+        "role": type1_report.RECOVERY_RECEIPT_ROLE,
+        "status": "COMPLETE",
+        "execution_status": "COMPLETE",
+        "verdict": "NO_GO",
+        "decision": "NO_GO",
+        "run_id": IDENTITY["train_run_id"],
+        "recovery_manifest_sha256": recovery_manifest_sha256,
+        "blocked_receipt_sha256": blocked_receipt_sha256,
+        "blocked_receipt_path": "receipt.json",
+        "blocked_reason": type1_report.ORIGINAL_BLOCK_REASON,
+        "original_block_reason": type1_report.ORIGINAL_BLOCK_REASON,
+        "original_block_preserved": True,
+        "retraining_performed": False,
+        "overwrite_performed": False,
+        "move_performed": False,
+        "delete_performed": False,
+        "fresh_oos": dict(type1_report.RECOVERY_FRESH_OOS),
+        "member_artifact_sha256": _member_artifact_sha256(run),
+        "source_sha256": source_sha256,
+        "materializer_sha256": source_sha256["materializer_manifest"],
+        "outcome": "NO_GO_ONLY",
+    }
+    (run / "recovery_receipt.json").write_bytes(type1_report._canonical(recovery_receipt))
+    _write_publication_receipt(run, recovered=True)
     return authority_path
 
 
+
 def _sources(run):
-    authority_path = _prepare_completed_runner(run)
+    authority_path = run / "frozen_authority_envelope.json"
+    if not (run / "run_manifest.json").exists():
+        authority_path = _prepare_completed_runner(run)
     return initialize_report_authority(run, authority_path)
+def _recovered_sources(run):
+    authority_path = run / "frozen_authority_envelope.json"
+    if not (run / "recovery_manifest.json").exists():
+        authority_path = _prepare_recovered_runner(run)
+    return initialize_report_authority(run, authority_path)
+
 
 def _authority_file_paths(run):
     return [run / name for name in _AUTHORITY_FILES]
@@ -244,6 +509,59 @@ def test_initialize_report_authority_creates_sources_after_completed_runner(tmp_
     parent = json.loads((tmp_path / "attempt_parent.json").read_text(encoding="utf-8"))
     assert parent["parent_identity"] == type1_report.PARENT_ATTEMPT_IDENTITY
     assert parent["parent_status"] == "MATERIALIZED_NOT_TRAINED_QUARANTINED"
+def test_initialize_report_authority_creates_sources_after_recovered_runner(tmp_path):
+    authority_path = _prepare_recovered_runner(tmp_path)
+    assert not (tmp_path / "run_manifest.json").exists()
+    sources = initialize_report_authority(tmp_path, authority_path)
+    assert all(path.is_file() for path in _authority_file_paths(tmp_path))
+    assert sources == report_source_sha256(tmp_path)
+    assert {"blocked_receipt", "recovery_manifest", "recovery_receipt", "publication_receipt"} <= set(sources)
+    assert "run_manifest" not in sources and "run_receipt" not in sources
+    paths = type1_report._report_source_paths(tmp_path)
+    assert paths["blocked_receipt"] == (tmp_path / "receipt.json").absolute()
+    assert paths["recovery_manifest"] == (tmp_path / "recovery_manifest.json").absolute()
+    assert paths["recovery_receipt"] == (tmp_path / "recovery_receipt.json").absolute()
+    recovery_receipt = json.loads((tmp_path / "recovery_receipt.json").read_text(encoding="utf-8"))
+    publication_receipt = json.loads((tmp_path / type1_report.PUBLICATION_RECEIPT_NAME).read_text(encoding="utf-8"))
+    assert recovery_receipt["blocked_reason"] == type1_report.ORIGINAL_BLOCK_REASON
+    assert recovery_receipt["retraining_performed"] is False
+    assert recovery_receipt["fresh_oos"] == type1_report.RECOVERY_FRESH_OOS
+    assert len(recovery_receipt["member_artifact_sha256"]) == 20
+    recovery_manifest = json.loads((tmp_path / "recovery_manifest.json").read_text(encoding="utf-8"))
+    assert recovery_manifest["features"] == list(type1_report.TYPE1_FEATURES)
+    assert recovery_manifest["training"]["primary_seeds"] == [0, 1, 2, 3, 4]
+    assert recovery_manifest["training"]["shuffled_reward_seeds"] == [0, 1, 2, 3, 4]
+    assert recovery_manifest["original_block"]["preserved_byte_identical"] is True
+    assert (
+        recovery_manifest["session_pairing"]["validation_pairs_sha256"]
+        != recovery_manifest["pretraining_gate"]["validation_noninterference"]["train_pairs_sha256"]
+    )
+    assert publication_receipt["schema_version"] == type1_report.PUBLICATION_RECEIPT_SCHEMA_V2
+    assert publication_receipt["run_evidence_mode"] == type1_report.PUBLICATION_RECOVERED_RUN_EVIDENCE_MODE
+    assert "run_manifest_sha256" not in publication_receipt
+    assert "run_receipt_sha256" not in publication_receipt
+    assert "blocked_receipt_sha256" not in publication_receipt
+    assert "recovery_manifest_sha256" not in publication_receipt
+    assert "member_artifact_sha256" not in publication_receipt
+    assert "members" not in publication_receipt
+    assert "artifact_inventory_digest" not in publication_receipt
+    assert publication_receipt["recovery_receipt_sha256"] == sources["recovery_receipt"]
+    assert publication_receipt["identity"] == recovery_manifest["identities"]
+    assert publication_receipt["original_block_reason"] == type1_report.ORIGINAL_BLOCK_REASON
+    assert publication_receipt["retraining_performed"] is False
+    assert publication_receipt["preserved_block_receipt"] is True
+    disclosure = publication_receipt["disclosure"]
+    expected_members = type1_report._expected_member_artifact_sha256(sources)
+    assert disclosure == {
+        "recovery_manifest_sha256": sources["recovery_manifest"],
+        "blocked_receipt_sha256": sources["blocked_receipt"],
+        "members": expected_members,
+    }
+    revision = build_completed_report_revision(tmp_path)
+    assert revision["result"] == REPORT_RESULT
+    assert revision["claims"] == RECOVERED_REPORT_CLAIMS
+    assert revision["evidence"] == {label: sources[label] for label in RECOVERED_REPORT_EVIDENCE_LABELS}
+
 
 
 def test_initialize_report_authority_exact_retry_is_idempotent(tmp_path):
@@ -329,6 +647,14 @@ def _revision(run, number=1):
         revision_id=f"type1-r{number:04d}",
         revision_ordinal=number,
     )
+def _recovered_revision(run, number=1):
+    _recovered_sources(run)
+    return build_completed_report_revision(
+        run,
+        revision_id=f"type1-r{number:04d}",
+        revision_ordinal=number,
+    )
+
 
 
 def test_build_completed_report_revision_derives_fixed_custody_sources(tmp_path):
@@ -535,6 +861,53 @@ def _rebind_revision(run, revision):
     sources = report_source_sha256(run)
     revision["source_sha256"] = sources
     revision["evidence"] = {label: sources[label] for label in _REPORT_EVIDENCE_LABELS}
+def _rebind_recovered_revision(run, revision):
+    sources = report_source_sha256(run)
+    revision["source_sha256"] = sources
+    revision["evidence"] = {label: sources[label] for label in RECOVERED_REPORT_EVIDENCE_LABELS}
+    revision["claims"] = RECOVERED_REPORT_CLAIMS
+
+
+def _mutate_json(path, mutate):
+    value = json.loads(path.read_text(encoding="utf-8"))
+    mutate(value)
+    path.write_bytes(type1_report._canonical(value))
+
+def _recovery_source_sha256(run):
+    return _runner_recovery_source_sha256(run)
+
+
+def _refresh_recovered_hash_bindings(run):
+    source_sha256 = _recovery_source_sha256(run)
+    blocked_receipt_sha256 = type1_report._sha((run / "receipt.json").read_bytes())
+    manifest_path = run / "recovery_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if isinstance(manifest.get("original_block"), dict):
+        manifest["original_block"]["receipt_sha256"] = blocked_receipt_sha256
+    manifest["source_sha256"] = source_sha256
+    manifest["materializer_sha256"] = source_sha256["materializer_manifest"]
+    report_sources = {
+        "protocol": source_sha256["protocol"],
+        "amendment": source_sha256["amendment"],
+        "authority": source_sha256["authority"],
+        "public_rows": source_sha256["public_rows"],
+        "dataset_manifest": source_sha256["dataset_manifest"],
+        "materializer_complete_receipt": source_sha256["materializer_complete_receipt"],
+    }
+    manifest["custody_bindings"] = type1_report._expected_recovery_custody_bindings(run, report_sources, blocked_receipt_sha256)
+    manifest_path.write_bytes(type1_report._canonical(manifest))
+    recovery_manifest_sha256 = type1_report._sha(manifest_path.read_bytes())
+    receipt_path = run / "recovery_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["blocked_receipt_sha256"] = blocked_receipt_sha256
+    receipt["recovery_manifest_sha256"] = recovery_manifest_sha256
+    receipt["member_artifact_sha256"] = _member_artifact_sha256(run)
+    receipt["source_sha256"] = source_sha256
+    receipt["materializer_sha256"] = source_sha256["materializer_manifest"]
+    receipt_path.write_bytes(type1_report._canonical(receipt))
+    if (run / type1_report.PUBLICATION_RECEIPT_NAME).exists():
+        _refresh_recovered_publication_receipt_hashes(run)
+
 
 def _mutate_manifest(run, mutate):
     manifest_path = run / "run_manifest.json"
@@ -546,7 +919,7 @@ def _mutate_manifest(run, mutate):
         "manifest_sha256": type1_report._sha(manifest_raw), "execution_status": "COMPLETE",
         "verdict": "NO_GO", "fresh_oos": {"state": "NOT_RUN", "metrics": None},
     }))
-    _write_publication_receipt(run)
+    _refresh_completed_publication_receipt_hashes(run)
 
 
 def test_build_completed_report_revision_revalidates_runner_evidence(tmp_path):
@@ -573,6 +946,44 @@ def test_report_rejects_invalid_runner_member_or_oos_evidence(tmp_path, mutate):
     _rebind_revision(tmp_path, revision)
     with pytest.raises(Type1ReportError):
         insert_report_revision(tmp_path, revision)
+@pytest.mark.parametrize(
+    "mutate,refresh",
+    [
+        (lambda run: _mutate_json(run / "receipt.json", lambda receipt: receipt.update({"reason": "different"})), True),
+        (lambda run: _mutate_json(run / "receipt.json", lambda receipt: receipt.update({"execution_status": "COMPLETE"})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest.update({"execution_status": "BLOCK"})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest.update({"features": {"kind": "fixture"}})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest["training"].update({"seeds": [0, 1, 2, 3, 4]})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest["session_pairing"].update({"validation_pairs_sha256": manifest["pretraining_gate"]["validation_noninterference"]["train_pairs_sha256"]})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest.update({"original_block": {**type1_report.BLOCKED_RUN_RECEIPT, "receipt_sha256": manifest["original_block"]["receipt_sha256"]}})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest["training"].update({"retraining_performed": True})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest["false_research_locks"].update({"live_broker_order_allowed": True})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest.update({"fresh_oos": {"state": "NOT_RUN", "metrics": None, "read_performed": True}})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest["members"]["primary"]["0"]["reload_receipt"]["evidence"].update({"normalizer_digest": "0" * 64})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest["members"]["primary"]["0"]["reload_receipt"]["evidence"].update({"validation_pairs_sha256": "0" * 64})), True),
+        (lambda run: _mutate_json(run / "recovery_manifest.json", lambda manifest: manifest["members"]["primary"]["0"]["reload_receipt"]["evidence"].update({"validation_pairs_sha256": manifest["pretraining_gate"]["validation_noninterference"]["train_pairs_sha256"]})), True),
+        (lambda run: _mutate_json(run / "recovery_receipt.json", lambda receipt: receipt.update({"recovery_manifest_sha256": "0" * 64})), False),
+        (lambda run: _mutate_json(run / "recovery_receipt.json", lambda receipt: receipt.update({"retraining_performed": True})), False),
+        (lambda run: _mutate_json(run / "recovery_receipt.json", lambda receipt: receipt["fresh_oos"].update({"read_performed": True})), False),
+        (lambda run: _mutate_json(run / "recovery_receipt.json", lambda receipt: receipt["source_sha256"].update({"recovery_manifest": "0" * 64})), False),
+        (lambda run: _mutate_json(run / type1_report.PUBLICATION_RECEIPT_NAME, lambda receipt: receipt["disclosure"].update({"blocked_receipt_sha256": "0" * 64})), False),
+        (lambda run: _mutate_json(run / type1_report.PUBLICATION_RECEIPT_NAME, lambda receipt: receipt.update({"original_block_reason": "different"})), False),
+        (lambda run: _mutate_json(run / type1_report.PUBLICATION_RECEIPT_NAME, lambda receipt: receipt.update({"retraining_performed": True})), False),
+        (lambda run: _mutate_json(run / type1_report.PUBLICATION_RECEIPT_NAME, lambda receipt: receipt["fresh_oos"].update({"read_performed": True})), False),
+        (lambda run: _mutate_json(run / type1_report.PUBLICATION_RECEIPT_NAME, lambda receipt: receipt["disclosure"]["members"].update({"primary/seed_0/final_model.zip": "0" * 64})), False),
+        (lambda run: _mutate_json(run / type1_report.PUBLICATION_RECEIPT_NAME, lambda receipt: receipt.update({"run_evidence_mode": "recovered"})), False),
+        (lambda run: _mutate_json(run / type1_report.PUBLICATION_RECEIPT_NAME, lambda receipt: receipt.update({"disclosure": {"run_manifest_created": False, "original_block_preserved": True}})), False),
+    ],
+)
+def test_report_rejects_recovered_block_recovery_publication_tampering(tmp_path, mutate, refresh):
+    revision = _recovered_revision(tmp_path)
+    mutate(tmp_path)
+    if refresh:
+        _refresh_recovered_hash_bindings(tmp_path)
+        _rebind_recovered_revision(tmp_path, revision)
+    with pytest.raises(Type1ReportError):
+        insert_report_revision(tmp_path, revision)
+
 
 @pytest.mark.parametrize(
     "field,value",
@@ -637,7 +1048,7 @@ def test_report_rejects_nonmaterializer_completion_receipt(tmp_path, mutate):
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     mutate(receipt)
     receipt_path.write_bytes(type1_report._canonical(receipt))
-    _write_publication_receipt(tmp_path)
+    _refresh_completed_publication_receipt_hashes(tmp_path)
     _rebind_revision(tmp_path, revision)
     with pytest.raises(Type1ReportError, match="materializer completion"):
         insert_report_revision(tmp_path, revision)
@@ -649,7 +1060,7 @@ def test_report_rejects_missing_pretraining_evidence(tmp_path):
     with pytest.raises(Type1ReportError, match="pretraining"):
         insert_report_revision(tmp_path, revision)
 
-def _prepare_one_shot_fixture(tmp_path, monkeypatch):
+def _prepare_one_shot_fixture(tmp_path, monkeypatch, *, recovered=False):
     run = (
         tmp_path
         / "webui"
@@ -658,7 +1069,7 @@ def _prepare_one_shot_fixture(tmp_path, monkeypatch):
         / IDENTITY["dataset_id"]
         / IDENTITY["train_run_id"]
     )
-    staged_authority = _prepare_completed_runner(run)
+    staged_authority = _prepare_recovered_runner(run) if recovered else _prepare_completed_runner(run)
     authority = (
         tmp_path
         / "webui"
@@ -723,6 +1134,40 @@ def test_completed_report_one_shot_cli_creates_single_committed_report(tmp_path,
     html = objects[0].read_text(encoding="utf-8")
     assert html.count('role="tab"') == 7
     assert "NO_GO" in html and "NO_GO_ONLY" in html and "NOT_RUN" in html
+def test_recovered_report_one_shot_cli_discloses_append_only_recovery(tmp_path, monkeypatch, capsys):
+    run, authority = _prepare_one_shot_fixture(tmp_path, monkeypatch, recovered=True)
+    code, receipt = _run_one_shot_cli(capsys, run, authority)
+    assert code == 0
+    assert receipt["report_status"] == "COMMITTED"
+    assert receipt["mode"] == "CREATED"
+    assert receipt["verdict"] == "NO_GO"
+    assert receipt["fresh_oos"] == {"state": "NOT_RUN", "read_performed": False}
+    assert receipt["run_evidence_mode"] == type1_report.RECOVERED_RUN_EVIDENCE_MODE
+    for label in ("blocked_receipt", "recovery_manifest", "recovery_receipt", "publication_receipt"):
+        assert label in receipt["evidence"]
+    snapshot = verify_report_catalog(run)
+    revision = snapshot["revision"]
+    assert revision["result"] == REPORT_RESULT
+    assert revision["claims"] == RECOVERED_REPORT_CLAIMS
+    assert revision["evidence"] == {label: report_source_sha256(run)[label] for label in RECOVERED_REPORT_EVIDENCE_LABELS}
+    assert revision["evidence"]["blocked_receipt"] == receipt["evidence"]["blocked_receipt"]
+    assert revision["evidence"]["recovery_manifest"] == receipt["evidence"]["recovery_manifest"]
+    assert revision["evidence"]["recovery_receipt"] == receipt["evidence"]["recovery_receipt"]
+    objects = list((run / "type1_reports" / "objects").iterdir())
+    assert len(objects) == 1
+    html = objects[0].read_text(encoding="utf-8")
+    assert html.count('role="tab"') == 7
+    assert html.count('role="tabpanel"') == 7
+    assert "Append-only recovery disclosure" in html
+    assert "recovery_from_blocked_controls:true" in html
+    assert type1_report.RECOVERY_MODE in html
+    assert type1_report.ORIGINAL_BLOCK_REASON in html
+    assert "original receipt remains" in html
+    assert "retraining_performed:false" in html
+    assert "Fresh OOS remains NOT_RUN/no-read" in html
+    assert "NO_GO" in html and "NO_GO_ONLY" in html and "NOT_RUN" in html
+    assert "NOT_CLAIMED" in html and "PROFITABLE" not in html and "LIVE" not in html
+
 
 
 def test_completed_report_one_shot_cli_is_idempotent_for_matching_committed_tip(tmp_path, monkeypatch, capsys):

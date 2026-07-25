@@ -1,4 +1,4 @@
-"""Fail-closed publication move for the completed Type 1 public run.
+"""Fail-closed publication move for the recovered Type 1 public run.
 
 The publisher performs two mutations only: durable creation of the canonical
 publication receipt inside the frozen staging run, followed by an atomic
@@ -16,7 +16,7 @@ import stat
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from stom_rl.daily_type1_contract import canonical_json_bytes, sha256_canonical
+from stom_rl.daily_type1_contract import FEATURES, canonical_json_bytes, sha256_canonical
 from stom_rl.daily_type1_public_data import (
     DATASET_ID,
     RECEIPT_ROLE as MATERIALIZER_RECEIPT_ROLE,
@@ -26,6 +26,13 @@ from stom_rl.daily_type1_public_data import (
 from stom_rl.daily_type1_public_run import (
     FALSE_RESEARCH_LOCKS,
     FINAL_MODEL_ONLY,
+    ORIGINAL_BLOCKED_REASON,
+    RECOVERY_MANIFEST_SCHEMA,
+    RECOVERY_MODE,
+    RECOVERY_RECEIPT_ROLE,
+    RECOVERY_RECEIPT_SCHEMA,
+    RECOVERY_ROLE,
+    RECOVERY_SOURCE_COMMIT,
     REPLACEMENT_AUTHORITY_ID,
     REPLACEMENT_CUSTODY_UID,
     REPLACEMENT_RUN_ID,
@@ -39,11 +46,22 @@ DESTINATION_RUN_ROOT = REPO_ROOT / "webui" / "rl_runs" / "v6_daily_h1" / DATASET
 SOURCE_LOGICAL_PATH = "artifacts/type1-public-runs/train_type1-public-005"
 DESTINATION_LOGICAL_PATH = "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/train_type1-public-005"
 PUBLICATION_RECEIPT_NAME = "publication_receipt.json"
-PUBLICATION_SCHEMA_VERSION = "kronos.type1.publication-receipt.v1"
+PUBLICATION_SCHEMA_VERSION = "kronos.type1.publication-receipt.v2"
+_COMPLETED_PUBLICATION_SCHEMA_VERSION = "kronos.type1.publication-receipt.v1"
 PUBLICATION_ROLE = "TYPE1_PUBLICATION_RECEIPT"
 _RUN_SCHEMA_VERSION = "kronos_type1_g002_public_run.v1"
+_RUN_EVIDENCE_MODE_COMPLETED = "COMPLETED_RUN"
+_RUN_EVIDENCE_MODE_RECOVERED = "RECOVERED_AFTER_BLOCK"
+_ORIGINAL_BLOCK_REASON = ORIGINAL_BLOCKED_REASON
 _FRESH_RUN_NOT_RUN = {"state": "NOT_RUN", "metrics": None}
+_FRESH_NO_READ = {"state": "NOT_RUN", "metrics": None, "read_performed": False}
 _FRESH_MATERIALIZER_NOT_RUN = {"state": "NOT_RUN", "read_performed": False}
+_ORIGINAL_BLOCK_RECEIPT = {
+    "execution_status": "BLOCK",
+    "fresh_oos": _FRESH_RUN_NOT_RUN,
+    "reason": _ORIGINAL_BLOCK_REASON,
+    "verdict": "NO_GO",
+}
 _REPLACEMENT_IDENTITY = {
     "authority_id": REPLACEMENT_AUTHORITY_ID,
     "dataset_id": DATASET_ID,
@@ -69,8 +87,145 @@ _MATERIALIZER_ROLES = {
     "dataset_manifest.json": "CANONICAL_DATASET_MANIFEST",
     "materializer_complete_receipt.json": MATERIALIZER_RECEIPT_ROLE,
 }
-_RUN_ROOT_ENTRIES_BEFORE_RECEIPT = frozenset({"receipt.json", "run_manifest.json", "primary", "shuffled_reward"})
-_RUN_ROOT_ENTRIES_WITH_RECEIPT = _RUN_ROOT_ENTRIES_BEFORE_RECEIPT | frozenset({PUBLICATION_RECEIPT_NAME})
+_COMPLETED_RUN_ROOT_ENTRIES_BEFORE_RECEIPT = frozenset({"receipt.json", "run_manifest.json", "primary", "shuffled_reward"})
+_COMPLETED_RUN_ROOT_ENTRIES_WITH_RECEIPT = _COMPLETED_RUN_ROOT_ENTRIES_BEFORE_RECEIPT | frozenset({PUBLICATION_RECEIPT_NAME})
+_RECOVERED_RUN_ROOT_ENTRIES_BEFORE_RECEIPT = frozenset({"receipt.json", "recovery_manifest.json", "recovery_receipt.json", "primary", "shuffled_reward"})
+_RECOVERED_RUN_ROOT_ENTRIES_WITH_RECEIPT = _RECOVERED_RUN_ROOT_ENTRIES_BEFORE_RECEIPT | frozenset({PUBLICATION_RECEIPT_NAME})
+_RECOVERY_FAMILIES = ("primary", "shuffled_reward")
+_RECOVERY_SEEDS = (0, 1, 2, 3, 4)
+_RECOVERY_MEMBER_ARTIFACT_NAMES = ("final_model.zip", "normalizer.json")
+_RECOVERY_MANIFEST_KEYS = frozenset({
+    "schema_version",
+    "role",
+    "status",
+    "recovery_status",
+    "recovery_mode",
+    "source_commit",
+    "original_run_id",
+    "reused_original_run_id",
+    "original_block",
+    "protocol",
+    "identities",
+    "features",
+    "public_splits",
+    "session_pairing",
+    "training",
+    "members",
+    "aggregation",
+    "pretraining_gate",
+    "controls",
+    "source_sha256",
+    "materializer_sha256",
+    "custody_bindings",
+    "fresh_oos",
+    "false_research_locks",
+    "execution_status",
+    "verdict",
+    "decision",
+    "claims",
+})
+_RECOVERY_RECEIPT_KEYS = frozenset({
+    "schema_version",
+    "role",
+    "status",
+    "execution_status",
+    "verdict",
+    "decision",
+    "run_id",
+    "recovery_manifest_sha256",
+    "blocked_receipt_sha256",
+    "blocked_receipt_path",
+    "blocked_reason",
+    "original_block_reason",
+    "original_block_preserved",
+    "retraining_performed",
+    "overwrite_performed",
+    "move_performed",
+    "delete_performed",
+    "fresh_oos",
+    "member_artifact_sha256",
+    "source_sha256",
+    "materializer_sha256",
+    "outcome",
+})
+_RECOVERY_IDENTITY_KEYS = frozenset({
+    "authority_id",
+    "dataset_id",
+    "train_id",
+    "train_run_id",
+    "custody_uid",
+    "amendment_sha256",
+    "authority_sha256",
+    "materializer_sha256",
+    "materializer_complete_receipt_sha256",
+    "source_database_identity",
+    "materializer_source_sha256",
+    "preregistration_sha256",
+    "parent_protocol_sha256",
+    "runner_source_sha256",
+    "authority_sessions",
+})
+_RECOVERY_SOURCE_SHA256_KEYS = frozenset({
+    "runner",
+    "market",
+    "protocol",
+    "amendment",
+    "authority",
+    "public_rows",
+    "dataset_manifest",
+    "materializer_manifest",
+    "materializer_complete_receipt",
+})
+_RECOVERY_CUSTODY_BINDING_KEYS = frozenset({
+    "blocked_receipt",
+    "protocol",
+    "amendment",
+    "public_rows",
+    "dataset_manifest",
+    "materializer_manifest",
+    "materializer_complete_receipt",
+    "authority",
+    "runner",
+    "market",
+})
+_RECOVERY_ORIGINAL_BLOCK_KEYS = frozenset({
+    "path",
+    "receipt_sha256",
+    "status",
+    "execution_status",
+    "verdict",
+    "reason",
+    "fresh_oos",
+    "preserved_byte_identical",
+})
+_RECOVERY_TRAINING_CONTRACT = {
+    "primary_seeds": list(_RECOVERY_SEEDS),
+    "shuffled_reward_seeds": list(_RECOVERY_SEEDS),
+    "timesteps_per_seed": TIMESTEPS_PER_SEED,
+    "device": "cpu",
+    "validation_visible_to_training": False,
+    "eval_callback": False,
+    "early_stopping": False,
+    "best_model_selection": False,
+    "checkpoint_selection": False,
+    "member_selection": False,
+    "saved_artifact": FINAL_MODEL_ONLY,
+    "synthetic_oracle_calibration": False,
+    "retraining_performed": False,
+}
+_RECOVERY_CLAIMS = {
+    "profitability": "NOT_CLAIMED",
+    "live": "NOT_CLAIMED",
+    "fresh_oos": "NOT_RUN_NO_READ",
+    "outcome": "NO_GO_ONLY",
+}
+_RECOVERY_PUBLICATION_DISCLOSURE_KEYS = frozenset({
+    "recovery_manifest_sha256",
+    "blocked_receipt_sha256",
+    "members",
+})
+_RUN_ROOT_ENTRIES_BEFORE_RECEIPT = _COMPLETED_RUN_ROOT_ENTRIES_BEFORE_RECEIPT
+_RUN_ROOT_ENTRIES_WITH_RECEIPT = _COMPLETED_RUN_ROOT_ENTRIES_WITH_RECEIPT
 
 
 class Type1PublicationError(ValueError):
@@ -86,6 +241,29 @@ def publish_type1_run() -> dict[str, Any]:
         destination_logical_path=DESTINATION_LOGICAL_PATH,
     )
 
+def _select_run_evidence_mode(
+    source: Path,
+    destination: Path,
+    *,
+    source_logical_path: str,
+    destination_logical_path: str,
+) -> str:
+    production_logical_paths = (
+        source_logical_path == SOURCE_LOGICAL_PATH
+        and destination_logical_path == DESTINATION_LOGICAL_PATH
+    )
+    production_identity = (
+        production_logical_paths
+        or source.name == REPLACEMENT_RUN_ID
+        or destination.name == REPLACEMENT_RUN_ID
+    )
+    if production_identity:
+        if not production_logical_paths:
+            raise Type1PublicationError("recovered production publication logical paths do not match the authorized contract")
+        return _RUN_EVIDENCE_MODE_RECOVERED
+    if not source_logical_path or not destination_logical_path:
+        raise Type1PublicationError("publication receipt logical paths must be non-empty")
+    return _RUN_EVIDENCE_MODE_COMPLETED
 
 def _publish_verified_run(
     source_root: Path | str,
@@ -98,8 +276,12 @@ def _publish_verified_run(
     source = Path(source_root)
     destination = Path(destination_root)
     destination_parent = destination.parent
-    if source_logical_path != SOURCE_LOGICAL_PATH or destination_logical_path != DESTINATION_LOGICAL_PATH:
-        raise Type1PublicationError("publication receipt logical paths do not match the authorized contract")
+    run_evidence_mode = _select_run_evidence_mode(
+        source,
+        destination,
+        source_logical_path=source_logical_path,
+        destination_logical_path=destination_logical_path,
+    )
 
     source_exists = _exists_for_identity(source)
     destination_exists = _exists_for_identity(destination)
@@ -123,7 +305,7 @@ def _publish_verified_run(
 
     receipt_path = source / PUBLICATION_RECEIPT_NAME
     has_staged_receipt = _exists_for_identity(receipt_path)
-    run_evidence = _verify_run_root(source, allow_publication_receipt=has_staged_receipt)
+    run_evidence = _verify_run_root(source, allow_publication_receipt=has_staged_receipt, run_evidence_mode=run_evidence_mode)
 
     # The immutable materialization verifier is intentionally called before the
     # move, while the destination parent still contains exactly the three
@@ -134,6 +316,7 @@ def _publish_verified_run(
     except Exception as exc:
         raise Type1PublicationError("destination parent is not the canonical three-artifact materialization") from exc
     materializer = _verify_materializer_artifacts(destination_parent)
+    _verify_run_materializer_bindings(run_evidence, materializer)
 
     _require_same_volume(source, destination_parent)
     receipt = _publication_receipt(
@@ -147,7 +330,7 @@ def _publish_verified_run(
     else:
         _write_new_canonical(receipt_path, receipt)
 
-    staged_run = _verify_run_root(source, allow_publication_receipt=True)
+    staged_run = _verify_run_root(source, allow_publication_receipt=True, run_evidence_mode=run_evidence_mode)
     if staged_run != run_evidence:
         raise Type1PublicationError("run evidence changed after publication receipt creation")
     _verify_publication_receipt(source, expected_receipt=receipt, recovered=False)
@@ -163,7 +346,7 @@ def _publish_verified_run(
         raise Type1PublicationError("same-volume atomic directory rename failed") from exc
     _fsync_rename_parent_directories(source.parent, destination_parent)
 
-    moved_run = _verify_run_root(destination, allow_publication_receipt=True)
+    moved_run = _verify_run_root(destination, allow_publication_receipt=True, run_evidence_mode=run_evidence_mode)
     if moved_run != run_evidence:
         raise Type1PublicationError("run evidence changed across atomic rename")
     moved_materializer = _verify_materializer_artifacts(destination_parent)
@@ -182,10 +365,17 @@ def _recover_published_destination(
     source_logical_path: str,
     destination_logical_path: str,
 ) -> dict[str, Any]:
+    run_evidence_mode = _select_run_evidence_mode(
+        destination,
+        destination,
+        source_logical_path=source_logical_path,
+        destination_logical_path=destination_logical_path,
+    )
     _reject_existing_indirection(destination)
     _reject_tree_indirection(destination)
-    run_evidence = _verify_run_root(destination, allow_publication_receipt=True)
+    run_evidence = _verify_run_root(destination, allow_publication_receipt=True, run_evidence_mode=run_evidence_mode)
     materializer = _verify_materializer_artifacts(destination.parent)
+    _verify_run_materializer_bindings(run_evidence, materializer)
     expected = _publication_receipt(
         source_logical_path=source_logical_path,
         destination_logical_path=destination_logical_path,
@@ -206,21 +396,31 @@ def _verify_publication_receipt(
     if actual != dict(expected_receipt):
         raise Type1PublicationError("publication receipt is missing, partial, or does not bind this destination")
     return {
-        "publication_status": "COMPLETE",
+        "publication_status": actual["status"],
         "mode": "RECOVERED" if recovered else "PUBLISHED",
-        "verdict": "NO_GO",
+        "publication_mode": actual.get("mode", "completed"),
+        "run_evidence_mode": actual.get("run_evidence_mode", _RUN_EVIDENCE_MODE_COMPLETED),
+        "verdict": actual["verdict"],
         "destination": str(destination),
         "publication_receipt_path": str(receipt_path),
         "publication_receipt_sha256": _sha(raw),
-        "fresh_oos": dict(_FRESH_RUN_NOT_RUN),
+        "fresh_oos": dict(actual.get("fresh_oos", _FRESH_RUN_NOT_RUN)),
     }
 
 
-def _verify_run_root(root: Path, *, allow_publication_receipt: bool) -> dict[str, Any]:
+def _verify_run_root(root: Path, *, allow_publication_receipt: bool, run_evidence_mode: str) -> dict[str, Any]:
+    if run_evidence_mode == _RUN_EVIDENCE_MODE_RECOVERED:
+        return _verify_recovered_run_root(root, allow_publication_receipt=allow_publication_receipt)
+    if run_evidence_mode == _RUN_EVIDENCE_MODE_COMPLETED:
+        return _verify_completed_run_root(root, allow_publication_receipt=allow_publication_receipt)
+    raise Type1PublicationError("unknown publication run evidence mode")
+
+
+def _verify_completed_run_root(root: Path, *, allow_publication_receipt: bool) -> dict[str, Any]:
     if not root.is_dir():
         raise FileNotFoundError(root)
     _reject_tree_indirection(root)
-    expected_entries = _RUN_ROOT_ENTRIES_WITH_RECEIPT if allow_publication_receipt else _RUN_ROOT_ENTRIES_BEFORE_RECEIPT
+    expected_entries = _COMPLETED_RUN_ROOT_ENTRIES_WITH_RECEIPT if allow_publication_receipt else _COMPLETED_RUN_ROOT_ENTRIES_BEFORE_RECEIPT
     try:
         actual_entries = {path.name for path in root.iterdir()}
     except OSError as exc:
@@ -243,9 +443,56 @@ def _verify_run_root(root: Path, *, allow_publication_receipt: bool) -> dict[str
     _validate_run_manifest(manifest, manifest_sha)
     artifact_hashes = _verify_members(root, manifest)
     return {
+        "run_evidence_mode": _RUN_EVIDENCE_MODE_COMPLETED,
         "run_manifest_sha256": manifest_sha,
         "run_receipt_sha256": receipt_sha,
         "artifact_sha256": artifact_hashes,
+    }
+
+
+def _verify_recovered_run_root(root: Path, *, allow_publication_receipt: bool) -> dict[str, Any]:
+    if not root.is_dir():
+        raise FileNotFoundError(root)
+    _reject_tree_indirection(root)
+    expected_entries = _RECOVERED_RUN_ROOT_ENTRIES_WITH_RECEIPT if allow_publication_receipt else _RECOVERED_RUN_ROOT_ENTRIES_BEFORE_RECEIPT
+    try:
+        actual_entries = {path.name for path in root.iterdir()}
+    except OSError as exc:
+        raise Type1PublicationError("run root is unreadable") from exc
+    if actual_entries != expected_entries:
+        required = ", ".join(sorted(expected_entries))
+        raise Type1PublicationError(f"recovered run root must contain exactly these top-level entries: {required}")
+
+    block_receipt, block_receipt_raw = _read_canonical_object(root / "receipt.json", "original BLOCK receipt")
+    if block_receipt != _ORIGINAL_BLOCK_RECEIPT:
+        raise Type1PublicationError("original BLOCK receipt/reason is not the immutable Decimal-mask control failure")
+    blocked_receipt_sha = _sha(block_receipt_raw)
+    recovery_manifest, recovery_manifest_raw = _read_canonical_object(root / "recovery_manifest.json", "recovery manifest")
+    recovery_receipt, recovery_receipt_raw = _read_canonical_object(root / "recovery_receipt.json", "recovery receipt")
+    recovery_manifest_sha = _sha(recovery_manifest_raw)
+    recovery_receipt_sha = _sha(recovery_receipt_raw)
+    source_hashes, identities = _validate_recovery_manifest(recovery_manifest, recovery_manifest_sha, blocked_receipt_sha)
+    member_artifact_sha256 = _verify_recovered_members(root, recovery_manifest)
+    _validate_recovery_receipt(
+        recovery_receipt,
+        recovery_receipt_sha,
+        recovery_manifest_sha=recovery_manifest_sha,
+        blocked_receipt_sha=blocked_receipt_sha,
+        source_hashes=source_hashes,
+        member_artifact_sha256=member_artifact_sha256,
+    )
+    return {
+        "run_evidence_mode": _RUN_EVIDENCE_MODE_RECOVERED,
+        "blocked_receipt_sha256": blocked_receipt_sha,
+        "recovery_manifest_sha256": recovery_manifest_sha,
+        "recovery_receipt_sha256": recovery_receipt_sha,
+        "original_block_reason": _ORIGINAL_BLOCK_REASON,
+        "preserved_block_receipt": True,
+        "retraining_performed": False,
+        "fresh_oos": dict(_FRESH_NO_READ),
+        "artifact_sha256": dict(member_artifact_sha256),
+        "source_hashes": dict(source_hashes),
+        "identities": dict(identities),
     }
 
 
@@ -334,9 +581,375 @@ def _verify_members(root: Path, manifest: Mapping[str, Any]) -> dict[str, str]:
     if len(artifact_hashes) != 20:
         raise Type1PublicationError("run must bind exactly twenty final model/normalizer artifacts")
     return artifact_hashes
+def _validate_recovery_manifest(
+    manifest: Mapping[str, Any],
+    manifest_sha: str,
+    blocked_receipt_sha: str,
+) -> tuple[dict[str, str], Mapping[str, Any]]:
+    _require_exact_keys(manifest, _RECOVERY_MANIFEST_KEYS, "recovery manifest")
+    if manifest_sha != _sha(canonical_json_bytes(dict(manifest))):
+        raise Type1PublicationError("recovery manifest is not canonical")
+    if (
+        manifest["schema_version"] != RECOVERY_MANIFEST_SCHEMA
+        or manifest["role"] != RECOVERY_ROLE
+        or manifest["status"] != "COMPLETE"
+        or manifest["recovery_status"] != "COMPLETE"
+        or manifest["execution_status"] != "COMPLETE"
+        or manifest["verdict"] != "NO_GO"
+        or manifest["decision"] != "NO_GO"
+        or manifest["recovery_mode"] != RECOVERY_MODE
+        or manifest["source_commit"] != RECOVERY_SOURCE_COMMIT
+        or manifest["original_run_id"] != REPLACEMENT_RUN_ID
+        or manifest["reused_original_run_id"] is not True
+        or manifest["fresh_oos"] != _FRESH_NO_READ
+        or manifest["false_research_locks"] != FALSE_RESEARCH_LOCKS
+        or manifest["training"] != _RECOVERY_TRAINING_CONTRACT
+        or manifest["claims"] != _RECOVERY_CLAIMS
+        or manifest["features"] != list(FEATURES)
+    ):
+        raise Type1PublicationError("recovery manifest violates the exact recovered runner contract")
+    if any(value is not False for value in manifest["false_research_locks"].values()):
+        raise Type1PublicationError("false-research locks must all remain false")
+
+    source_hashes = _validate_recovery_source_sha256(manifest["source_sha256"], "recovery manifest source_sha256")
+    identities = _validate_recovery_identities(manifest["identities"])
+    if (
+        manifest["materializer_sha256"] != source_hashes["materializer_manifest"]
+        or identities["materializer_sha256"] != source_hashes["materializer_manifest"]
+        or identities["materializer_complete_receipt_sha256"] != source_hashes["materializer_complete_receipt"]
+        or identities["authority_sha256"] != source_hashes["authority"]
+        or identities["amendment_sha256"] != source_hashes["amendment"]
+        or identities["parent_protocol_sha256"] != source_hashes["protocol"]
+        or identities["runner_source_sha256"] != source_hashes["runner"]
+    ):
+        raise Type1PublicationError("recovery manifest identity/source hashes are not cross-bound")
+
+    _validate_recovery_original_block(manifest["original_block"], blocked_receipt_sha)
+    _validate_recovery_protocol(manifest["protocol"], source_hashes["protocol"])
+    session_pairing = _validate_recovery_session_pairing(manifest["session_pairing"])
+    if session_pairing["trailing_embargo"] != identities["authority_sessions"]["trailing_embargo"]:
+        raise Type1PublicationError("recovery manifest session pairing does not match authority sessions")
+    _validate_recovery_custody_bindings(manifest["custody_bindings"], source_hashes, blocked_receipt_sha)
+    controls = manifest["controls"]
+    if not isinstance(controls, Mapping) or controls.get("integrity_ok") is not True:
+        raise Type1PublicationError("recovery controls integrity is not complete")
+    return source_hashes, identities
 
 
-def _verify_materializer_artifacts(parent: Path) -> dict[str, str]:
+def _validate_recovery_receipt(
+    receipt: Mapping[str, Any],
+    receipt_sha: str,
+    *,
+    recovery_manifest_sha: str,
+    blocked_receipt_sha: str,
+    source_hashes: Mapping[str, str],
+    member_artifact_sha256: Mapping[str, str],
+) -> None:
+    if not receipt_sha:
+        raise Type1PublicationError("recovery receipt hash is unavailable")
+    _require_exact_keys(receipt, _RECOVERY_RECEIPT_KEYS, "recovery receipt")
+    if (
+        receipt["schema_version"] != RECOVERY_RECEIPT_SCHEMA
+        or receipt["role"] != RECOVERY_RECEIPT_ROLE
+        or receipt["status"] != "COMPLETE"
+        or receipt["execution_status"] != "COMPLETE"
+        or receipt["verdict"] != "NO_GO"
+        or receipt["decision"] != "NO_GO"
+        or receipt["run_id"] != REPLACEMENT_RUN_ID
+        or receipt["recovery_manifest_sha256"] != recovery_manifest_sha
+        or receipt["blocked_receipt_sha256"] != blocked_receipt_sha
+        or receipt["blocked_receipt_path"] != "receipt.json"
+        or receipt["blocked_reason"] != _ORIGINAL_BLOCK_REASON
+        or receipt["original_block_reason"] != _ORIGINAL_BLOCK_REASON
+        or receipt["original_block_preserved"] is not True
+        or receipt["retraining_performed"] is not False
+        or receipt["overwrite_performed"] is not False
+        or receipt["move_performed"] is not False
+        or receipt["delete_performed"] is not False
+        or receipt["fresh_oos"] != _FRESH_NO_READ
+        or receipt["source_sha256"] != dict(source_hashes)
+        or receipt["materializer_sha256"] != source_hashes["materializer_manifest"]
+        or receipt["outcome"] != "NO_GO_ONLY"
+    ):
+        raise Type1PublicationError("recovery receipt violates the exact recovered runner contract")
+    receipt_artifacts = _validate_member_artifact_map(receipt["member_artifact_sha256"], "recovery receipt member_artifact_sha256")
+    if receipt_artifacts != dict(member_artifact_sha256):
+        raise Type1PublicationError("recovery receipt artifact hashes do not bind the recovered files")
+
+
+def _verify_recovered_members(root: Path, manifest: Mapping[str, Any]) -> dict[str, str]:
+    members = _require_exact_keys(manifest["members"], set(_RECOVERY_FAMILIES), "recovery manifest members")
+    session_pairing = _validate_recovery_session_pairing(manifest["session_pairing"])
+    expected_validation_pairs_sha = session_pairing["validation_pairs_sha256"]
+    expected_normalizer_digest = session_pairing["normalizer_digest"]
+    expected_seed_dirs = {f"seed_{seed}" for seed in _RECOVERY_SEEDS}
+    artifact_hashes: dict[str, str] = {}
+    for family in _RECOVERY_FAMILIES:
+        family_dir = root / family
+        if not family_dir.is_dir():
+            raise Type1PublicationError("required recovered member family directory is missing")
+        _reject_existing_indirection(family_dir)
+        if {path.name for path in family_dir.iterdir()} != expected_seed_dirs:
+            raise Type1PublicationError("recovered member family directory contains missing or extra seed artifacts")
+        family_members = _require_exact_keys(members[family], {str(seed) for seed in _RECOVERY_SEEDS}, f"recovery {family} members")
+        for seed in _RECOVERY_SEEDS:
+            member = _require_exact_keys(
+                family_members[str(seed)],
+                {
+                    "seed",
+                    "timesteps",
+                    "actual_sb3_timesteps",
+                    "device",
+                    "artifact",
+                    "artifact_paths",
+                    "artifacts",
+                    "reload_receipt",
+                    "validation",
+                },
+                f"recovery {family} seed {seed} member",
+            )
+            directory = f"{family}/seed_{seed}"
+            seed_dir = root / family / f"seed_{seed}"
+            if {path.name for path in seed_dir.iterdir()} != set(_RECOVERY_MEMBER_ARTIFACT_NAMES):
+                raise Type1PublicationError("recovered seed directory must contain only final_model.zip and normalizer.json")
+            model_path = _required_file(seed_dir / "final_model.zip", f"{family} seed {seed} final model")
+            normalizer_path = _required_file(seed_dir / "normalizer.json", f"{family} seed {seed} normalizer")
+            model_raw = _read_bytes(model_path, f"{family} seed {seed} final model")
+            normalizer_raw = _read_bytes(normalizer_path, f"{family} seed {seed} normalizer")
+            normalizer = _canonical_json_mapping(normalizer_raw, f"{family} seed {seed} normalizer")
+            model_sha = _sha(model_raw)
+            normalizer_sha = _sha(normalizer_raw)
+            normalizer_digest = normalizer.get("digest")
+            if not _is_sha256(normalizer_digest):
+                raise Type1PublicationError("recovered normalizer digest is invalid")
+            artifact_paths = _require_exact_keys(member["artifact_paths"], {"model", "normalizer"}, f"recovery {family} seed {seed} artifact_paths")
+            artifacts = _require_exact_keys(member["artifacts"], {"model_sha256", "normalizer_sha256"}, f"recovery {family} seed {seed} artifacts")
+            reload_receipt = _require_exact_keys(
+                member["reload_receipt"],
+                {"model_sha256", "normalizer_sha256", "deterministic", "evidence"},
+                f"recovery {family} seed {seed} reload_receipt",
+            )
+            reload_evidence = _require_exact_keys(
+                reload_receipt["evidence"],
+                {"model_sha256", "normalizer_sha256", "normalizer_digest", "validation_pairs_sha256", "model_device", "num_timesteps"},
+                f"recovery {family} seed {seed} reload evidence",
+            )
+            validation = member["validation"]
+            if (
+                member["seed"] != seed
+                or member["timesteps"] != TIMESTEPS_PER_SEED
+                or member["actual_sb3_timesteps"] != TIMESTEPS_PER_SEED
+                or member["device"] != "cpu"
+                or member["artifact"] != FINAL_MODEL_ONLY
+                or _normal_relative_path(artifact_paths["model"]) != f"{directory}/final_model.zip"
+                or _normal_relative_path(artifact_paths["normalizer"]) != f"{directory}/normalizer.json"
+                or artifacts != {"model_sha256": model_sha, "normalizer_sha256": normalizer_sha}
+                or reload_receipt["model_sha256"] != model_sha
+                or reload_receipt["normalizer_sha256"] != normalizer_sha
+                or reload_receipt["deterministic"] is not True
+                or reload_evidence["model_sha256"] != model_sha
+                or reload_evidence["normalizer_sha256"] != normalizer_sha
+                or reload_evidence["normalizer_digest"] != normalizer_digest
+                or reload_evidence["normalizer_digest"] != expected_normalizer_digest
+                or reload_evidence["validation_pairs_sha256"] != expected_validation_pairs_sha
+                or reload_evidence["model_device"] != "cpu"
+                or type(reload_evidence["num_timesteps"]) is not int
+                or reload_evidence["num_timesteps"] != TIMESTEPS_PER_SEED
+                or not isinstance(validation, Mapping)
+                or validation.get("deterministic") is not True
+            ):
+                raise Type1PublicationError("recovered member final artifacts do not match runner member receipts")
+            artifact_hashes[f"{directory}/final_model.zip"] = model_sha
+            artifact_hashes[f"{directory}/normalizer.json"] = normalizer_sha
+    return _validate_member_artifact_map(artifact_hashes, "recovered member artifacts")
+
+
+def _require_exact_keys(value: Any, expected: set[str] | frozenset[str], label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != set(expected):
+        required = ", ".join(sorted(expected))
+        raise Type1PublicationError(f"{label} must contain exactly these fields: {required}")
+    return value
+
+
+def _validate_recovery_identities(value: Any) -> Mapping[str, Any]:
+    identities = _require_exact_keys(value, _RECOVERY_IDENTITY_KEYS, "recovery manifest identities")
+    if any(identities.get(key) != expected for key, expected in _REPLACEMENT_IDENTITY.items()):
+        raise Type1PublicationError("recovery manifest does not bind the exact replacement identity")
+    for key in (
+        "amendment_sha256",
+        "authority_sha256",
+        "materializer_sha256",
+        "materializer_complete_receipt_sha256",
+        "materializer_source_sha256",
+        "preregistration_sha256",
+        "parent_protocol_sha256",
+        "runner_source_sha256",
+    ):
+        _require_sha256(identities[key], f"recovery identity {key}")
+    authority_sessions = _require_exact_keys(
+        identities["authority_sessions"],
+        {"ordered", "pairs", "trailing_embargo"},
+        "recovery identity authority_sessions",
+    )
+    if not isinstance(identities["source_database_identity"], Mapping):
+        raise Type1PublicationError("recovery identity source database must be a bound mapping")
+    if (
+        not isinstance(authority_sessions["ordered"], list)
+        or not isinstance(authority_sessions["pairs"], list)
+        or not isinstance(authority_sessions["trailing_embargo"], list)
+    ):
+        raise Type1PublicationError("recovery identity authority sessions must bind ordered pairs and trailing_embargo")
+    return identities
+
+
+def _validate_recovery_source_sha256(value: Any, label: str) -> dict[str, str]:
+    source_hashes = _require_exact_keys(value, _RECOVERY_SOURCE_SHA256_KEYS, label)
+    return {name: _require_sha256(source_hashes[name], f"{label} {name}") for name in sorted(_RECOVERY_SOURCE_SHA256_KEYS)}
+
+
+def _validate_recovery_original_block(value: Any, blocked_receipt_sha: str) -> None:
+    block = _require_exact_keys(value, _RECOVERY_ORIGINAL_BLOCK_KEYS, "recovery manifest original_block")
+    if block != {
+        "path": "receipt.json",
+        "receipt_sha256": blocked_receipt_sha,
+        "status": "BLOCK",
+        "execution_status": "BLOCK",
+        "verdict": "NO_GO",
+        "reason": _ORIGINAL_BLOCK_REASON,
+        "fresh_oos": _FRESH_NO_READ,
+        "preserved_byte_identical": True,
+    }:
+        raise Type1PublicationError("recovery manifest original_block does not preserve the immutable BLOCK receipt")
+
+
+def _validate_recovery_protocol(value: Any, protocol_sha256: str) -> None:
+    protocol = _require_exact_keys(value, {"id", "sha256"}, "recovery manifest protocol")
+    if not isinstance(protocol["id"], str) or not protocol["id"] or protocol["sha256"] != protocol_sha256:
+        raise Type1PublicationError("recovery manifest protocol does not bind the public protocol source hash")
+
+
+def _validate_recovery_session_pairing(value: Any) -> Mapping[str, str]:
+    session_pairing = _require_exact_keys(
+        value,
+        {"authority_bound", "trailing_embargo", "validation_pairs_sha256", "normalizer_digest"},
+        "recovery manifest session_pairing",
+    )
+    if session_pairing["authority_bound"] is not True or not isinstance(session_pairing["trailing_embargo"], list):
+        raise Type1PublicationError("recovery manifest session pairing is not authority-bound")
+    _require_sha256(session_pairing["validation_pairs_sha256"], "recovery manifest validation_pairs_sha256")
+    _require_sha256(session_pairing["normalizer_digest"], "recovery manifest normalizer_digest")
+    return session_pairing
+
+
+def _validate_recovery_custody_bindings(
+    value: Any,
+    source_hashes: Mapping[str, str],
+    blocked_receipt_sha: str,
+) -> None:
+    custody = _require_exact_keys(value, _RECOVERY_CUSTODY_BINDING_KEYS, "recovery manifest custody_bindings")
+    expected = {
+        "blocked_receipt": ("receipt.json", blocked_receipt_sha),
+        "protocol": ("kronos_type1_g002_public_protocol_2026-07-23.json", source_hashes["protocol"]),
+        "amendment": ("kronos_type1_g002_recovery_amendment_v4_2026-07-24.json", source_hashes["amendment"]),
+        "public_rows": ("public_rows.json", source_hashes["public_rows"]),
+        "dataset_manifest": ("dataset_manifest.json", source_hashes["dataset_manifest"]),
+        "materializer_manifest": ("dataset_manifest.json", source_hashes["materializer_manifest"]),
+        "materializer_complete_receipt": ("materializer_complete_receipt.json", source_hashes["materializer_complete_receipt"]),
+        "authority": (None, source_hashes["authority"]),
+        "runner": ("stom_rl/daily_type1_public_run.py", source_hashes["runner"]),
+        "market": ("stom_rl/daily_type1_market.py", source_hashes["market"]),
+    }
+    for name, (path_suffix, expected_sha) in expected.items():
+        _validate_custody_ref(custody[name], path_suffix, expected_sha, f"recovery custody {name}")
+
+
+def _validate_custody_ref(value: Any, expected_path_suffix: str | None, expected_sha256: str, label: str) -> None:
+    ref = _require_exact_keys(value, {"path", "sha256"}, label)
+    if ref["sha256"] != expected_sha256:
+        raise Type1PublicationError(f"{label} sha256 does not match")
+    if not isinstance(ref["path"], str) or not ref["path"]:
+        raise Type1PublicationError(f"{label} path is missing")
+    normalized = ref["path"].replace("\\", "/")
+    if expected_path_suffix is not None and not normalized.endswith(expected_path_suffix):
+        raise Type1PublicationError(f"{label} path does not bind {expected_path_suffix}")
+
+
+def _validate_member_artifact_map(value: Any, label: str) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise Type1PublicationError(f"{label} must be an artifact hash map")
+    expected_paths = {
+        f"{family}/seed_{seed}/{artifact}"
+        for family in _RECOVERY_FAMILIES
+        for seed in _RECOVERY_SEEDS
+        for artifact in _RECOVERY_MEMBER_ARTIFACT_NAMES
+    }
+    if set(value) != expected_paths:
+        raise Type1PublicationError(f"{label} must bind exactly twenty recovered member artifacts")
+    return {path: _require_sha256(value[path], f"{label} {path}") for path in sorted(expected_paths)}
+
+
+def _verify_run_materializer_bindings(run_evidence: Mapping[str, Any], materializer_evidence: Mapping[str, Any]) -> None:
+    if run_evidence.get("run_evidence_mode") != _RUN_EVIDENCE_MODE_RECOVERED:
+        return
+    recovery_hashes = run_evidence.get("source_hashes")
+    identities = run_evidence.get("identities")
+    materializer_hashes = materializer_evidence.get("materializer_source_hashes")
+    if not isinstance(recovery_hashes, Mapping) or not isinstance(identities, Mapping) or not isinstance(materializer_hashes, Mapping):
+        raise Type1PublicationError("recovery source hashes do not bind materializer source evidence")
+    if (
+        recovery_hashes["protocol"] != materializer_hashes.get("protocol")
+        or recovery_hashes["amendment"] != materializer_hashes.get("amendment")
+        or recovery_hashes["authority"] != materializer_hashes.get("authority")
+        or identities["materializer_source_sha256"] != materializer_hashes.get("materializer")
+        or identities["materializer_source_sha256"] != materializer_evidence["materializer_source_sha256"]
+        or recovery_hashes["public_rows"] != materializer_evidence["public_rows_sha256"]
+        or recovery_hashes["dataset_manifest"] != materializer_evidence["dataset_manifest_sha256"]
+        or recovery_hashes["materializer_manifest"] != materializer_evidence["dataset_manifest_sha256"]
+        or recovery_hashes["materializer_complete_receipt"] != materializer_evidence["materializer_complete_receipt_sha256"]
+    ):
+        raise Type1PublicationError("recovery source hashes do not match the materializer evidence")
+
+
+def _materializer_receipt_hashes(materializer_evidence: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        "public_rows_sha256": str(materializer_evidence["public_rows_sha256"]),
+        "dataset_manifest_sha256": str(materializer_evidence["dataset_manifest_sha256"]),
+        "materializer_complete_receipt_sha256": str(materializer_evidence["materializer_complete_receipt_sha256"]),
+    }
+
+
+
+def _require_sha256(value: Any, label: str) -> str:
+    if not _is_sha256(value):
+        raise Type1PublicationError(f"{label} is not a sha256 hex digest")
+    return str(value)
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
+
+def _normal_relative_path(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        raise Type1PublicationError("artifact path is missing")
+    normalized = value.replace("\\", "/").strip("/")
+    if normalized.startswith("../") or "/../" in normalized or normalized in {".", ".."}:
+        raise Type1PublicationError("artifact path escapes the recovered run root")
+    return normalized
+
+
+def _canonical_json_mapping(raw: bytes, label: str) -> Mapping[str, Any]:
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Type1PublicationError(f"{label} is not canonical JSON") from exc
+    if not isinstance(value, Mapping) or canonical_json_bytes(value) != raw:
+        raise Type1PublicationError(f"{label} is not canonical JSON")
+    return value
+
+
+
+def _verify_materializer_artifacts(parent: Path) -> dict[str, Any]:
     _reject_existing_indirection(parent)
     rows_path = _required_file(parent / "public_rows.json", "public rows")
     manifest_path = _required_file(parent / "dataset_manifest.json", "dataset manifest")
@@ -357,12 +970,31 @@ def _verify_materializer_artifacts(parent: Path) -> dict[str, str]:
         _validate_complete_receipt(receipt, manifest, manifest_raw, rows_raw, _MATERIALIZER_ROLES)
     except ValueError as exc:
         raise Type1PublicationError("materializer completion receipt does not bind the canonical dataset") from exc
-    if manifest.get("dataset_id") != DATASET_ID or manifest.get("fresh_oos") != _FRESH_MATERIALIZER_NOT_RUN or receipt.get("fresh_oos") != _FRESH_MATERIALIZER_NOT_RUN:
-        raise Type1PublicationError("materializer does not preserve Fresh OOS NOT_RUN/no-read")
+    rows_sha = _sha(rows_raw)
+    manifest_sha = _sha(manifest_raw)
+    receipt_sha = _sha(receipt_raw)
+    source_hashes = manifest.get("source_hashes")
+    materializer_source_sha = manifest.get("materializer_source_sha256")
+    if (
+        manifest.get("dataset_id") != DATASET_ID
+        or manifest.get("fresh_oos") != _FRESH_MATERIALIZER_NOT_RUN
+        or receipt.get("fresh_oos") != _FRESH_MATERIALIZER_NOT_RUN
+        or manifest.get("output_sha256") != rows_sha
+        or not isinstance(source_hashes, Mapping)
+        or not _is_sha256(materializer_source_sha)
+        or source_hashes.get("materializer") != materializer_source_sha
+    ):
+        raise Type1PublicationError("materializer does not preserve Fresh OOS NOT_RUN/no-read and source hashes")
+    required_source_hashes = {"protocol", "amendment", "authority", "materializer"}
+    if not required_source_hashes <= set(source_hashes) or any(not _is_sha256(source_hashes.get(name)) for name in required_source_hashes):
+        raise Type1PublicationError("materializer source hashes are incomplete")
     return {
-        "public_rows_sha256": _sha(rows_raw),
-        "dataset_manifest_sha256": _sha(manifest_raw),
-        "materializer_complete_receipt_sha256": _sha(receipt_raw),
+        "public_rows_sha256": rows_sha,
+        "dataset_manifest_sha256": manifest_sha,
+        "materializer_complete_receipt_sha256": receipt_sha,
+        "materializer_output_sha256": rows_sha,
+        "materializer_source_sha256": str(materializer_source_sha),
+        "materializer_source_hashes": {str(key): str(value) for key, value in source_hashes.items() if isinstance(value, str)},
     }
 
 
@@ -371,32 +1003,73 @@ def _publication_receipt(
     source_logical_path: str,
     destination_logical_path: str,
     run_evidence: Mapping[str, Any],
-    materializer_evidence: Mapping[str, str],
+    materializer_evidence: Mapping[str, Any],
 ) -> dict[str, Any]:
+    publisher_source_sha = _sha_file(Path(__file__))
+    move_contract = {
+        "operation": "same_volume_atomic_directory_rename",
+        "copy_performed": False,
+        "overwrite_performed": False,
+        "delete_performed": False,
+    }
+    materializer_hashes = _materializer_receipt_hashes(materializer_evidence)
+    if run_evidence.get("run_evidence_mode") != _RUN_EVIDENCE_MODE_RECOVERED:
+        return {
+            "schema_version": _COMPLETED_PUBLICATION_SCHEMA_VERSION,
+            "role": PUBLICATION_ROLE,
+            "status": "COMPLETE",
+            "verdict": "NO_GO",
+            "identity": dict(_REPLACEMENT_IDENTITY),
+            "source_logical_path": source_logical_path,
+            "destination_logical_path": destination_logical_path,
+            "move_contract": move_contract,
+            "run_manifest_sha256": run_evidence["run_manifest_sha256"],
+            "run_receipt_sha256": run_evidence["run_receipt_sha256"],
+            "member_artifact_sha256": dict(run_evidence["artifact_sha256"]),
+            "materializer_sha256": materializer_hashes,
+            "publisher_source_sha256": publisher_source_sha,
+            "fresh_oos": {
+                "run": dict(_FRESH_RUN_NOT_RUN),
+                "materializer": dict(_FRESH_MATERIALIZER_NOT_RUN),
+                "read_performed": False,
+            },
+        }
+
+    source_hashes = dict(run_evidence["source_hashes"])
+    disclosure = {
+        "recovery_manifest_sha256": run_evidence["recovery_manifest_sha256"],
+        "blocked_receipt_sha256": run_evidence["blocked_receipt_sha256"],
+        "members": dict(run_evidence["artifact_sha256"]),
+    }
+    if set(disclosure) != _RECOVERY_PUBLICATION_DISCLOSURE_KEYS:
+        raise Type1PublicationError("recovered publication disclosure schema is not exact")
     return {
         "schema_version": PUBLICATION_SCHEMA_VERSION,
         "role": PUBLICATION_ROLE,
         "status": "COMPLETE",
         "verdict": "NO_GO",
-        "identity": dict(_REPLACEMENT_IDENTITY),
+        "mode": "recovered",
+        "disclosure": disclosure,
+        "run_evidence_mode": _RUN_EVIDENCE_MODE_RECOVERED,
+        "identity": dict(run_evidence["identities"]),
         "source_logical_path": source_logical_path,
         "destination_logical_path": destination_logical_path,
-        "move_contract": {
-            "operation": "same_volume_atomic_directory_rename",
-            "copy_performed": False,
-            "overwrite_performed": False,
-            "delete_performed": False,
+        "move_contract": move_contract,
+        "recovery_receipt_sha256": run_evidence["recovery_receipt_sha256"],
+        "original_block_reason": run_evidence["original_block_reason"],
+        "preserved_block_receipt": True,
+        "retraining_performed": False,
+        "fresh_oos": dict(_FRESH_NO_READ),
+        "false_research_locks": dict(FALSE_RESEARCH_LOCKS),
+        "materializer_sha256": materializer_hashes,
+        "materializer_public_rows_sha256": materializer_hashes["public_rows_sha256"],
+        "materializer_source_sha256": materializer_evidence["materializer_source_sha256"],
+        "materializer_source_hashes": dict(materializer_evidence["materializer_source_hashes"]),
+        "source_hashes": {
+            "publisher_source": publisher_source_sha,
+            **source_hashes,
         },
-        "run_manifest_sha256": run_evidence["run_manifest_sha256"],
-        "run_receipt_sha256": run_evidence["run_receipt_sha256"],
-        "member_artifact_sha256": dict(run_evidence["artifact_sha256"]),
-        "materializer_sha256": dict(materializer_evidence),
-        "publisher_source_sha256": _sha_file(Path(__file__)),
-        "fresh_oos": {
-            "run": dict(_FRESH_RUN_NOT_RUN),
-            "materializer": dict(_FRESH_MATERIALIZER_NOT_RUN),
-            "read_performed": False,
-        },
+        "publisher_source_sha256": publisher_source_sha,
     }
 
 
@@ -570,7 +1243,7 @@ def _sha_file(path: Path) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    return argparse.ArgumentParser(description="Publish the completed Type 1 public run into the exact V6 discovery root.")
+    return argparse.ArgumentParser(description="Publish the recovered Type 1 public run into the exact V6 discovery root.")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -581,7 +1254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({
             "publication_status": "BLOCK",
             "verdict": "NO_GO",
-            "fresh_oos": dict(_FRESH_RUN_NOT_RUN),
+            "fresh_oos": dict(_FRESH_NO_READ),
             "error": str(exc),
         }, sort_keys=True))
         return 1

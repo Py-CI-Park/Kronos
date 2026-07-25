@@ -51,17 +51,47 @@ RUNNER_RECEIPT = {
     "verdict": "NO_GO",
     "fresh_oos": {"state": "NOT_RUN", "metrics": None},
 }
+ORIGINAL_BLOCK_REASON = "conversion from numpy.int8 to Decimal is not supported"
+BLOCKED_RUN_RECEIPT = {
+    "execution_status": "BLOCK",
+    "verdict": "NO_GO",
+    "reason": ORIGINAL_BLOCK_REASON,
+    "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+}
+RECOVERY_MANIFEST_SCHEMA = "kronos_type1_g002_public_run_recovery.v1"
+RECOVERY_RECEIPT_SCHEMA = "kronos.type1.public-run-recovery-receipt.v1"
+RECOVERY_MANIFEST_ROLE = "TYPE1_PUBLIC_RUN_RECOVERY"
+RECOVERY_RECEIPT_ROLE = "TYPE1_PUBLIC_RUN_RECOVERY_RECEIPT"
+RECOVERY_MODE = "APPEND_ONLY_REEVALUATE_SAVED_MODELS"
+RECOVERED_RUN_EVIDENCE_MODE = "RECOVERED_AFTER_BLOCK"
+COMPLETED_RUN_EVIDENCE_MODE = "COMPLETED_RUN"
+RECOVERY_FRESH_OOS = {"state": "NOT_RUN", "metrics": None, "read_performed": False}
+RECOVERY_CLAIMS = {"profitability": "NOT_CLAIMED", "live": "NOT_CLAIMED", "fresh_oos": "NOT_RUN_NO_READ", "outcome": "NO_GO_ONLY"}
 PUBLICATION_RECEIPT_NAME = "publication_receipt.json"
-PUBLICATION_RECEIPT_SCHEMA = "kronos.type1.publication-receipt.v1"
+PUBLICATION_RECEIPT_SCHEMA_V1 = "kronos.type1.publication-receipt.v1"
+PUBLICATION_RECEIPT_SCHEMA_V2 = "kronos.type1.publication-receipt.v2"
+PUBLICATION_RECEIPT_SCHEMA = PUBLICATION_RECEIPT_SCHEMA_V1
 PUBLICATION_RECEIPT_ROLE = "TYPE1_PUBLICATION_RECEIPT"
 PUBLICATION_SOURCE_LOGICAL_PATH = "artifacts/type1-public-runs/train_type1-public-005"
 PUBLICATION_DESTINATION_LOGICAL_PATH = "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/train_type1-public-005"
 PUBLICATION_MOVE_CONTRACT = {"operation": "same_volume_atomic_directory_rename", "copy_performed": False, "overwrite_performed": False, "delete_performed": False}
+PUBLICATION_RECOVERED_MODE = "recovered"
+PUBLICATION_RECOVERED_RUN_EVIDENCE_MODE = RECOVERED_RUN_EVIDENCE_MODE
+PUBLICATION_RECOVERY_DISCLOSURE_KEY = "disclosure"
+TYPE1_FEATURES = (
+    "ret_1d_prev",
+    "ret_5d_prev",
+    "ret_20d_prev",
+    "vol_z_20",
+    "foreign_ratio_prev",
+    "foreign_ratio_delta_5",
+    "inst_netbuy_norm_5",
+)
 COMPLETED_REPORT_RUN_DIR = REPO_ROOT / PUBLICATION_DESTINATION_LOGICAL_PATH
 FROZEN_AUTHORITY_ENVELOPE_PATH = (
     REPO_ROOT / "webui" / "rl_runs" / "v6_daily_h1" / "type1_authorities" / f"{REPLACEMENT_IDENTITY['authority_id']}.json"
 )
-REPORT_EVIDENCE_LABELS = (
+COMPLETED_REPORT_EVIDENCE_LABELS = (
     "type1_identity",
     "public_run_seal",
     "deployment_lock",
@@ -73,6 +103,22 @@ REPORT_EVIDENCE_LABELS = (
     "builder_source",
     "publication_receipt",
 )
+RECOVERED_REPORT_EVIDENCE_LABELS = (
+    "type1_identity",
+    "public_run_seal",
+    "deployment_lock",
+    "attempt_parent",
+    "amendment",
+    "protocol",
+    "preregistration",
+    "authority",
+    "builder_source",
+    "blocked_receipt",
+    "recovery_manifest",
+    "recovery_receipt",
+    "publication_receipt",
+)
+REPORT_EVIDENCE_LABELS = COMPLETED_REPORT_EVIDENCE_LABELS
 MATERIALIZER_FRESH_OOS = {"state": "NOT_RUN", "read_performed": False}
 REPORT_RESULT = {
     "run_state": "COMPLETE",
@@ -90,6 +136,14 @@ REPORT_CLAIMS = {
     "profitability": "NOT_CLAIMED",
     "live": "NOT_CLAIMED",
 }
+RECOVERED_REPORT_CLAIMS = {
+    **REPORT_CLAIMS,
+    "recovery_from_blocked_controls": True,
+    "recovery_mode": RECOVERY_MODE,
+    "original_control_failure_reason": ORIGINAL_BLOCK_REASON,
+    "original_block_receipt_preserved": True,
+    "retraining_performed": False,
+}
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _EVENT = re.compile(r"([0-9]{8})-([0-9a-f]{64})\.json\Z")
 _OBJECT = re.compile(r"([A-Za-z0-9][A-Za-z0-9_.-]{0,80})-([0-9a-f]{64})\.html\Z")
@@ -105,12 +159,55 @@ _SOURCE_LOCAL_PATHS = {
     "materializer_complete_receipt": Path("..") / "materializer_complete_receipt.json",
     "run_manifest": Path("run_manifest.json"),
     "run_receipt": Path("receipt.json"),
+    "blocked_receipt": Path("receipt.json"),
+    "recovery_manifest": Path("recovery_manifest.json"),
+    "recovery_receipt": Path("recovery_receipt.json"),
     "publication_receipt": Path(PUBLICATION_RECEIPT_NAME),
     **{f"{kind}_seed_{seed}_{artifact}": Path(kind) / f"seed_{seed}" / filename
        for kind in ("primary", "shuffled_reward") for seed in range(5)
        for artifact, filename in (("model", "final_model.zip"), ("normalizer", "normalizer.json"))},
 }
 _AUTHORITY_ARTIFACT_LABELS = ("type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")
+_RECOVERY_SOURCE_SHA256_LABELS = (
+    "runner",
+    "market",
+    "protocol",
+    "amendment",
+    "authority",
+    "public_rows",
+    "dataset_manifest",
+    "materializer_manifest",
+    "materializer_complete_receipt",
+)
+_RECOVERY_CUSTODY_BINDING_LABELS = (
+    "blocked_receipt",
+    "protocol",
+    "amendment",
+    "public_rows",
+    "dataset_manifest",
+    "materializer_manifest",
+    "materializer_complete_receipt",
+    "authority",
+    "runner",
+    "market",
+)
+_RECOVERY_IDENTITY_KEYS = frozenset({
+    "authority_id",
+    "dataset_id",
+    "train_id",
+    "train_run_id",
+    "custody_uid",
+    "amendment_sha256",
+    "authority_sha256",
+    "materializer_sha256",
+    "materializer_complete_receipt_sha256",
+    "source_database_identity",
+    "materializer_source_sha256",
+    "preregistration_sha256",
+    "parent_protocol_sha256",
+    "runner_source_sha256",
+    "authority_sessions",
+})
 PARENT_ATTEMPT_IDENTITY = {
     "dataset_id": "type1-close-20260803-004",
     "train_id": "type1-public-004",
@@ -161,6 +258,82 @@ def _safe_child(root: Path, relative: Path) -> Path:
     except ValueError as exc:
         raise Type1ReportError("authority path escapes fixed root") from exc
     return candidate
+def _runner_evidence_mode(directory: Path) -> str:
+    has_completed = _safe_child(directory, Path("run_manifest.json")).exists()
+    has_recovery_manifest = _safe_child(directory, Path("recovery_manifest.json")).exists()
+    has_recovery_receipt = _safe_child(directory, Path("recovery_receipt.json")).exists()
+    if has_completed and (has_recovery_manifest or has_recovery_receipt):
+        raise Type1ReportError("runner evidence mode is ambiguous")
+    if has_recovery_manifest != has_recovery_receipt:
+        raise Type1ReportError("recovery evidence is incomplete")
+    if has_recovery_manifest:
+        return RECOVERED_RUN_EVIDENCE_MODE
+    if has_completed:
+        return COMPLETED_RUN_EVIDENCE_MODE
+    raise Type1ReportError("runner evidence is missing")
+
+
+def _source_evidence_mode(sources: Mapping[str, Any]) -> str:
+    has_completed = "run_manifest" in sources or "run_receipt" in sources
+    has_recovered = any(label in sources for label in ("blocked_receipt", "recovery_manifest", "recovery_receipt"))
+    if has_completed and has_recovered:
+        raise Type1ReportError("runner source evidence mode is ambiguous")
+    if has_recovered and {"blocked_receipt", "recovery_manifest", "recovery_receipt"} <= set(sources):
+        return RECOVERED_RUN_EVIDENCE_MODE
+    if has_completed and {"run_manifest", "run_receipt"} <= set(sources):
+        return COMPLETED_RUN_EVIDENCE_MODE
+    raise Type1ReportError("runner source evidence is incomplete")
+
+
+def _report_evidence_labels_for_sources(sources: Mapping[str, Any]) -> tuple[str, ...]:
+    return (
+        RECOVERED_REPORT_EVIDENCE_LABELS
+        if _source_evidence_mode(sources) == RECOVERED_RUN_EVIDENCE_MODE
+        else COMPLETED_REPORT_EVIDENCE_LABELS
+    )
+
+
+def _report_claims_for_sources(sources: Mapping[str, Any]) -> dict[str, Any]:
+    return (
+        _canonical_copy(RECOVERED_REPORT_CLAIMS)
+        if _source_evidence_mode(sources) == RECOVERED_RUN_EVIDENCE_MODE
+        else _canonical_copy(REPORT_CLAIMS)
+    )
+
+
+def _expected_member_artifact_sha256(sources: Mapping[str, Any]) -> dict[str, Any]:
+    members = {
+        f"{kind}/seed_{seed}/final_model.zip": sources.get(f"{kind}_seed_{seed}_model")
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+    }
+    members.update({
+        f"{kind}/seed_{seed}/normalizer.json": sources.get(f"{kind}_seed_{seed}_normalizer")
+        for kind in ("primary", "shuffled_reward")
+        for seed in range(5)
+    })
+    return members
+
+
+
+
+def _validate_publication_fresh_oos(value: Any) -> None:
+    if not isinstance(value, Mapping) or value.get("read_performed") is not False:
+        raise Type1ReportError("publication receipt fresh-OOS claim is unsafe")
+    if value in (RECOVERY_FRESH_OOS, {"state": "NOT_RUN", "read_performed": False}):
+        return
+    for key, nested in value.items():
+        if key == "read_performed":
+            continue
+        if not isinstance(nested, Mapping):
+            raise Type1ReportError("publication receipt fresh-OOS claim is unsafe")
+        state = nested.get("state", nested.get("status"))
+        if state != "NOT_RUN":
+            raise Type1ReportError("publication receipt fresh-OOS claim is unsafe")
+        if nested.get("metrics") is not None:
+            raise Type1ReportError("publication receipt fresh-OOS claim is unsafe")
+        if nested.get("read_performed") is True or nested.get("no_read") is False:
+            raise Type1ReportError("publication receipt fresh-OOS claim is unsafe")
 
 def _read_bytes(path: Path, label: str, *, maximum: int = 64 * 1024 * 1024) -> bytes:
     if not path.is_file() or _is_reparse(path):
@@ -194,6 +367,99 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise Type1ReportError(f"{label} is invalid")
     return value
+def _expected_recovery_source_sha256(sources: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "runner": _sha(_read_bytes(REPO_ROOT / "stom_rl" / "daily_type1_public_run.py", "runner source")),
+        "market": _sha(_read_bytes(REPO_ROOT / "stom_rl" / "daily_type1_market.py", "market source")),
+        "protocol": sources.get("protocol"),
+        "amendment": sources.get("amendment"),
+        "authority": sources.get("authority"),
+        "public_rows": sources.get("public_rows"),
+        "dataset_manifest": sources.get("dataset_manifest"),
+        "materializer_manifest": sources.get("dataset_manifest"),
+        "materializer_complete_receipt": sources.get("materializer_complete_receipt"),
+    }
+
+
+def _validate_recovery_source_sha256(value: Any, sources: Mapping[str, Any], label: str) -> None:
+    expected = _expected_recovery_source_sha256(sources)
+    if not isinstance(value, Mapping) or set(value) != set(expected):
+        raise Type1ReportError(f"{label} source hashes do not match the recovered runner schema")
+    for source_label in _RECOVERY_SOURCE_SHA256_LABELS:
+        expected_digest = _require_sha(expected.get(source_label), f"{label} expected {source_label} SHA")
+        actual_digest = _require_sha(value.get(source_label), f"{label} {source_label} SHA")
+        if actual_digest != expected_digest:
+            raise Type1ReportError(f"{label} source hash mismatch")
+
+
+def _validate_recovery_identity(value: Any, sources: Mapping[str, Any], label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != _RECOVERY_IDENTITY_KEYS:
+        raise Type1ReportError(f"{label} does not match the recovered runner identity schema")
+    if {key: value.get(key) for key in REPLACEMENT_IDENTITY} != REPLACEMENT_IDENTITY:
+        raise Type1ReportError(f"{label} does not bind the replacement run identity")
+    expected_source = _expected_recovery_source_sha256(sources)
+    expected_hashes = {
+        "amendment_sha256": sources.get("amendment"),
+        "authority_sha256": sources.get("authority"),
+        "materializer_sha256": sources.get("dataset_manifest"),
+        "materializer_complete_receipt_sha256": sources.get("materializer_complete_receipt"),
+        "preregistration_sha256": sources.get("preregistration"),
+        "parent_protocol_sha256": sources.get("protocol"),
+        "runner_source_sha256": expected_source["runner"],
+    }
+    for identity_key, expected_digest in expected_hashes.items():
+        if _require_sha(value.get(identity_key), f"{label} {identity_key}") != _require_sha(expected_digest, f"{label} expected {identity_key}"):
+            raise Type1ReportError(f"{label} source hash mismatch")
+    _require_sha(value.get("materializer_source_sha256"), f"{label} materializer_source_sha256")
+    if not isinstance(value.get("source_database_identity"), Mapping):
+        raise Type1ReportError(f"{label} source database identity is missing")
+    sessions = value.get("authority_sessions")
+    if not isinstance(sessions, Mapping) or set(sessions) != {"ordered", "pairs", "trailing_embargo"}:
+        raise Type1ReportError(f"{label} authority session schema is invalid")
+    if (
+        not isinstance(sessions.get("ordered"), list)
+        or not isinstance(sessions.get("pairs"), list)
+        or not isinstance(sessions.get("trailing_embargo"), list)
+    ):
+        raise Type1ReportError(f"{label} authority session values are invalid")
+    return value
+
+
+def _expected_recovery_custody_bindings(root: Path, sources: Mapping[str, Any], blocked_receipt_sha256: str) -> dict[str, dict[str, Any]]:
+    source_sha256 = _expected_recovery_source_sha256(sources)
+    authority_source = root / "frozen_authority_envelope.json"
+    authority_path = authority_source if authority_source.exists() else FROZEN_AUTHORITY_ENVELOPE_PATH
+    dataset_manifest_path = _safe_child(root.parent, Path("dataset_manifest.json"))
+    return {
+        "blocked_receipt": {"path": "receipt.json", "sha256": blocked_receipt_sha256},
+        "protocol": {"path": _display_path(PROTOCOL_PATH), "sha256": sources.get("protocol")},
+        "amendment": {"path": _display_path(AMENDMENT_PATH), "sha256": sources.get("amendment")},
+        "public_rows": {"path": _display_path(_safe_child(root.parent, Path("public_rows.json"))), "sha256": sources.get("public_rows")},
+        "dataset_manifest": {"path": _display_path(dataset_manifest_path), "sha256": sources.get("dataset_manifest")},
+        "materializer_manifest": {"path": _display_path(dataset_manifest_path), "sha256": sources.get("dataset_manifest")},
+        "materializer_complete_receipt": {"path": _display_path(_safe_child(root.parent, Path("materializer_complete_receipt.json"))), "sha256": sources.get("materializer_complete_receipt")},
+        "authority": {"path": _display_path(authority_path), "sha256": sources.get("authority")},
+        "runner": {"path": "stom_rl/daily_type1_public_run.py", "sha256": source_sha256["runner"]},
+        "market": {"path": "stom_rl/daily_type1_market.py", "sha256": source_sha256["market"]},
+    }
+
+
+def _validate_recovery_custody_bindings(root: Path, value: Any, sources: Mapping[str, Any], blocked_receipt_sha256: str) -> None:
+    expected = _expected_recovery_custody_bindings(root, sources, blocked_receipt_sha256)
+    if not isinstance(value, Mapping) or set(value) != set(expected):
+        raise Type1ReportError("recovery manifest custody bindings do not match the recovered runner schema")
+    for label in _RECOVERY_CUSTODY_BINDING_LABELS:
+        binding = value.get(label)
+        expected_binding = expected[label]
+        if not isinstance(binding, Mapping) or set(binding) != {"path", "sha256"}:
+            raise Type1ReportError("recovery manifest custody binding is malformed")
+        if binding.get("path") != expected_binding["path"]:
+            raise Type1ReportError("recovery manifest custody path mismatch")
+        expected_digest = _require_sha(expected_binding.get("sha256"), f"expected {label} custody SHA")
+        actual_digest = _require_sha(binding.get("sha256"), f"{label} custody SHA")
+        if actual_digest != expected_digest:
+            raise Type1ReportError("recovery manifest custody hash mismatch")
+
 def _is_authority_envelope(value: Mapping[str, Any]) -> bool:
     return set(value) == {"authority", "integrity", "schema"}
 
@@ -394,12 +660,19 @@ def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
             raise Type1ReportError("authority source does not bind replacement authority ID")
 
 def _report_source_paths(directory: Path) -> dict[str, Path]:
+    mode = _runner_evidence_mode(directory)
+    excluded = {"dataset_manifest", "public_rows", "materializer_complete_receipt"}
+    excluded.update(
+        {"blocked_receipt", "recovery_manifest", "recovery_receipt"}
+        if mode == COMPLETED_RUN_EVIDENCE_MODE
+        else {"run_manifest", "run_receipt"}
+    )
     return {
         "amendment": _safe_child(REPO_ROOT, Path("docs") / AMENDMENT_PATH.name),
         "protocol": _safe_child(REPO_ROOT, Path("docs") / PROTOCOL_PATH.name),
         "preregistration": _safe_child(REPO_ROOT, Path("docs") / PREREG_PATH.name),
         "builder_source": _safe_child(REPO_ROOT, Path("stom_rl") / Path(__file__).name),
-        **{label: _safe_child(directory, relative) for label, relative in _SOURCE_LOCAL_PATHS.items() if label not in {"dataset_manifest", "public_rows", "materializer_complete_receipt"}},
+        **{label: _safe_child(directory, relative) for label, relative in _SOURCE_LOCAL_PATHS.items() if label not in excluded},
         "dataset_manifest": _safe_child(directory.parent, Path("dataset_manifest.json")),
         "public_rows": _safe_child(directory.parent, Path("public_rows.json")),
         "materializer_complete_receipt": _safe_child(directory.parent, Path("materializer_complete_receipt.json")),
@@ -425,24 +698,40 @@ def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
     _validate_publication_receipt(directory, sources)
     return sources
 
-def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> None:
-    receipt, raw = _read_canonical(_safe_child(root, Path(PUBLICATION_RECEIPT_NAME)), "publication receipt")
-    materializer = receipt.get("materializer_sha256")
-    expected_materializer = {
+def _publication_expected_materializer(sources: Mapping[str, Any]) -> dict[str, Any]:
+    return {
         "public_rows_sha256": sources.get("public_rows"),
         "dataset_manifest_sha256": sources.get("dataset_manifest"),
         "materializer_complete_receipt_sha256": sources.get("materializer_complete_receipt"),
     }
-    expected_members = {
-        f"{kind}/seed_{seed}/final_model.zip": sources.get(f"{kind}_seed_{seed}_model")
-        for kind in ("primary", "shuffled_reward")
-        for seed in range(5)
-    }
-    expected_members.update({
-        f"{kind}/seed_{seed}/normalizer.json": sources.get(f"{kind}_seed_{seed}_normalizer")
-        for kind in ("primary", "shuffled_reward")
-        for seed in range(5)
-    })
+
+
+def _validate_publication_hash_maps(
+    materializer: Any,
+    members: Any,
+    expected_materializer: Mapping[str, Any],
+    expected_members: Mapping[str, Any],
+) -> None:
+    if not isinstance(materializer, Mapping):
+        raise Type1ReportError("publication receipt materializer hashes are invalid")
+    for label, digest in expected_materializer.items():
+        _require_sha(digest, f"{label} source SHA")
+        _require_sha(materializer.get(label), f"{label} publication SHA")
+        if materializer.get(label) != digest:
+            raise Type1ReportError("publication receipt materializer hash mismatch")
+    if not isinstance(members, Mapping) or len(members) != 20:
+        raise Type1ReportError("publication receipt member artifact hashes are invalid")
+    for label, digest in expected_members.items():
+        _require_sha(digest, f"{label} source SHA")
+        _require_sha(members.get(label), f"{label} publication SHA")
+        if members.get(label) != digest:
+            raise Type1ReportError("publication receipt member artifact hash mismatch")
+
+
+def _validate_completed_publication_receipt(receipt: Mapping[str, Any], sources: Mapping[str, Any], raw: bytes) -> None:
+    materializer = receipt.get("materializer_sha256")
+    expected_materializer = _publication_expected_materializer(sources)
+    expected_members = _expected_member_artifact_sha256(sources)
     required = {
         "schema_version", "role", "status", "verdict", "identity",
         "source_logical_path", "destination_logical_path", "move_contract",
@@ -451,7 +740,7 @@ def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> Non
     }
     if (
         set(receipt) != required
-        or receipt.get("schema_version") != PUBLICATION_RECEIPT_SCHEMA
+        or receipt.get("schema_version") != PUBLICATION_RECEIPT_SCHEMA_V1
         or receipt.get("role") != PUBLICATION_RECEIPT_ROLE
         or receipt.get("status") != "COMPLETE"
         or receipt.get("verdict") != "NO_GO"
@@ -474,17 +763,91 @@ def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> Non
     _require_sha(receipt.get("publisher_source_sha256"), "publisher source SHA")
     _require_sha(receipt.get("run_manifest_sha256"), "publication run manifest SHA")
     _require_sha(receipt.get("run_receipt_sha256"), "publication run receipt SHA")
-    if not isinstance(materializer, Mapping):
-        raise Type1ReportError("publication receipt materializer hashes are invalid")
-    for label, digest in expected_materializer.items():
-        _require_sha(digest, f"{label} source SHA")
-        _require_sha(materializer.get(label), f"{label} publication SHA")
-    members = receipt.get("member_artifact_sha256")
-    if not isinstance(members, Mapping) or len(members) != 20:
-        raise Type1ReportError("publication receipt member artifact hashes are invalid")
-    for label, digest in expected_members.items():
-        _require_sha(digest, f"{label} source SHA")
-        _require_sha(members.get(label), f"{label} publication SHA")
+    _validate_publication_hash_maps(materializer, receipt.get("member_artifact_sha256"), expected_materializer, expected_members)
+
+
+def _validate_recovered_publication_receipt(receipt: Mapping[str, Any], sources: Mapping[str, Any], raw: bytes) -> None:
+    materializer = receipt.get("materializer_sha256")
+    expected_materializer = _publication_expected_materializer(sources)
+    expected_members = _expected_member_artifact_sha256(sources)
+    expected_publisher_source_sha256 = _sha(_read_bytes(REPO_ROOT / "stom_rl" / "daily_type1_publication.py", "publisher source"))
+    required = {
+        "schema_version", "role", "status", "verdict", "mode", "disclosure",
+        "run_evidence_mode", "identity", "source_logical_path", "destination_logical_path",
+        "move_contract", "recovery_receipt_sha256", "original_block_reason",
+        "preserved_block_receipt", "retraining_performed", "fresh_oos",
+        "false_research_locks", "materializer_sha256", "materializer_public_rows_sha256",
+        "materializer_source_sha256", "materializer_source_hashes", "source_hashes",
+        "publisher_source_sha256",
+    }
+    disclosure = receipt.get("disclosure")
+    if (
+        set(receipt) != required
+        or receipt.get("schema_version") != PUBLICATION_RECEIPT_SCHEMA_V2
+        or receipt.get("role") != PUBLICATION_RECEIPT_ROLE
+        or receipt.get("status") != "COMPLETE"
+        or receipt.get("verdict") != "NO_GO"
+        or receipt.get("mode") != PUBLICATION_RECOVERED_MODE
+        or receipt.get("run_evidence_mode") != PUBLICATION_RECOVERED_RUN_EVIDENCE_MODE
+        or receipt.get("source_logical_path") != PUBLICATION_SOURCE_LOGICAL_PATH
+        or receipt.get("destination_logical_path") != PUBLICATION_DESTINATION_LOGICAL_PATH
+        or receipt.get("move_contract") != PUBLICATION_MOVE_CONTRACT
+        or _sha(raw) != sources.get("publication_receipt")
+        or receipt.get("recovery_receipt_sha256") != sources.get("recovery_receipt")
+        or receipt.get("original_block_reason") != ORIGINAL_BLOCK_REASON
+        or receipt.get("retraining_performed") is not False
+        or receipt.get("preserved_block_receipt") is not True
+        or receipt.get("fresh_oos") != RECOVERY_FRESH_OOS
+        or receipt.get("false_research_locks") != LOCKS
+        or materializer != expected_materializer
+        or receipt.get("materializer_public_rows_sha256") != expected_materializer["public_rows_sha256"]
+        or receipt.get("publisher_source_sha256") != expected_publisher_source_sha256
+    ):
+        raise Type1ReportError("publication receipt does not prove the recovered v5 publication move")
+    _validate_recovery_identity(receipt.get("identity"), sources, "publication receipt identity")
+    _require_sha(receipt.get("recovery_receipt_sha256"), "publication recovery receipt SHA")
+    _require_sha(receipt.get("materializer_source_sha256"), "publication materializer source SHA")
+    _validate_publication_fresh_oos(receipt.get("fresh_oos"))
+    if (
+        not isinstance(disclosure, Mapping)
+        or set(disclosure) != {"recovery_manifest_sha256", "blocked_receipt_sha256", "members"}
+        or disclosure.get("recovery_manifest_sha256") != sources.get("recovery_manifest")
+        or disclosure.get("blocked_receipt_sha256") != sources.get("blocked_receipt")
+        or disclosure.get("members") != expected_members
+    ):
+        raise Type1ReportError("publication receipt append-only recovery disclosure is invalid")
+    _validate_publication_hash_maps(materializer, disclosure.get("members"), expected_materializer, expected_members)
+    expected_source_hashes = {
+        "publisher_source": expected_publisher_source_sha256,
+        **_expected_recovery_source_sha256(sources),
+    }
+    source_hashes = receipt.get("source_hashes")
+    if not isinstance(source_hashes, Mapping) or set(source_hashes) != set(expected_source_hashes):
+        raise Type1ReportError("publication receipt source hashes are invalid")
+    for label, expected_digest in expected_source_hashes.items():
+        _require_sha(expected_digest, f"expected publication {label} source SHA")
+        if source_hashes.get(label) != expected_digest:
+            raise Type1ReportError("publication receipt source hash mismatch")
+    materializer_source_hashes = receipt.get("materializer_source_hashes")
+    if not isinstance(materializer_source_hashes, Mapping) or set(materializer_source_hashes) != {"materializer", "protocol", "preregistration", "amendment", "authority"}:
+        raise Type1ReportError("publication receipt materializer source hashes are invalid")
+    for label in ("protocol", "preregistration", "amendment", "authority"):
+        if materializer_source_hashes.get(label) != sources.get(label):
+            raise Type1ReportError("publication receipt materializer source hash mismatch")
+    if materializer_source_hashes.get("materializer") != receipt.get("materializer_source_sha256"):
+        raise Type1ReportError("publication receipt materializer source hash mismatch")
+
+
+def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> None:
+    receipt, raw = _read_canonical(_safe_child(root, Path(PUBLICATION_RECEIPT_NAME)), "publication receipt")
+    mode = _source_evidence_mode(sources)
+    if mode == COMPLETED_RUN_EVIDENCE_MODE and receipt.get("schema_version") == PUBLICATION_RECEIPT_SCHEMA_V1:
+        _validate_completed_publication_receipt(receipt, sources, raw)
+        return
+    if mode == RECOVERED_RUN_EVIDENCE_MODE and receipt.get("schema_version") == PUBLICATION_RECEIPT_SCHEMA_V2:
+        _validate_recovered_publication_receipt(receipt, sources, raw)
+        return
+    raise Type1ReportError("publication receipt schema does not match runner evidence mode")
 
 def _verify_current_parent(root: Path, events: list[tuple[dict[str, Any], str]], state: str) -> None:
     """Read-only check of the SQLite CAS parent; reconciliation is runner-owned."""
@@ -522,9 +885,132 @@ def _read_completed_runner_manifest(root: Path, expected_manifest_sha256: Any = 
     ):
         raise Type1ReportError("runner manifest or receipt violates the frozen no-go contract")
     return manifest
-def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -> None:
-    root = Path(run_dir).absolute()
-    manifest = _read_completed_runner_manifest(root, sources.get("run_manifest"))
+
+
+def _read_runner_manifest_for_authority(root: Path) -> dict[str, Any]:
+    if _runner_evidence_mode(root) == COMPLETED_RUN_EVIDENCE_MODE:
+        return _read_completed_runner_manifest(root)
+    manifest = _read_canonical(_safe_child(root, Path("recovery_manifest.json")), "recovery manifest")[0]
+    if not isinstance(manifest.get("identities"), Mapping):
+        raise Type1ReportError("recovery manifest identity is missing")
+    return manifest
+
+
+def _read_original_block_receipt(root: Path, expected_receipt_sha256: Any = None) -> tuple[dict[str, Any], str]:
+    receipt, raw = _read_canonical(_safe_child(root, Path("receipt.json")), "blocked receipt")
+    receipt_sha256 = _sha(raw)
+    if expected_receipt_sha256 is not None and receipt_sha256 != expected_receipt_sha256:
+        raise Type1ReportError("blocked receipt source hash mismatch")
+    if receipt != BLOCKED_RUN_RECEIPT:
+        raise Type1ReportError("original blocked receipt violates the exact BLOCK control-failure reason")
+    return receipt, receipt_sha256
+
+
+def _read_recovery_manifest(root: Path, sources: Mapping[str, Any], blocked_receipt_sha256: str) -> tuple[dict[str, Any], str]:
+    manifest, raw = _read_canonical(_safe_child(root, Path("recovery_manifest.json")), "recovery manifest")
+    manifest_sha256 = _sha(raw)
+    if manifest_sha256 != sources.get("recovery_manifest"):
+        raise Type1ReportError("recovery manifest source hash mismatch")
+    required = {
+        "schema_version", "role", "status", "recovery_status", "recovery_mode",
+        "source_commit", "original_run_id", "reused_original_run_id", "original_block",
+        "protocol", "identities", "features", "public_splits", "session_pairing",
+        "training", "members", "aggregation", "pretraining_gate", "controls",
+        "source_sha256", "materializer_sha256", "custody_bindings", "fresh_oos",
+        "false_research_locks", "execution_status", "verdict", "decision", "claims",
+    }
+    expected_original_block = {
+        "path": "receipt.json",
+        "receipt_sha256": blocked_receipt_sha256,
+        "status": "BLOCK",
+        "execution_status": "BLOCK",
+        "verdict": "NO_GO",
+        "reason": ORIGINAL_BLOCK_REASON,
+        "fresh_oos": RECOVERY_FRESH_OOS,
+        "preserved_byte_identical": True,
+    }
+    if (
+        set(manifest) != required
+        or {"run_manifest_sha256", "run_receipt_sha256"} & set(manifest)
+        or manifest.get("schema_version") != RECOVERY_MANIFEST_SCHEMA
+        or manifest.get("role") != RECOVERY_MANIFEST_ROLE
+        or manifest.get("status") != "COMPLETE"
+        or manifest.get("recovery_status") != "COMPLETE"
+        or manifest.get("recovery_mode") != RECOVERY_MODE
+        or manifest.get("source_commit") != "4ba930c"
+        or manifest.get("original_run_id") != REPLACEMENT_IDENTITY["train_run_id"]
+        or manifest.get("reused_original_run_id") is not True
+        or manifest.get("original_block") != expected_original_block
+        or manifest.get("protocol") != {
+            "id": "KRONOS-TYPE1-G002-PUBLIC-2026-07-23",
+            "sha256": sources.get("protocol"),
+        }
+        or manifest.get("features") != list(TYPE1_FEATURES)
+        or not all(isinstance(manifest.get(label), Mapping) for label in ("public_splits", "session_pairing", "aggregation"))
+        or manifest.get("materializer_sha256") != sources.get("dataset_manifest")
+        or manifest.get("fresh_oos") != RECOVERY_FRESH_OOS
+        or manifest.get("false_research_locks") != LOCKS
+        or any(value is not False for value in manifest["false_research_locks"].values())
+        or manifest.get("execution_status") != "COMPLETE"
+        or manifest.get("verdict") != "NO_GO"
+        or manifest.get("decision") != "NO_GO"
+        or manifest.get("claims") != RECOVERY_CLAIMS
+    ):
+        raise Type1ReportError("recovery manifest violates the append-only no-go contract")
+    _validate_recovery_source_sha256(manifest.get("source_sha256"), sources, "recovery manifest")
+    identities = _validate_recovery_identity(manifest.get("identities"), sources, "recovery manifest identity")
+    if manifest["session_pairing"].get("trailing_embargo") != identities["authority_sessions"]["trailing_embargo"]:
+        raise Type1ReportError("recovery manifest session pairing does not match authority sessions")
+    _validate_recovery_custody_bindings(root, manifest.get("custody_bindings"), sources, blocked_receipt_sha256)
+    return manifest, manifest_sha256
+
+
+def _validate_recovery_receipt(root: Path, sources: Mapping[str, Any], recovery_manifest_sha256: str) -> None:
+    receipt, raw = _read_canonical(_safe_child(root, Path("recovery_receipt.json")), "recovery receipt")
+    expected_members = _expected_member_artifact_sha256(sources)
+    required = {
+        "schema_version", "role", "status", "execution_status", "verdict", "decision",
+        "run_id", "recovery_manifest_sha256", "blocked_receipt_sha256", "blocked_receipt_path",
+        "blocked_reason", "original_block_reason", "original_block_preserved",
+        "retraining_performed", "overwrite_performed", "move_performed", "delete_performed",
+        "fresh_oos", "member_artifact_sha256", "source_sha256", "materializer_sha256",
+        "outcome",
+    }
+    if (
+        set(receipt) != required
+        or {"run_manifest_sha256", "run_receipt_sha256"} & set(receipt)
+        or _sha(raw) != sources.get("recovery_receipt")
+        or receipt.get("schema_version") != RECOVERY_RECEIPT_SCHEMA
+        or receipt.get("role") != RECOVERY_RECEIPT_ROLE
+        or receipt.get("status") != "COMPLETE"
+        or receipt.get("execution_status") != "COMPLETE"
+        or receipt.get("verdict") != "NO_GO"
+        or receipt.get("decision") != "NO_GO"
+        or receipt.get("run_id") != REPLACEMENT_IDENTITY["train_run_id"]
+        or receipt.get("recovery_manifest_sha256") != recovery_manifest_sha256
+        or receipt.get("blocked_receipt_sha256") != sources.get("blocked_receipt")
+        or receipt.get("blocked_receipt_path") != "receipt.json"
+        or receipt.get("blocked_reason") != ORIGINAL_BLOCK_REASON
+        or receipt.get("original_block_reason") != ORIGINAL_BLOCK_REASON
+        or receipt.get("original_block_preserved") is not True
+        or receipt.get("retraining_performed") is not False
+        or receipt.get("overwrite_performed") is not False
+        or receipt.get("move_performed") is not False
+        or receipt.get("delete_performed") is not False
+        or receipt.get("fresh_oos") != RECOVERY_FRESH_OOS
+        or receipt.get("member_artifact_sha256") != expected_members
+        or receipt.get("materializer_sha256") != sources.get("dataset_manifest")
+        or receipt.get("outcome") != "NO_GO_ONLY"
+    ):
+        raise Type1ReportError("recovery receipt violates the append-only no-go contract")
+    _require_sha(receipt.get("recovery_manifest_sha256"), "recovery manifest SHA")
+    _require_sha(receipt.get("blocked_receipt_sha256"), "blocked receipt SHA")
+    if not isinstance(receipt.get("member_artifact_sha256"), Mapping) or len(receipt["member_artifact_sha256"]) != 20:
+        raise Type1ReportError("recovery receipt member artifact hashes are invalid")
+    _validate_recovery_source_sha256(receipt.get("source_sha256"), sources, "recovery receipt")
+
+
+def _validate_materializer_evidence(root: Path, sources: Mapping[str, Any]) -> None:
     materializer_receipt, _ = _read_canonical(
         _safe_child(root.parent, Path("materializer_complete_receipt.json")),
         "materializer completion receipt",
@@ -563,7 +1049,9 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
         or materializer_receipt.get("authority_sha256") != sources.get("authority")
     ):
         raise Type1ReportError("materializer completion receipt does not bind report sources")
-    _validate_publication_receipt(root, sources)
+
+
+def _validate_runner_manifest_body(root: Path, manifest: Mapping[str, Any], sources: Mapping[str, Any], *, recovered: bool) -> None:
     pretraining = manifest.get("pretraining_gate")
     if not isinstance(pretraining, Mapping) or set(pretraining) != {
         "accounting", "block_semantics", "validation_noninterference",
@@ -571,6 +1059,7 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
         raise Type1ReportError("runner pretraining evidence is missing or malformed")
     accounting = pretraining.get("accounting")
     noninterference = pretraining.get("validation_noninterference")
+    train_pairs_sha256 = noninterference.get("train_pairs_sha256") if isinstance(noninterference, Mapping) else None
     if (
         not isinstance(accounting, Mapping)
         or (accounting.get("cost_bps"), accounting.get("slot_notional_krw"), accounting.get("max_slots")) != (23, 5000000, 10)
@@ -581,20 +1070,56 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
         or any(_SHA.fullmatch(str(noninterference.get(key, ""))) is None for key in ("train_only_normalizer_digest", "train_pairs_sha256"))
     ):
         raise Type1ReportError("runner pretraining evidence violates accounting or validation isolation")
+    session_pairing = manifest.get("session_pairing")
+    expected_validation_pairs_sha256 = None
+    expected_normalizer_digest = None
+    if recovered:
+        if (
+            not isinstance(session_pairing, Mapping)
+            or set(session_pairing) != {"authority_bound", "trailing_embargo", "validation_pairs_sha256", "normalizer_digest"}
+            or session_pairing.get("authority_bound") is not True
+            or not isinstance(session_pairing.get("trailing_embargo"), list)
+            or _SHA.fullmatch(str(session_pairing.get("validation_pairs_sha256", ""))) is None
+            or _SHA.fullmatch(str(session_pairing.get("normalizer_digest", ""))) is None
+            or session_pairing.get("validation_pairs_sha256") == train_pairs_sha256
+        ):
+            raise Type1ReportError("recovery session-pairing validation hash is invalid")
+        expected_validation_pairs_sha256 = session_pairing["validation_pairs_sha256"]
+        expected_normalizer_digest = session_pairing["normalizer_digest"]
+    elif isinstance(session_pairing, Mapping) and _SHA.fullmatch(str(session_pairing.get("validation_pairs_sha256", ""))) is not None:
+        expected_validation_pairs_sha256 = session_pairing["validation_pairs_sha256"]
     training = manifest.get("training")
-    if not isinstance(training, Mapping) or training != {
-        "seeds": [0, 1, 2, 3, 4],
-        "timesteps_per_seed": 200000,
-        "device": "cpu",
-        "validation_visible_to_training": False,
-        "eval_callback": False,
-        "early_stopping": False,
-        "best_model_selection": False,
-        "checkpoint_selection": False,
-        "member_selection": False,
-        "saved_artifact": "FINAL_MODEL_ONLY",
-        "synthetic_oracle_calibration": False,
-    }:
+    if recovered:
+        expected_training = {
+            "primary_seeds": [0, 1, 2, 3, 4],
+            "shuffled_reward_seeds": [0, 1, 2, 3, 4],
+            "timesteps_per_seed": 200000,
+            "device": "cpu",
+            "validation_visible_to_training": False,
+            "eval_callback": False,
+            "early_stopping": False,
+            "best_model_selection": False,
+            "checkpoint_selection": False,
+            "member_selection": False,
+            "saved_artifact": "FINAL_MODEL_ONLY",
+            "synthetic_oracle_calibration": False,
+            "retraining_performed": False,
+        }
+    else:
+        expected_training = {
+            "seeds": [0, 1, 2, 3, 4],
+            "timesteps_per_seed": 200000,
+            "device": "cpu",
+            "validation_visible_to_training": False,
+            "eval_callback": False,
+            "early_stopping": False,
+            "best_model_selection": False,
+            "checkpoint_selection": False,
+            "member_selection": False,
+            "saved_artifact": "FINAL_MODEL_ONLY",
+            "synthetic_oracle_calibration": False,
+        }
+    if not isinstance(training, Mapping) or training != expected_training:
         raise Type1ReportError("runner training contract is invalid")
     controls = manifest.get("controls")
     members = manifest.get("members")
@@ -608,8 +1133,27 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
             member = family[str(seed)]
             model_key = f"{kind}_seed_{seed}_model"
             normalizer_key = f"{kind}_seed_{seed}_normalizer"
-            if not isinstance(member, Mapping) or member.get("seed") != seed or member.get("timesteps") != 200000 or member.get("actual_sb3_timesteps") != 200000 or member.get("device") != "cpu" or member.get("artifact") != "FINAL_MODEL_ONLY":
+            expected_member_keys = {
+                "seed", "timesteps", "actual_sb3_timesteps", "device",
+                "artifact", "artifacts", "reload_receipt", "validation",
+            }
+            if recovered:
+                expected_member_keys.add("artifact_paths")
+            if (
+                not isinstance(member, Mapping)
+                or set(member) != expected_member_keys
+                or member.get("seed") != seed
+                or member.get("timesteps") != 200000
+                or member.get("actual_sb3_timesteps") != 200000
+                or member.get("device") != "cpu"
+                or member.get("artifact") != "FINAL_MODEL_ONLY"
+            ):
                 raise Type1ReportError("runner member step or device receipt is invalid")
+            if recovered and member.get("artifact_paths") != {
+                "model": f"{kind}/seed_{seed}/final_model.zip",
+                "normalizer": f"{kind}/seed_{seed}/normalizer.json",
+            }:
+                raise Type1ReportError("runner member artifact paths are invalid")
             artifacts, reload_receipt = member.get("artifacts"), member.get("reload_receipt")
             expected_artifacts = {"model_sha256": sources.get(model_key), "normalizer_sha256": sources.get(normalizer_key)}
             evidence = reload_receipt.get("evidence") if isinstance(reload_receipt, Mapping) else None
@@ -644,6 +1188,14 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
                 or evidence.get("normalizer_sha256") != expected_artifacts["normalizer_sha256"]
                 or evidence.get("model_device") != "cpu"
                 or evidence.get("num_timesteps") != 200000
+                or (
+                    expected_validation_pairs_sha256 is not None
+                    and evidence.get("validation_pairs_sha256") != expected_validation_pairs_sha256
+                )
+                or (
+                    expected_normalizer_digest is not None
+                    and evidence.get("normalizer_digest") != expected_normalizer_digest
+                )
                 or _SHA.fullmatch(str(evidence.get("normalizer_digest", ""))) is None
                 or _SHA.fullmatch(str(evidence.get("validation_pairs_sha256", ""))) is None
                 or set(normalizer) != {"kind", "digest", "scales"}
@@ -653,6 +1205,31 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
                 or not isinstance(normalizer.get("scales"), list)
             ):
                 raise Type1ReportError("runner final artifact or persisted-normalizer replay receipt is invalid")
+
+
+def _validate_completed_runner_evidence(root: Path, sources: Mapping[str, Any]) -> None:
+    manifest = _read_completed_runner_manifest(root, sources.get("run_manifest"))
+    _validate_materializer_evidence(root, sources)
+    _validate_publication_receipt(root, sources)
+    _validate_runner_manifest_body(root, manifest, sources, recovered=False)
+
+
+def _validate_recovered_runner_evidence(root: Path, sources: Mapping[str, Any]) -> None:
+    _, blocked_receipt_sha256 = _read_original_block_receipt(root, sources.get("blocked_receipt"))
+    manifest, recovery_manifest_sha256 = _read_recovery_manifest(root, sources, blocked_receipt_sha256)
+    _validate_materializer_evidence(root, sources)
+    _validate_runner_manifest_body(root, manifest, sources, recovered=True)
+    _validate_recovery_receipt(root, sources, recovery_manifest_sha256)
+    _validate_publication_receipt(root, sources)
+
+
+def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -> None:
+    root = Path(run_dir).absolute()
+    mode = _runner_evidence_mode(root)
+    if mode == COMPLETED_RUN_EVIDENCE_MODE:
+        _validate_completed_runner_evidence(root, sources)
+    else:
+        _validate_recovered_runner_evidence(root, sources)
 
 def _uninitialized_report_source_sha256(directory: Path, authority_sha256: str) -> dict[str, str]:
     paths = _report_source_paths(directory)
@@ -717,11 +1294,11 @@ def _preflight_report_authority_targets(directory: Path, artifacts: Mapping[str,
     return targets
 
 def initialize_report_authority(run_dir: str | Path, frozen_authority_envelope_path: str | Path) -> dict[str, str]:
-    """Explicitly bridge a completed Type1 runner directory into immutable report sources."""
+    """Explicitly bridge completed or append-only recovered Type1 runner evidence into immutable report sources."""
     directory = Path(run_dir).absolute()
     if not directory.is_dir() or _is_reparse(directory):
         raise Type1ReportError("run directory is required")
-    manifest = _read_completed_runner_manifest(directory)
+    manifest = _read_runner_manifest_for_authority(directory)
     _, authority, authority_raw = _read_frozen_authority_envelope(Path(frozen_authority_envelope_path).absolute())
     authority_sha256 = _sha(authority_raw)
     _validate_runner_authority_binding(manifest, authority, authority_sha256)
@@ -739,7 +1316,7 @@ def build_completed_report_revision(
     revision_id: str = "type1-r0001",
     revision_ordinal: int = 1,
 ) -> dict[str, Any]:
-    """Build the immutable completed-report revision from validated custody only."""
+    """Build the immutable completed/no-go report revision from validated completed or recovered custody only."""
     if not isinstance(revision_id, str) or re.fullmatch(r"type1-r[0-9]{4,}", revision_id) is None:
         raise Type1ReportError("revision ID is invalid")
     if type(revision_ordinal) is not int or revision_ordinal < 1:
@@ -747,7 +1324,8 @@ def build_completed_report_revision(
     sources = report_source_sha256(run_dir)
     _validate_runner_evidence(run_dir, sources)
     try:
-        evidence = {label: sources[label] for label in REPORT_EVIDENCE_LABELS}
+        evidence_labels = _report_evidence_labels_for_sources(sources)
+        evidence = {label: sources[label] for label in evidence_labels}
     except KeyError as exc:
         raise Type1ReportError("replacement authority evidence is incomplete") from exc
     return {
@@ -760,7 +1338,7 @@ def build_completed_report_revision(
         "source_sha256": dict(sources),
         "evidence": evidence,
         "false_research_locks": _canonical_copy(LOCKS),
-        "claims": _canonical_copy(REPORT_CLAIMS),
+        "claims": _report_claims_for_sources(sources),
     }
 
 
@@ -773,15 +1351,18 @@ def _validate_revision(value: Mapping[str, Any]) -> None:
     if value.get("result") != REPORT_RESULT:
         raise Type1ReportError("report completion must be derived from validated runner evidence")
     sources, evidence = value.get("source_sha256"), value.get("evidence")
-    required_evidence = set(REPORT_EVIDENCE_LABELS)
-    if not isinstance(sources, Mapping) or not isinstance(evidence, Mapping) or set(evidence) != required_evidence:
+    if not isinstance(sources, Mapping) or not isinstance(evidence, Mapping):
+        raise Type1ReportError("replacement authority evidence is incomplete")
+    required_evidence = set(_report_evidence_labels_for_sources(sources))
+    expected_claims = _report_claims_for_sources(sources)
+    if set(evidence) != required_evidence:
         raise Type1ReportError("replacement authority evidence is incomplete")
     for label, digest in sources.items():
         if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", label): raise Type1ReportError("source label is invalid")
         _require_sha(digest, "source SHA")
     for label in required_evidence:
         if evidence[label] != sources.get(label): raise Type1ReportError("authority evidence does not bind fixed source")
-    if value.get("false_research_locks") != LOCKS or value.get("claims") != REPORT_CLAIMS:
+    if value.get("false_research_locks") != LOCKS or value.get("claims") != expected_claims:
         raise Type1ReportError("revision locks or claims are invalid")
 
 def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
@@ -804,8 +1385,18 @@ def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
         f"training: {html.escape(str(r['training_state']))}; "
         f"reused validation: {html.escape(str(r['reused_validation_state']))}.</p>"
     )
+    recovery_disclosure = ""
+    if revision["claims"].get("recovery_from_blocked_controls") is True:
+        reason = html.escape(str(revision["claims"]["original_control_failure_reason"]))
+        recovery_disclosure = (
+            "<p><strong>Append-only recovery disclosure:</strong> "
+            "<code>recovery_from_blocked_controls:true</code>; "
+            f"mode <code>{RECOVERY_MODE}</code>; original receipt remains <code>BLOCK</code>; "
+            "retraining_performed:false; Fresh OOS remains NOT_RUN/no-read; "
+            f"original control failure reason: <code>{reason}</code>.</p>"
+        )
     sections = (
-        ("overview", "Overview", f"<p class=verdict>NO_GO</p>{observed}<p>Outcome boundary: NO_GO_ONLY.</p>"),
+        ("overview", "Overview", f"<p class=verdict>NO_GO</p>{observed}{recovery_disclosure}<p>Outcome boundary: NO_GO_ONLY.</p>"),
         (
             "identity",
             "Type1 identity and scope",
@@ -821,14 +1412,14 @@ def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
             "training",
             "Training plan and observed completion",
             "<p>Planned: five seeds × 200000 timesteps. No checkpoint, member, validation, "
-            f"profitability, paper, broker, live, or funded selection is claimed.</p>{observed}",
+            f"profitability, paper, broker, live, or funded selection is claimed.</p>{observed}{recovery_disclosure}",
         ),
         ("validation", "Reused-validation controls", "<p>Reused validation can yield NO_GO only.</p>"),
         (
             "custody",
             "Fresh OOS and custody",
             f"<p>Fresh OOS: {html.escape(str(r['fresh_oos_state']))}; payload was not read.</p>"
-            f"<p>M3E: {M3E_STATEMENT}</p>",
+            f"{recovery_disclosure}<p>M3E: {M3E_STATEMENT}</p>",
         ),
         (
             "integrity",
@@ -1059,6 +1650,8 @@ def _completed_report_receipt(run_dir: str | Path, snapshot: Mapping[str, Any], 
         "object_id": materialization["object_id"],
         "html_sha256": materialization["html_sha256"],
         "publication_receipt_sha256": revision["evidence"]["publication_receipt"],
+        "run_evidence_mode": _source_evidence_mode(revision["source_sha256"]),
+        "evidence": dict(revision["evidence"]),
         "source_count": len(revision["source_sha256"]),
     }
 

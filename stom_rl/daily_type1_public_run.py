@@ -12,6 +12,7 @@ import copy
 import hashlib
 import json
 import os
+import stat
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -45,6 +46,21 @@ FALSE_RESEARCH_LOCKS = {
     "profitability_claim_allowed": False,
     "go_summary_allowed": False,
 }
+ORIGINAL_BLOCKED_REASON = "conversion from numpy.int8 to Decimal is not supported"
+ORIGINAL_BLOCK_RECEIPT = {
+    "execution_status": "BLOCK",
+    "fresh_oos": {"metrics": None, "state": "NOT_RUN"},
+    "reason": ORIGINAL_BLOCKED_REASON,
+    "verdict": "NO_GO",
+}
+RECOVERY_MANIFEST_NAME = "recovery_manifest.json"
+RECOVERY_RECEIPT_NAME = "recovery_receipt.json"
+RECOVERY_MANIFEST_SCHEMA = "kronos_type1_g002_public_run_recovery.v1"
+RECOVERY_RECEIPT_SCHEMA = "kronos.type1.public-run-recovery-receipt.v1"
+RECOVERY_ROLE = "TYPE1_PUBLIC_RUN_RECOVERY"
+RECOVERY_RECEIPT_ROLE = "TYPE1_PUBLIC_RUN_RECOVERY_RECEIPT"
+RECOVERY_MODE = "APPEND_ONLY_REEVALUATE_SAVED_MODELS"
+RECOVERY_SOURCE_COMMIT = "4ba930c"
 
 
 class PublicRunOperations(Protocol):
@@ -333,8 +349,327 @@ def _contained_run_root(out_root: str | Path, run_id: str, *, production: bool =
     return candidate
 
 
+def _lexical_absolute(path: str | Path) -> Path:
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _stat_is_reparse(info: os.stat_result) -> bool:
+    attrs = getattr(info, "st_file_attributes", 0)
+    return stat.S_ISLNK(info.st_mode) or bool(attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+
+def _path_prefixes(path: Path) -> tuple[Path, ...]:
+    parts = path.parts
+    if not parts:
+        return ()
+    current = Path(parts[0])
+    prefixes = [current]
+    for part in parts[1:]:
+        current = current / part
+        prefixes.append(current)
+    return tuple(prefixes)
+
+
+def _lstat_required(path: Path, label: str) -> os.stat_result:
+    try:
+        return path.lstat()
+    except OSError as exc:
+        raise ValueError(f"{label} path is inaccessible") from exc
+
+
+def _reject_reparse_info(path: Path, label: str, info: os.stat_result) -> None:
+    if _stat_is_reparse(info):
+        raise ValueError(f"{label} must not be a symlink, junction, or reparse point: {path}")
+
+
+def _require_plain_parent_chain(path: Path, label: str) -> Path:
+    absolute = _lexical_absolute(path)
+    prefixes = _path_prefixes(absolute)
+    for parent in prefixes[:-1]:
+        info = _lstat_required(parent, label)
+        _reject_reparse_info(parent, label, info)
+        if not stat.S_ISDIR(info.st_mode):
+            raise ValueError(f"{label} parent path is not a directory: {parent}")
+    return absolute
+
+
+def _require_plain_directory(path: str | Path, label: str) -> Path:
+    absolute = _require_plain_parent_chain(Path(path), label)
+    info = _lstat_required(absolute, label)
+    _reject_reparse_info(absolute, label, info)
+    if not stat.S_ISDIR(info.st_mode):
+        raise ValueError(f"{label} must be an existing directory: {absolute}")
+    return absolute
+
+
+def _optional_plain_file(path: str | Path, label: str) -> Path | None:
+    absolute = _require_plain_parent_chain(Path(path), label)
+    try:
+        info = absolute.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ValueError(f"{label} path is inaccessible") from exc
+    _reject_reparse_info(absolute, label, info)
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError(f"{label} must be an existing regular file: {absolute}")
+    return absolute
+
+
+def _require_plain_file(path: str | Path, label: str) -> Path:
+    plain = _optional_plain_file(path, label)
+    if plain is None:
+        raise ValueError(f"{label} must be an existing regular file: {_lexical_absolute(path)}")
+    return plain
+
+
+def _read_plain_file_bytes(path: str | Path, label: str) -> bytes:
+    plain = _require_plain_file(path, label)
+    try:
+        return plain.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"{label} path is unreadable") from exc
+
+
+def _plain_file_hash(path: str | Path, label: str) -> str:
+    return hashlib.sha256(_read_plain_file_bytes(path, label)).hexdigest()
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return os.path.normcase(str(left)) == os.path.normcase(str(right))
+
+
+def _common_path(left: Path, right: Path) -> str:
+    return os.path.commonpath((os.path.normcase(str(left)), os.path.normcase(str(right))))
+
+
+def _contained_recovery_run_root(out_root: str | Path, run_id: str, *, production: bool = False) -> Path:
+    base = _lexical_absolute(out_root)
+    if not run_id or Path(run_id).name != run_id:
+        raise ValueError("run_id must be one non-empty path component")
+    if production and (run_id != REPLACEMENT_RUN_ID or not _same_path(base, _lexical_absolute(AUTHORIZED_RUN_ROOT))):
+        raise ValueError("production run_id and output root must equal the frozen authorized identity")
+    candidate = _lexical_absolute(base / run_id)
+    try:
+        common = _common_path(base, candidate)
+    except ValueError as exc:
+        raise ValueError("run output escapes authorized public root") from exc
+    if common != os.path.normcase(str(base)):
+        raise ValueError("run output escapes authorized public root")
+    return _require_plain_directory(candidate, "recovery root")
+
+
 def _write_receipt(path: Path, receipt: Mapping[str, Any]) -> None:
     path.write_bytes(canonical_json_bytes(receipt))
+
+
+def _fsync_parent(path: Path) -> None:
+    try:
+        directory_fd = os.open(str(path.parent), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _write_json_create_new_or_exact(path: Path, value: Mapping[str, Any]) -> str:
+    payload = canonical_json_bytes(value)
+    digest = hashlib.sha256(payload).hexdigest()
+    path = _lexical_absolute(path)
+    existing = _optional_plain_file(path, path.name)
+    if existing is not None:
+        if _read_plain_file_bytes(existing, path.name) != payload:
+            raise ValueError(f"{path.name} already exists with non-identical recovery content")
+        return digest
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd: int | None = None
+    try:
+        fd = os.open(str(path), flags, 0o644)
+        view = memoryview(payload)
+        while len(view):
+            written = os.write(fd, view)
+            if written <= 0:
+                raise OSError("atomic recovery write made no progress")
+            view = view[written:]
+        os.fsync(fd)
+    except FileExistsError:
+        existing = _require_plain_file(path, path.name)
+        if _read_plain_file_bytes(existing, path.name) != payload:
+            raise ValueError(f"{path.name} already exists with non-identical recovery content")
+    finally:
+        if fd is not None:
+            os.close(fd)
+    _fsync_parent(path)
+    return digest
+
+
+def _verify_original_block_receipt(path: Path) -> str:
+    expected = canonical_json_bytes(ORIGINAL_BLOCK_RECEIPT)
+    actual = _read_plain_file_bytes(path, "original BLOCK receipt")
+    if actual != expected:
+        raise ValueError("original BLOCK receipt bytes differ from the canonical Decimal-control failure receipt")
+    receipt = json.loads(actual.decode("utf-8"))
+    if receipt != ORIGINAL_BLOCK_RECEIPT:
+        raise ValueError("original BLOCK receipt content differs from the canonical Decimal-control failure receipt")
+    return hashlib.sha256(actual).hexdigest()
+
+
+def _validate_recovery_existing_files(root: Path) -> Path:
+    blocked_receipt_path = _require_plain_file(root / "receipt.json", "original BLOCK receipt")
+    recovery_manifest_path = _optional_plain_file(root / RECOVERY_MANIFEST_NAME, "existing recovery manifest")
+    recovery_receipt_path = _optional_plain_file(root / RECOVERY_RECEIPT_NAME, "existing recovery receipt")
+    if recovery_receipt_path is not None and recovery_manifest_path is None:
+        raise ValueError("recovery receipt cannot exist without its recovery manifest")
+    return blocked_receipt_path
+
+
+def _recovery_member_artifacts(root: Path) -> dict[str, str]:
+    root = _require_plain_directory(root, "recovery root")
+    _validate_recovery_existing_files(root)
+    if _optional_plain_file(root / "run_manifest.json", "original run manifest") is not None:
+        raise ValueError("append-only recovery requires the original BLOCK run to have no run_manifest.json")
+    allowed_root = {"receipt.json", "primary", "shuffled_reward", RECOVERY_MANIFEST_NAME, RECOVERY_RECEIPT_NAME}
+    try:
+        actual_root = {item.name for item in root.iterdir()}
+    except OSError as exc:
+        raise ValueError("recovery root is not readable") from exc
+    required_root = {"receipt.json", "primary", "shuffled_reward"}
+    if not required_root <= actual_root or actual_root - allowed_root:
+        raise ValueError("recovery run root must contain only the original receipt and exact member directories")
+    artifact_hashes: dict[str, str] = {}
+    for kind in ("primary", "shuffled_reward"):
+        kind_path = _require_plain_directory(root / kind, "recovery kind directory")
+        expected_seed_names = {f"seed_{seed}" for seed in SEEDS}
+        try:
+            actual_seed_names = {item.name for item in kind_path.iterdir()}
+        except OSError as exc:
+            raise ValueError("recovery kind directory is not readable") from exc
+        if actual_seed_names != expected_seed_names:
+            raise ValueError("recovery member directories must be exactly five primary and five shuffled seeds")
+        for seed in SEEDS:
+            seed_path = _require_plain_directory(kind_path / f"seed_{seed}", "recovery seed directory")
+            try:
+                actual_members = {item.name for item in seed_path.iterdir()}
+            except OSError as exc:
+                raise ValueError("recovery seed directory is not readable") from exc
+            if actual_members != {"final_model.zip", "normalizer.json"}:
+                raise ValueError("recovery seed member artifacts must be exactly final_model.zip and normalizer.json")
+            for filename in ("final_model.zip", "normalizer.json"):
+                relative = f"{kind}/seed_{seed}/{filename}"
+                artifact_hashes[relative] = _plain_file_hash(
+                    seed_path / filename, f"recovery member artifact {relative}"
+                )
+    if len(artifact_hashes) != 20:
+        raise ValueError("recovery requires exactly twenty persisted member artifacts")
+    return artifact_hashes
+
+
+def _source_hashes(
+    *,
+    rows_path: Path | None = None,
+    dataset_manifest_path: Path | None = None,
+    authority_path: Path | None = None,
+    materializer_manifest_path: Path | None = None,
+    materializer_complete_receipt_path: Path | None = None,
+    amendment_path: Path | None = AMENDMENT_PATH,
+) -> dict[str, str]:
+    paths: dict[str, Path] = {
+        "runner": Path(__file__).resolve(),
+        "market": REPO_ROOT / "stom_rl" / "daily_type1_market.py",
+        "protocol": PROTOCOL_PATH,
+    }
+    optional = {
+        "amendment": amendment_path,
+        "authority": authority_path,
+        "public_rows": rows_path,
+        "dataset_manifest": dataset_manifest_path,
+        "materializer_manifest": materializer_manifest_path,
+        "materializer_complete_receipt": materializer_complete_receipt_path,
+    }
+    for label, path in optional.items():
+        if path is not None:
+            paths[label] = Path(path)
+    return {label: _file_hash(path) for label, path in paths.items()}
+
+
+def _display_path(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    try:
+        return str(candidate.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(candidate)
+
+
+def _recovery_member(
+    operations: Any,
+    validation_rows: Sequence[Mapping[str, Any]],
+    validation_pairs: Sequence[Mapping[str, Any]],
+    *,
+    seed: int,
+    root: Path,
+    kind: str,
+    expected_pair_bytes: bytes,
+    expected_validation_pairs_sha256: str,
+    expected_normalizer_digest: str,
+    artifact_hashes: Mapping[str, str],
+) -> dict[str, Any]:
+    path = root / kind / f"seed_{seed}"
+    model_relative = f"{kind}/seed_{seed}/final_model.zip"
+    normalizer_relative = f"{kind}/seed_{seed}/normalizer.json"
+    evaluator = getattr(operations, "evaluate_saved", None)
+    if not callable(evaluator):
+        raise ValueError("recovery operations must reload and evaluate saved final models")
+    metrics = dict(evaluator(
+        path,
+        validation_rows,
+        seed=seed,
+        expected_pair_bytes=expected_pair_bytes,
+        expected_normalizer_digest=expected_normalizer_digest,
+        expected_normalizer_sha256=artifact_hashes[normalizer_relative],
+    ))
+    reload_evidence = metrics.pop("reload_evidence", None)
+    required_reload = {
+        "model_sha256", "normalizer_sha256", "normalizer_digest", "validation_pairs_sha256",
+        "model_device", "num_timesteps",
+    }
+    if not isinstance(reload_evidence, Mapping) or set(reload_evidence) != required_reload:
+        raise ValueError("recovered saved-model reload evidence schema is incomplete")
+    if (
+        reload_evidence["model_sha256"] != artifact_hashes[model_relative]
+        or reload_evidence["normalizer_sha256"] != artifact_hashes[normalizer_relative]
+        or reload_evidence["normalizer_digest"] != expected_normalizer_digest
+        or reload_evidence["validation_pairs_sha256"] != expected_validation_pairs_sha256
+        or reload_evidence["model_device"] != "cpu"
+        or type(reload_evidence["num_timesteps"]) is not int
+        or reload_evidence["num_timesteps"] != TIMESTEPS_PER_SEED
+        or metrics.get("deterministic") is not True
+    ):
+        raise ValueError("recovered saved-model reload evidence does not bind persisted CPU artifacts")
+    return {
+        "seed": seed,
+        "timesteps": TIMESTEPS_PER_SEED,
+        "actual_sb3_timesteps": reload_evidence["num_timesteps"],
+        "device": "cpu",
+        "artifact": FINAL_MODEL_ONLY,
+        "artifact_paths": {"model": model_relative, "normalizer": normalizer_relative},
+        "artifacts": {
+            "model_sha256": artifact_hashes[model_relative],
+            "normalizer_sha256": artifact_hashes[normalizer_relative],
+        },
+        "reload_receipt": {
+            "model_sha256": artifact_hashes[model_relative],
+            "normalizer_sha256": artifact_hashes[normalizer_relative],
+            "deterministic": True,
+            "evidence": dict(reload_evidence),
+        },
+        "validation": metrics,
+    }
+
+
 def _protocol() -> Mapping[str, Any]:
     value = json.loads(PROTOCOL_PATH.read_text(encoding="utf-8"))
     if value.get("protocol_id") != "KRONOS-TYPE1-G002-PUBLIC-2026-07-23":
@@ -522,6 +857,213 @@ def run_public_experiment(
     return {"output_dir": root, "manifest": manifest, "receipt": receipt}
 
 
+def recover_public_experiment(
+    rows: Sequence[Mapping[str, Any]], *, out_root: str | Path, run_id: str,
+    operations: PublicRunOperations, config: RunConfig = RunConfig(),
+    identity: Mapping[str, Any] | None = None,
+    rows_path: Path | None = None,
+    dataset_manifest_path: Path | None = None,
+    authority_path: Path | None = None,
+    materializer_manifest_path: Path | None = None,
+    materializer_complete_receipt_path: Path | None = None,
+    amendment_path: Path | None = AMENDMENT_PATH,
+) -> dict[str, Any]:
+    """Append-only recovery that re-evaluates the persisted G002 final models."""
+    if run_id != REPLACEMENT_RUN_ID:
+        raise ValueError("recovery run_id must equal the frozen original train_type1-public-005 identity")
+    train_rows, validation_rows = split_public_rows(rows)
+    if identity is not None:
+        if identity.get("train_id") != REPLACEMENT_TRAIN_ID or identity.get("train_run_id") != REPLACEMENT_RUN_ID:
+            raise ValueError("production train identity mismatch")
+        if isinstance(operations, _ProductionOperations):
+            operations.bind_authority_sessions(identity["authority_sessions"])
+    root = _contained_recovery_run_root(out_root, run_id, production=identity is not None)
+    blocked_receipt_path = _validate_recovery_existing_files(root)
+    blocked_receipt_sha256 = _verify_original_block_receipt(blocked_receipt_path)
+    artifact_hashes = _recovery_member_artifacts(root)
+    protocol = _protocol()
+
+    train_pairs = operations.build_pairs(train_rows, split="train")
+    validation_pairs = operations.build_pairs(validation_rows, split="reused_validation")
+    if not train_pairs or not validation_pairs:
+        raise ValueError("public pair construction produced an empty split")
+    if isinstance(operations, _ProductionOperations):
+        pretraining_gate = _production_pretraining_gate(
+            operations, train_rows, validation_rows, train_pairs, validation_pairs,
+        )
+    else:
+        pretraining = getattr(operations, "pretraining_gate", None)
+        pretraining_gate = dict(pretraining(
+            train_rows, validation_rows, train_pairs, validation_pairs,
+        )) if callable(pretraining) else {"status": "NOT_PRODUCTION"}
+    train_pairs = operations.build_pairs(train_rows, split="train")
+    validation_pairs = operations.build_pairs(validation_rows, split="reused_validation")
+    normalizer_digest_fn = getattr(operations, "normalizer_digest", None)
+    if not callable(normalizer_digest_fn):
+        raise ValueError("recovery must rebuild and bind the train-only normalizer digest")
+    normalizer_digest = normalizer_digest_fn()
+    if not isinstance(normalizer_digest, str) or not normalizer_digest:
+        raise ValueError("recovery normalizer digest must be a non-empty string")
+    validation_pair_bytes = _pair_bytes(validation_pairs)
+    validation_pairs_sha256 = hashlib.sha256(validation_pair_bytes).hexdigest()
+
+    primary: dict[str, dict[str, Any]] = {}
+    shuffled: dict[str, dict[str, Any]] = {}
+    for seed in config.seeds:
+        primary[str(seed)] = _recovery_member(
+            operations, validation_rows, validation_pairs,
+            seed=seed, root=root, kind="primary",
+            expected_pair_bytes=validation_pair_bytes,
+            expected_validation_pairs_sha256=validation_pairs_sha256,
+            expected_normalizer_digest=normalizer_digest,
+            artifact_hashes=artifact_hashes,
+        )
+        shuffled[str(seed)] = _recovery_member(
+            operations, validation_rows, validation_pairs,
+            seed=seed, root=root, kind="shuffled_reward",
+            expected_pair_bytes=validation_pair_bytes,
+            expected_validation_pairs_sha256=validation_pairs_sha256,
+            expected_normalizer_digest=normalizer_digest,
+            artifact_hashes=artifact_hashes,
+        )
+
+    controls = dict(operations.controls(train_rows, validation_rows, primary, shuffled))
+    required_controls = {
+        "integrity_ok", "integrity_reasons", "mutation_invariance", "scientific_gates_pass",
+        "scientific_gate_reasons", "shuffle_retraining",
+    }
+    if not required_controls <= set(controls) or controls.get("integrity_ok") is not True:
+        raise ValueError("recovery controls must complete with integrity_ok=true")
+
+    source_sha256 = _source_hashes(
+        rows_path=rows_path,
+        dataset_manifest_path=dataset_manifest_path,
+        authority_path=authority_path,
+        materializer_manifest_path=materializer_manifest_path,
+        materializer_complete_receipt_path=materializer_complete_receipt_path,
+        amendment_path=amendment_path,
+    )
+    materializer_sha256 = source_sha256.get(
+        "materializer_manifest",
+        str((identity or {}).get("materializer_sha256", "")),
+    )
+    fresh_oos = {"state": "NOT_RUN", "metrics": None, "read_performed": False}
+    manifest = {
+        "schema_version": RECOVERY_MANIFEST_SCHEMA,
+        "role": RECOVERY_ROLE,
+        "status": "COMPLETE",
+        "recovery_status": "COMPLETE",
+        "recovery_mode": RECOVERY_MODE,
+        "source_commit": RECOVERY_SOURCE_COMMIT,
+        "original_run_id": REPLACEMENT_RUN_ID,
+        "reused_original_run_id": True,
+        "original_block": {
+            "path": "receipt.json",
+            "receipt_sha256": blocked_receipt_sha256,
+            "status": "BLOCK",
+            "execution_status": "BLOCK",
+            "verdict": "NO_GO",
+            "reason": ORIGINAL_BLOCKED_REASON,
+            "fresh_oos": fresh_oos,
+            "preserved_byte_identical": True,
+        },
+        "protocol": {"id": protocol["protocol_id"], "sha256": _file_hash(PROTOCOL_PATH)},
+        "identities": dict(identity) if identity is not None else {"production_authoritative": False, "train_run_id": run_id},
+        "features": list(FEATURES),
+        "public_splits": {
+            "train": {
+                "frozen_start": PUBLIC_TRAIN_START,
+                "frozen_end": PUBLIC_TRAIN_END,
+                "actual_start": min(_row_date(row) for row in train_rows),
+                "actual_end": max(_row_date(row) for row in train_rows),
+            },
+            "reused_validation": {
+                "frozen_start": REUSED_VALIDATION_START,
+                "frozen_end": REUSED_VALIDATION_END,
+                "actual_start": min(_row_date(row) for row in validation_rows),
+                "actual_end": max(_row_date(row) for row in validation_rows),
+            },
+        },
+        "session_pairing": {
+            "authority_bound": identity is not None,
+            "trailing_embargo": list((identity or {}).get("authority_sessions", {}).get("trailing_embargo", [])),
+            "validation_pairs_sha256": validation_pairs_sha256,
+            "normalizer_digest": normalizer_digest,
+        },
+        "training": {
+            "primary_seeds": list(config.seeds),
+            "shuffled_reward_seeds": list(config.seeds),
+            "timesteps_per_seed": config.timesteps_per_seed,
+            "device": "cpu",
+            "validation_visible_to_training": False,
+            "eval_callback": False,
+            "early_stopping": False,
+            "best_model_selection": False,
+            "checkpoint_selection": False,
+            "member_selection": False,
+            "saved_artifact": FINAL_MODEL_ONLY,
+            "synthetic_oracle_calibration": False,
+            "retraining_performed": False,
+        },
+        "members": {"primary": primary, "shuffled_reward": shuffled},
+        "aggregation": {"metric": "FIVE_SEED_IQM", "primary_nav_krw": _iqm(primary), "shuffled_nav_krw": _iqm(shuffled)},
+        "pretraining_gate": pretraining_gate,
+        "controls": controls,
+        "source_sha256": source_sha256,
+        "materializer_sha256": materializer_sha256,
+        "custody_bindings": {
+            "blocked_receipt": {"path": "receipt.json", "sha256": blocked_receipt_sha256},
+            "protocol": {"path": _display_path(PROTOCOL_PATH), "sha256": source_sha256["protocol"]},
+            "amendment": {"path": _display_path(amendment_path or AMENDMENT_PATH), "sha256": source_sha256.get("amendment")},
+            "public_rows": {"path": _display_path(rows_path), "sha256": source_sha256.get("public_rows")},
+            "dataset_manifest": {"path": _display_path(dataset_manifest_path), "sha256": source_sha256.get("dataset_manifest")},
+            "materializer_manifest": {"path": _display_path(materializer_manifest_path), "sha256": source_sha256.get("materializer_manifest")},
+            "materializer_complete_receipt": {"path": _display_path(materializer_complete_receipt_path), "sha256": source_sha256.get("materializer_complete_receipt")},
+            "authority": {"path": _display_path(authority_path), "sha256": source_sha256.get("authority")},
+            "runner": {"path": "stom_rl/daily_type1_public_run.py", "sha256": source_sha256["runner"]},
+            "market": {"path": "stom_rl/daily_type1_market.py", "sha256": source_sha256["market"]},
+        },
+        "fresh_oos": fresh_oos,
+        "false_research_locks": FALSE_RESEARCH_LOCKS,
+        "execution_status": "COMPLETE",
+        "verdict": "NO_GO",
+        "decision": "NO_GO",
+        "claims": {
+            "profitability": "NOT_CLAIMED",
+            "live": "NOT_CLAIMED",
+            "fresh_oos": "NOT_RUN_NO_READ",
+            "outcome": "NO_GO_ONLY",
+        },
+    }
+    manifest_sha256 = _write_json_create_new_or_exact(root / RECOVERY_MANIFEST_NAME, manifest)
+    receipt = {
+        "schema_version": RECOVERY_RECEIPT_SCHEMA,
+        "role": RECOVERY_RECEIPT_ROLE,
+        "status": "COMPLETE",
+        "execution_status": "COMPLETE",
+        "verdict": "NO_GO",
+        "decision": "NO_GO",
+        "run_id": REPLACEMENT_RUN_ID,
+        "recovery_manifest_sha256": manifest_sha256,
+        "blocked_receipt_sha256": blocked_receipt_sha256,
+        "blocked_receipt_path": "receipt.json",
+        "blocked_reason": ORIGINAL_BLOCKED_REASON,
+        "original_block_reason": ORIGINAL_BLOCKED_REASON,
+        "original_block_preserved": True,
+        "retraining_performed": False,
+        "overwrite_performed": False,
+        "move_performed": False,
+        "delete_performed": False,
+        "fresh_oos": fresh_oos,
+        "member_artifact_sha256": dict(sorted(artifact_hashes.items())),
+        "source_sha256": source_sha256,
+        "materializer_sha256": materializer_sha256,
+        "outcome": "NO_GO_ONLY",
+    }
+    _write_json_create_new_or_exact(root / RECOVERY_RECEIPT_NAME, receipt)
+    return {"output_dir": root, "manifest": manifest, "receipt": receipt}
+
+
 def _pair_bytes(pairs: Sequence[Mapping[str, Any]]) -> bytes:
     digest = hashlib.sha256()
     for pair in pairs:
@@ -534,6 +1076,8 @@ def _pair_bytes(pairs: Sequence[Mapping[str, Any]]) -> bytes:
             "settlement_date": pair["settlement_date"],
         }))
     return digest.digest()
+
+
 def _mutated_validation_rows(
     validation_rows: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -822,9 +1366,25 @@ class _ProductionOperations:
         ]
 
     @staticmethod
+    def _gross_return_decimal(value: Any) -> Decimal:
+        if isinstance(value, Decimal):
+            return value
+        if isinstance(value, bool):
+            raise ValueError("gross_return must be Decimal-compatible")
+        return Decimal(str(value))
+
+    @staticmethod
     def _pnl(outcomes: Sequence[Mapping[str, Any]]) -> Decimal:
-        return sum((SLOT_NOTIONAL_KRW * (Decimal(item["gross_return"]) - Decimal("0.0023"))
-                    for item in outcomes if item["status"] == "FILLED"), Decimal(0))
+        return sum(
+            (
+                SLOT_NOTIONAL_KRW * (
+                    _ProductionOperations._gross_return_decimal(item["gross_return"]) - Decimal("0.0023")
+                )
+                for item in outcomes
+                if item["status"] == "FILLED"
+            ),
+            Decimal(0),
+        )
 
     def controls(self, train_rows: Sequence[Mapping[str, Any]], validation_rows: Sequence[Mapping[str, Any]], primary: Mapping[str, Any], shuffled: Mapping[str, Any]) -> Mapping[str, Any]:
         """Run all frozen controls; integrity defects BLOCK while science never promotes."""
@@ -892,8 +1452,12 @@ class _ProductionOperations:
                     reasons.append(f"{name}_seed_{seed}_evaluation_block")
                 try:
                     replay = replay_fixed_notional(tuple(
-                        tuple(SlotOutcome(item["symbol"], item["status"], item["gross_return"]) if item["status"] == "FILLED" else SlotOutcome(item["symbol"], item["status"])
-                              for item in pair)
+                        tuple(
+                            SlotOutcome(
+                                item["symbol"], item["status"], self._gross_return_decimal(item["gross_return"])
+                            ) if item["status"] == "FILLED" else SlotOutcome(item["symbol"], item["status"])
+                            for item in pair
+                        )
                         for pair in member["validation"]["outcomes"]
                     ))
                     if replay[-1] != Decimal(str(member["validation"]["nav_krw"])):
@@ -935,6 +1499,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--amendment", default=str(AMENDMENT_PATH), help="Frozen recovery amendment.")
     parser.add_argument("--out-root", required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--recover", action="store_true", help="Append-only recovery: re-evaluate saved final models without training.")
     return parser
 
 
@@ -955,15 +1520,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             rows_path, manifest_path, authority_path, materializer_path, completion_receipt_path, amendment_path,
         )
         root = _contained_run_root(args.out_root, args.run_id, production=True)
+        operations = _ProductionOperations(stable_symbols=stable_symbols)
+        if args.recover:
+            result = recover_public_experiment(
+                rows, out_root=args.out_root, run_id=args.run_id,
+                operations=operations, config=RunConfig(), identity=identity,
+                rows_path=rows_path,
+                dataset_manifest_path=manifest_path,
+                authority_path=authority_path,
+                materializer_manifest_path=materializer_path,
+                materializer_complete_receipt_path=completion_receipt_path,
+                amendment_path=amendment_path,
+            )
+            print(json.dumps({"output_dir": str(result["output_dir"]), "execution_status": result["receipt"]["execution_status"], "verdict": "NO_GO"}, sort_keys=True))
+            return 0
         result = run_public_experiment(
             rows, out_root=args.out_root, run_id=args.run_id,
-            operations=_ProductionOperations(stable_symbols=stable_symbols), config=RunConfig(),
+            operations=operations, config=RunConfig(),
             identity=identity,
         )
         print(json.dumps({"output_dir": str(result["output_dir"]), "execution_status": result["manifest"]["execution_status"], "verdict": "NO_GO"}, sort_keys=True))
         return 0 if result["manifest"]["execution_status"] == "COMPLETE" else 1
     except Exception as exc:
-        if root is not None and root.is_dir() and (root / "receipt.json").exists():
+        if not args.recover and root is not None and root.is_dir() and (root / "receipt.json").exists():
             _write_receipt(root / "receipt.json", {
                 "execution_status": "BLOCK", "verdict": "NO_GO", "reason": str(exc),
                 "fresh_oos": {"state": "NOT_RUN", "metrics": None},
