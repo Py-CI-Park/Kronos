@@ -85,6 +85,12 @@ _SOURCE_LOCAL_PATHS = {
        for kind in ("primary", "shuffled_reward") for seed in range(5)
        for artifact, filename in (("model", "final_model.zip"), ("normalizer", "normalizer.json"))},
 }
+_AUTHORITY_ARTIFACT_LABELS = ("type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")
+PARENT_ATTEMPT_IDENTITY = {
+    "dataset_id": "type1-close-20260803-004",
+    "train_id": "type1-public-004",
+    "train_run_id": "train_type1-public-004",
+}
 
 class Type1ReportError(ValueError):
     """Raised when a Type1 immutable report authority is invalid or blocked."""
@@ -159,6 +165,56 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise Type1ReportError(f"{label} is invalid")
     return value
+def _is_authority_envelope(value: Mapping[str, Any]) -> bool:
+    return set(value) == {"authority", "integrity", "schema"}
+
+def _authority_payload(envelope: Mapping[str, Any], label: str) -> Mapping[str, Any]:
+    if not _is_authority_envelope(envelope):
+        raise Type1ReportError(f"{label} must be the frozen authority envelope")
+    authority = envelope.get("authority")
+    sessions = authority.get("sessions") if isinstance(authority, Mapping) else None
+    if (
+        envelope.get("schema") != "kronos.type1.krx-public-authority.v2"
+        or not isinstance(authority, Mapping)
+        or authority.get("authority_id") != REPLACEMENT_IDENTITY["authority_id"]
+        or authority.get("fresh_oos") != {"status": "NOT_RUN", "no_read": True}
+        or not isinstance(sessions, Mapping)
+        or not {"ordered", "pairs", "trailing_embargo"} <= set(sessions)
+    ):
+        raise Type1ReportError(f"{label} does not bind the frozen v5 authority")
+    return authority
+
+def _validate_frozen_authority_envelope(envelope: Mapping[str, Any], raw: bytes, label: str) -> None:
+    try:
+        from stom_rl.daily_type1_authority import canonical_json, validate_authority
+
+        if raw != canonical_json(envelope):
+            raise Type1ReportError(f"{label} is not canonical JSON")
+        validate_authority(envelope)
+        _authority_payload(envelope, label)
+    except Type1ReportError:
+        raise
+    except Exception as exc:
+        raise Type1ReportError(f"{label} is invalid") from exc
+
+def _read_authority_source(path: Path, label: str) -> tuple[dict[str, Any], bytes]:
+    try:
+        raw = _read_bytes(path, label)
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, Type1ReportError) as exc:
+        raise Type1ReportError(f"{label} is invalid") from exc
+    if not isinstance(value, dict):
+        raise Type1ReportError(f"{label} is invalid")
+    if _is_authority_envelope(value):
+        _validate_frozen_authority_envelope(value, raw, label)
+    elif raw != _canonical(value):
+        raise Type1ReportError(f"{label} is not canonical JSON")
+    return value, raw
+
+def _read_frozen_authority_envelope(path: Path) -> tuple[dict[str, Any], Mapping[str, Any], bytes]:
+    envelope, raw = _read_authority_source(path, "frozen authority")
+    authority = _authority_payload(envelope, "frozen authority")
+    return envelope, authority, raw
 
 def _write_new(path: Path, raw: bytes) -> None:
     """Create and durably write an immutable object; accept only an exact orphan retry."""
@@ -276,7 +332,7 @@ def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
     ) != ("CONTEXTUAL_BANDIT_RESEARCH_EXPERIMENT", "NO_GO", "NOT_RUN"):
         raise Type1ReportError("preregistration M3E boundary is invalid")
 
-    for label in ("type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority"):
+    for label in ("type1_identity", "public_run_seal", "deployment_lock", "attempt_parent"):
         _identity_mapping(fixed[label])
     seal = fixed["public_run_seal"]
     fresh = seal.get("fresh_oos", seal)
@@ -289,19 +345,27 @@ def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
         raise Type1ReportError("deployment lock does not preserve Type1 no-go locks")
     parent = fixed["attempt_parent"]
     prior = parent.get("parent_identity", parent.get("parent_attempt", parent.get("previous_attempt")))
-    if not isinstance(prior, Mapping) or (
-        prior.get("dataset_id"), prior.get("train_id"), prior.get("train_run_id")
-    ) != ("type1-close-20260803-004", "type1-public-004", "train_type1-public-004"):
+    parent_fresh = parent.get("fresh_oos")
+    parent_status = parent.get("parent_status", parent.get("status"))
+    models_created = parent.get("models_created")
+    if (
+        not isinstance(prior, Mapping)
+        or {key: prior.get(key) for key in PARENT_ATTEMPT_IDENTITY} != PARENT_ATTEMPT_IDENTITY
+        or parent_status not in (None, "MATERIALIZED_NOT_TRAINED_QUARANTINED")
+        or models_created not in (None, 0)
+        or parent_fresh not in (None, {"status": "NOT_RUN", "no_read": True})
+    ):
         raise Type1ReportError("attempt parent does not preserve quarantined -004 ancestry")
     authority = fixed["authority"]
-    if authority.get("authority_id", _identity_mapping(authority).get("authority_id")) != REPLACEMENT_OUTER_IDENTITY["authority_id"]:
-        raise Type1ReportError("authority source does not bind replacement authority ID")
+    if _is_authority_envelope(authority):
+        _authority_payload(authority, "authority source")
+    else:
+        authority_identity = _identity_mapping(authority)
+        if authority.get("authority_id", authority_identity.get("authority_id")) != REPLACEMENT_OUTER_IDENTITY["authority_id"]:
+            raise Type1ReportError("authority source does not bind replacement authority ID")
 
-def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
-    directory = Path(run_dir).absolute()
-    if not directory.is_dir() or _is_reparse(directory):
-        raise Type1ReportError("run directory is required")
-    paths = {
+def _report_source_paths(directory: Path) -> dict[str, Path]:
+    return {
         "amendment": _safe_child(REPO_ROOT, Path("docs") / AMENDMENT_PATH.name),
         "protocol": _safe_child(REPO_ROOT, Path("docs") / PROTOCOL_PATH.name),
         "preregistration": _safe_child(REPO_ROOT, Path("docs") / PREREG_PATH.name),
@@ -311,7 +375,22 @@ def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
         "public_rows": _safe_child(directory.parent, Path("public_rows.json")),
         "materializer_complete_receipt": _safe_child(directory.parent, Path("materializer_complete_receipt.json")),
     }
-    fixed = {label: (_read_json(paths[label], label) if label in {"amendment", "protocol", "preregistration"} else _read_canonical(paths[label], label)[0]) for label in ("amendment", "protocol", "preregistration", "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")}
+
+def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
+    directory = Path(run_dir).absolute()
+    if not directory.is_dir() or _is_reparse(directory):
+        raise Type1ReportError("run directory is required")
+    paths = _report_source_paths(directory)
+    fixed = {
+        label: (
+            _read_json(paths[label], label)
+            if label in {"amendment", "protocol", "preregistration"}
+            else _read_authority_source(paths[label], label)[0]
+            if label == "authority"
+            else _read_canonical(paths[label], label)[0]
+        )
+        for label in ("amendment", "protocol", "preregistration", "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")
+    }
     _validate_authority_sources(fixed)
     return {label: _sha(_read_bytes(path, label)) for label, path in paths.items()}
 def _verify_current_parent(root: Path, events: list[tuple[dict[str, Any], str]], state: str) -> None:
@@ -332,10 +411,12 @@ def _verify_current_parent(root: Path, events: list[tuple[dict[str, Any], str]],
     if row is None or row[0] != expected or row[1] != expected_state:
         raise Type1ReportError("current-parent authority mismatch")
 
-def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -> None:
-    root = Path(run_dir).absolute()
-    manifest = _read_canonical(_safe_child(root, Path("run_manifest.json")), "run manifest")[0]
+def _read_completed_runner_manifest(root: Path, expected_manifest_sha256: Any = None) -> dict[str, Any]:
+    manifest, manifest_raw = _read_canonical(_safe_child(root, Path("run_manifest.json")), "run manifest")
     receipt = _read_canonical(_safe_child(root, Path("receipt.json")), "run receipt")[0]
+    manifest_sha256 = _sha(manifest_raw)
+    if expected_manifest_sha256 is not None and manifest_sha256 != expected_manifest_sha256:
+        raise Type1ReportError("runner manifest source hash mismatch")
     if (
         manifest.get("schema_version") != RUNNER_MANIFEST_SCHEMA
         or not isinstance(manifest.get("identities"), Mapping)
@@ -344,9 +425,13 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
         or manifest.get("verdict") != "NO_GO"
         or manifest.get("fresh_oos") != RUNNER_RECEIPT["fresh_oos"]
         or manifest.get("false_research_locks") != LOCKS
-        or receipt != {**RUNNER_RECEIPT, "manifest_sha256": sources.get("run_manifest")}
+        or receipt != {**RUNNER_RECEIPT, "manifest_sha256": manifest_sha256}
     ):
         raise Type1ReportError("runner manifest or receipt violates the frozen no-go contract")
+    return manifest
+def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -> None:
+    root = Path(run_dir).absolute()
+    manifest = _read_completed_runner_manifest(root, sources.get("run_manifest"))
     materializer_receipt, _ = _read_canonical(
         _safe_child(root.parent, Path("materializer_complete_receipt.json")),
         "materializer completion receipt",
@@ -474,6 +559,80 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
                 or not isinstance(normalizer.get("scales"), list)
             ):
                 raise Type1ReportError("runner final artifact or persisted-normalizer replay receipt is invalid")
+
+def _uninitialized_report_source_sha256(directory: Path, authority_sha256: str) -> dict[str, str]:
+    paths = _report_source_paths(directory)
+    skipped = set(_AUTHORITY_ARTIFACT_LABELS)
+    sources = {label: _sha(_read_bytes(path, label)) for label, path in paths.items() if label not in skipped}
+    sources["authority"] = authority_sha256
+    return sources
+
+def _validate_runner_authority_binding(manifest: Mapping[str, Any], authority: Mapping[str, Any], authority_sha256: str) -> None:
+    identities = manifest.get("identities")
+    if (
+        not isinstance(identities, Mapping)
+        or identities.get("authority_id") != authority.get("authority_id")
+        or identities.get("authority_sha256") != authority_sha256
+    ):
+        raise Type1ReportError("frozen authority hash does not match runner identity")
+
+def _report_authority_artifact_bytes(authority_raw: bytes, authority_sha256: str) -> dict[str, bytes]:
+    outer = {"authority_sha256": authority_sha256, "identity": IDENTITY}
+    return {
+        "type1_identity": _canonical(outer),
+        "public_run_seal": _canonical({**outer, "fresh_oos": {"state": "NOT_RUN", "payload_read": False}}),
+        "deployment_lock": _canonical({**outer, "false_research_locks": LOCKS}),
+        "attempt_parent": _canonical({
+            **outer,
+            "parent_identity": PARENT_ATTEMPT_IDENTITY,
+            "parent_status": "MATERIALIZED_NOT_TRAINED_QUARANTINED",
+            "models_created": 0,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+        }),
+        "authority": authority_raw,
+    }
+
+def _validate_pending_report_authority_sources(directory: Path, artifacts: Mapping[str, bytes]) -> None:
+    paths = _report_source_paths(directory)
+    fixed: dict[str, Mapping[str, Any]] = {
+        label: _read_json(paths[label], label)
+        for label in ("amendment", "protocol", "preregistration")
+    }
+    try:
+        for label in _AUTHORITY_ARTIFACT_LABELS:
+            value = json.loads(artifacts[label].decode("utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError(f"{label} is not an object")
+            fixed[label] = value
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise Type1ReportError("pending report authority artifact is invalid") from exc
+    _validate_authority_sources(fixed)
+
+def _preflight_report_authority_targets(directory: Path, artifacts: Mapping[str, bytes]) -> dict[str, Path]:
+    targets = {label: _safe_child(directory, _SOURCE_LOCAL_PATHS[label]) for label in _AUTHORITY_ARTIFACT_LABELS}
+    for label, path in targets.items():
+        raw = artifacts[label]
+        if path.exists() and _read_bytes(path, f"existing report authority artifact: {label}", maximum=len(raw)) != raw:
+            raise Type1ReportError("report authority artifact already exists with different bytes")
+    return targets
+
+def initialize_report_authority(run_dir: str | Path, frozen_authority_envelope_path: str | Path) -> dict[str, str]:
+    """Explicitly bridge a completed Type1 runner directory into immutable report sources."""
+    directory = Path(run_dir).absolute()
+    if not directory.is_dir() or _is_reparse(directory):
+        raise Type1ReportError("run directory is required")
+    manifest = _read_completed_runner_manifest(directory)
+    _, authority, authority_raw = _read_frozen_authority_envelope(Path(frozen_authority_envelope_path).absolute())
+    authority_sha256 = _sha(authority_raw)
+    _validate_runner_authority_binding(manifest, authority, authority_sha256)
+    sources = _uninitialized_report_source_sha256(directory, authority_sha256)
+    _validate_runner_evidence(directory, sources)
+    artifacts = _report_authority_artifact_bytes(authority_raw, authority_sha256)
+    _validate_pending_report_authority_sources(directory, artifacts)
+    targets = _preflight_report_authority_targets(directory, artifacts)
+    for label in _AUTHORITY_ARTIFACT_LABELS:
+        _write_new(targets[label], artifacts[label])
+    return report_source_sha256(directory)
 
 def _validate_revision(value: Mapping[str, Any]) -> None:
     required = {"schema_version", "revision_id", "revision_ordinal", "identity", "policy", "result", "source_sha256", "evidence", "false_research_locks", "claims", "catalog_ordinal", "previous_event_sha256", "previous_revision_event_sha256"}

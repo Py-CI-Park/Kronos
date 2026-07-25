@@ -7,36 +7,67 @@ import stom_rl.daily_v1_type1_report as type1_report
 from stom_rl.daily_v1_type1_report import (
     AMENDMENT_PATH, IDENTITY, LOCKS, M3E_STATEMENT, POLICY, REPORT_CLAIMS,
     REPORT_RESULT, REPLACEMENT_OUTER_IDENTITY, Type1ReportError,
-    commit_report_tip, insert_report_revision, materialize_report_revision,
-    reconcile_report_tip, report_source_sha256, verify_report_catalog,
+    commit_report_tip, initialize_report_authority, insert_report_revision,
+    materialize_report_revision, reconcile_report_tip, report_source_sha256,
+    verify_report_catalog,
 )
 
 
-def _sources(run):
+_AUTHORITY_SCHEMA = "kronos.type1.krx-public-authority.v2"
+_AUTHORITY_FILES = (
+    "type1_identity.json",
+    "p6_public_run_seal.json",
+    "deployment_lock.json",
+    "attempt_parent.json",
+    "authority.json",
+)
+
+
+@pytest.fixture(autouse=True)
+def _allow_synthetic_authority(monkeypatch):
+    import stom_rl.daily_type1_authority as authority_module
+
+    def validate_authority(envelope):
+        if not isinstance(envelope, dict) or set(envelope) != {"authority", "integrity", "schema"} or envelope.get("schema") != _AUTHORITY_SCHEMA:
+            raise ValueError("synthetic authority envelope is invalid")
+
+    monkeypatch.setattr(authority_module, "validate_authority", validate_authority)
+
+
+def _authority_envelope(*, authority_id=IDENTITY["authority_id"], integrity="test"):
+    return {
+        "schema": _AUTHORITY_SCHEMA,
+        "authority": {
+            "authority_id": authority_id,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+            "sessions": {"ordered": [], "pairs": [], "trailing_embargo": []},
+        },
+        "integrity": {"test_only": integrity},
+    }
+
+
+def _authority_bytes(*, authority_id=IDENTITY["authority_id"], integrity="test"):
+    from stom_rl.daily_type1_authority import canonical_json
+
+    return canonical_json(_authority_envelope(authority_id=authority_id, integrity=integrity))
+
+
+def _write_authority(run, *, authority_id=IDENTITY["authority_id"], integrity="test"):
+    path = run / "frozen_authority_envelope.json"
+    path.write_bytes(_authority_bytes(authority_id=authority_id, integrity=integrity))
+    return path
+
+
+def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_GO"):
     from stom_rl.daily_type1_public_data import _complete_receipt
     from stom_rl.daily_type1_market import FeatureScale, TrainOnlyNormalizer
     from decimal import Decimal
 
     run.mkdir(parents=True, exist_ok=True)
+    authority_path = _write_authority(run)
+    authority_sha = type1_report._sha(authority_path.read_bytes())
     rows_bytes = type1_report._canonical([])
     (run.parent / "public_rows.json").write_bytes(rows_bytes)
-    outer = {"identity": IDENTITY}
-    (run / "type1_identity.json").write_bytes(type1_report._canonical(outer))
-    (run / "p6_public_run_seal.json").write_bytes(type1_report._canonical({
-        **outer, "fresh_oos": {"state": "NOT_RUN", "payload_read": False},
-    }))
-    (run / "deployment_lock.json").write_bytes(type1_report._canonical({**outer, "locks": LOCKS}))
-    (run / "attempt_parent.json").write_bytes(type1_report._canonical({
-        **outer,
-        "parent_identity": {
-            "dataset_id": "type1-close-20260803-004",
-            "train_id": "type1-public-004",
-            "train_run_id": "train_type1-public-004",
-        },
-    }))
-    (run / "authority.json").write_bytes(type1_report._canonical({
-        **outer, "authority_id": REPLACEMENT_OUTER_IDENTITY["authority_id"],
-    }))
     scales = tuple(FeatureScale(Decimal("0"), Decimal("1")) for _ in range(7))
     normalizer_digest = TrainOnlyNormalizer(scales).digest()
     normalizer_bytes = type1_report._canonical({
@@ -75,7 +106,7 @@ def _sources(run):
             }
     manifest = {
         "schema_version": "kronos_type1_g002_public_run.v1",
-        "identities": IDENTITY,
+        "identities": {**IDENTITY, "authority_sha256": authority_sha},
         "training": {
             "seeds": [0, 1, 2, 3, 4],
             "timesteps_per_seed": 200000,
@@ -103,12 +134,16 @@ def _sources(run):
         },
         "fresh_oos": {"state": "NOT_RUN", "metrics": None},
         "false_research_locks": LOCKS,
-        "execution_status": "COMPLETE",
-        "verdict": "NO_GO",
+        "execution_status": execution_status,
+        "verdict": verdict,
     }
     (run / "run_manifest.json").write_bytes(type1_report._canonical(manifest))
-    (run / "receipt.json").write_bytes(type1_report._canonical({}))
-    authority_sha = type1_report._sha((run / "authority.json").read_bytes())
+    (run / "receipt.json").write_bytes(type1_report._canonical({
+        "manifest_sha256": type1_report._sha((run / "run_manifest.json").read_bytes()),
+        "execution_status": execution_status,
+        "verdict": verdict,
+        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
+    }))
     amendment_sha = type1_report._sha(AMENDMENT_PATH.read_bytes())
     dataset_manifest = {
         "dataset_id": IDENTITY["dataset_id"],
@@ -137,14 +172,72 @@ def _sources(run):
             amendment=amendment,
         )
     ))
-    sources = report_source_sha256(run)
-    (run / "receipt.json").write_bytes(type1_report._canonical({
-        "manifest_sha256": sources["run_manifest"],
-        "execution_status": "COMPLETE",
-        "verdict": "NO_GO",
-        "fresh_oos": {"state": "NOT_RUN", "metrics": None},
-    }))
-    return report_source_sha256(run)
+    return authority_path
+
+
+def _sources(run):
+    authority_path = _prepare_completed_runner(run)
+    return initialize_report_authority(run, authority_path)
+
+def _authority_file_paths(run):
+    return [run / name for name in _AUTHORITY_FILES]
+
+
+def test_initialize_report_authority_creates_sources_after_completed_runner(tmp_path):
+    authority_path = _prepare_completed_runner(tmp_path)
+    assert all(not path.exists() for path in _authority_file_paths(tmp_path))
+    sources = initialize_report_authority(tmp_path, authority_path)
+    assert all(path.is_file() for path in _authority_file_paths(tmp_path))
+    assert sources == report_source_sha256(tmp_path)
+    assert sources["authority"] == type1_report._sha(authority_path.read_bytes())
+    parent = json.loads((tmp_path / "attempt_parent.json").read_text(encoding="utf-8"))
+    assert parent["parent_identity"] == type1_report.PARENT_ATTEMPT_IDENTITY
+    assert parent["parent_status"] == "MATERIALIZED_NOT_TRAINED_QUARANTINED"
+
+
+def test_initialize_report_authority_exact_retry_is_idempotent(tmp_path):
+    authority_path = _prepare_completed_runner(tmp_path)
+    authority_raw = authority_path.read_bytes()
+    authority_sha = type1_report._sha(authority_raw)
+    prefix = type1_report._report_authority_artifact_bytes(authority_raw, authority_sha)
+    (tmp_path / "type1_identity.json").write_bytes(prefix["type1_identity"])
+    first = initialize_report_authority(tmp_path, authority_path)
+    second = initialize_report_authority(tmp_path, authority_path)
+    assert second == first == report_source_sha256(tmp_path)
+
+
+def test_initialize_report_authority_blocks_differing_existing_bytes_before_writes(tmp_path):
+    authority_path = _prepare_completed_runner(tmp_path)
+    (tmp_path / "p6_public_run_seal.json").write_bytes(b"{}")
+    with pytest.raises(Type1ReportError, match="different bytes"):
+        initialize_report_authority(tmp_path, authority_path)
+    assert not (tmp_path / "type1_identity.json").exists()
+    assert not (tmp_path / "deployment_lock.json").exists()
+    assert not (tmp_path / "attempt_parent.json").exists()
+    assert not (tmp_path / "authority.json").exists()
+
+
+def test_initialize_report_authority_rejects_block_runner_without_writes(tmp_path):
+    authority_path = _prepare_completed_runner(tmp_path, execution_status="BLOCK")
+    with pytest.raises(Type1ReportError, match="runner manifest or receipt"):
+        initialize_report_authority(tmp_path, authority_path)
+    assert all(not path.exists() for path in _authority_file_paths(tmp_path))
+
+
+def test_initialize_report_authority_rejects_wrong_authority_without_writes(tmp_path):
+    _prepare_completed_runner(tmp_path)
+    wrong = tmp_path / "wrong_authority.json"
+    wrong.write_bytes(_authority_bytes(integrity="different-local-envelope"))
+    with pytest.raises(Type1ReportError, match="authority hash"):
+        initialize_report_authority(tmp_path, wrong)
+    assert all(not path.exists() for path in _authority_file_paths(tmp_path))
+
+
+def test_initialize_report_authority_does_not_create_report_catalog(tmp_path):
+    authority_path = _prepare_completed_runner(tmp_path)
+    assert not (tmp_path / "type1_reports").exists()
+    initialize_report_authority(tmp_path, authority_path)
+    assert not (tmp_path / "type1_reports").exists()
 
 
 def _revision(run, number=1):
@@ -204,13 +297,15 @@ def test_catalog_rehashes_fixed_source_paths(tmp_path):
     (tmp_path / "run_manifest.json").write_bytes(b"tampered")
     with pytest.raises(Type1ReportError, match="source hashes"):
         verify_report_catalog(tmp_path)
-def test_catalog_rejects_semantic_outer_identity_tamper(tmp_path):
+def test_catalog_rejects_semantic_authority_envelope_tamper(tmp_path):
+    from stom_rl.daily_type1_authority import canonical_json
+
     _sources(tmp_path)
     source = tmp_path / "authority.json"
     value = json.loads(source.read_text())
-    value["identity"]["custody_uid"] = "copied-under-wrong-path"
-    source.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")))
-    with pytest.raises(Type1ReportError, match="outer identity"):
+    value["authority"]["fresh_oos"]["no_read"] = False
+    source.write_bytes(canonical_json(value))
+    with pytest.raises(Type1ReportError, match="frozen v5 authority"):
         report_source_sha256(tmp_path)
     assert REPLACEMENT_OUTER_IDENTITY == {
         "authority_id": "type1-krx-authority-20260724-004",
