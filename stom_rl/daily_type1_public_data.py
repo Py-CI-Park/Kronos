@@ -24,17 +24,20 @@ from stom_rl.daily_type1_market import (
     public_row_from_mapping,
 )
 
-DATASET_ID = "type1-close-20260803-004"
+DATASET_ID = "type1-close-20260803-005"
 PUBLIC_CUTOFF = 20250630
 PUBLIC_START = 20180102
 PROXY_HHMM = 1520
 SCHEMA_VERSION = "kronos_type1_g002_public_data.v3"
+RECEIPT_SCHEMA_VERSION = "kronos.type1.public-materializer-complete-receipt.v1"
+RECEIPT_ROLE = "MATERIALIZER_COMPLETE_RECEIPT"
+RECEIPT_STATUS = "COMPLETE"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PREREG_PATH = REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json"
-DEFAULT_AUTHORITY_PATH = REPO_ROOT / "artifacts" / "type1-authority" / "type1-krx-authority-20260724-003.json"
-AUTHORITY_ID = "type1-krx-authority-20260724-003"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v4_2026-07-24.json"
+DEFAULT_AUTHORITY_PATH = REPO_ROOT / "artifacts" / "type1-authority" / "type1-krx-authority-20260724-004.json"
+AUTHORITY_ID = "type1-krx-authority-20260724-004"
 MATERIALIZER_MANIFEST_SCHEMA = "kronos.type1.public-materializer.v3"
 _DECIMAL_CONTEXT = Context(prec=50, rounding=ROUND_HALF_EVEN)
 _DAILY_COLUMNS = ("date", "close", "volume", "상장주식수", "외국인현보유비율", "기관순매수")
@@ -155,7 +158,21 @@ def materialize_public_data(
         },
         "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
     }
-    return {"rows": serialized_rows, "manifest": manifest, "rows_bytes": row_bytes}
+    manifest_bytes = canonical_json_bytes(manifest)
+    receipt = _complete_receipt(
+        manifest=manifest,
+        manifest_bytes=manifest_bytes,
+        rows_bytes=row_bytes,
+        amendment=amendment,
+    )
+    return {
+        "rows": serialized_rows,
+        "manifest": manifest,
+        "receipt": receipt,
+        "rows_bytes": row_bytes,
+        "manifest_bytes": manifest_bytes,
+        "receipt_bytes": canonical_json_bytes(receipt),
+    }
 
 
 def write_public_materialization(*, out_root: Path | str, **kwargs: Any) -> dict[str, Any]:
@@ -163,14 +180,168 @@ def write_public_materialization(*, out_root: Path | str, **kwargs: Any) -> dict
     root = Path(out_root)
     _reject_path_indirection(root)
     root.mkdir(parents=True, exist_ok=True)
+    _reject_path_indirection(root)
     destination = root / DATASET_ID
     destination.mkdir()  # output reuse is a scientific identity violation
-    rows_path, manifest_path = destination / "public_rows.json", destination / "dataset_manifest.json"
-    with rows_path.open("xb") as handle:
-        handle.write(result["rows_bytes"])
-    with manifest_path.open("xb") as handle:
-        handle.write(canonical_json_bytes(result["manifest"]))
-    return {**result, "destination": destination, "rows_path": rows_path, "manifest_path": manifest_path}
+    _reject_path_indirection(destination)
+    rows_path = destination / "public_rows.json"
+    manifest_path = destination / "dataset_manifest.json"
+    receipt_path = destination / "materializer_complete_receipt.json"
+    for path, content in (
+        (rows_path, result["rows_bytes"]),
+        (manifest_path, result["manifest_bytes"]),
+        (receipt_path, result["receipt_bytes"]),
+    ):
+        with path.open("xb") as handle:
+            handle.write(content)
+    verify_public_materialization(destination)
+    return {
+        **result,
+        "destination": destination,
+        "rows_path": rows_path,
+        "manifest_path": manifest_path,
+        "receipt_path": receipt_path,
+    }
+
+
+def verify_public_materialization(destination: Path | str) -> dict[str, Any]:
+    """Fail closed unless the three canonical immutable materialization artifacts bind."""
+    root = Path(destination)
+    if not root.is_dir():
+        raise FileNotFoundError(root)
+    _reject_path_indirection(root)
+    expected_paths = {
+        "public_rows.json": "CANONICAL_PUBLIC_ROWS",
+        "dataset_manifest.json": "CANONICAL_DATASET_MANIFEST",
+        "materializer_complete_receipt.json": RECEIPT_ROLE,
+    }
+    actual_paths = {path.name for path in root.iterdir()}
+    if actual_paths != set(expected_paths):
+        raise ValueError("materialization must contain exactly the three canonical artifacts")
+    paths = {name: _safe_source_path(root / name, name) for name in expected_paths}
+    identities = [(path.stat().st_dev, path.stat().st_ino) for path in paths.values()]
+    if len(set(identities)) != len(identities):
+        raise ValueError("materialization artifacts must be physically distinct files")
+    try:
+        rows_bytes = paths["public_rows.json"].read_bytes()
+        manifest_bytes = paths["dataset_manifest.json"].read_bytes()
+        receipt_bytes = paths["materializer_complete_receipt.json"].read_bytes()
+        rows = json.loads(rows_bytes)
+        manifest = json.loads(manifest_bytes)
+        receipt = json.loads(receipt_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("materialization artifact is not canonical JSON") from exc
+    if canonical_json_bytes(rows) != rows_bytes or canonical_json_bytes(manifest) != manifest_bytes or canonical_json_bytes(receipt) != receipt_bytes:
+        raise ValueError("materialization artifact is not canonical JSON")
+    if not isinstance(rows, list) or not isinstance(manifest, Mapping) or not isinstance(receipt, Mapping):
+        raise ValueError("materialization artifact types are invalid")
+    if manifest.get("dataset_id") != DATASET_ID or manifest.get("output_sha256") != hashlib.sha256(rows_bytes).hexdigest():
+        raise ValueError("dataset manifest does not bind canonical public rows")
+    _validate_complete_receipt(receipt, manifest, manifest_bytes, rows_bytes, expected_paths)
+    return {"rows": rows, "manifest": manifest, "receipt": receipt}
+
+
+def _complete_receipt(
+    *,
+    manifest: Mapping[str, Any],
+    manifest_bytes: bytes,
+    rows_bytes: bytes,
+    amendment: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "role": RECEIPT_ROLE,
+        "status": RECEIPT_STATUS,
+        "dataset_id": DATASET_ID,
+        "physical_dataset_identity": {
+            "dataset_id": DATASET_ID,
+            "directory_name": DATASET_ID,
+            "files": ["public_rows.json", "dataset_manifest.json", "materializer_complete_receipt.json"],
+        },
+        "artifact_roles": {
+            "public_rows.json": "CANONICAL_PUBLIC_ROWS",
+            "dataset_manifest.json": "CANONICAL_DATASET_MANIFEST",
+            "materializer_complete_receipt.json": RECEIPT_ROLE,
+        },
+        "dataset_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "public_rows_sha256": hashlib.sha256(rows_bytes).hexdigest(),
+        "authority_id": manifest["authority"]["authority_id"],
+        "authority_sha256": manifest["authority_sha256"],
+        "amendment_id": amendment["amendment_id"],
+        "amendment_sha256": manifest["amendment_sha256"],
+        "source_database_identity": manifest["source_database_identity"],
+        "materializer_source_sha256": manifest["materializer_source_sha256"],
+        "counts": {
+            "rows": manifest["row_count"],
+            "split_rows": manifest["split_row_counts"],
+            "split_symbols": manifest["split_symbol_counts"],
+            "expected": manifest["expected"],
+        },
+        "calendar": manifest["authority"]["sessions"],
+        "public_cutoff": manifest["public_cutoff"],
+        "price_basis": manifest["price_basis"],
+        "execution_contract": amendment["execution_contract"],
+        "fresh_oos": manifest["fresh_oos"],
+    }
+
+
+def _validate_complete_receipt(
+    receipt: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    manifest_bytes: bytes,
+    rows_bytes: bytes,
+    artifact_roles: Mapping[str, str],
+) -> None:
+    required = {
+        "schema_version", "role", "status", "dataset_id", "physical_dataset_identity",
+        "artifact_roles", "dataset_manifest_sha256", "public_rows_sha256",
+        "authority_id", "authority_sha256", "amendment_id", "amendment_sha256",
+        "source_database_identity", "materializer_source_sha256", "counts",
+        "calendar", "public_cutoff", "price_basis", "execution_contract", "fresh_oos",
+    }
+    if set(receipt) != required:
+        raise ValueError("complete receipt schema is partial or contains unknown fields")
+    if receipt["schema_version"] != RECEIPT_SCHEMA_VERSION or receipt["role"] != RECEIPT_ROLE or receipt["status"] != RECEIPT_STATUS:
+        raise ValueError("receipt is not a complete materializer receipt")
+    if receipt["dataset_id"] != DATASET_ID or receipt["artifact_roles"] != dict(artifact_roles):
+        raise ValueError("receipt artifact roles are not canonical")
+    expected_physical = {
+        "dataset_id": DATASET_ID,
+        "directory_name": DATASET_ID,
+        "files": ["public_rows.json", "dataset_manifest.json", "materializer_complete_receipt.json"],
+    }
+    if receipt["physical_dataset_identity"] != expected_physical:
+        raise ValueError("receipt physical dataset identity is not canonical")
+    expected = {
+        "dataset_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "public_rows_sha256": hashlib.sha256(rows_bytes).hexdigest(),
+        "authority_id": manifest["authority"]["authority_id"],
+        "authority_sha256": manifest["authority_sha256"],
+        "amendment_id": manifest["amendment_id"],
+        "amendment_sha256": manifest["amendment_sha256"],
+        "source_database_identity": manifest["source_database_identity"],
+        "materializer_source_sha256": manifest["materializer_source_sha256"],
+        "counts": {
+            "rows": manifest["row_count"],
+            "split_rows": manifest["split_row_counts"],
+            "split_symbols": manifest["split_symbol_counts"],
+            "expected": manifest["expected"],
+        },
+        "calendar": manifest["authority"]["sessions"],
+        "public_cutoff": "2025-06-30",
+        "price_basis": "15:20_bar_close_proxy",
+        "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
+    }
+    for key, value in expected.items():
+        if receipt[key] != value:
+            raise ValueError(f"complete receipt {key} does not bind the canonical materialization")
+    execution = receipt["execution_contract"]
+    if execution != {
+        "proxy_time": "15:20:00", "cost_bps": 23, "fixed_notional": 60000000,
+        "primary_seeds": 5, "shuffled_seeds": 5, "timesteps_per_seed": 200000,
+        "outcome": "NO_GO_ONLY",
+    }:
+        raise ValueError("complete receipt execution contract is unsafe")
 
 
 def _load_amendment() -> Mapping[str, Any]:
@@ -181,26 +352,36 @@ def _load_amendment() -> Mapping[str, Any]:
         "authority_contract", "execution_contract", "fresh_oos", "frozen_utc",
     }
     if not isinstance(value, Mapping) or set(value) != required:
-        raise ValueError("recovery amendment v3 schema mismatch")
+        raise ValueError("recovery amendment v4 schema mismatch")
     replacement = value["replacement_identity"]
     expected = {
         "authority_id": AUTHORITY_ID,
         "dataset_id": DATASET_ID,
-        "train_id": "type1-public-004",
-        "train_run_id": "train_type1-public-004",
-        "custody_uid": "type1-fresh-oos-20260803-004",
+        "train_id": "type1-public-005",
+        "train_run_id": "train_type1-public-005",
+        "custody_uid": "type1-fresh-oos-20260803-005",
     }
-    quarantined = [{
-        "authority_id": "type1-krx-authority-20260723-002",
-        "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
-        "status": "QUARANTINED",
-        "models_created": 0,
-        "fresh_oos": {"status": "NOT_RUN", "no_read": True},
-    }]
-    if value["schema_version"] != "kronos.type1.g002-recovery-amendment.v3" or replacement != expected:
+    quarantined = value["quarantined_authorities"]
+    if quarantined != [
+        {
+            "authority_id": "type1-krx-authority-20260723-002",
+            "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+            "status": "QUARANTINED",
+            "models_created": 0,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+        },
+        {
+            "authority_id": "type1-krx-authority-20260724-003",
+            "authority_sha256": "30e34b05fe65e31b2cbb826a48628946fa3f03dc7fc7f868ebd41ff36fcef1fe",
+            "rows_sha256": "0af2be6cba26827f48ea00bf0caf700b1ce40e6fc1c2cfdebf1710ae39dfbd11",
+            "status": "QUARANTINED_MATERIALIZED_NOT_TRAINED",
+            "models_created": 0,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+        },
+    ]:
+        raise ValueError("recovery amendment must preserve earlier authority lineages as quarantined evidence")
+    if value["schema_version"] != "kronos.type1.g002-recovery-amendment.v4" or value["amendment_id"] != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004" or value["supersedes"] != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003" or replacement != expected:
         raise ValueError("recovery amendment does not authorize this replacement identity")
-    if value["quarantined_authorities"] != quarantined:
-        raise ValueError("recovery amendment quarantined authority record is unsafe")
     authority_contract = value["authority_contract"]
     if not isinstance(authority_contract, Mapping) or authority_contract.get("authority_metadata_cutoff") != "2026-07-24":
         raise ValueError("recovery amendment authority metadata cutoff is unsafe")
@@ -499,7 +680,7 @@ def main() -> None:
     args = parser.parse_args()
     identities = json.loads(Path(args.source_identities_json).read_text(encoding="utf-8"))
     result = write_public_materialization(out_root=args.out_root, daily_db_path=args.daily_db, fivemin_db_path=args.fivemin_db, authority_path=args.authority, expected_source_identities=identities)
-    print(json.dumps({"dataset_id": DATASET_ID, "rows_path": str(result["rows_path"]), "output_sha256": result["manifest"]["output_sha256"]}, sort_keys=True))
+    print(json.dumps({"dataset_id": DATASET_ID, "rows_path": str(result["rows_path"]), "receipt_path": str(result["receipt_path"]), "output_sha256": result["manifest"]["output_sha256"]}, sort_keys=True))
 
 
 if __name__ == "__main__":

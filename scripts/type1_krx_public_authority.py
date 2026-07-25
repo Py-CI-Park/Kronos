@@ -66,19 +66,24 @@ def classify_candidate(symbol: str, historical: Mapping[str, Any], typed: Mappin
     return _typed_exclusion(symbol, historical, typed)
 
 
-def _build_typed_master(current: list[Mapping[str, Any]], chunks: list[list[Mapping[str, Any]]], historical: list[Mapping[str, Any]]) -> tuple[list[dict[str, str]], set[str]]:
+def _build_typed_master(current: list[Mapping[str, Any]], chunks: list[list[Mapping[str, Any]]], historical_by_market: Mapping[str, list[Mapping[str, Any]]]) -> tuple[list[dict[str, str]], set[str]]:
     typed_rows = current + [item for chunk in chunks for item in chunk]
-    typed_by_isin = {
-        _field(row, "ISU_CD"): row
-        for row in typed_rows
-        if _field(row, "ISU_CD")
-    }
+    typed_by_isin: dict[str, list[Mapping[str, Any]]] = {}
+    for row in typed_rows:
+        isin = _field(row, "ISU_CD")
+        if isin:
+            typed_by_isin.setdefault(isin, []).append(row)
     typed_by_symbol: dict[str, list[Mapping[str, Any]]] = {}
     for row in typed_rows:
         symbol = _symbol(row)
         if symbol:
             typed_by_symbol.setdefault(symbol, []).append(row)
-    anchor = {_symbol(row): row for row in historical if _symbol(row)}
+    anchor = {
+        _symbol(row): row
+        for market in MARKETS
+        for row in historical_by_market[market]
+        if _symbol(row)
+    }
     exclusions: list[dict[str, str]] = []
     eligible: set[str] = set()
     for symbol, historical_row in sorted(anchor.items()):
@@ -92,8 +97,10 @@ def _build_typed_master(current: list[Mapping[str, Any]], chunks: list[list[Mapp
     return exclusions, eligible
 
 
-def build_authority(*, typed_current: list[Mapping[str, Any]], typed_delisted_chunks: list[list[Mapping[str, Any]]], historical_anchor: list[Mapping[str, Any]], calendar: list[Mapping[str, Any]], values: dict[str, list[Mapping[str, Any]]], delisted_chunk_bounds: list[dict[str, str]], provider_retrieval_utc: str) -> dict[str, Any]:
+def build_authority(*, typed_current: list[Mapping[str, Any]], typed_delisted_chunks: list[list[Mapping[str, Any]]], historical_anchor: Mapping[str, list[Mapping[str, Any]]], calendar: list[Mapping[str, Any]], values: Mapping[str, Mapping[str, list[Mapping[str, Any]]]], delisted_chunk_bounds: list[dict[str, str]], provider_retrieval_utc: str) -> dict[str, Any]:
     """Build from verbatim official responses; used by the offline regression tests."""
+    if set(historical_anchor) != set(MARKETS):
+        raise CollectionError("historical captures must be complete by market")
     dates = sorted(_field(row, "TRD_DD", "date") for row in calendar)
     public = [date for date in dates if CALENDAR_START <= date <= PUBLIC_END]
     if not public or public[0] != CALENDAR_START or public[-1] != PUBLIC_END:
@@ -106,10 +113,15 @@ def build_authority(*, typed_current: list[Mapping[str, Any]], typed_delisted_ch
     exclusions, eligible = _build_typed_master(typed_current, typed_delisted_chunks, historical_anchor)
     if len(eligible) < 500:
         raise CollectionError("fewer than 500 typed ordinary common anchor members")
-    if set(values) != set(ranking_sessions):
+    if set(values) != set(ranking_sessions) or any(set(values[date]) != set(MARKETS) for date in ranking_sessions):
         raise CollectionError("missing typed ranking session responses")
     values_by_session = {
-        date: {_symbol(row): row for row in values[date] if _symbol(row)}
+        date: {
+            _symbol(row): row
+            for market in MARKETS
+            for row in values[date][market]
+            if _symbol(row)
+        }
         for date in ranking_sessions
     }
     rows = []
@@ -119,17 +131,26 @@ def build_authority(*, typed_current: list[Mapping[str, Any]], typed_delisted_ch
     rows.sort(key=lambda row: (-row["median_traded_value"], row["symbol"]))
     raw = {
         "calendar": _capture({"bld": "index-calendar", "market": "KOSPI", "index_code": "1001", "from": "2017-01-01", "to": PUBLIC_END}, calendar),
-        "historical_anchor": _capture({"calls": [{"bld": SURFACES["historical_anchor"], "trdDd": "20171228", "mktId": MARKET_QUERY_IDS[market]} for market in MARKETS]}, historical_anchor),
+        "historical_anchor_by_market": {
+            market: _capture({"bld": SURFACES["historical_anchor"], "trdDd": "20171228", "mktId": MARKET_QUERY_IDS[market]}, historical_anchor[market])
+            for market in MARKETS
+        },
         "typed_current": _capture({"class": "전종목기본정보", "fetch_args": ["ALL"], "bld": SURFACES["typed_current"]}, typed_current),
         "typed_delisted_chunks": [_capture({"bld": SURFACES["typed_delisted"], "strtDd": bound["from"].replace("-", ""), "endDd": bound["to"].replace("-", ""), "mktId": "ALL", "isuCd": "ALL", "isuCd2": "ALL", "share": "1", "csvxls_isNo": "true"}, chunk) for bound, chunk in zip(delisted_chunk_bounds, typed_delisted_chunks)],
-        "traded_value_by_session": {date: _capture({"bld": "market-ohlcv", "trdDd": date, "mktId": "ALL"}, values[date]) for date in ranking_sessions},
+        "traded_value_by_session": {
+            date: {
+                market: _capture({"bld": "market-ohlcv", "trdDd": date, "mktId": MARKET_QUERY_IDS[market]}, values[date][market])
+                for market in MARKETS
+            }
+            for date in ranking_sessions
+        },
     }
     return {
         "authority_id": AUTHORITY_ID, "anchor_date": ANCHOR,
         "approved_dates": {"calendar_start": CALENDAR_START, "public_end": PUBLIC_END},
         "provider": {"name": "KRX public data portal", "retrieval_utc": provider_retrieval_utc},
-        "query_profile": {"historical_anchor_surface": "MDCSTAT01501", "typed_current_surface": "MDCSTAT01901", "typed_delisted_surface": "MDCSTAT23801", "typed_join": "ISU_CD exact; unique ISU_SRT_CD fallback", "authority_metadata_cutoff": AUTHORITY_METADATA_END, "anchor_date": ANCHOR, "markets": list(MARKETS), "ranking_sessions": ranking_sessions, "delisted_chunk_bounds": delisted_chunk_bounds},
-        "classification_profile": {"effective_dated": "LIST_DD<=anchor<DELIST_DD_or_active", "markets": list(MARKETS), "security_group": "SECUGRP_NM==주권", "certificate_type": "KIND_STKCERT_TP_NM==보통주", "domestic_group_fields": list(DOMESTIC_TYPED_FIELDS), "domestic_values": ["국내", "DOMESTIC"], "name_rule": "historical SPAC only when typed SPAC field absent"},
+        "query_profile": {"historical_anchor_surface": "MDCSTAT01501", "typed_current_surface": "MDCSTAT01901", "typed_delisted_surface": "MDCSTAT23801", "typed_join": "ISU_CD exact; effective-dated unique ISU_SRT_CD fallback", "authority_metadata_cutoff": AUTHORITY_METADATA_END, "anchor_date": ANCHOR, "markets": list(MARKETS), "ranking_sessions": ranking_sessions, "delisted_chunk_bounds": delisted_chunk_bounds},
+        "classification_profile": {"effective_dated": "LIST_DD<=anchor<DELIST_DD_or_active", "markets": list(MARKETS), "security_group": "SECUGRP_NM==주권", "certificate_type": "KIND_STKCERT_TP_NM==보통주", "domestic_group_fields": list(DOMESTIC_TYPED_FIELDS), "domestic_values": ["국내", "DOMESTIC"], "identity_evidence": "current KR7 ISU_CD or historical six-digit ISU_CD; no name classification", "name_rule": "historical SPAC only when typed SPAC field absent"},
         "candidate_exclusions": exclusions, "raw_responses": raw, "raw_sha256": sha256_canonical(raw),
         "sessions": {"count": len(public), "first": public[0], "last": public[-1], "ordered": public, "pairs": [[i, i + 1] for i in range(0, len(public) - 1, 2)], "parity": len(public) % 2, "trailing_embargo": [len(public)-1] if len(public) % 2 else []},
         "ranking": {"window_sessions": 60, "missing_traded_value": 0, "tie_break": "symbol_ascending", "rows": rows}, "stable_symbols": [row["symbol"] for row in rows[:500]], "fresh_oos": {"status": "NOT_RUN", "no_read": True},
@@ -201,19 +222,25 @@ def collect_from_krx(quant_insight_root: Path) -> dict[str, Any]:
                 )
                 for bound in bounds
             ]
-            historical = []
-            for market in MARKETS:
-                historical.extend(_records(전종목시세().fetch("20171228", MARKET_QUERY_IDS[market])))
+            historical = {
+                market: [
+                    {**dict(row), "MKT_NM": market}
+                    for row in _records(전종목시세().fetch("20171228", MARKET_QUERY_IDS[market]))
+                ]
+                for market in MARKETS
+            }
             index = stock.get_index_ohlcv_by_date("20170101", PUBLIC_END.replace("-", ""), "1001")
             calendar = [{"TRD_DD": str(day)[:10]} for day in index.index]
             ranking = sorted(row["TRD_DD"] for row in calendar if row["TRD_DD"] <= ANCHOR)[-60:]
-            per_date: dict[str, list[Mapping[str, Any]]] = {}
+            per_date: dict[str, dict[str, list[Mapping[str, Any]]]] = {}
             for date in ranking:
-                combined = []
-                for market in MARKETS:
-                    frame = stock.get_market_ohlcv_by_ticker(date.replace("-", ""), market=market)
-                    combined.extend([{"ISU_SRT_CD": str(symbol), **dict(row)} for symbol, row in frame.to_dict(orient="index").items()])
-                per_date[date] = combined
+                per_date[date] = {
+                    market: [
+                        {"ISU_SRT_CD": str(symbol), "MKT_NM": market, **dict(row)}
+                        for symbol, row in stock.get_market_ohlcv_by_ticker(date.replace("-", ""), market=market).to_dict(orient="index").items()
+                    ]
+                    for market in MARKETS
+                }
         except Exception as exc:
             raise CollectionError("KRX public collection failed; no artifact was written") from exc
         return build_authority(typed_current=current, typed_delisted_chunks=delisted, historical_anchor=historical, calendar=calendar, values=per_date, delisted_chunk_bounds=bounds, provider_retrieval_utc=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))

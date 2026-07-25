@@ -50,11 +50,11 @@ PROJECT_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 PROJECT_REPORT_SCHEMA: Final = "kronos_v7_project_report.v2"
 KNOWN_V7_REPORT_SCHEMA: Final = "kronos_v7_report.v1"
 TYPE1_REPLACEMENT_IDENTITY: Final = {
-    "authority_id": "type1-krx-authority-20260724-003",
-    "dataset_id": "type1-close-20260803-004",
-    "train_id": "type1-public-004",
-    "train_run_id": "train_type1-public-004",
-    "custody_uid": "type1-fresh-oos-20260803-004",
+    "authority_id": "type1-krx-authority-20260724-004",
+    "dataset_id": "type1-close-20260803-005",
+    "train_id": "type1-public-005",
+    "train_run_id": "train_type1-public-005",
+    "custody_uid": "type1-fresh-oos-20260803-005",
 }
 TYPE1_MAX_OBJECT_BYTES: Final = 8 * 1024 * 1024
 TYPE1_MAX_CATALOG_EVENTS: Final = 256
@@ -62,6 +62,7 @@ TYPE1_PRESERVED_ATTEMPTS: Final = (
     ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001", "INELIGIBLE_BLOCKED"),
     ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002", "INELIGIBLE_BLOCKED"),
     ("type1-close-20260803-003", "type1-public-003", "train_type1-public-003", "NON_MATERIALIZED_INELIGIBLE"),
+    ("type1-close-20260803-004", "type1-public-004", "train_type1-public-004", "MATERIALIZED_NOT_TRAINED_QUARANTINED"),
 )
 
 
@@ -653,31 +654,41 @@ def _type1_report_entry(run_dir: Path) -> dict[str, Any]:
 
 
 def _type1_preserved_attempt_entries() -> list[dict[str, Any]]:
-    amendment = _read_json(DOCS_ROOT / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json")
+    amendment = _read_json(DOCS_ROOT / "kronos_type1_g002_recovery_amendment_v4_2026-07-24.json")
     preserved = amendment.get("preserved_aborted_evidence") if amendment is not None else None
     invalid_reason: str | None = None
     if amendment is None:
         invalid_reason = "AMENDMENT_MISSING_OR_MALFORMED"
     elif (
         not isinstance(preserved, list)
-        or amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v3"
-        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
+        or amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v4"
+        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004"
         or amendment.get("replacement_identity") != TYPE1_REPLACEMENT_IDENTITY
         or len(preserved) != len(TYPE1_PRESERVED_ATTEMPTS)
-        or amendment.get("quarantined_authorities") != [{
-            "authority_id": "type1-krx-authority-20260723-002",
-            "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
-            "status": "QUARANTINED",
-            "models_created": 0,
-            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
-        }]
+        or amendment.get("quarantined_authorities") != [
+            {
+                "authority_id": "type1-krx-authority-20260723-002",
+                "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+                "status": "QUARANTINED",
+                "models_created": 0,
+                "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+            },
+            {
+                "authority_id": "type1-krx-authority-20260724-003",
+                "authority_sha256": "30e34b05fe65e31b2cbb826a48628946fa3f03dc7fc7f868ebd41ff36fcef1fe",
+                "rows_sha256": "0af2be6cba26827f48ea00bf0caf700b1ce40e6fc1c2cfdebf1710ae39dfbd11",
+                "status": "QUARANTINED_MATERIALIZED_NOT_TRAINED",
+                "models_created": 0,
+                "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+            },
+        ]
         or not isinstance(amendment.get("authority_contract"), Mapping)
         or (
             amendment["authority_contract"].get("authority_metadata_cutoff"),
             amendment["authority_contract"].get("authority_metadata_scope"),
         ) != (
             "2026-07-24",
-            "MDCSTAT23801 instrument-master metadata only; this does not extend price, calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30.",
+            "MDCSTAT23801 instrument-master metadata only; price, calendar, ranking, public-row, and fresh-OOS access end at 2025-06-30.",
         )
     ):
         invalid_reason = "AMENDMENT_INTEGRITY_MISMATCH"
@@ -691,7 +702,7 @@ def _type1_preserved_attempt_entries() -> list[dict[str, Any]]:
             evidence.get("models_created"),
         ) != expected
         or (
-            expected[0] == "type1-close-20260803-003"
+            expected[0] in {"type1-close-20260803-003", "type1-close-20260803-004"}
             and evidence.get("fresh_oos") != {"status": "NOT_RUN", "no_read": True}
         )
         for evidence, expected in zip(preserved, TYPE1_PRESERVED_ATTEMPTS)
@@ -715,6 +726,13 @@ def _type1_preserved_attempt_entries() -> list[dict[str, Any]]:
                 "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
                 "authority_status": "QUARANTINED",
                 "materializations_created": 0,
+            })
+        elif dataset_id == "type1-close-20260803-004":
+            custody.update({
+                "authority_id": "type1-krx-authority-20260724-003",
+                "authority_sha256": "30e34b05fe65e31b2cbb826a48628946fa3f03dc7fc7f868ebd41ff36fcef1fe",
+                "authority_status": "QUARANTINED_MATERIALIZED_NOT_TRAINED",
+                "materializations_created": 1,
             })
         entries.append({
             "record_type": "TYPE1_PRESERVED_INELIGIBLE_CUSTODY",

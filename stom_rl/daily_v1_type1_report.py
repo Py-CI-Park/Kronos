@@ -18,18 +18,18 @@ from typing import Any, Mapping
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PREREG_PATH = REPO_ROOT / "docs" / "kronos_type1_closing_prereg_2026-07-23.json"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v4_2026-07-24.json"
 REPORT_ROOT = "type1_reports"
 REVISION_SCHEMA = "kronos_type1_report_revision.v2"
 MATERIALIZATION_SCHEMA = "kronos_type1_report_materialization.v2"
 TIP_SCHEMA = "kronos_type1_committed_report_tip.v2"
 BUILDER_VERSION = "kronos_type1_report_builder.v2"
 REPLACEMENT_IDENTITY = {
-    "authority_id": "type1-krx-authority-20260724-003",
-    "dataset_id": "type1-close-20260803-004",
-    "train_id": "type1-public-004",
-    "train_run_id": "train_type1-public-004",
-    "custody_uid": "type1-fresh-oos-20260803-004",
+    "authority_id": "type1-krx-authority-20260724-004",
+    "dataset_id": "type1-close-20260803-005",
+    "train_id": "type1-public-005",
+    "train_run_id": "train_type1-public-005",
+    "custody_uid": "type1-fresh-oos-20260803-005",
 }
 REPLACEMENT_OUTER_IDENTITY = {
     **REPLACEMENT_IDENTITY,
@@ -77,6 +77,7 @@ _SOURCE_LOCAL_PATHS = {
     "authority": Path("authority.json"),
     "dataset_manifest": Path("..") / "dataset_manifest.json",
     "public_rows": Path("..") / "public_rows.json",
+    "materializer_complete_receipt": Path("..") / "materializer_complete_receipt.json",
     "run_manifest": Path("run_manifest.json"),
     "run_receipt": Path("receipt.json"),
     **{f"{kind}_seed_{seed}_{artifact}": Path(kind) / f"seed_{seed}" / filename
@@ -212,66 +213,47 @@ def _identity_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
     amendment = fixed["amendment"]
-    if (
-        amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v3"
-        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
-        or amendment.get("supersedes") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-002"
-        or amendment.get("status") != "FROZEN_BEFORE_V4_MATERIALIZATION_OR_TRAINING"
-        or amendment.get("replacement_identity") != REPLACEMENT_IDENTITY
-    ):
-        raise Type1ReportError("recovery amendment does not bind exact frozen v4 replacement identity")
+    expected_attempts = (
+        ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001", "INELIGIBLE_BLOCKED", None),
+        ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002", "INELIGIBLE_BLOCKED", None),
+        ("type1-close-20260803-003", "type1-public-003", "train_type1-public-003", "NON_MATERIALIZED_INELIGIBLE", {"status": "NOT_RUN", "no_read": True}),
+        ("type1-close-20260803-004", "type1-public-004", "train_type1-public-004", "MATERIALIZED_NOT_TRAINED_QUARANTINED", {"status": "NOT_RUN", "no_read": True}),
+    )
+    quarantined = [
+        {"authority_id": "type1-krx-authority-20260723-002", "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2", "status": "QUARANTINED", "models_created": 0, "fresh_oos": {"status": "NOT_RUN", "no_read": True}},
+        {"authority_id": "type1-krx-authority-20260724-003", "authority_sha256": "30e34b05fe65e31b2cbb826a48628946fa3f03dc7fc7f868ebd41ff36fcef1fe", "rows_sha256": "0af2be6cba26827f48ea00bf0caf700b1ce40e6fc1c2cfdebf1710ae39dfbd11", "status": "QUARANTINED_MATERIALIZED_NOT_TRAINED", "models_created": 0, "fresh_oos": {"status": "NOT_RUN", "no_read": True}},
+    ]
     execution = amendment.get("execution_contract")
     fresh_oos = amendment.get("fresh_oos")
     preserved = amendment.get("preserved_aborted_evidence")
-    expected_attempts = (
-        ("type1-close-20260803-001", "type1-public-001", "train_type1-public-001", "INELIGIBLE_BLOCKED"),
-        ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002", "INELIGIBLE_BLOCKED"),
-        ("type1-close-20260803-003", "type1-public-003", "train_type1-public-003", "NON_MATERIALIZED_INELIGIBLE"),
-    )
     if (
-        not isinstance(execution, Mapping)
-        or execution.get("outcome") != "NO_GO_ONLY"
-        or execution.get("cost_bps") != 23
-        or execution.get("primary_seeds") != 5
-        or execution.get("shuffled_seeds") != 5
-        or not isinstance(fresh_oos, Mapping)
-        or fresh_oos != {
-            "custody_uid": REPLACEMENT_IDENTITY["custody_uid"],
-            "status": "NOT_RUN",
-            "no_read": True,
-            "no_price_or_oos_query_after": "2025-06-30",
-        }
+        amendment.get("schema_version") != "kronos.type1.g002-recovery-amendment.v4"
+        or amendment.get("amendment_id") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004"
+        or amendment.get("supersedes") != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
+        or amendment.get("status") != "FROZEN_BEFORE_V5_MATERIALIZATION_OR_TRAINING"
+        or amendment.get("replacement_identity") != REPLACEMENT_IDENTITY
+        or execution != {"proxy_time": "15:20:00", "cost_bps": 23, "fixed_notional": 60000000, "primary_seeds": 5, "shuffled_seeds": 5, "timesteps_per_seed": 200000, "outcome": "NO_GO_ONLY"}
+        or fresh_oos != {"custody_uid": REPLACEMENT_IDENTITY["custody_uid"], "status": "NOT_RUN", "no_read": True, "no_price_or_oos_query_after": "2025-06-30"}
+        or amendment.get("quarantined_authorities") != quarantined
         or not isinstance(preserved, list)
         or len(preserved) != len(expected_attempts)
     ):
-        raise Type1ReportError("recovery amendment frozen no-go or aborted history is invalid")
-    for evidence, (dataset_id, train_id, train_run_id, status) in zip(preserved, expected_attempts):
+        raise Type1ReportError("recovery amendment does not bind the frozen v5 replacement authority")
+    for evidence, (dataset_id, train_id, train_run_id, status, evidence_oos) in zip(preserved, expected_attempts):
         if not isinstance(evidence, Mapping) or (
-            evidence.get("dataset_id"),
-            evidence.get("train_id"),
-            evidence.get("train_run_id"),
-            evidence.get("status"),
-            evidence.get("models_created"),
-        ) != (dataset_id, train_id, train_run_id, status, 0):
+            evidence.get("dataset_id"), evidence.get("train_id"), evidence.get("train_run_id"),
+            evidence.get("status"), evidence.get("models_created"), evidence.get("fresh_oos"),
+        ) != (dataset_id, train_id, train_run_id, status, 0, evidence_oos):
             raise Type1ReportError("recovery amendment aborted history is invalid")
-    if preserved[2].get("fresh_oos") != {"status": "NOT_RUN", "no_read": True}:
-        raise Type1ReportError("recovery amendment v3 fresh-OOS history is invalid")
-    quarantined = amendment.get("quarantined_authorities")
-    if quarantined != [{
-        "authority_id": "type1-krx-authority-20260723-002",
-        "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
-        "status": "QUARANTINED",
-        "models_created": 0,
-        "fresh_oos": {"status": "NOT_RUN", "no_read": True},
-    }]:
-        raise Type1ReportError("recovery amendment does not quarantine the v2 authority")
     authority_contract = amendment.get("authority_contract")
     if not isinstance(authority_contract, Mapping) or (
         authority_contract.get("authority_metadata_cutoff"),
         authority_contract.get("authority_metadata_scope"),
+        authority_contract.get("per_market_capture"),
     ) != (
         "2026-07-24",
-        "MDCSTAT23801 instrument-master metadata only; this does not extend price, calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30.",
+        "MDCSTAT23801 instrument-master metadata only; price, calendar, ranking, public-row, and fresh-OOS access end at 2025-06-30.",
+        "Store and RFC8785-hash separate {query,response} captures for STK/KOSPI and KSQ/KOSDAQ; each row must retain matching market provenance.",
     ):
         raise Type1ReportError("recovery amendment authority metadata scope is invalid")
 
@@ -308,8 +290,8 @@ def _validate_authority_sources(fixed: Mapping[str, Mapping[str, Any]]) -> None:
     prior = parent.get("parent_identity", parent.get("parent_attempt", parent.get("previous_attempt")))
     if not isinstance(prior, Mapping) or (
         prior.get("dataset_id"), prior.get("train_id"), prior.get("train_run_id")
-    ) != ("type1-close-20260803-002", "type1-public-002", "train_type1-public-002"):
-        raise Type1ReportError("attempt parent does not preserve aborted -002 ancestry")
+    ) != ("type1-close-20260803-004", "type1-public-004", "train_type1-public-004"):
+        raise Type1ReportError("attempt parent does not preserve quarantined -004 ancestry")
     authority = fixed["authority"]
     if authority.get("authority_id", _identity_mapping(authority).get("authority_id")) != REPLACEMENT_OUTER_IDENTITY["authority_id"]:
         raise Type1ReportError("authority source does not bind replacement authority ID")
@@ -323,9 +305,10 @@ def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
         "protocol": _safe_child(REPO_ROOT, Path("docs") / PROTOCOL_PATH.name),
         "preregistration": _safe_child(REPO_ROOT, Path("docs") / PREREG_PATH.name),
         "builder_source": _safe_child(REPO_ROOT, Path("stom_rl") / Path(__file__).name),
-        **{label: _safe_child(directory, relative) for label, relative in _SOURCE_LOCAL_PATHS.items() if label not in {"dataset_manifest", "public_rows"}},
+        **{label: _safe_child(directory, relative) for label, relative in _SOURCE_LOCAL_PATHS.items() if label not in {"dataset_manifest", "public_rows", "materializer_complete_receipt"}},
         "dataset_manifest": _safe_child(directory.parent, Path("dataset_manifest.json")),
         "public_rows": _safe_child(directory.parent, Path("public_rows.json")),
+        "materializer_complete_receipt": _safe_child(directory.parent, Path("materializer_complete_receipt.json")),
     }
     fixed = {label: (_read_json(paths[label], label) if label in {"amendment", "protocol", "preregistration"} else _read_canonical(paths[label], label)[0]) for label in ("amendment", "protocol", "preregistration", "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")}
     _validate_authority_sources(fixed)
@@ -355,7 +338,7 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
     if (
         manifest.get("schema_version") != RUNNER_MANIFEST_SCHEMA
         or not isinstance(manifest.get("identities"), Mapping)
-        or {key: manifest["identities"].get(key) for key in IDENTITY} != IDENTITY
+        or {key: manifest["identities"].get(key) for key in REPLACEMENT_IDENTITY} != REPLACEMENT_IDENTITY
         or manifest.get("execution_status") != "COMPLETE"
         or manifest.get("verdict") != "NO_GO"
         or manifest.get("fresh_oos") != RUNNER_RECEIPT["fresh_oos"]
@@ -363,6 +346,45 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
         or receipt != {**RUNNER_RECEIPT, "manifest_sha256": sources.get("run_manifest")}
     ):
         raise Type1ReportError("runner manifest or receipt violates the frozen no-go contract")
+    materializer_receipt = _read_canonical(
+        _safe_child(root.parent, Path("materializer_complete_receipt.json")),
+        "materializer completion receipt",
+    )[0]
+    required_materializer_receipt = {
+        "schema_version", "role", "status", "dataset_id", "materializer_manifest_sha256",
+        "rows_sha256", "authority_sha256", "amendment_sha256", "source_hashes",
+        "materializer_source_sha256", "expected", "price_basis", "fresh_oos",
+    }
+    if (
+        set(materializer_receipt) != required_materializer_receipt
+        or materializer_receipt.get("schema_version") != "kronos.type1.materializer-complete-receipt.v1"
+        or materializer_receipt.get("role") != "materializer_complete_receipt"
+        or materializer_receipt.get("status") != "COMPLETE"
+        or materializer_receipt.get("dataset_id") != REPLACEMENT_IDENTITY["dataset_id"]
+        or materializer_receipt.get("materializer_manifest_sha256") != sources.get("dataset_manifest")
+        or materializer_receipt.get("rows_sha256") != sources.get("public_rows")
+        or materializer_receipt.get("amendment_sha256") != sources.get("amendment")
+        or materializer_receipt.get("authority_sha256") != sources.get("authority")
+        or materializer_receipt.get("fresh_oos") != {"state": "NOT_RUN", "read_performed": False}
+    ):
+        raise Type1ReportError("materializer completion receipt does not prove the v5 dataset boundary")
+    pretraining = manifest.get("pretraining_gate")
+    if not isinstance(pretraining, Mapping) or set(pretraining) != {
+        "accounting", "block_semantics", "validation_noninterference",
+    }:
+        raise Type1ReportError("runner pretraining evidence is missing or malformed")
+    accounting = pretraining.get("accounting")
+    noninterference = pretraining.get("validation_noninterference")
+    if (
+        not isinstance(accounting, Mapping)
+        or (accounting.get("cost_bps"), accounting.get("slot_notional_krw"), accounting.get("max_slots")) != (23, 5000000, 10)
+        or pretraining.get("block_semantics") != "BLOCK"
+        or not isinstance(noninterference, Mapping)
+        or noninterference.get("unchanged") is not True
+        or noninterference.get("mutated_surfaces") != ["features", "gross_return", "entry_available"]
+        or any(_SHA.fullmatch(str(noninterference.get(key, ""))) is None for key in ("train_only_normalizer_digest", "train_pairs_sha256"))
+    ):
+        raise Type1ReportError("runner pretraining evidence violates accounting or validation isolation")
     training = manifest.get("training")
     if not isinstance(training, Mapping) or training != {
         "seeds": [0, 1, 2, 3, 4],

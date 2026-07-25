@@ -25,12 +25,12 @@ from stom_rl.daily_type1_contract import FEATURES, INITIAL_NAV_KRW, SEEDS, SLOT_
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
 PUBLIC_TRAIN_START = "2018-01-02"
-AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json"
-REPLACEMENT_DATASET_ID = "type1-close-20260803-004"
-REPLACEMENT_TRAIN_ID = "type1-public-004"
-REPLACEMENT_RUN_ID = "train_type1-public-004"
-REPLACEMENT_AUTHORITY_ID = "type1-krx-authority-20260724-003"
-REPLACEMENT_CUSTODY_UID = "type1-fresh-oos-20260803-004"
+AMENDMENT_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_recovery_amendment_v4_2026-07-24.json"
+REPLACEMENT_DATASET_ID = "type1-close-20260803-005"
+REPLACEMENT_TRAIN_ID = "type1-public-005"
+REPLACEMENT_RUN_ID = "train_type1-public-005"
+REPLACEMENT_AUTHORITY_ID = "type1-krx-authority-20260724-004"
+REPLACEMENT_CUSTODY_UID = "type1-fresh-oos-20260803-005"
 AUTHORIZED_RUN_ROOT = REPO_ROOT / "artifacts" / "type1-public-runs"
 PUBLIC_TRAIN_END = "2023-12-29"
 REUSED_VALIDATION_START = "2024-01-02"
@@ -156,6 +156,7 @@ def _verified_inputs(
     manifest_path: Path,
     authority_path: Path,
     materializer_manifest_path: Path,
+    materializer_complete_receipt_path: Path,
     amendment_path: Path = AMENDMENT_PATH,
 ) -> tuple[tuple[str, ...], Mapping[str, Any]]:
     """Verify every frozen source and raw authority Cartesian product before training."""
@@ -172,20 +173,31 @@ def _verified_inputs(
         "preserved_aborted_evidence", "quarantined_authorities", "replacement_identity",
         "authority_contract", "execution_contract", "fresh_oos", "frozen_utc",
     }
-    quarantined = [{
-        "authority_id": "type1-krx-authority-20260723-002",
-        "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
-        "status": "QUARANTINED",
-        "models_created": 0,
-        "fresh_oos": {"status": "NOT_RUN", "no_read": True},
-    }]
+    quarantined = [
+        {
+            "authority_id": "type1-krx-authority-20260723-002",
+            "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+            "status": "QUARANTINED",
+            "models_created": 0,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+        },
+        {
+            "authority_id": "type1-krx-authority-20260724-003",
+            "authority_sha256": "30e34b05fe65e31b2cbb826a48628946fa3f03dc7fc7f868ebd41ff36fcef1fe",
+            "rows_sha256": "0af2be6cba26827f48ea00bf0caf700b1ce40e6fc1c2cfdebf1710ae39dfbd11",
+            "status": "QUARANTINED_MATERIALIZED_NOT_TRAINED",
+            "models_created": 0,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+        },
+    ]
     if (
         set(amendment) != required_amendment
-        or amendment["schema_version"] != "kronos.type1.g002-recovery-amendment.v3"
+        or amendment["schema_version"] != "kronos.type1.g002-recovery-amendment.v4"
+        or amendment["amendment_id"] != "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004"
         or amendment["replacement_identity"] != expected_identity
         or amendment["quarantined_authorities"] != quarantined
     ):
-        raise ValueError("recovery amendment v3 replacement identity mismatch")
+        raise ValueError("recovery amendment v4 replacement identity mismatch")
     authority_contract = amendment["authority_contract"]
     if not isinstance(authority_contract, Mapping) or authority_contract.get("authority_metadata_cutoff") != "2026-07-24":
         raise ValueError("recovery amendment authority metadata cutoff is unsafe")
@@ -200,6 +212,29 @@ def _verified_inputs(
         raise ValueError("wrong effective-dated KRX authority")
     manifest = _read_json_object(manifest_path, "dataset manifest")
     materializer = _read_json_object(materializer_manifest_path, "materializer manifest")
+    if (
+        materializer_complete_receipt_path.name != "materializer_complete_receipt.json"
+        or materializer_complete_receipt_path.resolve(strict=False) == materializer_manifest_path.resolve(strict=False)
+    ):
+        raise ValueError("materializer completion receipt must be a physically distinct canonical path")
+    complete_receipt = _read_json_object(materializer_complete_receipt_path, "materializer completion receipt")
+    required_receipt = {
+        "schema_version", "role", "status", "dataset_id", "materializer_manifest_sha256",
+        "rows_sha256", "authority_sha256", "amendment_sha256", "source_hashes",
+        "materializer_source_sha256", "expected", "price_basis", "fresh_oos",
+    }
+    if (
+        set(complete_receipt) != required_receipt
+        or complete_receipt["role"] != "materializer_complete_receipt"
+        or complete_receipt["status"] != "COMPLETE"
+        or complete_receipt["dataset_id"] != REPLACEMENT_DATASET_ID
+        or complete_receipt["materializer_manifest_sha256"] != _file_hash(materializer_manifest_path)
+        or complete_receipt["rows_sha256"] != _file_hash(rows_path)
+        or complete_receipt["authority_sha256"] != _file_hash(authority_path)
+        or complete_receipt["amendment_sha256"] != _file_hash(amendment_path)
+        or complete_receipt["fresh_oos"] != {"state": "NOT_RUN", "read_performed": False}
+    ):
+        raise ValueError("materializer completion receipt does not cross-bind the manifest")
     required_manifest = {
         "schema_version", "materializer_manifest_schema", "dataset_id", "read_only", "price_basis",
         "official_close", "public_cutoff", "sql_predicates", "source_databases", "source_database_identity",
@@ -210,6 +245,13 @@ def _verified_inputs(
     }
     if set(manifest) != required_manifest or set(materializer) != required_manifest or manifest != materializer:
         raise ValueError("materializer manifest schema or canonical content differs")
+    if (
+        complete_receipt["source_hashes"] != manifest["source_hashes"]
+        or complete_receipt["materializer_source_sha256"] != manifest["materializer_source_sha256"]
+        or complete_receipt["expected"] != manifest["expected"]
+        or complete_receipt["price_basis"] != manifest["price_basis"]
+    ):
+        raise ValueError("materializer completion receipt source bindings differ")
     if manifest["dataset_id"] != REPLACEMENT_DATASET_ID or manifest["materializer_manifest_schema"] != "kronos.type1.public-materializer.v3":
         raise ValueError("dataset/materializer is not the frozen v3 identity")
     if manifest["output_sha256"] != _file_hash(rows_path):
@@ -230,6 +272,7 @@ def _verified_inputs(
     return symbols, {
         **expected_identity, "amendment_sha256": amendment_sha, "authority_sha256": authority_sha,
         "materializer_sha256": _file_hash(materializer_manifest_path),
+        "materializer_complete_receipt_sha256": _file_hash(materializer_complete_receipt_path),
         "source_database_identity": manifest["source_database_identity"],
         "materializer_source_sha256": manifest["materializer_source_sha256"],
         "preregistration_sha256": manifest["preregistration_sha256"],
@@ -288,27 +331,71 @@ def _protocol() -> Mapping[str, Any]:
     return value
 
 
-def _member(operations: PublicRunOperations, pairs: Sequence[Mapping[str, Any]], validation_pairs: Sequence[Mapping[str, Any]], *, seed: int, root: Path, kind: str) -> dict[str, Any]:
+def _member(
+    operations: PublicRunOperations,
+    pairs: Sequence[Mapping[str, Any]],
+    validation_rows: Sequence[Mapping[str, Any]],
+    validation_pairs: Sequence[Mapping[str, Any]],
+    *,
+    seed: int,
+    root: Path,
+    kind: str,
+) -> dict[str, Any]:
     model, normalizer = operations.train(pairs, seed=seed, timesteps=TIMESTEPS_PER_SEED)
+    actual_timesteps = getattr(model, "num_timesteps", None)
+    if type(actual_timesteps) is not int or actual_timesteps != TIMESTEPS_PER_SEED:
+        raise ValueError("trained model must report exactly 200000 integer CPU timesteps")
+    raw_device = getattr(model, "device", None)
+    if raw_device is None or str(raw_device) != "cpu":
+        raise ValueError("trained model must report the exact cpu device")
     destination = root / kind / f"seed_{seed}"
     destination.mkdir(parents=True, exist_ok=False)
     artifacts = dict(operations.save_final(model, normalizer, destination))
     if set(artifacts) != {"model_sha256", "normalizer_sha256"}:
         raise ValueError("final artifact receipt must contain model_sha256 and normalizer_sha256 only")
-    metrics = dict(operations.evaluate_saved(destination, validation_pairs, seed=seed) if hasattr(operations, "evaluate_saved") else operations.evaluate(model, validation_pairs, seed=seed))
-    actual_timesteps = getattr(model, "num_timesteps", TIMESTEPS_PER_SEED)
-    device = str(getattr(model, "device", "cpu"))
+    if isinstance(operations, _ProductionOperations):
+        metrics = dict(operations.evaluate_saved(
+            destination,
+            validation_rows,
+            seed=seed,
+            expected_pair_bytes=_pair_bytes(validation_pairs),
+            expected_normalizer_digest=operations.normalizer_digest(),
+            expected_normalizer_sha256=artifacts["normalizer_sha256"],
+        ))
+    else:
+        metrics = dict(operations.evaluate(model, validation_pairs, seed=seed))
+    reload_evidence = metrics.pop("reload_evidence", None)
+    if isinstance(operations, _ProductionOperations):
+        if not isinstance(reload_evidence, Mapping):
+            raise ValueError("saved-model evaluation did not provide reload evidence")
+        required_reload = {
+            "model_sha256", "normalizer_sha256", "normalizer_digest", "validation_pairs_sha256",
+            "model_device", "num_timesteps",
+        }
+        if set(reload_evidence) != required_reload:
+            raise ValueError("saved-model evaluation reload evidence schema is incomplete")
+        if (
+            reload_evidence["model_sha256"] != artifacts["model_sha256"]
+            or reload_evidence["normalizer_sha256"] != artifacts["normalizer_sha256"]
+            or reload_evidence["normalizer_digest"] != operations.normalizer_digest()
+            or reload_evidence["validation_pairs_sha256"] != hashlib.sha256(_pair_bytes(validation_pairs)).hexdigest()
+            or reload_evidence["model_device"] != "cpu"
+            or type(reload_evidence["num_timesteps"]) is not int
+            or reload_evidence["num_timesteps"] != TIMESTEPS_PER_SEED
+        ):
+            raise ValueError("saved-model evaluation reload evidence does not bind persisted artifacts")
     return {
         "seed": seed,
         "timesteps": TIMESTEPS_PER_SEED,
         "actual_sb3_timesteps": actual_timesteps,
-        "device": device,
+        "device": "cpu",
         "artifact": FINAL_MODEL_ONLY,
         "artifacts": artifacts,
         "reload_receipt": {
             "model_sha256": artifacts["model_sha256"],
             "normalizer_sha256": artifacts["normalizer_sha256"],
             "deterministic": metrics.get("deterministic") is True,
+            "evidence": dict(reload_evidence) if isinstance(reload_evidence, Mapping) else None,
         },
         "validation": metrics,
     }
@@ -344,6 +431,14 @@ def run_public_experiment(
     validation_pairs = operations.build_pairs(validation_rows, split="reused_validation")
     if not train_pairs or not validation_pairs:
         raise ValueError("public pair construction produced an empty split")
+    if isinstance(operations, _ProductionOperations):
+        pretraining_gate = _production_pretraining_gate(
+            operations, train_rows, validation_rows, train_pairs, validation_pairs,
+        )
+        train_pairs = operations.build_pairs(train_rows, split="train")
+        validation_pairs = operations.build_pairs(validation_rows, split="reused_validation")
+    else:
+        pretraining_gate = {"status": "NOT_PRODUCTION"}
     root = _contained_run_root(out_root, run_id, production=identity is not None)
     root.mkdir(parents=True, exist_ok=False)
     _write_receipt(root / "receipt.json", {
@@ -354,10 +449,17 @@ def run_public_experiment(
     primary: dict[str, dict[str, Any]] = {}
     shuffled: dict[str, dict[str, Any]] = {}
     for seed in config.seeds:
-        primary[str(seed)] = _member(operations, train_pairs, validation_pairs, seed=seed, root=root, kind="primary")
+        primary[str(seed)] = _member(operations, train_pairs, validation_rows, validation_pairs, seed=seed, root=root, kind="primary")
         shuffled_pairs = operations.build_pairs(train_rows, split="train", shuffled_seed=seed)
-        shuffled[str(seed)] = _member(operations, shuffled_pairs, validation_pairs, seed=seed, root=root, kind="shuffled_reward")
+        shuffled[str(seed)] = _member(operations, shuffled_pairs, validation_rows, validation_pairs, seed=seed, root=root, kind="shuffled_reward")
     controls = dict(operations.controls(train_rows, validation_rows, primary, shuffled))
+    required_controls = {
+        "integrity_ok", "integrity_reasons", "mutation_invariance", "scientific_gates_pass",
+        "scientific_gate_reasons", "shuffle_retraining",
+    }
+    if not required_controls <= set(controls) or controls.get("integrity_ok") is not True:
+        controls["integrity_ok"] = False
+        controls["integrity_reasons"] = list(controls.get("integrity_reasons", ())) + ["incomplete_or_failed_controls_schema"]
     timestep_mismatches = [
         f"{kind}_seed_{seed}_timestep_or_device_mismatch"
         for kind, members in (("primary", primary), ("shuffled_reward", shuffled))
@@ -396,6 +498,7 @@ def run_public_experiment(
         "training": {"seeds": list(config.seeds), "timesteps_per_seed": config.timesteps_per_seed, "device": "cpu", "validation_visible_to_training": False, "eval_callback": False, "early_stopping": False, "best_model_selection": False, "checkpoint_selection": False, "member_selection": False, "saved_artifact": FINAL_MODEL_ONLY, "synthetic_oracle_calibration": False},
         "members": {"primary": primary, "shuffled_reward": shuffled},
         "aggregation": {"metric": "FIVE_SEED_IQM", "primary_nav_krw": _iqm(primary), "shuffled_nav_krw": _iqm(shuffled)},
+        "pretraining_gate": pretraining_gate,
         "controls": controls,
         "fresh_oos": {"state": "NOT_RUN", "metrics": None},
         "false_research_locks": FALSE_RESEARCH_LOCKS,
@@ -420,6 +523,65 @@ def _pair_bytes(pairs: Sequence[Mapping[str, Any]]) -> bytes:
             "settlement_date": pair["settlement_date"],
         }))
     return digest.digest()
+def _production_pretraining_gate(
+    operations: "_ProductionOperations",
+    train_rows: Sequence[Mapping[str, Any]],
+    validation_rows: Sequence[Mapping[str, Any]],
+    train_pairs: Sequence[Mapping[str, Any]],
+    validation_pairs: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    """Prove accounting and validation noninterference before any model exists."""
+    from stom_rl.daily_type1_accounting import PortfolioState, SlotOutcome, settle_session
+    from stom_rl.daily_type1_env import Type1ClosingEnv
+
+    filled = settle_session(PortfolioState(), (SlotOutcome("000000", "FILLED", Decimal("0.0100")),), 23)
+    no_fill = settle_session(PortfolioState(), (SlotOutcome("000000", "NO_FILL"),), 23)
+    ten = settle_session(PortfolioState(), tuple(
+        SlotOutcome(f"{slot:06d}", "FILLED", Decimal("0.0100")) for slot in range(10)
+    ), 23)
+    if (
+        filled.nav_delta != Decimal("38500.000000")
+        or no_fill.nav_delta != Decimal("0.000000")
+        or ten.filled_slots != 10
+        or ten.nav_delta != Decimal("385000.000000")
+    ):
+        raise ValueError("Decimal fixed-notional accounting fixture failed")
+    env = Type1ClosingEnv(validation_pairs)
+    env.reset(seed=0)
+    _, _, terminated, _, info = env.step(-1)
+    if not terminated or info.get("status") != "BLOCK":
+        raise ValueError("Type1 BLOCK semantics fixture failed")
+    normalizer_before = operations.normalizer_digest()
+    train_bytes_before = _pair_bytes(train_pairs)
+    mutated = copy.deepcopy(list(validation_rows))
+    for row in mutated:
+        row["features"] = {name: "999999.125" for name in FEATURES}
+        row["gross_return"] = "-0.9999"
+        row["entry_available"] = not bool(row["entry_available"])
+    operations.build_pairs(mutated, split="reused_validation")
+    normalizer_after_mutation = operations.normalizer_digest()
+    rebuilt_train = operations.build_pairs(train_rows, split="train")
+    normalizer_after_train = operations.normalizer_digest()
+    train_bytes_after = _pair_bytes(rebuilt_train)
+    if (
+        normalizer_before != normalizer_after_mutation
+        or normalizer_before != normalizer_after_train
+        or train_bytes_before != train_bytes_after
+    ):
+        raise ValueError("reused validation mutation interfered with train-only inputs")
+    return {
+        "accounting": {
+            "cost_bps": 23, "slot_notional_krw": SLOT_NOTIONAL_KRW, "max_slots": 10,
+            "filled_nav_delta_krw": filled.nav_delta, "no_fill_nav_delta_krw": no_fill.nav_delta,
+            "ten_slot_nav_delta_krw": ten.nav_delta,
+        },
+        "block_semantics": "BLOCK",
+        "validation_noninterference": {
+            "train_only_normalizer_digest": normalizer_before,
+            "train_pairs_sha256": hashlib.sha256(train_bytes_before).hexdigest(),
+            "mutated_surfaces": ["features", "gross_return", "entry_available"], "unchanged": True,
+        },
+    }
 class _ProductionOperations:
     """The sole production bridge from canonical public rows to Type1ClosingEnv."""
 
@@ -432,6 +594,10 @@ class _ProductionOperations:
         if not {"ordered", "pairs", "trailing_embargo"} <= set(sessions):
             raise ValueError("authority session ordinals are malformed")
         self._authority_sessions = sessions
+    def normalizer_digest(self) -> str:
+        if self._normalizer is None:
+            raise ValueError("market Type7 normalizer was not fitted")
+        return self._normalizer.digest()
 
     def build_pairs(self, rows: Sequence[Mapping[str, Any]], *, split: str, shuffled_seed: int | None = None) -> Sequence[Mapping[str, Any]]:
         from stom_rl.daily_type1_market import (
@@ -553,18 +719,60 @@ class _ProductionOperations:
         }))
         return {"model_sha256": _file_hash(model_path.with_suffix(".zip")), "normalizer_sha256": _file_hash(normalizer_path)}
 
-    def evaluate_saved(self, path: Path, pairs: Sequence[Mapping[str, Any]], *, seed: int) -> Mapping[str, Any]:
+    def evaluate_saved(
+        self,
+        path: Path,
+        validation_rows: Sequence[Mapping[str, Any]],
+        *,
+        seed: int,
+        expected_pair_bytes: bytes,
+        expected_normalizer_digest: str,
+        expected_normalizer_sha256: str,
+    ) -> Mapping[str, Any]:
         from sb3_contrib import MaskablePPO
+        from stom_rl.daily_type1_env import Type1ClosingEnv
         from stom_rl.daily_type1_market import FeatureScale, TrainOnlyNormalizer
-        raw = _read_json_object(path / "normalizer.json", "market Type7 normalizer")
+
+        normalizer_path = path / "normalizer.json"
+        if _file_hash(normalizer_path) != expected_normalizer_sha256:
+            raise ValueError("persisted market Type7 normalizer hash differs from the final receipt")
+        raw = _read_json_object(normalizer_path, "market Type7 normalizer")
+        if set(raw) != {"kind", "digest", "scales"} or not isinstance(raw["scales"], list):
+            raise ValueError("persisted market Type7 normalizer schema is incomplete")
         normalizer = TrainOnlyNormalizer(tuple(
             FeatureScale(Decimal(item["center"]), Decimal(item["scale"])) for item in raw["scales"]
         ))
-        if raw.get("kind") != "market_type7_train_only" or raw.get("digest") != normalizer.digest():
+        if (
+            raw["kind"] != "market_type7_train_only"
+            or raw["digest"] != expected_normalizer_digest
+            or normalizer.digest() != expected_normalizer_digest
+        ):
             raise ValueError("persisted market Type7 normalizer failed verification")
-        from stom_rl.daily_type1_env import Type1ClosingEnv
-        model = MaskablePPO.load(str(path / "final_model.zip"), env=Type1ClosingEnv(pairs), device="cpu")
-        return self.evaluate(model, pairs, seed=seed)
+        prior_normalizer = self._normalizer
+        try:
+            self._normalizer = normalizer
+            rebuilt_pairs = self.build_pairs(validation_rows, split="reused_validation")
+        finally:
+            self._normalizer = prior_normalizer
+        rebuilt_pair_bytes = _pair_bytes(rebuilt_pairs)
+        if rebuilt_pair_bytes != expected_pair_bytes:
+            raise ValueError("reloaded normalizer did not reproduce canonical validation pairs")
+        model_path = path / "final_model.zip"
+        model = MaskablePPO.load(str(model_path), env=Type1ClosingEnv(rebuilt_pairs), device="cpu")
+        actual_timesteps = getattr(model, "num_timesteps", None)
+        device = getattr(model, "device", None)
+        if type(actual_timesteps) is not int or actual_timesteps != TIMESTEPS_PER_SEED or device is None or str(device) != "cpu":
+            raise ValueError("reloaded final model lacks exact CPU lifecycle evidence")
+        metrics = dict(self.evaluate(model, rebuilt_pairs, seed=seed))
+        metrics["reload_evidence"] = {
+            "model_sha256": _file_hash(model_path),
+            "normalizer_sha256": _file_hash(normalizer_path),
+            "normalizer_digest": normalizer.digest(),
+            "validation_pairs_sha256": hashlib.sha256(rebuilt_pair_bytes).hexdigest(),
+            "model_device": "cpu",
+            "num_timesteps": actual_timesteps,
+        }
+        return metrics
 
     def evaluate(self, model: Any, pairs: Sequence[Mapping[str, Any]], *, seed: int) -> Mapping[str, Any]:
         from stom_rl.daily_type1_env import Type1ClosingEnv
@@ -698,7 +906,6 @@ class _ProductionOperations:
                 "train_only_normalizer_unchanged": normalizer_before == normalizer_after == mutation_normalizer,
                 "train_pairs_byte_identical": train_input_before == train_input_after,
                 "mutation": {"features": "999999.125", "gross_return": "-0.9999", "availability_flipped": True},
-                "model_and_normalizer_hashes": {name: {str(seed): members[str(seed)]["artifacts"] for seed in SEEDS} for name, members in (("primary", primary), ("shuffled_reward", shuffled))},
             },
             "scientific_gates_pass": science, "scientific_gate_reasons": [] if science else ["local_control_gate_miss"],
             "train_rows": len(train_rows), "reused_validation_rows": len(validation_rows),
@@ -709,6 +916,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dataset-manifest", required=True, help="Replacement immutable dataset manifest.")
     parser.add_argument("--authority", required=True, help="Frozen verified KRX authority envelope.")
     parser.add_argument("--materializer-manifest", required=True, help="Replacement materializer manifest.")
+    parser.add_argument("--materializer-complete-receipt", required=True, help="Distinct canonical materializer completion receipt.")
     parser.add_argument("--amendment", default=str(AMENDMENT_PATH), help="Frozen recovery amendment.")
     parser.add_argument("--out-root", required=True)
     parser.add_argument("--run-id", required=True)
@@ -723,12 +931,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest_path = reject_nonpublic_path(args.dataset_manifest)
         authority_path = reject_nonpublic_path(args.authority)
         materializer_path = reject_nonpublic_path(args.materializer_manifest)
+        completion_receipt_path = reject_nonpublic_path(args.materializer_complete_receipt)
         amendment_path = reject_nonpublic_path(args.amendment)
         rows = json.loads(rows_path.read_text(encoding="utf-8"))
         if not isinstance(rows, list):
             raise ValueError("--rows-json must contain a JSON array")
         stable_symbols, identity = _verified_inputs(
-            rows_path, manifest_path, authority_path, materializer_path, amendment_path,
+            rows_path, manifest_path, authority_path, materializer_path, completion_receipt_path, amendment_path,
         )
         root = _contained_run_root(args.out_root, args.run_id, production=True)
         result = run_public_experiment(

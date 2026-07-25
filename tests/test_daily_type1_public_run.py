@@ -43,7 +43,7 @@ class FakeOperations:
 
     def train(self, pairs, *, seed, timesteps):
         self.train_calls.append((seed, timesteps))
-        return object(), object()
+        return type("Model", (), {"num_timesteps": timesteps, "device": "cpu"})(), object()
 
     def save_final(self, model, normalizer, path):
         return {"model_sha256": f"model-{path.name}", "normalizer_sha256": f"normalizer-{path.name}"}
@@ -71,6 +71,7 @@ def test_parser_exposes_no_smoke_seed_or_selection_escape_hatches():
         "--dataset-manifest", "manifest.json",
         "--authority", "authority.json",
         "--materializer-manifest", "materializer.json",
+        "--materializer-complete-receipt", "materializer_complete_receipt.json",
         "--out-root", "out",
         "--run-id", "g002",
     ])
@@ -87,14 +88,14 @@ def test_replacement_input_binding_exposes_v4_identity_and_source_hashes(tmp_pat
 
     amendment = json.loads(AMENDMENT_PATH.read_text(encoding="utf-8"))
     assert (REPLACEMENT_AUTHORITY_ID, REPLACEMENT_DATASET_ID, REPLACEMENT_TRAIN_ID, REPLACEMENT_RUN_ID, REPLACEMENT_CUSTODY_UID) == (
-        "type1-krx-authority-20260724-003",
-        "type1-close-20260803-004",
-        "type1-public-004",
-        "train_type1-public-004",
-        "type1-fresh-oos-20260803-004",
+        "type1-krx-authority-20260724-004",
+        "type1-close-20260803-005",
+        "type1-public-005",
+        "train_type1-public-005",
+        "type1-fresh-oos-20260803-005",
     )
-    assert amendment["schema_version"] == "kronos.type1.g002-recovery-amendment.v3"
-    assert amendment["amendment_id"] == "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
+    assert amendment["schema_version"] == "kronos.type1.g002-recovery-amendment.v4"
+    assert amendment["amendment_id"] == "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004"
     assert amendment["replacement_identity"] == {
         "authority_id": REPLACEMENT_AUTHORITY_ID,
         "dataset_id": REPLACEMENT_DATASET_ID,
@@ -119,8 +120,8 @@ def test_replacement_input_binding_exposes_v4_identity_and_source_hashes(tmp_pat
     }
     assert amendment["authority_contract"]["authority_metadata_cutoff"] == "2026-07-24"
     assert amendment["authority_contract"]["authority_metadata_scope"] == (
-        "MDCSTAT23801 instrument-master metadata only; this does not extend price, "
-        "calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30."
+        "MDCSTAT23801 instrument-master metadata only; price, calendar, ranking, "
+        "public-row, and fresh-OOS access end at 2025-06-30."
     )
     symbols = [f"{index:06d}" for index in range(500)]
     authority_path = tmp_path / "authority.json"
@@ -151,8 +152,24 @@ def test_replacement_input_binding_exposes_v4_identity_and_source_hashes(tmp_pat
         "materializer_source_sha256": "b" * 64,
     }), encoding="utf-8")
     monkeypatch.setattr(authority_module, "validate_authority", lambda _: None)
+    completion_receipt = tmp_path / "materializer_complete_receipt.json"
+    completion_receipt.write_text(json.dumps({
+        "schema_version": "kronos.type1.materializer-complete-receipt.v1",
+        "role": "materializer_complete_receipt",
+        "status": "COMPLETE",
+        "dataset_id": REPLACEMENT_DATASET_ID,
+        "materializer_manifest_sha256": hashlib.sha256(materializer_path.read_bytes()).hexdigest(),
+        "rows_sha256": hashlib.sha256(rows_path.read_bytes()).hexdigest(),
+        "authority_sha256": authority_sha,
+        "amendment_sha256": amendment_sha,
+        "source_hashes": {},
+        "materializer_source_sha256": "b" * 64,
+        "expected": {},
+        "price_basis": None,
+        "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
+    }), encoding="utf-8")
     with pytest.raises(ValueError, match="materializer manifest"):
-        _verified_inputs(rows_path, manifest_path, authority_path, materializer_path, amendment_path)
+        _verified_inputs(rows_path, manifest_path, authority_path, materializer_path, completion_receipt, amendment_path)
 
 
 
@@ -230,11 +247,10 @@ def test_actual_sb3_timestep_mismatch_is_forced_to_block(tmp_path: Path):
             self.train_calls.append((seed, timesteps))
             return type("Model", (), {"num_timesteps": timesteps - 1})(), object()
 
-    result = run_public_experiment(_rows(), out_root=tmp_path, run_id="wrong-trace", operations=WrongTraceOperations())
-    assert result["manifest"]["execution_status"] == "BLOCK"
-    assert result["manifest"]["verdict"] == "NO_GO"
-    assert all(member["actual_sb3_timesteps"] == 199_999 for member in result["manifest"]["members"]["primary"].values())
-    assert len(result["manifest"]["controls"]["integrity_reasons"]) == 10
+    operations = WrongTraceOperations()
+    with pytest.raises(ValueError, match="exactly 200000"):
+        run_public_experiment(_rows(), out_root=tmp_path, run_id="wrong-trace", operations=operations)
+    assert operations.train_calls == [(0, 200_000)]
 def test_mutation_control_failure_is_blocked(tmp_path: Path):
     operations = FakeOperations()
     operations.controls = lambda *args: {
@@ -243,7 +259,10 @@ def test_mutation_control_failure_is_blocked(tmp_path: Path):
     }  # type: ignore[method-assign]
     result = run_public_experiment(_rows(), out_root=tmp_path, run_id="mutation", operations=operations)
     assert result["manifest"]["execution_status"] == "BLOCK"
-    assert result["manifest"]["controls"]["integrity_reasons"] == ["reused_validation_mutated_train_normalizer"]
+    assert result["manifest"]["controls"]["integrity_reasons"] == [
+        "reused_validation_mutated_train_normalizer",
+        "incomplete_or_failed_controls_schema",
+    ]
 
 
 def test_production_pairs_accept_materialized_split_metadata():

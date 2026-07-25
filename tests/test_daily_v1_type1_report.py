@@ -16,11 +16,21 @@ def _sources(run):
     run.mkdir(parents=True, exist_ok=True)
     (run.parent / "dataset_manifest.json").write_bytes(b"dataset")
     (run.parent / "public_rows.json").write_bytes(b"rows")
+    (run.parent / "materializer_complete_receipt.json").write_bytes(type1_report._canonical({
+        "schema_version": "kronos.type1.materializer-complete-receipt.v1",
+        "role": "materializer_complete_receipt", "status": "COMPLETE",
+        "dataset_id": IDENTITY["dataset_id"], "materializer_manifest_sha256": "0" * 64,
+        "rows_sha256": "0" * 64, "authority_sha256": "0" * 64,
+        "amendment_sha256": "0" * 64, "source_hashes": {},
+        "materializer_source_sha256": "0" * 64, "expected": {},
+        "price_basis": "EXACT_15_20_BAR_CLOSE_PROXY",
+        "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
+    }))
     outer = {"identity": IDENTITY}
     (run / "type1_identity.json").write_text(json.dumps(outer, sort_keys=True, separators=(",", ":")))
     (run / "p6_public_run_seal.json").write_text(json.dumps({**outer, "fresh_oos": {"state": "NOT_RUN", "payload_read": False}}, sort_keys=True, separators=(",", ":")))
     (run / "deployment_lock.json").write_text(json.dumps({**outer, "locks": LOCKS}, sort_keys=True, separators=(",", ":")))
-    (run / "attempt_parent.json").write_text(json.dumps({**outer, "parent_identity": {"dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002"}}, sort_keys=True, separators=(",", ":")))
+    (run / "attempt_parent.json").write_text(json.dumps({**outer, "parent_identity": {"dataset_id": "type1-close-20260803-004", "train_id": "type1-public-004", "train_run_id": "train_type1-public-004"}}, sort_keys=True, separators=(",", ":")))
     (run / "authority.json").write_text(json.dumps({**outer, "authority_id": REPLACEMENT_OUTER_IDENTITY["authority_id"]}, sort_keys=True, separators=(",", ":")))
     members = {}
     for kind in ("primary", "shuffled_reward"):
@@ -49,12 +59,30 @@ def _sources(run):
                      "member_selection": False, "saved_artifact": "FINAL_MODEL_ONLY",
                      "synthetic_oracle_calibration": False},
         "members": members, "controls": {"integrity_ok": True},
+        "pretraining_gate": {
+            "accounting": {"cost_bps": 23, "slot_notional_krw": 5000000, "max_slots": 10},
+            "block_semantics": "BLOCK",
+            "validation_noninterference": {
+                "train_only_normalizer_digest": "0" * 64, "train_pairs_sha256": "1" * 64,
+                "mutated_surfaces": ["features", "gross_return", "entry_available"], "unchanged": True,
+            },
+        },
         "fresh_oos": {"state": "NOT_RUN", "metrics": None},
         "false_research_locks": LOCKS, "execution_status": "COMPLETE", "verdict": "NO_GO",
     }
     (run / "run_manifest.json").write_bytes(type1_report._canonical(manifest))
     (run / "receipt.json").write_bytes(type1_report._canonical({}))
     sources = report_source_sha256(run)
+    (run.parent / "materializer_complete_receipt.json").write_bytes(type1_report._canonical({
+        "schema_version": "kronos.type1.materializer-complete-receipt.v1",
+        "role": "materializer_complete_receipt", "status": "COMPLETE",
+        "dataset_id": IDENTITY["dataset_id"], "materializer_manifest_sha256": sources["dataset_manifest"],
+        "rows_sha256": sources["public_rows"], "authority_sha256": sources["authority"],
+        "amendment_sha256": sources["amendment"], "source_hashes": {},
+        "materializer_source_sha256": "0" * 64, "expected": {},
+        "price_basis": "EXACT_15_20_BAR_CLOSE_PROXY",
+        "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
+    }))
     (run / "receipt.json").write_bytes(type1_report._canonical({
         "manifest_sha256": sources["run_manifest"], "execution_status": "COMPLETE",
         "verdict": "NO_GO", "fresh_oos": {"state": "NOT_RUN", "metrics": None},
@@ -128,16 +156,16 @@ def test_catalog_rejects_semantic_outer_identity_tamper(tmp_path):
     with pytest.raises(Type1ReportError, match="outer identity"):
         report_source_sha256(tmp_path)
     assert REPLACEMENT_OUTER_IDENTITY == {
-        "authority_id": "type1-krx-authority-20260724-003",
-        "dataset_id": "type1-close-20260803-004",
-        "train_id": "type1-public-004",
-        "train_run_id": "train_type1-public-004",
-        "custody_uid": "type1-fresh-oos-20260803-004",
+        "authority_id": "type1-krx-authority-20260724-004",
+        "dataset_id": "type1-close-20260803-005",
+        "train_id": "type1-public-005",
+        "train_run_id": "train_type1-public-005",
+        "custody_uid": "type1-fresh-oos-20260803-005",
         "report_family": "kronos.type1.report.v1",
     }
     amendment = json.loads(AMENDMENT_PATH.read_text(encoding="utf-8"))
-    assert amendment["schema_version"] == "kronos.type1.g002-recovery-amendment.v3"
-    assert amendment["amendment_id"] == "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003"
+    assert amendment["schema_version"] == "kronos.type1.g002-recovery-amendment.v4"
+    assert amendment["amendment_id"] == "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004"
     assert amendment["replacement_identity"] == {
         key: REPLACEMENT_OUTER_IDENTITY[key]
         for key in ("authority_id", "dataset_id", "train_id", "train_run_id", "custody_uid")
@@ -146,19 +174,28 @@ def test_catalog_rejects_semantic_outer_identity_tamper(tmp_path):
         ("type1-close-20260803-001", 0),
         ("type1-close-20260803-002", 0),
         ("type1-close-20260803-003", 0),
+        ("type1-close-20260803-004", 0),
     ]
-    assert amendment["preserved_aborted_evidence"][2]["status"] == "NON_MATERIALIZED_INELIGIBLE"
-    assert amendment["quarantined_authorities"] == [{
-        "authority_id": "type1-krx-authority-20260723-002",
-        "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
-        "status": "QUARANTINED",
-        "models_created": 0,
-        "fresh_oos": {"status": "NOT_RUN", "no_read": True},
-    }]
+    assert amendment["preserved_aborted_evidence"][3]["status"] == "MATERIALIZED_NOT_TRAINED_QUARANTINED"
+    assert amendment["quarantined_authorities"] == [
+        {
+            "authority_id": "type1-krx-authority-20260723-002",
+            "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+            "status": "QUARANTINED", "models_created": 0,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+        },
+        {
+            "authority_id": "type1-krx-authority-20260724-003",
+            "authority_sha256": "30e34b05fe65e31b2cbb826a48628946fa3f03dc7fc7f868ebd41ff36fcef1fe",
+            "rows_sha256": "0af2be6cba26827f48ea00bf0caf700b1ce40e6fc1c2cfdebf1710ae39dfbd11",
+            "status": "QUARANTINED_MATERIALIZED_NOT_TRAINED", "models_created": 0,
+            "fresh_oos": {"status": "NOT_RUN", "no_read": True},
+        },
+    ]
     assert amendment["authority_contract"]["authority_metadata_cutoff"] == "2026-07-24"
     assert amendment["authority_contract"]["authority_metadata_scope"] == (
-        "MDCSTAT23801 instrument-master metadata only; this does not extend price, calendar, "
-        "ranking, public-row, or fresh-OOS access beyond 2025-06-30."
+        "MDCSTAT23801 instrument-master metadata only; price, calendar, ranking, "
+        "public-row, and fresh-OOS access end at 2025-06-30."
     )
     assert amendment["fresh_oos"]["no_price_or_oos_query_after"] == "2025-06-30"
 
@@ -287,3 +324,27 @@ def test_materialized_orphan_and_stale_writer_cas_fail_closed(tmp_path):
         reconcile_report_tip(tmp_path)
     with pytest.raises(Type1ReportError):
         commit_report_tip(tmp_path, materialization["event_sha256"])
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda receipt: receipt.update({"role": "runner_receipt"}),
+        lambda receipt: receipt.update({"status": "RUNNING"}),
+        lambda receipt: receipt.update({"dataset_id": "type1-close-20260803-004"}),
+    ],
+)
+def test_report_rejects_nonmaterializer_completion_receipt(tmp_path, mutate):
+    revision = _revision(tmp_path)
+    receipt_path = tmp_path.parent / "materializer_complete_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    mutate(receipt)
+    receipt_path.write_bytes(type1_report._canonical(receipt))
+    _rebind_revision(tmp_path, revision)
+    with pytest.raises(Type1ReportError, match="materializer completion"):
+        insert_report_revision(tmp_path, revision)
+
+def test_report_rejects_missing_pretraining_evidence(tmp_path):
+    revision = _revision(tmp_path)
+    _mutate_manifest(tmp_path, lambda manifest: manifest.pop("pretraining_gate"))
+    _rebind_revision(tmp_path, revision)
+    with pytest.raises(Type1ReportError, match="pretraining"):
+        insert_report_revision(tmp_path, revision)

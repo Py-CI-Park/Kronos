@@ -524,7 +524,7 @@ def test_v6_reports_catalog_and_html_viewer_contract(client, monkeypatch, tmp_pa
     download = client.get("/api/v6/report-html?dataset=dataset-r1&train=train-r1&download=1")
 
     assert catalog["schema_version"] == "kronos_v6_reports.v2"
-    assert len(catalog["reports"]) == 4
+    assert len(catalog["reports"]) == 5
     entry = next(report for report in catalog["reports"] if report["dataset_run_id"] == "dataset-r1")
     assert entry["dataset_run_id"] == "dataset-r1"
     assert entry["train_run_id"] == "train-r1"
@@ -671,13 +671,20 @@ def test_v6_reports_empty_and_report_html_guards(client, monkeypatch, tmp_path) 
         "type1-close-20260803-001",
         "type1-close-20260803-002",
         "type1-close-20260803-003",
+        "type1-close-20260803-004",
     }
     assert all(report["availability"] == "BLOCKED" for report in reports)
     assert all(report["custody"]["immutable_history"] is True for report in reports)
     aborted = next(report for report in reports if report["dataset_run_id"] == "type1-close-20260803-003")
+    materialized = next(report for report in reports if report["dataset_run_id"] == "type1-close-20260803-004")
     assert aborted["custody"]["scientific_eligibility"] == "NON_MATERIALIZED_INELIGIBLE"
     assert aborted["custody"]["model_files_created"] == 0
     assert aborted["custody"]["materializations_created"] == 0
+    assert materialized["custody"]["scientific_eligibility"] == "MATERIALIZED_NOT_TRAINED_QUARANTINED"
+    assert materialized["custody"]["model_files_created"] == 0
+    assert materialized["custody"]["materializations_created"] == 1
+    assert materialized["custody"]["authority_id"] == "type1-krx-authority-20260724-003"
+    assert materialized["custody"]["authority_status"] == "QUARANTINED_MATERIALIZED_NOT_TRAINED"
     assert aborted["custody"]["authority_id"] == "type1-krx-authority-20260723-002"
     assert aborted["custody"]["authority_sha256"] == "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2"
     assert aborted["custody"]["fresh_oos_state"] == "NOT_RUN"
@@ -712,7 +719,7 @@ def test_v6_reports_retain_invalid_type1_history_with_blocked_html(
 ) -> None:
     docs_root = tmp_path / "docs"
     docs_root.mkdir()
-    amendment_path = docs_root / "kronos_type1_g002_recovery_amendment_v3_2026-07-24.json"
+    amendment_path = docs_root / "kronos_type1_g002_recovery_amendment_v4_2026-07-24.json"
     if amendment_state == "malformed":
         amendment_path.write_text("{not-json", encoding="utf-8")
     elif amendment_state == "tampered":
@@ -734,6 +741,7 @@ def test_v6_reports_retain_invalid_type1_history_with_blocked_html(
         "type1-close-20260803-001",
         "type1-close-20260803-002",
         "type1-close-20260803-003",
+        "type1-close-20260803-004",
     ]
     assert all(entry["availability"] == "BLOCKED" for entry in preserved)
     assert all(entry["integrity"] == "INVALID" for entry in preserved)

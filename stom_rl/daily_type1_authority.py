@@ -18,7 +18,7 @@ INTEGRITY_LABEL = "local artifact integrity; not KRX/external attestation"
 PUBLIC_END = "2025-06-30"
 ANCHOR = "2017-12-29"
 AUTHORITY_METADATA_END = "2026-07-24"
-AUTHORITY_ID = "type1-krx-authority-20260724-003"
+AUTHORITY_ID = "type1-krx-authority-20260724-004"
 MARKETS = ("KOSPI", "KOSDAQ")
 MARKET_QUERY_IDS = {"KOSPI": "STK", "KOSDAQ": "KSQ"}
 
@@ -100,16 +100,24 @@ def _symbol(row: Mapping[str, Any]) -> str:
     return match.group(1) if match else ""
 
 
+def _effective_at_anchor(row: Mapping[str, Any]) -> bool:
+    listed = _date_key(_field(row, "LIST_DD", "listing_date"))
+    delisted = _date_key(_field(row, "DELIST_DD", "delisting_date"))
+    anchor = _date_key(ANCHOR)
+    return bool(listed and listed <= anchor and (not delisted or anchor < delisted))
+
+
 def _typed_row_for_historical(
     historical: Mapping[str, Any],
-    typed_by_isin: Mapping[str, Mapping[str, Any]],
+    typed_by_isin: Mapping[str, list[Mapping[str, Any]]],
     typed_by_symbol: Mapping[str, list[Mapping[str, Any]]],
 ) -> Mapping[str, Any]:
-    """Join by exact ISIN first, then only an unambiguous short-code fallback."""
+    """Join exact unique ISU_CD, then one effective-dated ticker candidate."""
     isin = _field(historical, "ISU_CD")
-    if isin in typed_by_isin:
-        return typed_by_isin[isin]
-    candidates = typed_by_symbol.get(_symbol(historical), [])
+    if isin:
+        matches = typed_by_isin.get(isin, [])
+        return matches[0] if len(matches) == 1 else {}
+    candidates = [row for row in typed_by_symbol.get(_symbol(historical), []) if _effective_at_anchor(row)]
     return candidates[0] if len(candidates) == 1 else {}
 
 
@@ -123,6 +131,14 @@ def _typed_exclusion(symbol: str, historical: Mapping[str, Any], typed: Mapping[
         return "not_six_digit_symbol"
     if not _field(historical, "ISU_ABBRV", "ISU_NM", "name", "종목명"):
         return "blank_historical_name"
+    isin = _field(typed, "ISU_CD")
+    if not isin:
+        return "typed_isin_missing"
+    if re.fullmatch(r"KR7\d{6}\d{3}", isin):
+        if _symbol(typed) and _symbol(typed) != isin[3:9]:
+            return "typed_isin_symbol_mismatch"
+    elif not re.fullmatch(r"\d{6}", isin):
+        return "typed_isin_not_domestic_kr7_or_historical_six_digit"
     if _field(typed, "MKT_NM", "MKT_TP_NM", "market") not in MARKETS:
         return "typed_market_not_kospi_or_kosdaq"
     if _field(typed, "SECUGRP_NM") != "주권":
@@ -132,10 +148,7 @@ def _typed_exclusion(symbol: str, historical: Mapping[str, Any], typed: Mapping[
     domestic = _field(typed, "DOMESTIC_FOREIGN_NM", "DOMESTIC_FOREIGN_TP_NM", "NATN_NM", "국내외구분")
     if domestic and domestic not in ("국내", "DOMESTIC"):
         return "typed_group_not_domestic"
-    listed = _date_key(_field(typed, "LIST_DD", "listing_date"))
-    delisted = _date_key(_field(typed, "DELIST_DD", "delisting_date"))
-    anchor = _date_key(ANCHOR)
-    if not listed or listed > anchor or (delisted and anchor >= delisted):
+    if not _effective_at_anchor(typed):
         return "not_effective_at_anchor"
     spac = _field(typed, "SPAC_YN", "SPAC_TP_NM")
     if spac and spac not in ("N", "NO", "비해당"):
@@ -161,7 +174,7 @@ def validate_authority(envelope: Mapping[str, Any]) -> None:
     provider = authority["provider"]
     _require(isinstance(provider, Mapping) and provider.get("name") == "KRX public data portal" and set(provider) == {"name", "retrieval_utc"}, "wrong public KRX source identity")
     raw = authority["raw_responses"]
-    _require(isinstance(raw, Mapping) and set(raw) == {"calendar", "historical_anchor", "traded_value_by_session", "typed_current", "typed_delisted_chunks"}, "malformed typed raw responses")
+    _require(isinstance(raw, Mapping) and set(raw) == {"calendar", "historical_anchor_by_market", "traded_value_by_session", "typed_current", "typed_delisted_chunks"}, "malformed typed raw responses")
     _require(authority["raw_sha256"] == sha256_canonical(raw), "raw response SHA mismatch")
     _validate_signature(authority, integrity)
     _validate_reconstruction(authority)
@@ -183,7 +196,15 @@ def _validate_signature(authority: Mapping[str, Any], integrity: Mapping[str, An
 def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
     raw = authority["raw_responses"]
     calendar = raw["calendar"]
-    historical = _response_rows(raw["historical_anchor"])
+    historical_by_market = raw["historical_anchor_by_market"]
+    _require(isinstance(historical_by_market, Mapping) and set(historical_by_market) == set(MARKETS), "missing per-market historical captures")
+    historical = []
+    for market in MARKETS:
+        capture = historical_by_market[market]
+        _require(capture["query"] == {"bld": "dbms/MDC/STAT/standard/MDCSTAT01501", "trdDd": "20171228", "mktId": MARKET_QUERY_IDS[market]}, "historical market query is not exact")
+        market_rows = _response_rows(capture)
+        _require(all(_field(row, "MKT_NM", "MKT_TP_NM", "market") == market for row in market_rows), "historical rows lack market provenance")
+        historical.extend(market_rows)
     current = _response_rows(raw["typed_current"])
     chunks = raw["typed_delisted_chunks"]
     _require(isinstance(chunks, list) and chunks, "missing chunked delisted typed history")
@@ -197,7 +218,7 @@ def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
         and profile.get("authority_metadata_cutoff") == AUTHORITY_METADATA_END,
         "wrong KRX typed query profile",
     )
-    _require(profile.get("typed_join") == "ISU_CD exact; unique ISU_SRT_CD fallback", "wrong typed instrument join")
+    _require(profile.get("typed_join") == "ISU_CD exact; effective-dated unique ISU_SRT_CD fallback", "wrong typed instrument join")
     bounds = profile.get("delisted_chunk_bounds")
     _require(
         isinstance(bounds, list)
@@ -209,7 +230,6 @@ def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
         "invalid delisted metadata chunk bounds",
     )
     current_query = raw["typed_current"]["query"]
-    historical_query = raw["historical_anchor"]["query"]
     _require(
         current_query == {
             "class": "전종목기본정보",
@@ -217,15 +237,6 @@ def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
             "bld": "dbms/MDC/STAT/standard/MDCSTAT01901",
         },
         "current typed master query is not exact",
-    )
-    _require(
-        historical_query == {
-            "calls": [
-                {"bld": "dbms/MDC/STAT/standard/MDCSTAT01501", "trdDd": "20171228", "mktId": MARKET_QUERY_IDS[market]}
-                for market in MARKETS
-            ]
-        },
-        "historical anchor query is not exact",
     )
     for bound, chunk in zip(bounds, chunks):
         _require(
@@ -250,11 +261,11 @@ def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
     _require(sessions.get("ordered") == public and sessions.get("count") == len(public), "sessions do not match public calendar raw authority")
     expected_pairs = [[i, i + 1] for i in range(0, len(public) - 1, 2)]
     _require(sessions.get("pairs") == expected_pairs and sessions.get("parity") == len(public) % 2 and sessions.get("trailing_embargo") == ([len(public)-1] if len(public) % 2 else []), "session pairing invalid")
-    typed_by_isin = {
-        _field(row, "ISU_CD"): row
-        for row in current + delisted
-        if _field(row, "ISU_CD")
-    }
+    typed_by_isin: dict[str, list[Mapping[str, Any]]] = {}
+    for row in current + delisted:
+        isin = _field(row, "ISU_CD")
+        if isin:
+            typed_by_isin.setdefault(isin, []).append(row)
     typed_by_symbol: dict[str, list[Mapping[str, Any]]] = {}
     for row in current + delisted:
         symbol = _symbol(row)
@@ -274,10 +285,18 @@ def _validate_reconstruction(authority: Mapping[str, Any]) -> None:
     _require(isinstance(ranking_sessions, list) and len(ranking_sessions) == 60 and ranking_sessions == sorted(ranking_sessions) and ranking_sessions[-1] <= ANCHOR, "invalid 60-session ranking window")
     values = raw["traded_value_by_session"]
     _require(isinstance(values, Mapping) and set(values) == set(ranking_sessions), "missing ranking source captures")
-    values_by_session = {
-        date: {_symbol(item): item for item in _response_rows(values[date]) if _symbol(item)}
-        for date in ranking_sessions
-    }
+    values_by_session = {}
+    for date in ranking_sessions:
+        captures = values[date]
+        _require(isinstance(captures, Mapping) and set(captures) == set(MARKETS), "missing per-market ranking captures")
+        market_rows = []
+        for market in MARKETS:
+            capture = captures[market]
+            _require(capture["query"] == {"bld": "market-ohlcv", "trdDd": date, "mktId": MARKET_QUERY_IDS[market]}, "ranking market query is not exact")
+            rows = _response_rows(capture)
+            _require(all(_field(row, "MKT_NM", "MKT_TP_NM", "market") == market for row in rows), "ranking rows lack market provenance")
+            market_rows.extend(rows)
+        values_by_session[date] = {_symbol(item): item for item in market_rows if _symbol(item)}
     rows = authority["ranking"].get("rows")
     _require(isinstance(rows, list) and len(rows) >= 500, "incomplete ranking")
     expected_rows = []
