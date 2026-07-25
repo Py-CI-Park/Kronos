@@ -50,6 +50,13 @@ RUNNER_RECEIPT = {
     "verdict": "NO_GO",
     "fresh_oos": {"state": "NOT_RUN", "metrics": None},
 }
+PUBLICATION_RECEIPT_NAME = "publication_receipt.json"
+PUBLICATION_RECEIPT_SCHEMA = "kronos.type1.publication-receipt.v1"
+PUBLICATION_RECEIPT_ROLE = "TYPE1_PUBLICATION_RECEIPT"
+PUBLICATION_SOURCE_LOGICAL_PATH = "artifacts/type1-public-runs/train_type1-public-005"
+PUBLICATION_DESTINATION_LOGICAL_PATH = "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/train_type1-public-005"
+PUBLICATION_MOVE_CONTRACT = {"operation": "same_volume_atomic_directory_rename", "copy_performed": False, "overwrite_performed": False, "delete_performed": False}
+MATERIALIZER_FRESH_OOS = {"state": "NOT_RUN", "read_performed": False}
 REPORT_RESULT = {
     "run_state": "COMPLETE",
     "training_state": "COMPLETE",
@@ -81,6 +88,7 @@ _SOURCE_LOCAL_PATHS = {
     "materializer_complete_receipt": Path("..") / "materializer_complete_receipt.json",
     "run_manifest": Path("run_manifest.json"),
     "run_receipt": Path("receipt.json"),
+    "publication_receipt": Path(PUBLICATION_RECEIPT_NAME),
     **{f"{kind}_seed_{seed}_{artifact}": Path(kind) / f"seed_{seed}" / filename
        for kind in ("primary", "shuffled_reward") for seed in range(5)
        for artifact, filename in (("model", "final_model.zip"), ("normalizer", "normalizer.json"))},
@@ -134,7 +142,7 @@ def _safe_child(root: Path, relative: Path) -> Path:
     return candidate
 
 def _read_bytes(path: Path, label: str, *, maximum: int = 64 * 1024 * 1024) -> bytes:
-    if _is_reparse(path) or not path.is_file():
+    if not path.is_file() or _is_reparse(path):
         raise Type1ReportError(f"required report source is missing: {label}")
     try:
         size = path.stat().st_size
@@ -392,7 +400,54 @@ def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
         for label in ("amendment", "protocol", "preregistration", "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")
     }
     _validate_authority_sources(fixed)
-    return {label: _sha(_read_bytes(path, label)) for label, path in paths.items()}
+    sources = {label: _sha(_read_bytes(path, label)) for label, path in paths.items()}
+    _validate_publication_receipt(directory, sources)
+    return sources
+
+def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> None:
+    receipt, raw = _read_canonical(_safe_child(root, Path(PUBLICATION_RECEIPT_NAME)), "publication receipt")
+    materializer = receipt.get("materializer_sha256")
+    expected_materializer = {
+        "public_rows_sha256": sources.get("public_rows"),
+        "dataset_manifest_sha256": sources.get("dataset_manifest"),
+        "materializer_complete_receipt_sha256": sources.get("materializer_complete_receipt"),
+    }
+    required = {
+        "schema_version", "role", "status", "verdict", "identity",
+        "source_logical_path", "destination_logical_path", "move_contract",
+        "run_manifest_sha256", "run_receipt_sha256", "materializer_sha256",
+        "publisher_source_sha256", "fresh_oos",
+    }
+    if (
+        set(receipt) != required
+        or receipt.get("schema_version") != PUBLICATION_RECEIPT_SCHEMA
+        or receipt.get("role") != PUBLICATION_RECEIPT_ROLE
+        or receipt.get("status") != "COMPLETE"
+        or receipt.get("verdict") != "NO_GO"
+        or receipt.get("identity") != REPLACEMENT_IDENTITY
+        or receipt.get("source_logical_path") != PUBLICATION_SOURCE_LOGICAL_PATH
+        or receipt.get("destination_logical_path") != PUBLICATION_DESTINATION_LOGICAL_PATH
+        or receipt.get("move_contract") != PUBLICATION_MOVE_CONTRACT
+        or _sha(raw) != sources.get("publication_receipt")
+        or receipt.get("run_manifest_sha256") != sources.get("run_manifest")
+        or receipt.get("run_receipt_sha256") != sources.get("run_receipt")
+        or materializer != expected_materializer
+        or receipt.get("fresh_oos") != {
+            "run": RUNNER_RECEIPT["fresh_oos"],
+            "materializer": MATERIALIZER_FRESH_OOS,
+            "read_performed": False,
+        }
+    ):
+        raise Type1ReportError("publication receipt does not prove the canonical v5 publication move")
+    _require_sha(receipt.get("publisher_source_sha256"), "publisher source SHA")
+    _require_sha(receipt.get("run_manifest_sha256"), "publication run manifest SHA")
+    _require_sha(receipt.get("run_receipt_sha256"), "publication run receipt SHA")
+    if not isinstance(materializer, Mapping):
+        raise Type1ReportError("publication receipt materializer hashes are invalid")
+    for label, digest in expected_materializer.items():
+        _require_sha(digest, f"{label} source SHA")
+        _require_sha(materializer.get(label), f"{label} publication SHA")
+
 def _verify_current_parent(root: Path, events: list[tuple[dict[str, Any], str]], state: str) -> None:
     """Read-only check of the SQLite CAS parent; reconciliation is runner-owned."""
     db = _safe_child(root, Path("current_parent.sqlite3"))
@@ -470,6 +525,7 @@ def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -
         or materializer_receipt.get("authority_sha256") != sources.get("authority")
     ):
         raise Type1ReportError("materializer completion receipt does not bind report sources")
+    _validate_publication_receipt(root, sources)
     pretraining = manifest.get("pretraining_gate")
     if not isinstance(pretraining, Mapping) or set(pretraining) != {
         "accounting", "block_semantics", "validation_noninterference",
@@ -610,9 +666,15 @@ def _validate_pending_report_authority_sources(directory: Path, artifacts: Mappi
 
 def _preflight_report_authority_targets(directory: Path, artifacts: Mapping[str, bytes]) -> dict[str, Path]:
     targets = {label: _safe_child(directory, _SOURCE_LOCAL_PATHS[label]) for label in _AUTHORITY_ARTIFACT_LABELS}
+    missing_prefix = False
     for label, path in targets.items():
         raw = artifacts[label]
-        if path.exists() and _read_bytes(path, f"existing report authority artifact: {label}", maximum=len(raw)) != raw:
+        if not path.exists():
+            missing_prefix = True
+            continue
+        if missing_prefix:
+            raise Type1ReportError("report authority artifacts are not an exact prefix")
+        if _read_bytes(path, f"existing report authority artifact: {label}", maximum=len(raw)) != raw:
             raise Type1ReportError("report authority artifact already exists with different bytes")
     return targets
 
@@ -643,7 +705,7 @@ def _validate_revision(value: Mapping[str, Any]) -> None:
     if value.get("result") != REPORT_RESULT:
         raise Type1ReportError("report completion must be derived from validated runner evidence")
     sources, evidence = value.get("source_sha256"), value.get("evidence")
-    required_evidence = {"type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "amendment", "protocol", "preregistration", "authority", "builder_source"}
+    required_evidence = {"type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "amendment", "protocol", "preregistration", "authority", "builder_source", "publication_receipt"}
     if not isinstance(sources, Mapping) or not isinstance(evidence, Mapping) or set(evidence) != required_evidence:
         raise Type1ReportError("replacement authority evidence is incomplete")
     for label, digest in sources.items():

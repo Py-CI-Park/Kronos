@@ -21,6 +21,18 @@ _AUTHORITY_FILES = (
     "attempt_parent.json",
     "authority.json",
 )
+_REPORT_EVIDENCE_LABELS = (
+    "type1_identity",
+    "public_run_seal",
+    "deployment_lock",
+    "attempt_parent",
+    "amendment",
+    "protocol",
+    "preregistration",
+    "authority",
+    "builder_source",
+    "publication_receipt",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -56,6 +68,39 @@ def _write_authority(run, *, authority_id=IDENTITY["authority_id"], integrity="t
     path = run / "frozen_authority_envelope.json"
     path.write_bytes(_authority_bytes(authority_id=authority_id, integrity=integrity))
     return path
+
+
+def _write_publication_receipt(run, *, mutate=None):
+    receipt = {
+        "schema_version": type1_report.PUBLICATION_RECEIPT_SCHEMA,
+        "role": type1_report.PUBLICATION_RECEIPT_ROLE,
+        "status": "COMPLETE",
+        "verdict": "NO_GO",
+        "identity": {
+            key: IDENTITY[key]
+            for key in ("authority_id", "dataset_id", "train_id", "train_run_id", "custody_uid")
+        },
+        "source_logical_path": type1_report.PUBLICATION_SOURCE_LOGICAL_PATH,
+        "destination_logical_path": type1_report.PUBLICATION_DESTINATION_LOGICAL_PATH,
+        "move_contract": dict(type1_report.PUBLICATION_MOVE_CONTRACT),
+        "run_manifest_sha256": type1_report._sha((run / "run_manifest.json").read_bytes()),
+        "run_receipt_sha256": type1_report._sha((run / "receipt.json").read_bytes()),
+        "materializer_sha256": {
+            "public_rows_sha256": type1_report._sha((run.parent / "public_rows.json").read_bytes()),
+            "dataset_manifest_sha256": type1_report._sha((run.parent / "dataset_manifest.json").read_bytes()),
+            "materializer_complete_receipt_sha256": type1_report._sha((run.parent / "materializer_complete_receipt.json").read_bytes()),
+        },
+        "publisher_source_sha256": type1_report._sha((type1_report.REPO_ROOT / "stom_rl" / "daily_type1_publication.py").read_bytes()),
+        "fresh_oos": {
+            "run": {"state": "NOT_RUN", "metrics": None},
+            "materializer": {"state": "NOT_RUN", "read_performed": False},
+            "read_performed": False,
+        },
+    }
+    if mutate is not None:
+        mutate(receipt)
+    (run / type1_report.PUBLICATION_RECEIPT_NAME).write_bytes(type1_report._canonical(receipt))
+    return receipt
 
 
 def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_GO"):
@@ -172,6 +217,7 @@ def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_G
             amendment=amendment,
         )
     ))
+    _write_publication_receipt(run)
     return authority_path
 
 
@@ -190,6 +236,9 @@ def test_initialize_report_authority_creates_sources_after_completed_runner(tmp_
     assert all(path.is_file() for path in _authority_file_paths(tmp_path))
     assert sources == report_source_sha256(tmp_path)
     assert sources["authority"] == type1_report._sha(authority_path.read_bytes())
+    assert sources["publication_receipt"] == type1_report._sha(
+        (tmp_path / type1_report.PUBLICATION_RECEIPT_NAME).read_bytes()
+    )
     parent = json.loads((tmp_path / "attempt_parent.json").read_text(encoding="utf-8"))
     assert parent["parent_identity"] == type1_report.PARENT_ATTEMPT_IDENTITY
     assert parent["parent_status"] == "MATERIALIZED_NOT_TRAINED_QUARANTINED"
@@ -200,7 +249,11 @@ def test_initialize_report_authority_exact_retry_is_idempotent(tmp_path):
     authority_raw = authority_path.read_bytes()
     authority_sha = type1_report._sha(authority_raw)
     prefix = type1_report._report_authority_artifact_bytes(authority_raw, authority_sha)
-    (tmp_path / "type1_identity.json").write_bytes(prefix["type1_identity"])
+    for label, filename in (
+        ("type1_identity", "type1_identity.json"),
+        ("public_run_seal", "p6_public_run_seal.json"),
+    ):
+        (tmp_path / filename).write_bytes(prefix[label])
     first = initialize_report_authority(tmp_path, authority_path)
     second = initialize_report_authority(tmp_path, authority_path)
     assert second == first == report_source_sha256(tmp_path)
@@ -208,13 +261,40 @@ def test_initialize_report_authority_exact_retry_is_idempotent(tmp_path):
 
 def test_initialize_report_authority_blocks_differing_existing_bytes_before_writes(tmp_path):
     authority_path = _prepare_completed_runner(tmp_path)
+    authority_raw = authority_path.read_bytes()
+    authority_sha = type1_report._sha(authority_raw)
+    prefix = type1_report._report_authority_artifact_bytes(authority_raw, authority_sha)
+    (tmp_path / "type1_identity.json").write_bytes(prefix["type1_identity"])
     (tmp_path / "p6_public_run_seal.json").write_bytes(b"{}")
     with pytest.raises(Type1ReportError, match="different bytes"):
         initialize_report_authority(tmp_path, authority_path)
-    assert not (tmp_path / "type1_identity.json").exists()
+    assert (tmp_path / "type1_identity.json").is_file()
     assert not (tmp_path / "deployment_lock.json").exists()
     assert not (tmp_path / "attempt_parent.json").exists()
     assert not (tmp_path / "authority.json").exists()
+
+
+def test_initialize_report_authority_blocks_out_of_order_suffix_before_writes(tmp_path):
+    authority_path = _prepare_completed_runner(tmp_path)
+    authority_raw = authority_path.read_bytes()
+    authority_sha = type1_report._sha(authority_raw)
+    prefix = type1_report._report_authority_artifact_bytes(authority_raw, authority_sha)
+    (tmp_path / "p6_public_run_seal.json").write_bytes(prefix["public_run_seal"])
+    with pytest.raises(Type1ReportError, match="exact prefix"):
+        initialize_report_authority(tmp_path, authority_path)
+    assert not (tmp_path / "type1_identity.json").exists()
+    assert (tmp_path / "p6_public_run_seal.json").is_file()
+    assert not (tmp_path / "deployment_lock.json").exists()
+    assert not (tmp_path / "attempt_parent.json").exists()
+    assert not (tmp_path / "authority.json").exists()
+
+
+def test_initialize_report_authority_requires_publication_receipt_before_writes(tmp_path):
+    authority_path = _prepare_completed_runner(tmp_path)
+    (tmp_path / type1_report.PUBLICATION_RECEIPT_NAME).unlink()
+    with pytest.raises(Type1ReportError, match="publication_receipt"):
+        initialize_report_authority(tmp_path, authority_path)
+    assert all(not path.exists() for path in _authority_file_paths(tmp_path))
 
 
 def test_initialize_report_authority_rejects_block_runner_without_writes(tmp_path):
@@ -242,10 +322,7 @@ def test_initialize_report_authority_does_not_create_report_catalog(tmp_path):
 
 def _revision(run, number=1):
     sources = _sources(run)
-    evidence = {label: sources[label] for label in (
-        "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent",
-        "amendment", "protocol", "preregistration", "authority", "builder_source",
-    )}
+    evidence = {label: sources[label] for label in _REPORT_EVIDENCE_LABELS}
     return {
         "schema_version": "kronos_type1_report_revision.v2",
         "revision_id": f"type1-r{number:04d}", "revision_ordinal": number,
@@ -295,8 +372,49 @@ def test_catalog_rehashes_fixed_source_paths(tmp_path):
     materialized = materialize_report_revision(tmp_path, inserted["event_sha256"])
     commit_report_tip(tmp_path, materialized["event_sha256"])
     (tmp_path / "run_manifest.json").write_bytes(b"tampered")
-    with pytest.raises(Type1ReportError, match="source hashes"):
+    with pytest.raises(Type1ReportError, match="publication receipt"):
         verify_report_catalog(tmp_path)
+
+
+def test_revision_requires_publication_receipt_evidence(tmp_path):
+    revision = _revision(tmp_path)
+    revision["evidence"].pop("publication_receipt")
+    with pytest.raises(Type1ReportError, match="evidence is incomplete"):
+        insert_report_revision(tmp_path, revision)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda receipt: receipt.update({"schema_version": "kronos.type1.publication-receipt.v0"}),
+        lambda receipt: receipt.update({"status": "RUNNING"}),
+        lambda receipt: receipt.update({"role": "RUN_RECEIPT"}),
+        lambda receipt: receipt.update({"source_logical_path": "artifacts/type1-public-runs/other"}),
+        lambda receipt: receipt.update({"destination_logical_path": "webui/rl_runs/v6_daily_h1/other"}),
+        lambda receipt: receipt["identity"].update({"train_run_id": "train_type1-public-004"}),
+        lambda receipt: receipt["materializer_sha256"].update({"public_rows_sha256": "0" * 64}),
+        lambda receipt: receipt["fresh_oos"].update({"read_performed": True}),
+    ],
+)
+def test_report_rejects_invalid_publication_receipt(tmp_path, mutate):
+    revision = _revision(tmp_path)
+    receipt_path = tmp_path / type1_report.PUBLICATION_RECEIPT_NAME
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    mutate(receipt)
+    receipt_path.write_bytes(type1_report._canonical(receipt))
+    with pytest.raises(Type1ReportError, match="publication receipt"):
+        insert_report_revision(tmp_path, revision)
+
+
+def test_catalog_rejects_missing_publication_receipt_after_commit(tmp_path):
+    inserted = insert_report_revision(tmp_path, _revision(tmp_path))
+    materialized = materialize_report_revision(tmp_path, inserted["event_sha256"])
+    commit_report_tip(tmp_path, materialized["event_sha256"])
+    (tmp_path / type1_report.PUBLICATION_RECEIPT_NAME).unlink()
+    with pytest.raises(Type1ReportError, match="publication_receipt"):
+        verify_report_catalog(tmp_path)
+
+
 def test_catalog_rejects_semantic_authority_envelope_tamper(tmp_path):
     from stom_rl.daily_type1_authority import canonical_json
 
@@ -391,23 +509,19 @@ def test_report_uses_seven_ordinary_anchor_linked_sections(tmp_path):
 def _rebind_revision(run, revision):
     sources = report_source_sha256(run)
     revision["source_sha256"] = sources
-    revision["evidence"] = {
-        label: sources[label] for label in (
-            "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent",
-            "amendment", "protocol", "preregistration", "authority", "builder_source",
-        )
-    }
+    revision["evidence"] = {label: sources[label] for label in _REPORT_EVIDENCE_LABELS}
 
 def _mutate_manifest(run, mutate):
     manifest_path = run / "run_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     mutate(manifest)
-    manifest_path.write_bytes(type1_report._canonical(manifest))
-    sources = report_source_sha256(run)
+    manifest_raw = type1_report._canonical(manifest)
+    manifest_path.write_bytes(manifest_raw)
     (run / "receipt.json").write_bytes(type1_report._canonical({
-        "manifest_sha256": sources["run_manifest"], "execution_status": "COMPLETE",
+        "manifest_sha256": type1_report._sha(manifest_raw), "execution_status": "COMPLETE",
         "verdict": "NO_GO", "fresh_oos": {"state": "NOT_RUN", "metrics": None},
     }))
+    _write_publication_receipt(run)
 
 @pytest.mark.parametrize(
     "mutate",
@@ -490,6 +604,7 @@ def test_report_rejects_nonmaterializer_completion_receipt(tmp_path, mutate):
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     mutate(receipt)
     receipt_path.write_bytes(type1_report._canonical(receipt))
+    _write_publication_receipt(tmp_path)
     _rebind_revision(tmp_path, revision)
     with pytest.raises(Type1ReportError, match="materializer completion"):
         insert_report_revision(tmp_path, revision)
