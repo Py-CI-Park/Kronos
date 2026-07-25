@@ -840,11 +840,7 @@ class _ProductionOperations:
         validation_pairs = self.build_pairs(validation_rows, split="reused_validation")
         normalizer_after = self._normalizer.digest()
         train_input_before = _pair_bytes(train_pairs)
-        mutated_validation = copy.deepcopy(list(validation_rows))
-        for row in mutated_validation:
-            row["features"] = {name: "999999.125" for name in FEATURES}
-            row["gross_return"] = "-0.9999"
-            row["entry_available"] = not bool(row["entry_available"])
+        mutated_validation = _mutated_validation_rows(validation_rows)
         self.build_pairs(mutated_validation, split="reused_validation")
         mutation_normalizer = self._normalizer.digest()
         train_input_after = _pair_bytes(self.build_pairs(train_rows, split="train"))
