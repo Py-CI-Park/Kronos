@@ -15,8 +15,8 @@ export interface V6PageDef {
 export const V6_BRAND = {
   name: 'AI Quant Reinforcement Learning',
   subtitle: 'V6 Workflow Research Platform',
-  version: 'v6.0-dev',
-  updateDate: '2026-07-19',
+  version: 'v6.0',
+  updateDate: '2026-07-25',
 } as const;
 
 export interface V6StepDef {

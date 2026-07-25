@@ -26,11 +26,11 @@ test('V6 registry resolves legacy locations into their workspace deep links', ()
   assert.deepEqual(resolveV6Location('live-training', null, null), { tab: 'rl', step: 'training' });
 });
 
-test('V6 brand remains unchanged', () => {
+test('V6 brand identifies the released shell', () => {
   assert.deepEqual(V6_BRAND, {
     name: 'AI Quant Reinforcement Learning',
     subtitle: 'V6 Workflow Research Platform',
-    version: 'v6.0-dev',
-    updateDate: '2026-07-19',
+    version: 'v6.0',
+    updateDate: '2026-07-25',
   });
 });
