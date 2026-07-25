@@ -5,6 +5,7 @@ revision, not a request for the latest report in a directory.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import html
 import json
@@ -14,7 +15,7 @@ import sqlite3
 import stat
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = REPO_ROOT / "docs" / "kronos_type1_g002_public_protocol_2026-07-23.json"
@@ -56,6 +57,22 @@ PUBLICATION_RECEIPT_ROLE = "TYPE1_PUBLICATION_RECEIPT"
 PUBLICATION_SOURCE_LOGICAL_PATH = "artifacts/type1-public-runs/train_type1-public-005"
 PUBLICATION_DESTINATION_LOGICAL_PATH = "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/train_type1-public-005"
 PUBLICATION_MOVE_CONTRACT = {"operation": "same_volume_atomic_directory_rename", "copy_performed": False, "overwrite_performed": False, "delete_performed": False}
+COMPLETED_REPORT_RUN_DIR = REPO_ROOT / PUBLICATION_DESTINATION_LOGICAL_PATH
+FROZEN_AUTHORITY_ENVELOPE_PATH = (
+    REPO_ROOT / "webui" / "rl_runs" / "v6_daily_h1" / "type1_authorities" / f"{REPLACEMENT_IDENTITY['authority_id']}.json"
+)
+REPORT_EVIDENCE_LABELS = (
+    "type1_identity",
+    "public_run_seal",
+    "deployment_lock",
+    "attempt_parent",
+    "amendment",
+    "protocol",
+    "preregistration",
+    "authority",
+    "builder_source",
+    "publication_receipt",
+)
 MATERIALIZER_FRESH_OOS = {"state": "NOT_RUN", "read_performed": False}
 REPORT_RESULT = {
     "run_state": "COMPLETE",
@@ -108,6 +125,10 @@ def _canonical(value: Any) -> bytes:
 
 def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
+
+
+def _canonical_copy(value: Any) -> Any:
+    return json.loads(_canonical(value).decode("utf-8"))
 
 def _require_sha(value: Any, label: str) -> str:
     if not isinstance(value, str) or _SHA.fullmatch(value) is None:
@@ -713,6 +734,36 @@ def initialize_report_authority(run_dir: str | Path, frozen_authority_envelope_p
         _write_new(targets[label], artifacts[label])
     return report_source_sha256(directory)
 
+def build_completed_report_revision(
+    run_dir: str | Path,
+    revision_id: str = "type1-r0001",
+    revision_ordinal: int = 1,
+) -> dict[str, Any]:
+    """Build the immutable completed-report revision from validated custody only."""
+    if not isinstance(revision_id, str) or re.fullmatch(r"type1-r[0-9]{4,}", revision_id) is None:
+        raise Type1ReportError("revision ID is invalid")
+    if type(revision_ordinal) is not int or revision_ordinal < 1:
+        raise Type1ReportError("revision ordinal is invalid")
+    sources = report_source_sha256(run_dir)
+    _validate_runner_evidence(run_dir, sources)
+    try:
+        evidence = {label: sources[label] for label in REPORT_EVIDENCE_LABELS}
+    except KeyError as exc:
+        raise Type1ReportError("replacement authority evidence is incomplete") from exc
+    return {
+        "schema_version": REVISION_SCHEMA,
+        "revision_id": revision_id,
+        "revision_ordinal": revision_ordinal,
+        "identity": _canonical_copy(IDENTITY),
+        "policy": _canonical_copy(POLICY),
+        "result": _canonical_copy(REPORT_RESULT),
+        "source_sha256": dict(sources),
+        "evidence": evidence,
+        "false_research_locks": _canonical_copy(LOCKS),
+        "claims": _canonical_copy(REPORT_CLAIMS),
+    }
+
+
 def _validate_revision(value: Mapping[str, Any]) -> None:
     required = {"schema_version", "revision_id", "revision_ordinal", "identity", "policy", "result", "source_sha256", "evidence", "false_research_locks", "claims", "catalog_ordinal", "previous_event_sha256", "previous_revision_event_sha256"}
     if set(value) != required or value.get("schema_version") != REVISION_SCHEMA or value.get("identity") != IDENTITY or value.get("policy") != POLICY:
@@ -722,7 +773,7 @@ def _validate_revision(value: Mapping[str, Any]) -> None:
     if value.get("result") != REPORT_RESULT:
         raise Type1ReportError("report completion must be derived from validated runner evidence")
     sources, evidence = value.get("source_sha256"), value.get("evidence")
-    required_evidence = {"type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "amendment", "protocol", "preregistration", "authority", "builder_source", "publication_receipt"}
+    required_evidence = set(REPORT_EVIDENCE_LABELS)
     if not isinstance(sources, Mapping) or not isinstance(evidence, Mapping) or set(evidence) != required_evidence:
         raise Type1ReportError("replacement authority evidence is incomplete")
     for label, digest in sources.items():
@@ -734,31 +785,82 @@ def _validate_revision(value: Mapping[str, Any]) -> None:
         raise Type1ReportError("revision locks or claims are invalid")
 
 def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
-    r = revision["result"]; failures = "".join(f"<li>{html.escape(str(x))}</li>" for x in r["failures"]) or "<li>None recorded.</li>"
-    hashes = "".join(f"<li><code>{html.escape(k)}</code>: <code>{html.escape(v)}</code></li>" for k,v in sorted(revision["source_sha256"].items()))
-    observed = f"<p>Observed completion — run: {html.escape(str(r['run_state']))}; training: {html.escape(str(r['training_state']))}; reused validation: {html.escape(str(r['reused_validation_state']))}.</p>"
-    sections = (
-        ("overview", "Overview", f"<p class=verdict>NO_GO</p>{observed}"),
-        ("identity", "Type1 identity and scope", "<p>Replacement Type1 research-only evidence; not official close, alpha, profitability, paper, broker, live, or funded evidence.</p>"),
-        ("protocol", "Protocol and accounting", "<p>Exact 15:20 close proxy and fixed-notional non-self-financing 23bp accounting.</p>"),
-        ("training", "Training plan and observed completion", f"<p>Planned: five seeds × 200000 timesteps. This is a plan, not a completion claim.</p>{observed}"),
-        ("validation", "Reused-validation controls", "<p>Reused validation can yield NO_GO only.</p>"),
-        ("custody", "Fresh OOS and custody", f"<p>Fresh OOS: {html.escape(str(r['fresh_oos_state']))}; payload was not read.</p><p>M3E: {M3E_STATEMENT}</p>"),
-        ("integrity", "Failures and integrity", f"<p>Revision SHA-256: <code>{revision_sha}</code></p><ul>{failures}</ul><ul>{hashes}</ul>"),
+    r = revision["result"]
+    failures = "".join(f"<li>{html.escape(str(x))}</li>" for x in r["failures"]) or "<li>None recorded.</li>"
+    hashes = "".join(
+        f"<li><code>{html.escape(k)}</code>: <code>{html.escape(v)}</code></li>"
+        for k, v in sorted(revision["source_sha256"].items())
     )
-    links = "".join(f'<a href="#{key}">{title}</a>' for key, title, _ in sections)
-    body = "".join(f'<section id="{key}" aria-labelledby="{key}-heading"><h2 id="{key}-heading">{title}</h2>{content}</section>' for key, title, content in sections)
+    claims = "".join(
+        f"<li><code>{html.escape(k)}</code>: <code>{html.escape(str(v))}</code></li>"
+        for k, v in sorted(revision["claims"].items())
+    )
+    locks = "".join(
+        f"<li><code>{html.escape(k)}</code>: <code>{html.escape(str(v))}</code></li>"
+        for k, v in sorted(revision["false_research_locks"].items())
+    )
+    observed = (
+        f"<p>Observed completion — run: {html.escape(str(r['run_state']))}; "
+        f"training: {html.escape(str(r['training_state']))}; "
+        f"reused validation: {html.escape(str(r['reused_validation_state']))}.</p>"
+    )
+    sections = (
+        ("overview", "Overview", f"<p class=verdict>NO_GO</p>{observed}<p>Outcome boundary: NO_GO_ONLY.</p>"),
+        (
+            "identity",
+            "Type1 identity and scope",
+            "<p>Replacement Type1 research-only evidence; not official close, alpha, "
+            "profitability, paper, broker, live, or funded evidence.</p>",
+        ),
+        (
+            "protocol",
+            "Protocol and accounting",
+            "<p>Exact 15:20 close proxy and fixed-notional non-self-financing 23bp accounting.</p>",
+        ),
+        (
+            "training",
+            "Training plan and observed completion",
+            "<p>Planned: five seeds × 200000 timesteps. No checkpoint, member, validation, "
+            f"profitability, paper, broker, live, or funded selection is claimed.</p>{observed}",
+        ),
+        ("validation", "Reused-validation controls", "<p>Reused validation can yield NO_GO only.</p>"),
+        (
+            "custody",
+            "Fresh OOS and custody",
+            f"<p>Fresh OOS: {html.escape(str(r['fresh_oos_state']))}; payload was not read.</p>"
+            f"<p>M3E: {M3E_STATEMENT}</p>",
+        ),
+        (
+            "integrity",
+            "Failures, claims, locks, and source integrity",
+            f"<p>Revision SHA-256: <code>{revision_sha}</code></p>"
+            f"<h3>Failures</h3><ul>{failures}</ul>"
+            f"<h3>Claims</h3><ul>{claims}</ul>"
+            f"<h3>False-research locks</h3><ul>{locks}</ul>"
+            f"<h3>Source SHA-256</h3><ul>{hashes}</ul>",
+        ),
+    )
+    links = "".join(
+        f'<a role="tab" id="{key}-tab" href="#{key}" aria-controls="{key}">{html.escape(title)}</a>'
+        for key, title, _ in sections
+    )
+    body = "".join(
+        f'<section role="tabpanel" id="{key}" aria-labelledby="{key}-tab" tabindex="0">'
+        f"<h2>{html.escape(title)}</h2>{content}</section>"
+        for key, title, content in sections
+    )
     text = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<title>Type1 immutable report</title><style>'
         'body{font-family:system-ui,sans-serif;max-width:960px;margin:2rem;line-height:1.5}'
-        'nav{display:flex;gap:.7rem;flex-wrap:wrap}'
-        'section{border-top:1px solid #cbd5e1;margin-top:1rem}'
+        'nav[role=tablist]{display:flex;gap:.7rem;flex-wrap:wrap;border-bottom:1px solid #cbd5e1}'
+        'a[role=tab]{padding:.45rem .7rem;border:1px solid #cbd5e1;border-bottom:0;text-decoration:none;color:#0f172a;background:#f8fafc}'
+        'section[role=tabpanel]{border-top:1px solid #cbd5e1;margin-top:1rem}'
         '.verdict{font-weight:bold;padding:.6rem;background:#7f1d1d;color:white}'
         'code{overflow-wrap:anywhere}'
-        '@media(max-width:600px){body{margin:1rem}nav{display:grid;grid-template-columns:1fr}}'
+        '@media(max-width:600px){body{margin:1rem}nav[role=tablist]{display:grid;grid-template-columns:1fr}}'
         '</style></head><body><h1>Type1 immutable reused-validation evidence</h1>'
-        f'<nav aria-label="Report sections">{links}</nav><main>{body}</main></body></html>'
+        f'<nav role="tablist" aria-label="Report sections">{links}</nav><main>{body}</main></body></html>'
     )
     return text.encode("utf-8")
 
@@ -897,3 +999,162 @@ def commit_report_tip(run_dir: str|Path, materialization_event_sha256:str)->dict
     except Exception:
         con.execute("ROLLBACK"); raise
     finally: con.close()
+
+def _catalog_root_path(run_dir: str | Path) -> Path:
+    directory = Path(run_dir).absolute()
+    if not directory.is_dir() or _is_reparse(directory):
+        raise Type1ReportError("run directory is required")
+    return _safe_child(directory, Path(REPORT_ROOT))
+
+
+def _require_exact_completed_report_inputs(
+    run_dir: str | Path,
+    frozen_authority_envelope_path: str | Path,
+) -> tuple[Path, Path]:
+    run_path = Path(run_dir).absolute()
+    authority_path = Path(frozen_authority_envelope_path).absolute()
+    if run_path != Path(COMPLETED_REPORT_RUN_DIR).absolute():
+        raise Type1ReportError(f"run directory must be the exact published destination: {PUBLICATION_DESTINATION_LOGICAL_PATH}")
+    if authority_path != Path(FROZEN_AUTHORITY_ENVELOPE_PATH).absolute():
+        raise Type1ReportError("frozen authority envelope path must be the exact type1_authorities -004 envelope")
+    return run_path, authority_path
+
+
+def _assert_one_shot_committed_snapshot(snapshot: Mapping[str, Any]) -> None:
+    revision = snapshot.get("revision")
+    materialization = snapshot.get("materialization")
+    if (
+        snapshot.get("state") != "COMMITTED"
+        or snapshot.get("event_count") != 2
+        or not isinstance(revision, Mapping)
+        or not isinstance(materialization, Mapping)
+        or revision.get("revision_id") != "type1-r0001"
+        or revision.get("revision_ordinal") != 1
+        or materialization.get("object_id") != "type1-r0001"
+    ):
+        raise Type1ReportError("one-shot report catalog must contain exactly one committed type1-r0001 revision")
+
+
+def _completed_report_receipt(run_dir: str | Path, snapshot: Mapping[str, Any], mode: str) -> dict[str, Any]:
+    _assert_one_shot_committed_snapshot(snapshot)
+    revision = snapshot["revision"]
+    materialization = snapshot["materialization"]
+    tip = snapshot["tip"]
+    return {
+        "report_status": "COMMITTED",
+        "mode": mode,
+        "verdict": revision["result"]["verdict"],
+        "fresh_oos": {
+            "state": revision["result"]["fresh_oos_state"],
+            "read_performed": revision["result"]["fresh_oos_read_performed"],
+        },
+        "run_dir": str(Path(run_dir).absolute()),
+        "revision_id": revision["revision_id"],
+        "revision_ordinal": revision["revision_ordinal"],
+        "catalog_event_count": snapshot["event_count"],
+        "object_count": 1,
+        "revision_event_sha256": tip["latest_revision_event_sha256"],
+        "materialization_event_sha256": tip["materialization_event_sha256"],
+        "tip_sha256": snapshot["tip_sha256"],
+        "object_id": materialization["object_id"],
+        "html_sha256": materialization["html_sha256"],
+        "publication_receipt_sha256": revision["evidence"]["publication_receipt"],
+        "source_count": len(revision["source_sha256"]),
+    }
+
+
+def _existing_completed_report_receipt(run_dir: str | Path) -> dict[str, Any] | None:
+    root = _catalog_root_path(run_dir)
+    if not root.exists():
+        return None
+    try:
+        snapshot = verify_report_catalog(run_dir)
+    except Type1ReportError as verify_exc:
+        try:
+            tip_exists = _safe_child(root, Path("committed_report_tip.json")).exists()
+        except Type1ReportError:
+            tip_exists = False
+        if not tip_exists:
+            raise Type1ReportError("existing report catalog is partial or invalid") from verify_exc
+        try:
+            reconcile_report_tip(run_dir)
+            snapshot = verify_report_catalog(run_dir)
+        except Type1ReportError as reconcile_exc:
+            raise Type1ReportError("existing report catalog is not an exact committed-tip orphan") from reconcile_exc
+        return _completed_report_receipt(run_dir, snapshot, "RECONCILED")
+    if snapshot.get("state") != "COMMITTED":
+        raise Type1ReportError("existing report catalog is partial; one-shot completion refuses to append")
+    return _completed_report_receipt(run_dir, snapshot, "VERIFIED")
+
+
+def complete_report_one_shot(
+    run_dir: str | Path,
+    frozen_authority_envelope_path: str | Path,
+) -> dict[str, Any]:
+    """Create or verify the sole immutable completed Type1 report catalog."""
+    run_path, authority_path = _require_exact_completed_report_inputs(run_dir, frozen_authority_envelope_path)
+    existing = _existing_completed_report_receipt(run_path)
+    if existing is not None:
+        return existing
+    initialize_report_authority(run_path, authority_path)
+    revision = build_completed_report_revision(run_path)
+    inserted = insert_report_revision(run_path, revision)
+    materialized = materialize_report_revision(run_path, inserted["event_sha256"])
+    commit_report_tip(run_path, materialized["event_sha256"])
+    snapshot = verify_report_catalog(run_path)
+    return _completed_report_receipt(run_path, snapshot, "CREATED")
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(Path(path).relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    run_display = _display_path(Path(COMPLETED_REPORT_RUN_DIR))
+    authority_display = _display_path(Path(FROZEN_AUTHORITY_ENVELOPE_PATH))
+    command = (
+        "py -3.11 -m stom_rl.daily_v1_type1_report "
+        f"--run-dir {run_display} "
+        f"--frozen-authority-envelope {authority_display}"
+    )
+    parser = argparse.ArgumentParser(
+        description="Build exactly one immutable completed Type1 report revision from frozen custody.",
+        epilog=f"Documented production command:\n  {command}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--run-dir",
+        required=True,
+        type=Path,
+        help=f"Required exact published run directory: {_display_path(Path(COMPLETED_REPORT_RUN_DIR))}",
+    )
+    parser.add_argument(
+        "--frozen-authority-envelope",
+        required=True,
+        type=Path,
+        help=f"Required exact frozen -004 authority envelope: {_display_path(Path(FROZEN_AUTHORITY_ENVELOPE_PATH))}",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        receipt = complete_report_one_shot(args.run_dir, args.frozen_authority_envelope)
+    except Exception as exc:
+        print(json.dumps({
+            "report_status": "BLOCKED",
+            "verdict": "NO_GO",
+            "fresh_oos": {"state": "NOT_RUN", "read_performed": False},
+            "error": str(exc),
+        }, sort_keys=True))
+        return 1
+    print(json.dumps(receipt, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

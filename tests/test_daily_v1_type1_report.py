@@ -6,10 +6,10 @@ import stom_rl.daily_v1_type1_report as type1_report
 
 from stom_rl.daily_v1_type1_report import (
     AMENDMENT_PATH, IDENTITY, LOCKS, M3E_STATEMENT, POLICY, REPORT_CLAIMS,
-    REPORT_RESULT, REPLACEMENT_OUTER_IDENTITY, Type1ReportError,
-    commit_report_tip, initialize_report_authority, insert_report_revision,
-    materialize_report_revision, reconcile_report_tip, report_source_sha256,
-    verify_report_catalog,
+    REPORT_EVIDENCE_LABELS, REPORT_RESULT, REPLACEMENT_OUTER_IDENTITY,
+    Type1ReportError, build_completed_report_revision, commit_report_tip,
+    initialize_report_authority, insert_report_revision, materialize_report_revision,
+    reconcile_report_tip, report_source_sha256, verify_report_catalog,
 )
 
 
@@ -21,18 +21,7 @@ _AUTHORITY_FILES = (
     "attempt_parent.json",
     "authority.json",
 )
-_REPORT_EVIDENCE_LABELS = (
-    "type1_identity",
-    "public_run_seal",
-    "deployment_lock",
-    "attempt_parent",
-    "amendment",
-    "protocol",
-    "preregistration",
-    "authority",
-    "builder_source",
-    "publication_receipt",
-)
+_REPORT_EVIDENCE_LABELS = REPORT_EVIDENCE_LABELS
 
 
 @pytest.fixture(autouse=True)
@@ -334,16 +323,30 @@ def test_initialize_report_authority_does_not_create_report_catalog(tmp_path):
 
 
 def _revision(run, number=1):
-    sources = _sources(run)
-    evidence = {label: sources[label] for label in _REPORT_EVIDENCE_LABELS}
-    return {
-        "schema_version": "kronos_type1_report_revision.v2",
-        "revision_id": f"type1-r{number:04d}", "revision_ordinal": number,
-        "identity": IDENTITY, "policy": POLICY,
-        "result": REPORT_RESULT,
-        "source_sha256": sources, "evidence": evidence, "false_research_locks": LOCKS,
-        "claims": REPORT_CLAIMS,
-    }
+    _sources(run)
+    return build_completed_report_revision(
+        run,
+        revision_id=f"type1-r{number:04d}",
+        revision_ordinal=number,
+    )
+
+
+def test_build_completed_report_revision_derives_fixed_custody_sources(tmp_path):
+    _sources(tmp_path)
+    revision = build_completed_report_revision(tmp_path)
+    sources = report_source_sha256(tmp_path)
+    assert revision["schema_version"] == type1_report.REVISION_SCHEMA
+    assert revision["identity"] == IDENTITY
+    assert revision["identity"] is not IDENTITY
+    assert revision["policy"] == POLICY
+    assert revision["result"] == REPORT_RESULT
+    assert revision["false_research_locks"] == LOCKS
+    assert revision["claims"] == REPORT_CLAIMS
+    assert revision["source_sha256"] == sources
+    assert set(revision["source_sha256"]) == set(sources)
+    assert revision["evidence"] == {label: sources[label] for label in REPORT_EVIDENCE_LABELS}
+    assert revision["evidence"]["publication_receipt"] == sources["publication_receipt"]
+
 
 
 def test_catalog_is_alternating_immutable_and_no_go_visible(tmp_path):
@@ -359,7 +362,7 @@ def test_catalog_is_alternating_immutable_and_no_go_visible(tmp_path):
     assert snapshot["revision"]["result"]["verdict"] == "NO_GO"
     report = (tmp_path / "type1_reports" / "objects" / f"type1-r0002-{second_materialized['html_sha256']}.html").read_text(encoding="utf-8")
     assert "NOT_RUN" in report and "NO_GO_ONLY" in json.dumps(snapshot["revision"])
-    for label in ("Overview", "Type1 identity", "Protocol and accounting", "Training plan and observed completion", "Reused-validation", "Fresh OOS", "Failures and integrity"):
+    for label in ("Overview", "Type1 identity", "Protocol and accounting", "Training plan and observed completion", "Reused-validation", "Fresh OOS", "Failures, claims, locks, and source integrity"):
         assert label in report
     with pytest.raises(Type1ReportError):
         insert_report_revision(tmp_path, _revision(tmp_path, 3))
@@ -508,17 +511,26 @@ def test_report_builder_rejects_amendment_authority_metadata_tampering(tmp_path,
         _sources(tmp_path)
 
 
-def test_report_uses_seven_ordinary_anchor_linked_sections(tmp_path):
+def test_report_uses_seven_tabbed_sections_and_no_go_not_run_visible(tmp_path):
     revision = insert_report_revision(tmp_path, _revision(tmp_path))
     object_event = materialize_report_revision(tmp_path, revision["event_sha256"])
     report = (tmp_path / "type1_reports" / "objects" / f"type1-r0001-{object_event['html_sha256']}.html").read_text(encoding="utf-8")
-    assert report.count("<section ") == 7
-    assert 'role="tab"' not in report and 'role="tabpanel"' not in report
+    assert report.count('role="tab"') == 7
+    assert report.count('role="tabpanel"') == 7
+    assert '<nav role="tablist"' in report
     for section in ("overview", "identity", "protocol", "training", "validation", "custody", "integrity"):
+        assert f'id="{section}-tab"' in report
         assert f'href="#{section}"' in report
         assert f'id="{section}"' in report
+        assert f'aria-labelledby="{section}-tab"' in report
+    assert "NO_GO" in report
+    assert "NO_GO_ONLY" in report
+    assert "NOT_RUN" in report
+    assert "payload was not read" in report
+    assert "NOT_CLAIMED" in report
     assert M3E_STATEMENT == "LINUCB_CONTEXTUAL_BANDIT_NO_GO_FIVE_SEEDS_23BP_FRESH_OOS_NOT_RUN_UNCHANGED"
     assert M3E_STATEMENT in report
+
 def _rebind_revision(run, revision):
     sources = report_source_sha256(run)
     revision["source_sha256"] = sources
@@ -535,6 +547,14 @@ def _mutate_manifest(run, mutate):
         "verdict": "NO_GO", "fresh_oos": {"state": "NOT_RUN", "metrics": None},
     }))
     _write_publication_receipt(run)
+
+
+def test_build_completed_report_revision_revalidates_runner_evidence(tmp_path):
+    _revision(tmp_path)
+    _mutate_manifest(tmp_path, lambda manifest: manifest["controls"].update({"integrity_ok": False}))
+    with pytest.raises(Type1ReportError, match="controls"):
+        build_completed_report_revision(tmp_path)
+
 
 @pytest.mark.parametrize(
     "mutate",
@@ -628,3 +648,138 @@ def test_report_rejects_missing_pretraining_evidence(tmp_path):
     _rebind_revision(tmp_path, revision)
     with pytest.raises(Type1ReportError, match="pretraining"):
         insert_report_revision(tmp_path, revision)
+
+def _prepare_one_shot_fixture(tmp_path, monkeypatch):
+    run = (
+        tmp_path
+        / "webui"
+        / "rl_runs"
+        / "v6_daily_h1"
+        / IDENTITY["dataset_id"]
+        / IDENTITY["train_run_id"]
+    )
+    staged_authority = _prepare_completed_runner(run)
+    authority = (
+        tmp_path
+        / "webui"
+        / "rl_runs"
+        / "v6_daily_h1"
+        / "type1_authorities"
+        / f"{IDENTITY['authority_id']}.json"
+    )
+    authority.parent.mkdir(parents=True, exist_ok=True)
+    authority.write_bytes(staged_authority.read_bytes())
+    monkeypatch.setattr(type1_report, "COMPLETED_REPORT_RUN_DIR", run.absolute())
+    monkeypatch.setattr(type1_report, "FROZEN_AUTHORITY_ENVELOPE_PATH", authority.absolute())
+    return run, authority
+
+
+def _run_one_shot_cli(capsys, run, authority):
+    code = type1_report.main([
+        "--run-dir", str(run),
+        "--frozen-authority-envelope", str(authority),
+    ])
+    output = capsys.readouterr().out.strip()
+    return code, json.loads(output)
+
+
+def test_completed_report_one_shot_parser_requires_explicit_paths():
+    parser = type1_report.build_parser()
+    help_text = parser.format_help()
+    assert "Documented production command" in help_text
+    assert "--run-dir" in help_text
+    assert "--frozen-authority-envelope" in help_text
+    with pytest.raises(SystemExit):
+        parser.parse_args([])
+    args = parser.parse_args([
+        "--run-dir", str(type1_report.COMPLETED_REPORT_RUN_DIR),
+        "--frozen-authority-envelope", str(type1_report.FROZEN_AUTHORITY_ENVELOPE_PATH),
+    ])
+    assert args.run_dir == type1_report.COMPLETED_REPORT_RUN_DIR
+    assert args.frozen_authority_envelope == type1_report.FROZEN_AUTHORITY_ENVELOPE_PATH
+
+
+def test_completed_report_one_shot_cli_creates_single_committed_report(tmp_path, monkeypatch, capsys):
+    run, authority = _prepare_one_shot_fixture(tmp_path, monkeypatch)
+    code, receipt = _run_one_shot_cli(capsys, run, authority)
+    assert code == 0
+    assert receipt["report_status"] == "COMMITTED"
+    assert receipt["mode"] == "CREATED"
+    assert receipt["verdict"] == "NO_GO"
+    assert receipt["fresh_oos"] == {"state": "NOT_RUN", "read_performed": False}
+    assert receipt["revision_id"] == "type1-r0001"
+    assert receipt["revision_ordinal"] == 1
+    assert receipt["catalog_event_count"] == 2
+    assert receipt["object_count"] == 1
+    snapshot = verify_report_catalog(run)
+    assert snapshot["state"] == "COMMITTED"
+    assert snapshot["event_count"] == 2
+    assert snapshot["revision"]["source_sha256"] == report_source_sha256(run)
+    assert snapshot["revision"]["evidence"]["publication_receipt"] == receipt["publication_receipt_sha256"]
+    events = list((run / "type1_reports" / "events").iterdir())
+    objects = list((run / "type1_reports" / "objects").iterdir())
+    assert len(events) == 2
+    assert len(objects) == 1
+    html = objects[0].read_text(encoding="utf-8")
+    assert html.count('role="tab"') == 7
+    assert "NO_GO" in html and "NO_GO_ONLY" in html and "NOT_RUN" in html
+
+
+def test_completed_report_one_shot_cli_is_idempotent_for_matching_committed_tip(tmp_path, monkeypatch, capsys):
+    run, authority = _prepare_one_shot_fixture(tmp_path, monkeypatch)
+    code, first = _run_one_shot_cli(capsys, run, authority)
+    assert code == 0
+    events_before = sorted(path.name for path in (run / "type1_reports" / "events").iterdir())
+    objects_before = sorted(path.name for path in (run / "type1_reports" / "objects").iterdir())
+    code, second = _run_one_shot_cli(capsys, run, authority)
+    assert code == 0
+    assert second["mode"] == "VERIFIED"
+    assert second["revision_event_sha256"] == first["revision_event_sha256"]
+    assert second["materialization_event_sha256"] == first["materialization_event_sha256"]
+    assert sorted(path.name for path in (run / "type1_reports" / "events").iterdir()) == events_before
+    assert sorted(path.name for path in (run / "type1_reports" / "objects").iterdir()) == objects_before
+
+
+def test_completed_report_one_shot_cli_reconciles_exact_committed_tip_orphan(tmp_path, monkeypatch, capsys):
+    run, authority = _prepare_one_shot_fixture(tmp_path, monkeypatch)
+    code, _ = _run_one_shot_cli(capsys, run, authority)
+    assert code == 0
+    db = run / "type1_reports" / "current_parent.sqlite3"
+    con = sqlite3.connect(db)
+    con.execute("UPDATE current_parent SET state='MATERIALIZED' WHERE singleton=1")
+    con.commit()
+    con.close()
+    code, receipt = _run_one_shot_cli(capsys, run, authority)
+    assert code == 0
+    assert receipt["mode"] == "RECONCILED"
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT state FROM current_parent WHERE singleton=1").fetchone() == ("COMMITTED",)
+    con.close()
+    assert verify_report_catalog(run)["state"] == "COMMITTED"
+
+
+def test_completed_report_one_shot_cli_rejects_partial_catalog_before_writes(tmp_path, monkeypatch, capsys):
+    run, authority = _prepare_one_shot_fixture(tmp_path, monkeypatch)
+    (run / "type1_reports" / "events").mkdir(parents=True)
+    (run / "type1_reports" / "objects").mkdir()
+    code, receipt = _run_one_shot_cli(capsys, run, authority)
+    assert code == 1
+    assert receipt["report_status"] == "BLOCKED"
+    assert "partial" in receipt["error"]
+    assert all(not path.exists() for path in _authority_file_paths(run))
+
+
+def test_completed_report_one_shot_cli_rejects_wrong_path_and_authority(tmp_path, monkeypatch, capsys):
+    run, authority = _prepare_one_shot_fixture(tmp_path, monkeypatch)
+    code, receipt = _run_one_shot_cli(capsys, run.parent, authority)
+    assert code == 1
+    assert "exact published destination" in receipt["error"]
+    code, receipt = _run_one_shot_cli(capsys, run, run / "frozen_authority_envelope.json")
+    assert code == 1
+    assert "exact type1_authorities" in receipt["error"]
+    authority.write_bytes(_authority_bytes(integrity="different-authority"))
+    code, receipt = _run_one_shot_cli(capsys, run, authority)
+    assert code == 1
+    assert "authority hash" in receipt["error"]
+    assert not (run / "type1_reports").exists()
+    assert all(not path.exists() for path in _authority_file_paths(run))
