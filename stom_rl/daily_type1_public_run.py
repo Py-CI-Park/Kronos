@@ -534,6 +534,18 @@ def _pair_bytes(pairs: Sequence[Mapping[str, Any]]) -> bytes:
             "settlement_date": pair["settlement_date"],
         }))
     return digest.digest()
+def _mutated_validation_rows(
+    validation_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Mutate validation surfaces while preserving the canonical fill invariant."""
+    mutated = copy.deepcopy(list(validation_rows))
+    for row in mutated:
+        row["features"] = {name: "999999.125" for name in FEATURES}
+        row["entry_available"] = not bool(row["entry_available"])
+        row["gross_return"] = "-0.9999" if row["entry_available"] else None
+    return mutated
+
+
 def _production_pretraining_gate(
     operations: "_ProductionOperations",
     train_rows: Sequence[Mapping[str, Any]],
@@ -564,11 +576,7 @@ def _production_pretraining_gate(
         raise ValueError("Type1 BLOCK semantics fixture failed")
     normalizer_before = operations.normalizer_digest()
     train_bytes_before = _pair_bytes(train_pairs)
-    mutated = copy.deepcopy(list(validation_rows))
-    for row in mutated:
-        row["features"] = {name: "999999.125" for name in FEATURES}
-        row["gross_return"] = "-0.9999"
-        row["entry_available"] = not bool(row["entry_available"])
+    mutated = _mutated_validation_rows(validation_rows)
     operations.build_pairs(mutated, split="reused_validation")
     normalizer_after_mutation = operations.normalizer_digest()
     rebuilt_train = operations.build_pairs(train_rows, split="train")

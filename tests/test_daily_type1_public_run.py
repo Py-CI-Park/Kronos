@@ -28,6 +28,7 @@ from stom_rl.daily_type1_public_run import (
     REPLACEMENT_TRAIN_ID,
     REPLACEMENT_CUSTODY_UID,
     _verified_inputs,
+    _mutated_validation_rows,
 )
 
 
@@ -63,6 +64,42 @@ def _rows():
         {"decision_date": REUSED_VALIDATION_END, "symbol": "000002"},
     ]
 
+
+def test_validation_mutation_preserves_fill_invariant() -> None:
+    rows = [
+        {"features": {}, "entry_available": True, "gross_return": "0.1"},
+        {"features": {}, "entry_available": False, "gross_return": None},
+    ]
+    mutated = _mutated_validation_rows(rows)
+    assert mutated == [
+        {
+            "features": {
+                "ret_1d_prev": "999999.125",
+                "ret_5d_prev": "999999.125",
+                "ret_20d_prev": "999999.125",
+                "vol_z_20": "999999.125",
+                "foreign_ratio_prev": "999999.125",
+                "foreign_ratio_delta_5": "999999.125",
+                "inst_netbuy_norm_5": "999999.125",
+            },
+            "entry_available": False,
+            "gross_return": None,
+        },
+        {
+            "features": {
+                "ret_1d_prev": "999999.125",
+                "ret_5d_prev": "999999.125",
+                "ret_20d_prev": "999999.125",
+                "vol_z_20": "999999.125",
+                "foreign_ratio_prev": "999999.125",
+                "foreign_ratio_delta_5": "999999.125",
+                "inst_netbuy_norm_5": "999999.125",
+            },
+            "entry_available": True,
+            "gross_return": "-0.9999",
+        },
+    ]
+    assert rows[0]["gross_return"] == "0.1"
 
 def test_parser_exposes_no_smoke_seed_or_selection_escape_hatches():
     parser = build_parser()
