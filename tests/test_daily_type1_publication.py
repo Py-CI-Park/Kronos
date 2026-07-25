@@ -19,16 +19,26 @@ FIVE_COLUMNS = "date, open, high, low, close, volume"
 FRESH_NO_READ = {"state": "NOT_RUN", "metrics": None, "read_performed": False}
 NORMALIZER_DIGEST = hashlib.sha256(b"runner-normalizer").hexdigest()
 VALIDATION_PAIRS_SHA256 = hashlib.sha256(b"runner-validation-pairs").hexdigest()
+AUTHORITY_ORDERED_SESSIONS = ["2023-12-28", "2023-12-29", "2024-01-02", "2025-06-30"]
+
+
+def _authority_sessions() -> dict[str, object]:
+    return {
+        "count": len(AUTHORITY_ORDERED_SESSIONS),
+        "first": AUTHORITY_ORDERED_SESSIONS[0],
+        "last": AUTHORITY_ORDERED_SESSIONS[-1],
+        "ordered": list(AUTHORITY_ORDERED_SESSIONS),
+        "pairs": [[0, 1], [2, 3]],
+        "parity": 0,
+        "trailing_embargo": [],
+    }
 
 
 def _authority() -> dict[str, object]:
     return {
+        "authority_id": publication.REPLACEMENT_AUTHORITY_ID,
         "stable_symbols": ["000250"],
-        "sessions": {
-            "ordered": ["2023-12-28", "2023-12-29", "2024-01-02", "2025-06-30"],
-            "pairs": [[0, 1], [2, 3]],
-            "trailing_embargo": [],
-        },
+        "sessions": _authority_sessions(),
         "anchor_date": "2017-12-29",
         "ranking": {},
         "provider": {},
@@ -623,6 +633,94 @@ def test_current_runner_recovery_contract_fixture_publishes(tmp_path: Path, monk
     assert receipt["disclosure"]["blocked_receipt_sha256"] == hashlib.sha256((destination / "receipt.json").read_bytes()).hexdigest()
     assert receipt["disclosure"]["members"] == runner_result["receipt"]["member_artifact_sha256"]
     assert len(receipt["disclosure"]["members"]) == 20
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "missing_count",
+        "extra_field",
+        "bad_count",
+        "bad_first",
+        "bad_last",
+        "bad_parity",
+        "duplicate_interior_date",
+        "swapped_interior_dates",
+        "invalid_date",
+        "bad_pairs",
+        "bad_trailing_embargo",
+    ],
+)
+def test_recovered_publication_rejects_authority_session_schema_tampering(tmp_path: Path, tamper: str) -> None:
+    parent = _materialization_parent(tmp_path)
+    source = tmp_path / "artifacts" / "type1-public-runs" / publication.REPLACEMENT_RUN_ID
+    destination = parent / publication.REPLACEMENT_RUN_ID
+    _write_recovered_run(source, parent)
+    manifest_path = source / "recovery_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    sessions = manifest["identities"]["authority_sessions"]
+    if tamper == "missing_count":
+        sessions.pop("count")
+    elif tamper == "extra_field":
+        sessions["legacy_pairs"] = []
+    elif tamper == "bad_count":
+        sessions["count"] += 1
+    elif tamper == "bad_first":
+        sessions["first"] = "2023-12-29"
+    elif tamper == "bad_last":
+        sessions["last"] = "2024-01-02"
+    elif tamper == "bad_parity":
+        sessions["parity"] = 1
+    elif tamper == "duplicate_interior_date":
+        sessions["ordered"][2] = sessions["ordered"][1]
+    elif tamper == "swapped_interior_dates":
+        sessions["ordered"][1], sessions["ordered"][2] = sessions["ordered"][2], sessions["ordered"][1]
+    elif tamper == "invalid_date":
+        sessions["ordered"][2] = "2024-02-30"
+    elif tamper == "bad_pairs":
+        sessions["pairs"] = [[0, 2], [1, 3]]
+    elif tamper == "bad_trailing_embargo":
+        sessions["trailing_embargo"] = [3]
+    else:
+        raise AssertionError(tamper)
+    manifest_path.write_bytes(canonical_json_bytes(manifest))
+
+    with pytest.raises(publication.Type1PublicationError):
+        _publish(source, destination)
+
+    assert source.is_dir()
+    assert not destination.exists()
+
+def test_recovered_publication_rejects_authority_session_artifact_mismatch(tmp_path: Path) -> None:
+    parent = _materialization_parent(tmp_path)
+    source = tmp_path / "artifacts" / "type1-public-runs" / publication.REPLACEMENT_RUN_ID
+    destination = parent / publication.REPLACEMENT_RUN_ID
+    _write_recovered_run(source, parent)
+
+    manifest_path = source / "recovery_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["identities"]["authority_sessions"] = {
+        "count": 4,
+        "first": "2023-12-27",
+        "last": "2025-06-30",
+        "ordered": ["2023-12-27", "2023-12-28", "2024-01-02", "2025-06-30"],
+        "pairs": [[0, 1], [2, 3]],
+        "parity": 0,
+        "trailing_embargo": [],
+    }
+    manifest_raw = canonical_json_bytes(manifest)
+    manifest_path.write_bytes(manifest_raw)
+
+    receipt_path = source / "recovery_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["recovery_manifest_sha256"] = hashlib.sha256(manifest_raw).hexdigest()
+    receipt_path.write_bytes(canonical_json_bytes(receipt))
+
+    with pytest.raises(publication.Type1PublicationError, match="authority_sessions"):
+        _publish(source, destination)
+
+    assert source.is_dir()
+    assert not destination.exists()
 
 
 def test_bare_block_without_recovery_manifest_and_receipt_is_rejected(tmp_path: Path) -> None:

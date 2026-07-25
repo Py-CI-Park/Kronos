@@ -23,6 +23,19 @@ _AUTHORITY_FILES = (
     "authority.json",
 )
 _REPORT_EVIDENCE_LABELS = REPORT_EVIDENCE_LABELS
+_AUTHORITY_ORDERED_SESSIONS = ["2023-12-28", "2023-12-29", "2024-01-02", "2025-06-30"]
+
+
+def _authority_sessions():
+    return {
+        "count": len(_AUTHORITY_ORDERED_SESSIONS),
+        "first": _AUTHORITY_ORDERED_SESSIONS[0],
+        "last": _AUTHORITY_ORDERED_SESSIONS[-1],
+        "ordered": list(_AUTHORITY_ORDERED_SESSIONS),
+        "pairs": [[0, 1], [2, 3]],
+        "parity": 0,
+        "trailing_embargo": [],
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +47,7 @@ def _allow_synthetic_authority(monkeypatch):
             raise ValueError("synthetic authority envelope is invalid")
 
     monkeypatch.setattr(authority_module, "validate_authority", validate_authority)
+    monkeypatch.setattr(authority_module, "canonical_json", type1_report._canonical)
 
 
 def _authority_envelope(*, authority_id=IDENTITY["authority_id"], integrity="test"):
@@ -42,7 +56,7 @@ def _authority_envelope(*, authority_id=IDENTITY["authority_id"], integrity="tes
         "authority": {
             "authority_id": authority_id,
             "fresh_oos": {"status": "NOT_RUN", "no_read": True},
-            "sessions": {"ordered": [], "pairs": [], "trailing_embargo": []},
+            "sessions": _authority_sessions(),
         },
         "integrity": {"test_only": integrity},
     }
@@ -305,7 +319,7 @@ def _prepare_completed_runner(run, *, execution_status="COMPLETE", verdict="NO_G
     amendment_sha = type1_report._sha(AMENDMENT_PATH.read_bytes())
     dataset_manifest = {
         "dataset_id": IDENTITY["dataset_id"],
-        "authority": {"authority_id": IDENTITY["authority_id"], "sessions": {"ordered": [], "pairs": [], "trailing_embargo": []}},
+        "authority": {"authority_id": IDENTITY["authority_id"], "sessions": _authority_sessions()},
         "authority_sha256": authority_sha,
         "amendment_id": "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004",
         "amendment_sha256": amendment_sha,
@@ -983,6 +997,72 @@ def test_report_rejects_recovered_block_recovery_publication_tampering(tmp_path,
         _rebind_recovered_revision(tmp_path, revision)
     with pytest.raises(Type1ReportError):
         insert_report_revision(tmp_path, revision)
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "missing_count",
+        "extra_field",
+        "bad_count",
+        "bad_first",
+        "bad_last",
+        "bad_parity",
+        "duplicate_interior_date",
+        "swapped_interior_dates",
+        "invalid_date",
+        "bad_pairs",
+        "bad_trailing_embargo",
+    ],
+)
+def test_report_rejects_authority_session_schema_tampering(tamper):
+    sessions = _authority_sessions()
+    assert type1_report._validate_authority_sessions(sessions, "fixture") == sessions
+    if tamper == "missing_count":
+        sessions.pop("count")
+    elif tamper == "extra_field":
+        sessions["legacy_pairs"] = []
+    elif tamper == "bad_count":
+        sessions["count"] += 1
+    elif tamper == "bad_first":
+        sessions["first"] = "2023-12-29"
+    elif tamper == "bad_last":
+        sessions["last"] = "2024-01-02"
+    elif tamper == "bad_parity":
+        sessions["parity"] = 1
+    elif tamper == "duplicate_interior_date":
+        sessions["ordered"][2] = sessions["ordered"][1]
+    elif tamper == "swapped_interior_dates":
+        sessions["ordered"][1], sessions["ordered"][2] = sessions["ordered"][2], sessions["ordered"][1]
+    elif tamper == "invalid_date":
+        sessions["ordered"][2] = "2024-02-30"
+    elif tamper == "bad_pairs":
+        sessions["pairs"] = [[0, 2], [1, 3]]
+    elif tamper == "bad_trailing_embargo":
+        sessions["trailing_embargo"] = [3]
+    else:
+        raise AssertionError(tamper)
+
+    with pytest.raises(Type1ReportError, match="authority session"):
+        type1_report._validate_authority_sessions(sessions, "fixture")
+
+def test_report_rejects_recovered_identity_authority_session_artifact_mismatch(tmp_path):
+    _recovered_revision(tmp_path)
+    mismatch = {
+        "count": 4,
+        "first": "2023-12-27",
+        "last": "2025-06-30",
+        "ordered": ["2023-12-27", "2023-12-28", "2024-01-02", "2025-06-30"],
+        "pairs": [[0, 1], [2, 3]],
+        "parity": 0,
+        "trailing_embargo": [],
+    }
+    _mutate_json(
+        tmp_path / "recovery_manifest.json",
+        lambda manifest: manifest["identities"].update({"authority_sessions": mismatch}),
+    )
+    _refresh_recovered_hash_bindings(tmp_path)
+    with pytest.raises(Type1ReportError, match="authority sessions"):
+        report_source_sha256(tmp_path)
 
 
 @pytest.mark.parametrize(

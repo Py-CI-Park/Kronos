@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import stat
+from datetime import date
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -55,6 +56,7 @@ _RUN_EVIDENCE_MODE_RECOVERED = "RECOVERED_AFTER_BLOCK"
 _ORIGINAL_BLOCK_REASON = ORIGINAL_BLOCKED_REASON
 _FRESH_RUN_NOT_RUN = {"state": "NOT_RUN", "metrics": None}
 _FRESH_NO_READ = {"state": "NOT_RUN", "metrics": None, "read_performed": False}
+_PUBLIC_ROWS_MAX_BYTES = 512 * 1024 * 1024
 _FRESH_MATERIALIZER_NOT_RUN = {"state": "NOT_RUN", "read_performed": False}
 _ORIGINAL_BLOCK_RECEIPT = {
     "execution_status": "BLOCK",
@@ -164,6 +166,15 @@ _RECOVERY_IDENTITY_KEYS = frozenset({
     "parent_protocol_sha256",
     "runner_source_sha256",
     "authority_sessions",
+})
+_RECOVERY_AUTHORITY_SESSION_KEYS = frozenset({
+    "count",
+    "first",
+    "last",
+    "ordered",
+    "pairs",
+    "parity",
+    "trailing_embargo",
 })
 _RECOVERY_SOURCE_SHA256_KEYS = frozenset({
     "runner",
@@ -471,7 +482,7 @@ def _verify_recovered_run_root(root: Path, *, allow_publication_receipt: bool) -
     recovery_receipt, recovery_receipt_raw = _read_canonical_object(root / "recovery_receipt.json", "recovery receipt")
     recovery_manifest_sha = _sha(recovery_manifest_raw)
     recovery_receipt_sha = _sha(recovery_receipt_raw)
-    source_hashes, identities = _validate_recovery_manifest(recovery_manifest, recovery_manifest_sha, blocked_receipt_sha)
+    source_hashes, identities, authority_custody_binding = _validate_recovery_manifest(recovery_manifest, recovery_manifest_sha, blocked_receipt_sha)
     member_artifact_sha256 = _verify_recovered_members(root, recovery_manifest)
     _validate_recovery_receipt(
         recovery_receipt,
@@ -492,6 +503,7 @@ def _verify_recovered_run_root(root: Path, *, allow_publication_receipt: bool) -
         "fresh_oos": dict(_FRESH_NO_READ),
         "artifact_sha256": dict(member_artifact_sha256),
         "source_hashes": dict(source_hashes),
+        "authority_custody_binding": dict(authority_custody_binding),
         "identities": dict(identities),
     }
 
@@ -585,7 +597,7 @@ def _validate_recovery_manifest(
     manifest: Mapping[str, Any],
     manifest_sha: str,
     blocked_receipt_sha: str,
-) -> tuple[dict[str, str], Mapping[str, Any]]:
+) -> tuple[dict[str, str], Mapping[str, Any], Mapping[str, Any]]:
     _require_exact_keys(manifest, _RECOVERY_MANIFEST_KEYS, "recovery manifest")
     if manifest_sha != _sha(canonical_json_bytes(dict(manifest))):
         raise Type1PublicationError("recovery manifest is not canonical")
@@ -629,11 +641,11 @@ def _validate_recovery_manifest(
     session_pairing = _validate_recovery_session_pairing(manifest["session_pairing"])
     if session_pairing["trailing_embargo"] != identities["authority_sessions"]["trailing_embargo"]:
         raise Type1PublicationError("recovery manifest session pairing does not match authority sessions")
-    _validate_recovery_custody_bindings(manifest["custody_bindings"], source_hashes, blocked_receipt_sha)
+    custody_bindings = _validate_recovery_custody_bindings(manifest["custody_bindings"], source_hashes, blocked_receipt_sha)
     controls = manifest["controls"]
     if not isinstance(controls, Mapping) or controls.get("integrity_ok") is not True:
         raise Type1PublicationError("recovery controls integrity is not complete")
-    return source_hashes, identities
+    return source_hashes, identities, custody_bindings["authority"]
 
 
 def _validate_recovery_receipt(
@@ -770,6 +782,126 @@ def _require_exact_keys(value: Any, expected: set[str] | frozenset[str], label: 
         raise Type1PublicationError(f"{label} must contain exactly these fields: {required}")
     return value
 
+def _parse_exact_iso_date(value: Any, label: str) -> date:
+    if (
+        not isinstance(value, str)
+        or len(value) != 10
+        or value[4] != "-"
+        or value[7] != "-"
+        or not (value[:4] + value[5:7] + value[8:]).isdigit()
+    ):
+        raise Type1PublicationError(f"{label} must be an exact ISO date")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise Type1PublicationError(f"{label} must be an exact ISO date") from exc
+    if parsed.isoformat() != value:
+        raise Type1PublicationError(f"{label} must be an exact ISO date")
+    return parsed
+
+
+def _validate_ordered_authority_dates(ordered: list[Any], label: str) -> None:
+    previous: date | None = None
+    seen: set[str] = set()
+    for index, session in enumerate(ordered):
+        parsed = _parse_exact_iso_date(session, f"{label} ordered session {index}")
+        if session in seen or (previous is not None and parsed <= previous):
+            raise Type1PublicationError(f"{label} ordered sessions must be unique and strictly increasing ISO dates")
+        seen.add(session)
+        previous = parsed
+
+
+def _exact_index_pairs(value: Any, expected: list[list[int]]) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == len(expected)
+        and all(
+            isinstance(pair, list)
+            and len(pair) == 2
+            and all(type(item) is int for item in pair)
+            for pair in value
+        )
+        and value == expected
+    )
+
+
+def _exact_index_list(value: Any, expected: list[int]) -> bool:
+    return isinstance(value, list) and all(type(item) is int for item in value) and value == expected
+
+
+
+
+def _validate_recovery_authority_sessions(value: Any, label: str) -> Mapping[str, Any]:
+    sessions = _require_exact_keys(value, _RECOVERY_AUTHORITY_SESSION_KEYS, label)
+    count = sessions["count"]
+    first = sessions["first"]
+    last = sessions["last"]
+    ordered = sessions["ordered"]
+    pairs = sessions["pairs"]
+    parity = sessions["parity"]
+    trailing_embargo = sessions["trailing_embargo"]
+    if (
+        type(count) is not int
+        or type(parity) is not int
+        or not isinstance(first, str)
+        or not isinstance(last, str)
+        or not isinstance(ordered, list)
+        or not isinstance(pairs, list)
+        or not isinstance(trailing_embargo, list)
+        or count <= 0
+        or len(ordered) != count
+        or first != ordered[0]
+        or last != ordered[-1]
+        or parity != count % 2
+    ):
+        raise Type1PublicationError(f"{label} count/first/last/parity do not match ordered sessions")
+    _validate_ordered_authority_dates(ordered, label)
+    expected_pairs = [[index, index + 1] for index in range(0, count - parity, 2)]
+    expected_trailing_embargo = [count - 1] if parity else []
+    if not _exact_index_pairs(pairs, expected_pairs) or not _exact_index_list(trailing_embargo, expected_trailing_embargo):
+        raise Type1PublicationError(f"{label} pairs and trailing_embargo do not match ordered session parity")
+    return sessions
+
+def _authority_sessions_from_artifact(value: Mapping[str, Any], label: str) -> Mapping[str, Any]:
+    if set(value) == {"authority", "integrity", "schema"}:
+        authority = value.get("authority")
+        if value.get("schema") != "kronos.type1.krx-public-authority.v2" or not isinstance(authority, Mapping):
+            raise Type1PublicationError(f"{label} does not bind the frozen authority envelope")
+    else:
+        authority = value
+    if not isinstance(authority, Mapping) or authority.get("authority_id") != REPLACEMENT_AUTHORITY_ID:
+        raise Type1PublicationError(f"{label} does not bind the frozen authority identity")
+    return _validate_recovery_authority_sessions(authority.get("sessions"), f"{label} authority_sessions")
+
+
+def _resolve_bound_authority_path(value: Any) -> Path:
+    if not isinstance(value, str) or not value:
+        raise Type1PublicationError("recovery custody authority path is missing")
+    candidate = Path(value)
+    if candidate.is_absolute():
+        return candidate
+    normalized = value.replace("\\", "/").strip("/")
+    if normalized.startswith("../") or "/../" in normalized or normalized in {".", ".."}:
+        raise Type1PublicationError("recovery custody authority path escapes the repository")
+    return REPO_ROOT / Path(normalized)
+
+
+def _read_bound_authority_sessions(binding: Any, expected_sha256: str) -> Mapping[str, Any]:
+    ref = _require_exact_keys(binding, {"path", "sha256"}, "recovery custody authority")
+    if ref["sha256"] != expected_sha256:
+        raise Type1PublicationError("recovery custody authority sha256 does not match")
+    authority, raw = _read_canonical_object(_resolve_bound_authority_path(ref["path"]), "frozen authority artifact")
+    if _sha(raw) != expected_sha256:
+        raise Type1PublicationError("frozen authority artifact hash does not match recovery custody")
+    return _authority_sessions_from_artifact(authority, "frozen authority artifact")
+
+
+def _validate_authority_sessions_match(actual: Any, expected: Any, label: str) -> Mapping[str, Any]:
+    actual_sessions = _validate_recovery_authority_sessions(actual, label)
+    expected_sessions = _validate_recovery_authority_sessions(expected, "frozen authority artifact authority_sessions")
+    if actual_sessions != expected_sessions:
+        raise Type1PublicationError(f"{label} do not match frozen authority artifact sessions")
+    return actual_sessions
 
 def _validate_recovery_identities(value: Any) -> Mapping[str, Any]:
     identities = _require_exact_keys(value, _RECOVERY_IDENTITY_KEYS, "recovery manifest identities")
@@ -786,19 +918,9 @@ def _validate_recovery_identities(value: Any) -> Mapping[str, Any]:
         "runner_source_sha256",
     ):
         _require_sha256(identities[key], f"recovery identity {key}")
-    authority_sessions = _require_exact_keys(
-        identities["authority_sessions"],
-        {"ordered", "pairs", "trailing_embargo"},
-        "recovery identity authority_sessions",
-    )
     if not isinstance(identities["source_database_identity"], Mapping):
         raise Type1PublicationError("recovery identity source database must be a bound mapping")
-    if (
-        not isinstance(authority_sessions["ordered"], list)
-        or not isinstance(authority_sessions["pairs"], list)
-        or not isinstance(authority_sessions["trailing_embargo"], list)
-    ):
-        raise Type1PublicationError("recovery identity authority sessions must bind ordered pairs and trailing_embargo")
+    _validate_recovery_authority_sessions(identities["authority_sessions"], "recovery identity authority_sessions")
     return identities
 
 
@@ -845,7 +967,7 @@ def _validate_recovery_custody_bindings(
     value: Any,
     source_hashes: Mapping[str, str],
     blocked_receipt_sha: str,
-) -> None:
+) -> Mapping[str, Any]:
     custody = _require_exact_keys(value, _RECOVERY_CUSTODY_BINDING_KEYS, "recovery manifest custody_bindings")
     expected = {
         "blocked_receipt": ("receipt.json", blocked_receipt_sha),
@@ -861,6 +983,7 @@ def _validate_recovery_custody_bindings(
     }
     for name, (path_suffix, expected_sha) in expected.items():
         _validate_custody_ref(custody[name], path_suffix, expected_sha, f"recovery custody {name}")
+    return custody
 
 
 def _validate_custody_ref(value: Any, expected_path_suffix: str | None, expected_sha256: str, label: str) -> None:
@@ -908,6 +1031,8 @@ def _verify_run_materializer_bindings(run_evidence: Mapping[str, Any], materiali
         or recovery_hashes["materializer_complete_receipt"] != materializer_evidence["materializer_complete_receipt_sha256"]
     ):
         raise Type1PublicationError("recovery source hashes do not match the materializer evidence")
+    frozen_sessions = _read_bound_authority_sessions(run_evidence.get("authority_custody_binding"), recovery_hashes["authority"])
+    _validate_authority_sessions_match(identities.get("authority_sessions"), frozen_sessions, "recovery identity authority_sessions")
 
 
 def _materializer_receipt_hashes(materializer_evidence: Mapping[str, Any]) -> dict[str, str]:
@@ -957,7 +1082,7 @@ def _verify_materializer_artifacts(parent: Path) -> dict[str, Any]:
     identities = [(path.stat().st_dev, path.stat().st_ino) for path in (rows_path, manifest_path, receipt_path)]
     if len(set(identities)) != 3:
         raise Type1PublicationError("materializer artifacts must remain physically distinct files")
-    rows_raw = _read_bytes(rows_path, "public rows")
+    rows_raw = _read_bytes(rows_path, "public rows", maximum=_PUBLIC_ROWS_MAX_BYTES)
     manifest, manifest_raw = _read_canonical_object(manifest_path, "dataset manifest")
     receipt, receipt_raw = _read_canonical_object(receipt_path, "materializer receipt")
     try:

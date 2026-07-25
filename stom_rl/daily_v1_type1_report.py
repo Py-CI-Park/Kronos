@@ -13,6 +13,7 @@ import os
 import re
 import sqlite3
 import stat
+from datetime import date
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping, Sequence
@@ -26,6 +27,7 @@ REVISION_SCHEMA = "kronos_type1_report_revision.v2"
 MATERIALIZATION_SCHEMA = "kronos_type1_report_materialization.v2"
 TIP_SCHEMA = "kronos_type1_committed_report_tip.v2"
 BUILDER_VERSION = "kronos_type1_report_builder.v2"
+_PUBLIC_ROWS_MAX_BYTES = 512 * 1024 * 1024
 REPLACEMENT_IDENTITY = {
     "authority_id": "type1-krx-authority-20260724-004",
     "dataset_id": "type1-close-20260803-005",
@@ -208,6 +210,15 @@ _RECOVERY_IDENTITY_KEYS = frozenset({
     "runner_source_sha256",
     "authority_sessions",
 })
+_RECOVERY_AUTHORITY_SESSION_KEYS = frozenset({
+    "count",
+    "first",
+    "last",
+    "ordered",
+    "pairs",
+    "parity",
+    "trailing_embargo",
+})
 PARENT_ATTEMPT_IDENTITY = {
     "dataset_id": "type1-close-20260803-004",
     "train_id": "type1-public-004",
@@ -350,6 +361,10 @@ def _read_bytes(path: Path, label: str, *, maximum: int = 64 * 1024 * 1024) -> b
         raise Type1ReportError(f"required report source changed while read: {label}")
     return raw
 
+def _read_report_source_bytes(path: Path, label: str) -> bytes:
+    maximum = _PUBLIC_ROWS_MAX_BYTES if label == "public_rows" else 64 * 1024 * 1024
+    return _read_bytes(path, label, maximum=maximum)
+
 def _read_canonical(path: Path, label: str) -> tuple[dict[str, Any], bytes]:
     try:
         raw = _read_bytes(path, label)
@@ -392,7 +407,100 @@ def _validate_recovery_source_sha256(value: Any, sources: Mapping[str, Any], lab
             raise Type1ReportError(f"{label} source hash mismatch")
 
 
-def _validate_recovery_identity(value: Any, sources: Mapping[str, Any], label: str) -> Mapping[str, Any]:
+def _parse_exact_iso_date(value: Any, label: str) -> date:
+    if (
+        not isinstance(value, str)
+        or len(value) != 10
+        or value[4] != "-"
+        or value[7] != "-"
+        or not (value[:4] + value[5:7] + value[8:]).isdigit()
+    ):
+        raise Type1ReportError(f"{label} authority session must be an exact ISO date")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise Type1ReportError(f"{label} authority session must be an exact ISO date") from exc
+    if parsed.isoformat() != value:
+        raise Type1ReportError(f"{label} authority session must be an exact ISO date")
+    return parsed
+
+
+def _validate_ordered_authority_dates(ordered: list[Any], label: str) -> None:
+    previous: date | None = None
+    seen: set[str] = set()
+    for index, session in enumerate(ordered):
+        parsed = _parse_exact_iso_date(session, f"{label} ordered session {index}")
+        if session in seen or (previous is not None and parsed <= previous):
+            raise Type1ReportError(f"{label} authority session ordered dates must be unique and strictly increasing ISO dates")
+        seen.add(session)
+        previous = parsed
+
+
+def _exact_index_pairs(value: Any, expected: list[list[int]]) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == len(expected)
+        and all(
+            isinstance(pair, list)
+            and len(pair) == 2
+            and all(type(item) is int for item in pair)
+            for pair in value
+        )
+        and value == expected
+    )
+
+
+def _exact_index_list(value: Any, expected: list[int]) -> bool:
+    return isinstance(value, list) and all(type(item) is int for item in value) and value == expected
+
+
+def _validate_authority_sessions(value: Any, label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != _RECOVERY_AUTHORITY_SESSION_KEYS:
+        raise Type1ReportError(f"{label} authority session schema is invalid")
+    count = value["count"]
+    first = value["first"]
+    last = value["last"]
+    ordered = value["ordered"]
+    pairs = value["pairs"]
+    parity = value["parity"]
+    trailing_embargo = value["trailing_embargo"]
+    if (
+        type(count) is not int
+        or type(parity) is not int
+        or not isinstance(first, str)
+        or not isinstance(last, str)
+        or not isinstance(ordered, list)
+        or not isinstance(pairs, list)
+        or not isinstance(trailing_embargo, list)
+        or count <= 0
+        or len(ordered) != count
+        or first != ordered[0]
+        or last != ordered[-1]
+        or parity != count % 2
+    ):
+        raise Type1ReportError(f"{label} authority session count/first/last/parity are inconsistent")
+    _validate_ordered_authority_dates(ordered, label)
+    expected_pairs = [[index, index + 1] for index in range(0, count - parity, 2)]
+    expected_trailing_embargo = [count - 1] if parity else []
+    if not _exact_index_pairs(pairs, expected_pairs) or not _exact_index_list(trailing_embargo, expected_trailing_embargo):
+        raise Type1ReportError(f"{label} authority session pairing is inconsistent")
+    return value
+def _validate_authority_sessions_match(actual: Any, expected: Any, label: str) -> Mapping[str, Any]:
+    actual_sessions = _validate_authority_sessions(actual, label)
+    expected_sessions = _validate_authority_sessions(expected, "frozen authority envelope")
+    if actual_sessions != expected_sessions:
+        raise Type1ReportError(f"{label} authority sessions do not match frozen authority envelope sessions")
+    return actual_sessions
+
+
+
+
+def _validate_recovery_identity(
+    value: Any,
+    sources: Mapping[str, Any],
+    label: str,
+    authority_sessions: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any]:
     if not isinstance(value, Mapping) or set(value) != _RECOVERY_IDENTITY_KEYS:
         raise Type1ReportError(f"{label} does not match the recovered runner identity schema")
     if {key: value.get(key) for key in REPLACEMENT_IDENTITY} != REPLACEMENT_IDENTITY:
@@ -413,15 +521,10 @@ def _validate_recovery_identity(value: Any, sources: Mapping[str, Any], label: s
     _require_sha(value.get("materializer_source_sha256"), f"{label} materializer_source_sha256")
     if not isinstance(value.get("source_database_identity"), Mapping):
         raise Type1ReportError(f"{label} source database identity is missing")
-    sessions = value.get("authority_sessions")
-    if not isinstance(sessions, Mapping) or set(sessions) != {"ordered", "pairs", "trailing_embargo"}:
-        raise Type1ReportError(f"{label} authority session schema is invalid")
-    if (
-        not isinstance(sessions.get("ordered"), list)
-        or not isinstance(sessions.get("pairs"), list)
-        or not isinstance(sessions.get("trailing_embargo"), list)
-    ):
-        raise Type1ReportError(f"{label} authority session values are invalid")
+    if authority_sessions is None:
+        _validate_authority_sessions(value.get("authority_sessions"), label)
+    else:
+        _validate_authority_sessions_match(value.get("authority_sessions"), authority_sessions, label)
     return value
 
 
@@ -473,10 +576,9 @@ def _authority_payload(envelope: Mapping[str, Any], label: str) -> Mapping[str, 
         or not isinstance(authority, Mapping)
         or authority.get("authority_id") != REPLACEMENT_IDENTITY["authority_id"]
         or authority.get("fresh_oos") != {"status": "NOT_RUN", "no_read": True}
-        or not isinstance(sessions, Mapping)
-        or not {"ordered", "pairs", "trailing_embargo"} <= set(sessions)
     ):
         raise Type1ReportError(f"{label} does not bind the frozen v5 authority")
+    _validate_authority_sessions(sessions, label)
     return authority
 
 def _validate_frozen_authority_envelope(envelope: Mapping[str, Any], raw: bytes, label: str) -> None:
@@ -694,8 +796,13 @@ def report_source_sha256(run_dir: str | Path) -> dict[str, str]:
         for label in ("amendment", "protocol", "preregistration", "type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "authority")
     }
     _validate_authority_sources(fixed)
-    sources = {label: _sha(_read_bytes(path, label)) for label, path in paths.items()}
-    _validate_publication_receipt(directory, sources)
+    sources = {label: _sha(_read_report_source_bytes(path, label)) for label, path in paths.items()}
+    authority_sessions = (
+        _authority_payload(fixed["authority"], "authority source")["sessions"]
+        if _source_evidence_mode(sources) == RECOVERED_RUN_EVIDENCE_MODE
+        else None
+    )
+    _validate_publication_receipt(directory, sources, authority_sessions)
     return sources
 
 def _publication_expected_materializer(sources: Mapping[str, Any]) -> dict[str, Any]:
@@ -766,7 +873,12 @@ def _validate_completed_publication_receipt(receipt: Mapping[str, Any], sources:
     _validate_publication_hash_maps(materializer, receipt.get("member_artifact_sha256"), expected_materializer, expected_members)
 
 
-def _validate_recovered_publication_receipt(receipt: Mapping[str, Any], sources: Mapping[str, Any], raw: bytes) -> None:
+def _validate_recovered_publication_receipt(
+    receipt: Mapping[str, Any],
+    sources: Mapping[str, Any],
+    raw: bytes,
+    authority_sessions: Mapping[str, Any] | None,
+) -> None:
     materializer = receipt.get("materializer_sha256")
     expected_materializer = _publication_expected_materializer(sources)
     expected_members = _expected_member_artifact_sha256(sources)
@@ -804,7 +916,7 @@ def _validate_recovered_publication_receipt(receipt: Mapping[str, Any], sources:
         or receipt.get("publisher_source_sha256") != expected_publisher_source_sha256
     ):
         raise Type1ReportError("publication receipt does not prove the recovered v5 publication move")
-    _validate_recovery_identity(receipt.get("identity"), sources, "publication receipt identity")
+    _validate_recovery_identity(receipt.get("identity"), sources, "publication receipt identity", authority_sessions)
     _require_sha(receipt.get("recovery_receipt_sha256"), "publication recovery receipt SHA")
     _require_sha(receipt.get("materializer_source_sha256"), "publication materializer source SHA")
     _validate_publication_fresh_oos(receipt.get("fresh_oos"))
@@ -838,14 +950,14 @@ def _validate_recovered_publication_receipt(receipt: Mapping[str, Any], sources:
         raise Type1ReportError("publication receipt materializer source hash mismatch")
 
 
-def _validate_publication_receipt(root: Path, sources: Mapping[str, Any]) -> None:
+def _validate_publication_receipt(root: Path, sources: Mapping[str, Any], authority_sessions: Mapping[str, Any] | None = None) -> None:
     receipt, raw = _read_canonical(_safe_child(root, Path(PUBLICATION_RECEIPT_NAME)), "publication receipt")
     mode = _source_evidence_mode(sources)
     if mode == COMPLETED_RUN_EVIDENCE_MODE and receipt.get("schema_version") == PUBLICATION_RECEIPT_SCHEMA_V1:
         _validate_completed_publication_receipt(receipt, sources, raw)
         return
     if mode == RECOVERED_RUN_EVIDENCE_MODE and receipt.get("schema_version") == PUBLICATION_RECEIPT_SCHEMA_V2:
-        _validate_recovered_publication_receipt(receipt, sources, raw)
+        _validate_recovered_publication_receipt(receipt, sources, raw, authority_sessions)
         return
     raise Type1ReportError("publication receipt schema does not match runner evidence mode")
 
@@ -906,7 +1018,12 @@ def _read_original_block_receipt(root: Path, expected_receipt_sha256: Any = None
     return receipt, receipt_sha256
 
 
-def _read_recovery_manifest(root: Path, sources: Mapping[str, Any], blocked_receipt_sha256: str) -> tuple[dict[str, Any], str]:
+def _read_recovery_manifest(
+    root: Path,
+    sources: Mapping[str, Any],
+    blocked_receipt_sha256: str,
+    authority_sessions: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any], str]:
     manifest, raw = _read_canonical(_safe_child(root, Path("recovery_manifest.json")), "recovery manifest")
     manifest_sha256 = _sha(raw)
     if manifest_sha256 != sources.get("recovery_manifest"):
@@ -958,7 +1075,7 @@ def _read_recovery_manifest(root: Path, sources: Mapping[str, Any], blocked_rece
     ):
         raise Type1ReportError("recovery manifest violates the append-only no-go contract")
     _validate_recovery_source_sha256(manifest.get("source_sha256"), sources, "recovery manifest")
-    identities = _validate_recovery_identity(manifest.get("identities"), sources, "recovery manifest identity")
+    identities = _validate_recovery_identity(manifest.get("identities"), sources, "recovery manifest identity", authority_sessions)
     if manifest["session_pairing"].get("trailing_embargo") != identities["authority_sessions"]["trailing_embargo"]:
         raise Type1ReportError("recovery manifest session pairing does not match authority sessions")
     _validate_recovery_custody_bindings(root, manifest.get("custody_bindings"), sources, blocked_receipt_sha256)
@@ -1022,6 +1139,7 @@ def _validate_materializer_evidence(root: Path, sources: Mapping[str, Any]) -> N
     public_rows_bytes = _read_bytes(
         _safe_child(root.parent, Path("public_rows.json")),
         "public rows",
+        maximum=_PUBLIC_ROWS_MAX_BYTES,
     )
     try:
         public_rows = json.loads(public_rows_bytes.decode("utf-8"))
@@ -1214,27 +1332,37 @@ def _validate_completed_runner_evidence(root: Path, sources: Mapping[str, Any]) 
     _validate_runner_manifest_body(root, manifest, sources, recovered=False)
 
 
-def _validate_recovered_runner_evidence(root: Path, sources: Mapping[str, Any]) -> None:
+def _validate_recovered_runner_evidence(root: Path, sources: Mapping[str, Any], authority_sessions: Mapping[str, Any] | None) -> None:
     _, blocked_receipt_sha256 = _read_original_block_receipt(root, sources.get("blocked_receipt"))
-    manifest, recovery_manifest_sha256 = _read_recovery_manifest(root, sources, blocked_receipt_sha256)
+    manifest, recovery_manifest_sha256 = _read_recovery_manifest(root, sources, blocked_receipt_sha256, authority_sessions)
     _validate_materializer_evidence(root, sources)
     _validate_runner_manifest_body(root, manifest, sources, recovered=True)
     _validate_recovery_receipt(root, sources, recovery_manifest_sha256)
-    _validate_publication_receipt(root, sources)
+    _validate_publication_receipt(root, sources, authority_sessions)
 
 
-def _validate_runner_evidence(run_dir: str | Path, sources: Mapping[str, Any]) -> None:
+def _validate_runner_evidence(
+    run_dir: str | Path,
+    sources: Mapping[str, Any],
+    authority_sessions: Mapping[str, Any] | None = None,
+) -> None:
     root = Path(run_dir).absolute()
     mode = _runner_evidence_mode(root)
     if mode == COMPLETED_RUN_EVIDENCE_MODE:
         _validate_completed_runner_evidence(root, sources)
     else:
-        _validate_recovered_runner_evidence(root, sources)
+        expected_authority_sessions = authority_sessions
+        if expected_authority_sessions is None:
+            authority, raw = _read_authority_source(_safe_child(root, _SOURCE_LOCAL_PATHS["authority"]), "authority source")
+            if _sha(raw) != sources.get("authority"):
+                raise Type1ReportError("authority source hash mismatch")
+            expected_authority_sessions = _authority_payload(authority, "authority source")["sessions"]
+        _validate_recovered_runner_evidence(root, sources, expected_authority_sessions)
 
 def _uninitialized_report_source_sha256(directory: Path, authority_sha256: str) -> dict[str, str]:
     paths = _report_source_paths(directory)
     skipped = set(_AUTHORITY_ARTIFACT_LABELS)
-    sources = {label: _sha(_read_bytes(path, label)) for label, path in paths.items() if label not in skipped}
+    sources = {label: _sha(_read_report_source_bytes(path, label)) for label, path in paths.items() if label not in skipped}
     sources["authority"] = authority_sha256
     return sources
 
@@ -1303,7 +1431,7 @@ def initialize_report_authority(run_dir: str | Path, frozen_authority_envelope_p
     authority_sha256 = _sha(authority_raw)
     _validate_runner_authority_binding(manifest, authority, authority_sha256)
     sources = _uninitialized_report_source_sha256(directory, authority_sha256)
-    _validate_runner_evidence(directory, sources)
+    _validate_runner_evidence(directory, sources, authority_sessions=authority["sessions"])
     artifacts = _report_authority_artifact_bytes(authority_raw, authority_sha256)
     _validate_pending_report_authority_sources(directory, artifacts)
     targets = _preflight_report_authority_targets(directory, artifacts)
