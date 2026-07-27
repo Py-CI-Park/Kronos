@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 from pathlib import Path
 
-from stom_rl.rl_discovery.gates import ArmOutcome, GateResult, RunProfile
+from stom_rl.rl_discovery.gates import ArmOutcome, GateResult, RunProfile, evaluate_discovery_gate
 from stom_rl.rl_discovery.lifecycle_evidence import receipt_payload, state_payload, write_dashboard
 from stom_rl.rl_discovery.lifecycle_schema import (
     LifecycleIntegrityError,
@@ -147,6 +147,9 @@ class DiscoveryLifecycle:
         )
         if gate.status != expected_status.value:
             raise LifecycleIntegrityError("gate_status", "must match lifecycle profile")
+        computed_gate = evaluate_discovery_gate(self._outcomes, profile=self._state.profile)
+        if gate != computed_gate:
+            raise LifecycleIntegrityError("gate", "must equal the gate recomputed from recorded outcomes")
         receipt_path = contained_path(self.run_dir, "terminal_receipt.json")
         if receipt_path.exists():
             raise TerminalRunError(self.run_dir)

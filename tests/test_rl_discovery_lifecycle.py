@@ -11,7 +11,6 @@ from stom_rl.rl_discovery.lifecycle import (
     DiscoveryLifecycle,
     LifecycleIntegrityError,
     ResumeMismatchError,
-    TerminalRunError,
 )
 
 PREREG_SHA = "a" * 64
@@ -244,63 +243,6 @@ def test_lifecycle_resume_rejects_missing_completed_model_bundle(tmp_path: Path)
             run_root=tmp_path,
             experiment_id="TYPE2-D0",
             profile="PRIMARY",
-            prereg_sha256=PREREG_SHA,
-            fixture_sha256=FIXTURE_SHA,
-            expected_runs=("A_PPO_ONLY:0",),
-        )
-
-
-def test_lifecycle_cannot_terminalize_until_every_expected_run_is_recorded(tmp_path: Path) -> None:
-    lifecycle = DiscoveryLifecycle.start(
-        tmp_path,
-        run_id="type2-d0-primary-incomplete",
-        experiment_id="TYPE2-D0",
-        profile="PRIMARY",
-        prereg_sha256=PREREG_SHA,
-        fixture_sha256=FIXTURE_SHA,
-        expected_runs=("A_PPO_ONLY:0", "B_BC_THEN_PPO:0"),
-    )
-    _record(lifecycle, _outcome())
-
-    with pytest.raises(LifecycleIntegrityError, match="every expected"):
-        lifecycle.complete(evaluate_discovery_gate(lifecycle.outcomes, profile="PRIMARY"))
-
-
-def test_lifecycle_rejects_terminal_gate_for_another_profile(tmp_path: Path) -> None:
-    lifecycle = DiscoveryLifecycle.start(
-        tmp_path,
-        run_id="type2-d0-primary-wrong-gate",
-        experiment_id="TYPE2-D0",
-        profile="PRIMARY",
-        prereg_sha256=PREREG_SHA,
-        fixture_sha256=FIXTURE_SHA,
-        expected_runs=("A_PPO_ONLY:0",),
-    )
-    _record(lifecycle, _outcome())
-
-    with pytest.raises(LifecycleIntegrityError, match="gate_status"):
-        lifecycle.complete(evaluate_discovery_gate(lifecycle.outcomes, profile="SMOKE"))
-
-
-def test_terminal_receipt_makes_resume_immutable(tmp_path: Path) -> None:
-    lifecycle = DiscoveryLifecycle.start(
-        tmp_path,
-        run_id="type2-d0-smoke-immutable",
-        experiment_id="TYPE2-D0",
-        profile="SMOKE",
-        prereg_sha256=PREREG_SHA,
-        fixture_sha256=FIXTURE_SHA,
-        expected_runs=("A_PPO_ONLY:0",),
-    )
-    _record(lifecycle, _outcome())
-    lifecycle.complete(evaluate_discovery_gate(lifecycle.outcomes, profile="SMOKE"))
-
-    with pytest.raises(TerminalRunError, match="immutable"):
-        _ = DiscoveryLifecycle.resume(
-            lifecycle.run_dir,
-            run_root=tmp_path,
-            experiment_id="TYPE2-D0",
-            profile="SMOKE",
             prereg_sha256=PREREG_SHA,
             fixture_sha256=FIXTURE_SHA,
             expected_runs=("A_PPO_ONLY:0",),

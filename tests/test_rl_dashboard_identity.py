@@ -38,8 +38,12 @@ def test_artifact_identity_reuses_content_hash_when_file_stat_is_unchanged(
 def test_discovery_terminal_summary_requires_matching_receipt(tmp_path: Path) -> None:
     summary: dict[str, object] = {
         "research_lane": "rl_discovery",
+        "experiment_id": "TYPE2-D0",
+        "profile": "PRIMARY",
         "status": "PRIMARY_COMPLETE",
         "verdict": "NO_GO",
+        "promotion_allowed": False,
+        "profitability_claim_allowed": False,
         "prereg_sha256": "a" * 64,
         "fresh_oos": "NOT_RUN_NO_READ",
     }
@@ -49,10 +53,18 @@ def test_discovery_terminal_summary_requires_matching_receipt(tmp_path: Path) ->
     assert uncommitted["verdict"] == "RUNNING_NOT_EVALUATED"
 
     receipt = {
+        "experiment_id": "TYPE2-D0",
+        "profile": "PRIMARY",
         "status": "PRIMARY_COMPLETE",
         "verdict": "NO_GO",
+        "promotion_allowed": False,
+        "profitability_claim_allowed": False,
         "prereg_sha256": "a" * 64,
         "fresh_oos": "NOT_RUN_NO_READ",
     }
     _ = (tmp_path / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
     assert require_discovery_terminal_receipt(tmp_path, summary) == summary
+
+    summary["promotion_allowed"] = True
+    tampered = require_discovery_terminal_receipt(tmp_path, summary)
+    assert tampered["status"] == "RUNNING"
