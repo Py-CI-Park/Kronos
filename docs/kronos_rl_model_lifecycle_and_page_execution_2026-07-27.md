@@ -146,11 +146,11 @@ Recommended PR policy:
 
 | Check | Result |
 |---|---|
-| Discovery/dashboard Python regression | 127 passed, 2 skipped |
+| Discovery/dashboard Python regression | 128 passed, 2 skipped |
 | Lifecycle targeted tests | Included in the 123-test receipt |
 | Ruff | Passed |
 | Basedpyright | 0 errors, 0 warnings |
-| V6 TypeScript tests | 382 passed |
+| V6 TypeScript tests | 383 passed |
 | Svelte check | 0 errors, 0 warnings |
 | Production build | 955 modules transformed |
 | Actual SB3 smoke | 4 models + 4 normalizers + 4 outcomes persisted |
