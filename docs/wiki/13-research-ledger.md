@@ -1,7 +1,7 @@
 # 연구 원장 · Research Ledger
 
 > 상태: `ACTIVE_RESEARCH_INDEX`  
-> 최종 갱신: 2026-07-21
+> 최종 갱신: 2026-07-27
 > 범위: Kronos 예측, 일봉 종가매매, 포트폴리오 RL, 대시보드·연구 인프라
 
 ## 목적
@@ -138,7 +138,7 @@
 | Date | Document | Type | Status |
 |---|---|---|---|
 | 2026-07-27 | `docs/kronos_rl_discovery_type2_d0_primary_result_2026-07-27.md` | RESULT | 4 arms × 3 seeds completed. PPO-only overfit was not confirmed: `NO-GO`. Fresh OOS remains `NOT_RUN_NO_READ`. |
-| 2026-07-27 | `docs/evidence/type2-d0-primary-20260727.custody.json` | EVIDENCE_CUSTODY | 40 local files / 596,114,829 bytes bound to producer commit, fixture, preregistration, and SHA-256 inventory. |
+| 2026-07-27 | `docs/evidence/type2-d0-primary-20260727.custody.json` | EVIDENCE_INVENTORY | 40 local files / 596,114,829 bytes bound to producer commit and receipt preregistration. Legacy receipt omitted fixture SHA, so fixture binding is explicitly `PRODUCER_DECLARED_LEGACY_UNVERIFIED`. |
 
 The observed run used the reduced executable D0 preregistration. Diagnostics
 that appeared only in richer planning drafts were not executed and are not

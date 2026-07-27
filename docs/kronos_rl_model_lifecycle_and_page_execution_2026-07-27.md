@@ -28,7 +28,8 @@ strategy and is not relabeled as RL.
 | Resume | Completed arm/seed units are skipped | `--resume <run-dir>` and immutable identity checks | 100% |
 | Contract protection | Experiment/profile/prereg/fixture/matrix changes cannot resume | Strict lifecycle v2 validation | 100% |
 | Terminal immutability | A completed receipt cannot be resumed or overwritten | Fail-closed terminal boundary | 100% |
-| Evidence custody | 40 ignored run files are bound by committed SHA-256 manifest | 596,114,829 bytes inventoried | 100% |
+| Evidence inventory | 40 ignored run files are bound by committed SHA-256 manifest | Legacy fixture runtime binding remains unverified | 90% |
+| Future unit custody | Lifecycle v2 binds exact input snapshots and every outcome/model/normalizer digest | Resume rejects missing or changed completed units | 100% |
 | Dashboard evidence | Running and terminal summaries share scanner format | `sb3_smoke_summary.json` | 100% |
 | Full-page visibility | All V6 pages show one execution strip | Score, branch, next action, ETA, safety gates | 100% |
 | Page control table | All 12 surfaces have progress/action/ETA/merge gate | Program Scorecard page | 100% |
@@ -145,11 +146,11 @@ Recommended PR policy:
 
 | Check | Result |
 |---|---|
-| Discovery/dashboard Python regression | 123 passed, 2 skipped |
+| Discovery/dashboard Python regression | 127 passed, 2 skipped |
 | Lifecycle targeted tests | Included in the 123-test receipt |
 | Ruff | Passed |
 | Basedpyright | 0 errors, 0 warnings |
-| V6 TypeScript tests | 381 passed |
+| V6 TypeScript tests | 382 passed |
 | Svelte check | 0 errors, 0 warnings |
 | Production build | 955 modules transformed |
 | Actual SB3 smoke | 4 models + 4 normalizers + 4 outcomes persisted |

@@ -85,6 +85,13 @@ profitability claim, or live trading.
 | Custody files / bytes | 40 / 596,114,829 |
 | Evidence manifest SHA-256 | `f44fc17a587050c865b22ba1cd671e276f768282afc91a6ed4168619cec59825` |
 | Producer commit | `9b555f52275bdae8f13c3c7190817a7290097b08` |
+| Fixture binding | `PRODUCER_DECLARED_LEGACY_UNVERIFIED` |
+
+The legacy D0 receipt binds the preregistration SHA but did not record a
+fixture SHA. The manifest therefore inventories the fixture selected by the
+producer commit, but it cannot prove that the runtime read those exact fixture
+bytes. This limitation is explicit and prevents treating D0 as fully input-bound
+custody. Lifecycle v2 snapshots and hashes exact input bytes for future runs.
 
 ## Next research action
 
