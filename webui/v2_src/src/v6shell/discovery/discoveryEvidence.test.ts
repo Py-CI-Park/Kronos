@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parseDiscoveryEvidence, summarizeDiscoveryArms } from './discoveryEvidence';
+import { REVIEWED_DISCOVERY_SNAPSHOT } from './reviewedDiscoverySnapshot';
+
+const discoveryPage = readFileSync(new URL('../pages/DiscoveryPage.svelte', import.meta.url), 'utf8');
 
 test('discovery evidence parser accepts the dashboard run detail contract', () => {
   const evidence = parseDiscoveryEvidence({
@@ -54,4 +58,22 @@ test('primary discovery evidence preserves seed identity and computes arm aggreg
 
 test('discovery evidence parser rejects another research lane', () => {
   assert.equal(parseDiscoveryEvidence({ name: 'legacy', summary: { research_lane: 'rule' } }), null);
+});
+
+test('discovery page keeps conclusions artifact-driven and handles API failure', () => {
+  assert.match(discoveryPage, /catch \{/);
+  assert.match(discoveryPage, /evidence\.verdict/);
+  assert.match(discoveryPage, /summarizeDiscoveryArms\(evidence\.arms\)/);
+  assert.doesNotMatch(discoveryPage, /세 seed 모두 0\.90/);
+  assert.doesNotMatch(discoveryPage, /\/ NO-GO<\/b>/);
+});
+
+test('reviewed snapshot keeps clean-checkout evidence bound to the committed manifest', () => {
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.authority, 'REVIEWED_SNAPSHOT');
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.arms.length, 12);
+  assert.match(REVIEWED_DISCOVERY_SNAPSHOT.evidenceManifest ?? '', /^[0-9a-f]{64}$/);
+  assert.deepEqual(
+    [...new Set(REVIEWED_DISCOVERY_SNAPSHOT.arms.map((row) => row.seed))],
+    [0, 1, 2],
+  );
 });

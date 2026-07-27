@@ -6,15 +6,16 @@
     summarizeDiscoveryArms,
     type DiscoveryEvidence,
   } from '../discovery/discoveryEvidence';
+  import { REVIEWED_DISCOVERY_SNAPSHOT } from '../discovery/reviewedDiscoverySnapshot';
 
   const LADDER = [
-    ['D0', 'PPO 귀속성', 'NO-GO 완료'],
-    ['D1', 'reward/action 재설계', '사전등록 필요'],
-    ['D2', '표현·기간 확장', '대기'],
-    ['D3', 'reward/action ablation', '대기'],
-    ['D4', '비용 민감도', '대기'],
-    ['D5', '전체 train + control', '대기'],
-    ['D6', 'reused validation', '잠금'],
+    ['D0', 'PPO attribution', 'NO-GO complete'],
+    ['D1', 'reward/action redesign', 'prereg required'],
+    ['D2', 'representation/period expansion', 'waiting'],
+    ['D3', 'reward/action ablation', 'waiting'],
+    ['D4', 'cost sensitivity', 'waiting'],
+    ['D5', 'full train + control', 'waiting'],
+    ['D6', 'reused validation', 'locked'],
   ] as const;
   const ARM_LABELS: Readonly<Record<string, string>> = {
     A_PPO_ONLY: 'A · PPO only',
@@ -23,9 +24,10 @@
     D_SHUFFLED_REWARD_PPO: 'D · shuffled PPO',
   };
 
-  let evidence = $state<DiscoveryEvidence | null>(null);
+  let evidence = $state<DiscoveryEvidence | null>(REVIEWED_DISCOVERY_SNAPSHOT);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let notice = $state<string | null>(null);
 
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
   const ratioWidth = (value: number) => `${Math.max(0, Math.min(100, value * 100))}%`;
@@ -35,19 +37,35 @@
   async function load(): Promise<void> {
     loading = true;
     error = null;
-    const runs = await rlApi.rlRuns(100);
-    const discoveryRuns = runs?.runs.filter((run) => run.summary?.research_lane === 'rl_discovery') ?? [];
-    const record = discoveryRuns.find((run) =>
-      run.summary?.profile === 'PRIMARY' && run.summary?.status === 'PRIMARY_COMPLETE'
-    ) ?? discoveryRuns[0];
-    if (!record) {
+    notice = null;
+    try {
+      const runs = await rlApi.rlRuns(100);
+      const discoveryRuns = runs?.runs.filter((run) => run.summary?.research_lane === 'rl_discovery') ?? [];
+      const record = discoveryRuns.find((run) =>
+        run.summary?.profile === 'PRIMARY' && run.summary?.status === 'PRIMARY_COMPLETE'
+      ) ?? discoveryRuns[0];
+      if (!record) {
+        evidence = REVIEWED_DISCOVERY_SNAPSHOT;
+        notice = '로컬 run artifact가 없어 커밋된 reviewed snapshot을 표시합니다.';
+        return;
+      }
+      if (record.name === REVIEWED_DISCOVERY_SNAPSHOT.runName) {
+        evidence = REVIEWED_DISCOVERY_SNAPSHOT;
+        notice = '검토된 D0 Primary는 커밋된 manifest-bound snapshot으로 표시합니다.';
+        return;
+      }
+      const detail = await rlApi.rlRun(record.name);
+      evidence = detail ? parseDiscoveryEvidence(detail) : null;
+      if (!evidence) {
+        evidence = REVIEWED_DISCOVERY_SNAPSHOT;
+        notice = 'Artifact 계약을 읽지 못해 커밋된 reviewed snapshot을 표시합니다.';
+      }
+    } catch {
+      evidence = REVIEWED_DISCOVERY_SNAPSHOT;
+      notice = 'Discovery API에 연결할 수 없어 커밋된 reviewed snapshot을 표시합니다.';
+    } finally {
       loading = false;
-      return;
     }
-    const detail = await rlApi.rlRun(record.name);
-    evidence = detail ? parseDiscoveryEvidence(detail) : null;
-    if (!evidence) error = 'Discovery artifact 계약을 읽을 수 없습니다.';
-    loading = false;
   }
 
   onMount(() => { void load(); });
@@ -55,11 +73,7 @@
 
 <section class="discovery-page" aria-labelledby="discovery-title">
   <header class="hero">
-    <div>
-      <p class="eyebrow">RL DISCOVERY LAB // ATTRIBUTION</p>
-      <h1 id="discovery-title">강화학습 발견 실험실</h1>
-      <p>수익성보다 먼저 PPO가 reward를 실제로 학습하는지 arm과 seed 단위로 분해합니다.</p>
-    </div>
+    <div><p class="eyebrow">RL DISCOVERY LAB // ATTRIBUTION</p><h1 id="discovery-title">강화학습 발견 실험실</h1><p>수익성보다 먼저 PPO가 reward를 실제로 학습하는지 arm과 seed 단위로 분해합니다.</p></div>
     <button type="button" onclick={load} disabled={loading}>증거 새로고침</button>
   </header>
 
@@ -69,10 +83,11 @@
     <article><span>PROMOTION</span><strong>BLOCKED</strong><small>Primary 완료도 승격 금지</small></article>
     <article><span>CLAIMS</span><strong>RESEARCH ONLY</strong><small>수익·실거래 주장이 아님</small></article>
   </section>
+  {#if notice}<section class="state notice" aria-live="polite">{notice}</section>{/if}
 
   <section class="ladder" aria-labelledby="ladder-title">
     <div class="section-title"><p>PROGRAM MAP</p><h2 id="ladder-title">Discovery 연구 사다리</h2></div>
-    <ol>{#each LADDER as stage, index}<li class:active={index === 0} class:locked={stage[2] === '잠금'}><span>{stage[0]}</span><strong>{stage[1]}</strong><small>{stage[2]}</small></li>{/each}</ol>
+    <ol>{#each LADDER as stage, index}<li class:active={index === 0} class:locked={stage[2] === 'locked'}><span>{stage[0]}</span><strong>{stage[1]}</strong><small>{stage[2]}</small></li>{/each}</ol>
   </section>
 
   {#if loading}
@@ -84,20 +99,14 @@
   {:else}
     {@const aggregates = summarizeDiscoveryArms(evidence.arms)}
     {@const primaryComplete = evidence.profile === 'PRIMARY' && evidence.status === 'PRIMARY_COMPLETE'}
-    {@const ppoAggregate = aggregates.find((arm) => arm.id === 'A_PPO_ONLY')}
-    {@const bcAggregate = aggregates.find((arm) => arm.id === 'C_BC_ONLY')}
-    {@const shuffledAggregate = aggregates.find((arm) => arm.id === 'D_SHUFFLED_REWARD_PPO')}
+    {@const disposition = evidence.verdict === 'PPO_ONLY_OVERFIT_NOT_CONFIRMED' ? 'NO-GO' : 'RESEARCH-ONLY'}
     <section class="verdict-grid">
-      <article class="verdict-card">
-        <p>TERMINAL VERDICT</p>
-        <strong>{evidence.verdict}</strong>
-        <span>{evidence.status} · {evidence.profile} · {evidence.arms.length}/{primaryComplete ? 12 : 4} units</span>
-      </article>
-      <article class="receipt"><dl><div><dt>Run</dt><dd>{evidence.runName}</dd></div><div><dt>Prereg SHA</dt><dd>{evidence.preregSha256.slice(0, 16)}…</dd></div><div><dt>Fresh OOS</dt><dd>{evidence.freshOos}</dd></div></dl></article>
+      <article class="verdict-card"><p>{evidence.authority} VERDICT</p><strong>{evidence.verdict}</strong><span>{evidence.status} · {evidence.profile} · {evidence.arms.length}/{primaryComplete ? 12 : 4} units</span></article>
+      <article class="receipt"><dl><div><dt>Authority</dt><dd>{evidence.authority}</dd></div><div><dt>Run</dt><dd>{evidence.runName}</dd></div><div><dt>Manifest</dt><dd>{evidence.evidenceManifest?.slice(0, 16) ?? 'LIVE SCAN'}…</dd></div><div><dt>Prereg SHA</dt><dd>{evidence.preregSha256.slice(0, 16)}…</dd></div><div><dt>Fresh OOS</dt><dd>{evidence.freshOos}</dd></div></dl></article>
     </section>
 
     <section class="aggregates" aria-labelledby="aggregate-title">
-      <div class="section-title"><p>THREE-SEED AGGREGATES</p><h2 id="aggregate-title">Arm 평균 비교</h2></div>
+      <div class="section-title"><p>ARTIFACT AGGREGATES</p><h2 id="aggregate-title">Arm 평균 비교</h2></div>
       <div class="aggregate-grid">{#each aggregates as arm}<article><span>{armLabel(arm.id)}</span><strong class={outcomeClass(arm.meanOracleRewardRatio)}>{arm.meanOracleRewardRatio.toFixed(3)}×</strong><small>{arm.seedCount} seeds · 정확도 {pct(arm.meanExactBasketAccuracy)} · 지배행동 {pct(arm.meanDominantActionRate)}</small></article>{/each}</div>
     </section>
 
@@ -107,12 +116,8 @@
     </section>
 
     <section class="interpretation">
-      <div><p>{primaryComplete ? 'PRIMARY READOUT' : 'SMOKE READOUT'}</p><h2>{primaryComplete ? 'D0 최종 해석' : '현재 결과의 의미'}</h2></div>
-      {#if primaryComplete}
-        <ul><li>PPO-only 평균은 <b>{ppoAggregate?.meanOracleRewardRatio.toFixed(3) ?? 'MISSING'}×</b>이며 세 seed 모두 0.90 임계값에 미달했습니다.</li><li>BC-only 평균은 PPO 없이 <b>{bcAggregate?.meanOracleRewardRatio.toFixed(3) ?? 'MISSING'}×</b>이므로 완전 적합은 oracle BC 효과입니다.</li><li>Shuffled PPO 평균은 <b>{shuffledAggregate?.meanOracleRewardRatio.toFixed(3) ?? 'MISSING'}×</b>으로 collapse했습니다. reward 정보는 있지만 PPO-only 학습은 안정적이지 않았습니다.</li><li>결론은 <b>{evidence.verdict} / NO-GO</b>입니다. D1은 별도 가설로 사전등록해야 합니다.</li></ul>
-      {:else}
-        <ul><li>Smoke는 실행 배선과 artifact 생성을 확인할 뿐 Primary 판정을 대체하지 않습니다.</li><li>모든 arm의 invalid/block/no-fill과 행동 집중을 함께 확인해야 합니다.</li></ul>
-      {/if}
+      <div><p>{primaryComplete ? 'PRIMARY RECEIPT' : 'SMOKE RECEIPT'}</p><h2>Artifact 기반 판정</h2></div>
+      <ul><li>화면의 평균과 seed 값은 선택된 artifact에서 계산하며 고정 결론을 덧붙이지 않습니다.</li><li>Receipt 판정: <b>{evidence.verdict} / {disposition}</b>.</li><li>Promotion <b>{evidence.promotionAllowed ? 'ALLOWED' : 'BLOCKED'}</b>, profitability claim <b>{evidence.profitabilityClaimAllowed ? 'ALLOWED' : 'BLOCKED'}</b>.</li><li>D1은 이 결과를 사후 튜닝하지 않고 별도 가설로 사전등록해야 합니다.</li></ul>
     </section>
   {/if}
 </section>
@@ -122,4 +127,5 @@
   @media(max-width:1000px){.safety,.arm-grid,.aggregate-grid{grid-template-columns:repeat(2,1fr)}.ladder ol{grid-template-columns:repeat(4,1fr)}.safety article:nth-child(2){border-right:0}}
   @media(max-width:620px){.hero{align-items:start;flex-direction:column}.safety,.arm-grid,.aggregate-grid,.verdict-grid,.interpretation{grid-template-columns:1fr}.ladder ol{display:flex;overflow-x:auto;scroll-snap-type:x mandatory}.ladder li{min-width:150px;scroll-snap-align:start}.safety article{border-right:0;border-bottom:1px solid var(--border)}}
   @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+  .state.notice{border-color:var(--info);color:var(--info);text-align:left}
 </style>

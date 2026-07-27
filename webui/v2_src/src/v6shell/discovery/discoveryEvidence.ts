@@ -23,6 +23,8 @@ export type DiscoveryArmAggregate = {
 };
 
 export interface DiscoveryEvidence {
+  readonly authority: 'LIVE_ARTIFACT' | 'REVIEWED_SNAPSHOT';
+  readonly evidenceManifest: string | null;
   readonly runName: string;
   readonly status: string;
   readonly verdict: string;
@@ -73,6 +75,8 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     shuffledReward: booleanValue(row.shuffled_reward),
   }));
   return {
+    authority: 'LIVE_ARTIFACT',
+    evidenceManifest: null,
     runName: run.name,
     status: textValue(summary.status),
     verdict: textValue(summary.verdict),

@@ -5,12 +5,12 @@
 <aside class="execution" aria-label="프로그램 실행 상태">
   <div class="score"><span>RESEARCH PROGRAM COMPLETENESS</span><strong>{PROGRAM_EXECUTION.overallScore}</strong><small>/100</small></div>
   <dl>
-    <div><dt>현재 단계</dt><dd>{PROGRAM_EXECUTION.stage}</dd></div>
+    <div><dt>검토 스냅샷</dt><dd>{PROGRAM_EXECUTION.stage}</dd></div>
     <div><dt>전달 흐름</dt><dd>{PROGRAM_EXECUTION.deliveryLane}</dd></div>
     <div><dt>다음 실행</dt><dd>{PROGRAM_EXECUTION.nextAction}</dd></div>
     <div><dt>예상 시간</dt><dd>{PROGRAM_EXECUTION.eta}</dd></div>
   </dl>
-  <div class="guards"><span>{PROGRAM_EXECUTION.pageCount} PAGES</span><span>NOT MODEL PERFORMANCE</span><span>FRESH OOS: SEALED</span><span>LIVE: BLOCKED</span></div>
+  <div class="guards"><span>{PROGRAM_EXECUTION.authority}</span><span>RUN: {PROGRAM_EXECUTION.reviewedRun}</span><span>{PROGRAM_EXECUTION.pageCount} PAGES</span><span>NOT LIVE ARTIFACT STATE</span><span>NOT MODEL PERFORMANCE</span><span>FRESH OOS: SEALED</span><span>LIVE: BLOCKED</span></div>
 </aside>
 
 <style>

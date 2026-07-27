@@ -16,7 +16,7 @@
   </div>
   {#if detailsOpen}
     <div class="details" id="v6-safety-details">
-      <p>V6는 연구 전용입니다. 기본 UI는 계속 V3이며, 이 화면은 opt-in으로만 열립니다.</p>
+      <p>V6는 현재 기본 연구 UI이며 읽기 전용입니다. V3/V5는 명시적 rollback·비교 경로로만 유지됩니다.</p>
       <p>브로커, 주문, 라이브, 페이퍼 포워드, 수익 또는 GO 주장은 제공하지 않습니다.</p>
       <p>여섯 개의 false lock은 모두 false 상태로 유지됩니다.</p>
     </div>
