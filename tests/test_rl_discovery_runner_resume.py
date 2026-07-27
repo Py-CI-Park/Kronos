@@ -103,6 +103,8 @@ def test_runner_resume_skips_completed_arm_and_finishes_remaining_matrix(
         )
 
     run_dir = tmp_path / "type2-d0-smoke-resume-e2e"
+    assert (run_dir / "inputs" / "prereg.json").read_bytes() == paths.prereg.read_bytes()
+    assert (run_dir / "inputs" / "fixture.json").read_bytes() == paths.fixture.read_bytes()
     resumed_arms: list[ArmId] = []
 
     def resumed_train(

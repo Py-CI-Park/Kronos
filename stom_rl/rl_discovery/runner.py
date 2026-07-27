@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from pydantic import BaseModel, ConfigDict
 
-from stom_rl.rl_discovery.contract import ArmId, load_prereg
+from stom_rl.rl_discovery.contract import ArmId, load_prereg_bytes
 from stom_rl.rl_discovery.daily_adapter import (
     build_training_config,
     evaluate_discovery_model,
@@ -24,6 +24,7 @@ from stom_rl.rl_discovery.daily_adapter import (
 )
 from stom_rl.rl_discovery.gates import ArmOutcome, RunProfile, evaluate_discovery_gate
 from stom_rl.rl_discovery.lifecycle import DiscoveryLifecycle
+from stom_rl.rl_discovery.storage import atomic_write_bytes, contained_path, file_digest
 from stom_rl.rl_discovery.training_bundle import (
     DiscoveryModel,
     DiscoveryNormalizer,
@@ -168,11 +169,11 @@ def run_discovery(
     """Execute or resume every preregistered arm with durable partial evidence."""
 
     prereg_bytes = paths.prereg.read_bytes()
-    prereg = load_prereg(paths.prereg)
-    pairs = load_fixture_pairs(paths.fixture)
+    fixture_bytes = paths.fixture.read_bytes()
+    prereg = load_prereg_bytes(prereg_bytes, source=paths.prereg)
     seeds = prereg.training.smoke_seeds if profile is RunProfile.SMOKE else prereg.seeds
     prereg_sha256 = hashlib.sha256(prereg_bytes).hexdigest()
-    fixture_sha256 = hashlib.sha256(paths.fixture.read_bytes()).hexdigest()
+    fixture_sha256 = hashlib.sha256(fixture_bytes).hexdigest()
     expected_runs = tuple(f"{arm.id.value}:{seed}" for arm in prereg.arms for seed in seeds)
     if resume_dir is None:
         timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
@@ -195,6 +196,17 @@ def run_discovery(
             fixture_sha256=fixture_sha256,
             expected_runs=expected_runs,
         )
+    prereg_snapshot = contained_path(lifecycle.run_dir, "inputs", "prereg.json")
+    fixture_snapshot = contained_path(lifecycle.run_dir, "inputs", "fixture.json")
+    if resume_dir is None:
+        atomic_write_bytes(prereg_snapshot, prereg_bytes)
+        atomic_write_bytes(fixture_snapshot, fixture_bytes)
+    elif (
+        file_digest(prereg_snapshot)[0] != prereg_sha256
+        or file_digest(fixture_snapshot)[0] != fixture_sha256
+    ):
+        raise ValueError("persisted discovery input snapshot does not match lifecycle identity")
+    pairs = load_fixture_pairs(fixture_snapshot)
     started_at = time.monotonic()
     for arm in prereg.arms:
         for seed in seeds:

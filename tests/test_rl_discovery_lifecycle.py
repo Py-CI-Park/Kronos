@@ -33,6 +33,14 @@ def _outcome(*, arm: str = "A_PPO_ONLY", seed: int = 0) -> ArmOutcome:
     )
 
 
+def _record(lifecycle: DiscoveryLifecycle, outcome: ArmOutcome) -> None:
+    model_dir = lifecycle.run_dir / "models" / outcome.arm / f"seed-{outcome.seed}"
+    model_dir.mkdir(parents=True)
+    _ = (model_dir / "model.zip").write_bytes(b"model")
+    _ = (model_dir / "normalizer.pkl").write_bytes(b"normalizer")
+    lifecycle.record(outcome)
+
+
 def test_lifecycle_records_each_arm_seed_as_resumable_dashboard_evidence(tmp_path: Path) -> None:
     lifecycle = DiscoveryLifecycle.start(
         tmp_path,
@@ -44,7 +52,7 @@ def test_lifecycle_records_each_arm_seed_as_resumable_dashboard_evidence(tmp_pat
         expected_runs=("A_PPO_ONLY:0", "B_BC_THEN_PPO:0"),
     )
 
-    lifecycle.record(_outcome())
+    _record(lifecycle, _outcome())
 
     state = cast(
         dict[str, object],
@@ -76,7 +84,7 @@ def test_lifecycle_resume_loads_completed_outcomes_and_rejects_changed_contract(
         fixture_sha256=FIXTURE_SHA,
         expected_runs=("A_PPO_ONLY:0",),
     )
-    lifecycle.record(_outcome())
+    _record(lifecycle, _outcome())
 
     resumed = DiscoveryLifecycle.resume(
         lifecycle.run_dir,
@@ -114,7 +122,7 @@ def test_lifecycle_completion_writes_terminal_receipt_without_opening_fresh_oos(
         fixture_sha256=FIXTURE_SHA,
         expected_runs=("A_PPO_ONLY:0",),
     )
-    lifecycle.record(_outcome())
+    _record(lifecycle, _outcome())
 
     lifecycle.complete(evaluate_discovery_gate(lifecycle.outcomes, profile="SMOKE"))
 
@@ -199,13 +207,38 @@ def test_lifecycle_resume_rejects_outcome_whose_identity_differs_from_path(tmp_p
         fixture_sha256=FIXTURE_SHA,
         expected_runs=("A_PPO_ONLY:0",),
     )
-    lifecycle.record(_outcome())
+    _record(lifecycle, _outcome())
     outcome_path = lifecycle.run_dir / "outcomes" / "A_PPO_ONLY" / "seed-0.json"
     payload = cast(dict[str, object], json.loads(outcome_path.read_text(encoding="utf-8")))
     payload["arm"] = "B_BC_THEN_PPO"
     _ = outcome_path.write_text(json.dumps(payload), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="identity"):
+    with pytest.raises(ValueError, match="unit_artifact|identity"):
+        _ = DiscoveryLifecycle.resume(
+            lifecycle.run_dir,
+            run_root=tmp_path,
+            experiment_id="TYPE2-D0",
+            profile="PRIMARY",
+            prereg_sha256=PREREG_SHA,
+            fixture_sha256=FIXTURE_SHA,
+            expected_runs=("A_PPO_ONLY:0",),
+        )
+
+
+def test_lifecycle_resume_rejects_missing_completed_model_bundle(tmp_path: Path) -> None:
+    lifecycle = DiscoveryLifecycle.start(
+        tmp_path,
+        run_id="type2-d0-primary-missing-model",
+        experiment_id="TYPE2-D0",
+        profile="PRIMARY",
+        prereg_sha256=PREREG_SHA,
+        fixture_sha256=FIXTURE_SHA,
+        expected_runs=("A_PPO_ONLY:0",),
+    )
+    _record(lifecycle, _outcome())
+    (lifecycle.run_dir / "models" / "A_PPO_ONLY" / "seed-0" / "model.zip").unlink()
+
+    with pytest.raises(LifecycleIntegrityError, match="unit_artifact"):
         _ = DiscoveryLifecycle.resume(
             lifecycle.run_dir,
             run_root=tmp_path,
@@ -227,10 +260,26 @@ def test_lifecycle_cannot_terminalize_until_every_expected_run_is_recorded(tmp_p
         fixture_sha256=FIXTURE_SHA,
         expected_runs=("A_PPO_ONLY:0", "B_BC_THEN_PPO:0"),
     )
-    lifecycle.record(_outcome())
+    _record(lifecycle, _outcome())
 
     with pytest.raises(LifecycleIntegrityError, match="every expected"):
         lifecycle.complete(evaluate_discovery_gate(lifecycle.outcomes, profile="PRIMARY"))
+
+
+def test_lifecycle_rejects_terminal_gate_for_another_profile(tmp_path: Path) -> None:
+    lifecycle = DiscoveryLifecycle.start(
+        tmp_path,
+        run_id="type2-d0-primary-wrong-gate",
+        experiment_id="TYPE2-D0",
+        profile="PRIMARY",
+        prereg_sha256=PREREG_SHA,
+        fixture_sha256=FIXTURE_SHA,
+        expected_runs=("A_PPO_ONLY:0",),
+    )
+    _record(lifecycle, _outcome())
+
+    with pytest.raises(LifecycleIntegrityError, match="gate_status"):
+        lifecycle.complete(evaluate_discovery_gate(lifecycle.outcomes, profile="SMOKE"))
 
 
 def test_terminal_receipt_makes_resume_immutable(tmp_path: Path) -> None:
@@ -243,7 +292,7 @@ def test_terminal_receipt_makes_resume_immutable(tmp_path: Path) -> None:
         fixture_sha256=FIXTURE_SHA,
         expected_runs=("A_PPO_ONLY:0",),
     )
-    lifecycle.record(_outcome())
+    _record(lifecycle, _outcome())
     lifecycle.complete(evaluate_discovery_gate(lifecycle.outcomes, profile="SMOKE"))
 
     with pytest.raises(TerminalRunError, match="immutable"):

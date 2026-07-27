@@ -112,7 +112,13 @@ class DraftPreregistrationError(ValueError):
 def load_prereg(path: Path) -> DiscoveryPreregistration:
     """Load and validate an executable Type2-D0 preregistration."""
 
-    prereg = DiscoveryPreregistration.model_validate_json(path.read_text(encoding="utf-8"))
+    return load_prereg_bytes(path.read_bytes(), source=path)
+
+
+def load_prereg_bytes(payload: bytes, *, source: Path) -> DiscoveryPreregistration:
+    """Validate the exact preregistration bytes used for hashing."""
+
+    prereg = DiscoveryPreregistration.model_validate_json(payload)
     if prereg.status is not PreregStatus.APPROVED_EXECUTABLE:
-        raise DraftPreregistrationError(path)
+        raise DraftPreregistrationError(source)
     return prereg

@@ -55,6 +55,7 @@ def state_payload(state: LifecycleState) -> dict[str, JsonValue]:
         "status": state.status.value,
         "expected_runs": list(state.expected_runs),
         "completed_runs": list(state.completed_runs),
+        "unit_manifests": [item.model_dump(mode="json") for item in state.unit_manifests],
     }
 
 

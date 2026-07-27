@@ -93,6 +93,7 @@ class LifecycleState(BaseModel):
     status: LifecycleStatus
     expected_runs: tuple[str, ...]
     completed_runs: tuple[str, ...]
+    unit_manifests: tuple["UnitManifestRef", ...]
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> Self:
@@ -104,6 +105,8 @@ class LifecycleState(BaseModel):
             raise LifecycleIntegrityError("completed_runs", "duplicates are forbidden")
         if not set(completed).issubset(expected):
             raise LifecycleIntegrityError("completed_runs", "must be a subset of expected_runs")
+        if tuple(item.run_key for item in self.unit_manifests) != completed:
+            raise LifecycleIntegrityError("unit_manifests", "must bind every completed run in order")
         if self.status is not LifecycleStatus.RUNNING and completed != expected:
             raise LifecycleIntegrityError("status", "terminal state requires every expected run")
         return self
@@ -126,6 +129,36 @@ class OutcomePayload(BaseModel):
     shuffled_reward: bool
     model: str
     algorithm: ArmId
+
+
+class ArtifactStamp(BaseModel):
+    """Digest and size for one completed unit artifact."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
+
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class UnitManifestRef(BaseModel):
+    """Lifecycle-owned digest of one detailed unit manifest."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
+
+    run_key: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class UnitManifest(BaseModel):
+    """Outcome and model bundle identity accepted by resume."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["kronos.rl-discovery.unit-manifest.v1"]
+    run_key: str
+    outcome: ArtifactStamp
+    model: ArtifactStamp
+    normalizer: ArtifactStamp
 
 
 def outcome_payload(outcome: ArmOutcome) -> dict[str, JsonValue]:

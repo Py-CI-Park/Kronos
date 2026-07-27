@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
+import pytest
+from typing_extensions import override
+
 from stom_rl.rl_discovery import runner
 from stom_rl.rl_discovery.training_bundle import TrainedArm
 
@@ -20,6 +23,13 @@ class _FakeModel(_FakeSaver):
     def learn(self, *, total_timesteps: int, progress_bar: bool) -> object:
         _ = total_timesteps, progress_bar
         return self
+
+
+class _FailingModel(_FakeModel):
+    @override
+    def save(self, path: str) -> None:
+        _ = Path(path).write_bytes(b"partial")
+        raise OSError("simulated save failure")
 
 
 def test_shuffle_reward_pairs_is_deterministic_and_does_not_mutate_source() -> None:
@@ -95,5 +105,18 @@ def test_trained_arm_persists_model_and_normalizer_in_seed_directory(tmp_path: P
     expected_dir = tmp_path / "models" / "A_PPO_ONLY" / "seed-2"
     assert len(model.paths) == 1
     assert len(normalizer.paths) == 1
+    assert (expected_dir / "model.zip").read_bytes() == b"saved"
+    assert (expected_dir / "normalizer.pkl").read_bytes() == b"saved"
+
+
+def test_failed_model_replacement_preserves_previous_complete_bundle(tmp_path: Path) -> None:
+    original = TrainedArm(model=_FakeModel(), normalizer=_FakeSaver())
+    original.save(tmp_path, arm="A_PPO_ONLY", seed=2)
+
+    replacement = TrainedArm(model=_FailingModel(), normalizer=_FakeSaver())
+    with pytest.raises(OSError, match="simulated save failure"):
+        replacement.save(tmp_path, arm="A_PPO_ONLY", seed=2)
+
+    expected_dir = tmp_path / "models" / "A_PPO_ONLY" / "seed-2"
     assert (expected_dir / "model.zip").read_bytes() == b"saved"
     assert (expected_dir / "normalizer.pkl").read_bytes() == b"saved"

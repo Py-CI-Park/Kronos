@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from pathlib import Path
 from typing import ClassVar, Literal
@@ -32,6 +33,8 @@ class ReceiptBoundary(BaseModel):
     fresh_oos: Literal["NOT_RUN_NO_READ"]
     promotion_allowed: Literal[False]
     profitability_claim_allowed: Literal[False]
+    prereg_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fixture_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class CustodyManifest(BaseModel):
@@ -45,6 +48,7 @@ class CustodyManifest(BaseModel):
     producer_tree: str = Field(pattern=r"^[0-9a-f]{40}$")
     fixture_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     prereg_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fixture_binding: Literal["RECEIPT_BOUND", "PRODUCER_DECLARED_LEGACY_UNVERIFIED"]
     terminal_status: str
     terminal_verdict: str
     fresh_oos: Literal["NOT_RUN_NO_READ"]
@@ -104,14 +108,28 @@ def build_custody_manifest(
     receipt = ReceiptBoundary.model_validate_json(
         (root / "terminal_receipt.json").read_text(encoding="utf-8")
     )
+    fixture_sha256 = _sha256_file(fixture_path)
+    prereg_sha256 = _sha256_file(prereg_path)
+    if not hmac.compare_digest(receipt.prereg_sha256, prereg_sha256):
+        raise ValueError("preregistration hash does not match terminal receipt")
+    if receipt.fixture_sha256 is not None and not hmac.compare_digest(
+        receipt.fixture_sha256, fixture_sha256
+    ):
+        raise ValueError("fixture hash does not match terminal receipt")
+    fixture_binding = (
+        "RECEIPT_BOUND"
+        if receipt.fixture_sha256 is not None
+        else "PRODUCER_DECLARED_LEGACY_UNVERIFIED"
+    )
     artifacts = _artifact_digests(root)
     return CustodyManifest(
         schema_version="kronos.rl-discovery.custody.v1",
         run_name=root.name,
         producer_commit=producer_commit,
         producer_tree=producer_tree,
-        fixture_sha256=_sha256_file(fixture_path),
-        prereg_sha256=_sha256_file(prereg_path),
+        fixture_sha256=fixture_sha256,
+        prereg_sha256=prereg_sha256,
+        fixture_binding=fixture_binding,
         terminal_status=receipt.status,
         terminal_verdict=receipt.verdict,
         fresh_oos=receipt.fresh_oos,
@@ -136,6 +154,7 @@ def write_custody_manifest(path: Path, manifest: CustodyManifest) -> None:
         "producer_tree": manifest.producer_tree,
         "fixture_sha256": manifest.fixture_sha256,
         "prereg_sha256": manifest.prereg_sha256,
+        "fixture_binding": manifest.fixture_binding,
         "terminal_status": manifest.terminal_status,
         "terminal_verdict": manifest.terminal_verdict,
         "fresh_oos": manifest.fresh_oos,
@@ -145,4 +164,3 @@ def write_custody_manifest(path: Path, manifest: CustodyManifest) -> None:
         "evidence_manifest_sha256": manifest.evidence_manifest_sha256,
     }
     atomic_write_json(path, payload)
-

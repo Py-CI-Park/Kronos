@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -109,6 +110,34 @@ def atomic_write_json(path: Path, payload: JsonValue) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    """Write exact input bytes through an exclusive durable sibling."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            _ = handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def file_digest(path: Path) -> tuple[str, int]:
+    """Return a streaming SHA-256 and exact byte length."""
+
+    digest = hashlib.sha256()
+    size_bytes = 0
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+            size_bytes += len(chunk)
+    return digest.hexdigest(), size_bytes
+
+
 def _fsync_file(path: Path) -> None:
     with path.open("r+b") as handle:
         os.fsync(handle.fileno())
@@ -127,9 +156,9 @@ def write_model_bundle(
     arm_dir = contained_path(run_dir, "models", arm)
     arm_dir.mkdir(parents=True, exist_ok=True)
     final_dir = contained_path(run_dir, "models", arm, f"seed-{seed}")
-    if final_dir.exists():
-        shutil.rmtree(final_dir)
     temporary = Path(tempfile.mkdtemp(prefix=f".seed-{seed}.", dir=arm_dir))
+    backup = Path(tempfile.mkdtemp(prefix=f".seed-{seed}.backup.", dir=arm_dir))
+    backup.rmdir()
     try:
         model_path = temporary / "model.zip"
         normalizer_path = temporary / "normalizer.pkl"
@@ -139,7 +168,18 @@ def write_model_bundle(
             raise UnsafeArtifactPathError(temporary, "model bundle is incomplete")
         _fsync_file(model_path)
         _fsync_file(normalizer_path)
-        os.replace(temporary, final_dir)
+        if final_dir.exists():
+            os.replace(final_dir, backup)
+        try:
+            os.replace(temporary, final_dir)
+        except OSError:
+            if backup.exists() and not final_dir.exists():
+                os.replace(backup, final_dir)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
+        if backup.exists() and final_dir.exists():
+            shutil.rmtree(backup)

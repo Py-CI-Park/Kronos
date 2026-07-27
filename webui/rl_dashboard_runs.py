@@ -30,6 +30,27 @@ else:  # pragma: no cover - supports direct script-style imports
 RUN_IDENTITY_PROTOCOL = _IDENTITY_PROTOCOL
 
 
+def require_discovery_terminal_receipt(run_dir: Path, summary: Dict[str, Any]) -> Dict[str, Any]:
+    """Downgrade terminal discovery claims until the commit marker agrees."""
+
+    if summary.get("research_lane") != "rl_discovery" or summary.get("status") not in {
+        "SMOKE_COMPLETE",
+        "PRIMARY_COMPLETE",
+    }:
+        return summary
+    receipt_path = run_dir / "terminal_receipt.json"
+    if not _is_run_file(run_dir, receipt_path):
+        return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
+    receipt = _read_run_json(run_dir, receipt_path)
+    required = ("status", "verdict", "prereg_sha256", "fresh_oos")
+    if any(receipt.get(key) != summary.get(key) for key in required):
+        return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
+    fixture_sha = summary.get("fixture_sha256")
+    if fixture_sha is not None and receipt.get("fixture_sha256") != fixture_sha:
+        return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
+    return summary
+
+
 def _detect_artifact_type(run_dir: Path) -> str:
     for artifact_type, file_name in ARTIFACT_SIGNATURES:
         if _is_run_file(run_dir, run_dir / file_name):
@@ -63,6 +84,7 @@ def _find_json_summary(run_dir: Path, artifact_type: str) -> Dict[str, Any]:
     if artifact_type == "sb3_smoke":
         payload = _read_run_json(run_dir, run_dir / "sb3_smoke_summary.json")
         summary = dict(payload.get("summary", {}))
+        summary = require_discovery_terminal_receipt(run_dir, summary)
         live_summary = payload.get("live_events")
         if isinstance(live_summary, dict):
             summary.setdefault("live_event_count", live_summary.get("event_count"))
