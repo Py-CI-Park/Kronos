@@ -16,7 +16,7 @@ test('program score is the rounded weighted sum of every audited lane', () => {
 
   // Then
   assert.equal(totalWeight, 100);
-  assert.equal(score, 62);
+  assert.equal(score, 65);
 });
 
 test('page matrix describes every V6 user surface in navigation order', () => {
@@ -29,6 +29,10 @@ test('page matrix describes every V6 user surface in navigation order', () => {
     'rl-evaluation', 'rl-compare', 'rl-report', 'insights', 'lanes', 'settings',
   ]);
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.delivery === 'BUILT'));
+  assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.progress >= 0 && page.progress <= 100));
+  assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.eta.length > 0));
+  assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
+  assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
 });
 
 test('capability inventory separates available research from blocked claims', () => {
