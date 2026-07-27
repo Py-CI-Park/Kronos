@@ -83,7 +83,7 @@ def evaluate_discovery_gate(
         for outcome in ppo_only
         if outcome.seed in shuffled_by_seed
     )
-    mean_separated = bool(shuffled) and fmean(
+    mean_separated = bool(ppo_only) and bool(shuffled) and fmean(
         outcome.oracle_reward_ratio for outcome in ppo_only
     ) > fmean(outcome.oracle_reward_ratio for outcome in shuffled)
     valid = all(

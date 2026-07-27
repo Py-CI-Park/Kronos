@@ -41,7 +41,7 @@ def test_discovery_terminal_summary_requires_matching_receipt(tmp_path: Path) ->
         "experiment_id": "TYPE2-D0",
         "profile": "PRIMARY",
         "status": "PRIMARY_COMPLETE",
-        "verdict": "NO_GO",
+        "verdict": "PPO_ONLY_OVERFIT_NOT_CONFIRMED",
         "promotion_allowed": False,
         "profitability_claim_allowed": False,
         "prereg_sha256": "a" * 64,
@@ -56,7 +56,7 @@ def test_discovery_terminal_summary_requires_matching_receipt(tmp_path: Path) ->
         "experiment_id": "TYPE2-D0",
         "profile": "PRIMARY",
         "status": "PRIMARY_COMPLETE",
-        "verdict": "NO_GO",
+        "verdict": "PPO_ONLY_OVERFIT_NOT_CONFIRMED",
         "promotion_allowed": False,
         "profitability_claim_allowed": False,
         "prereg_sha256": "a" * 64,
@@ -68,3 +68,47 @@ def test_discovery_terminal_summary_requires_matching_receipt(tmp_path: Path) ->
     summary["promotion_allowed"] = True
     tampered = require_discovery_terminal_receipt(tmp_path, summary)
     assert tampered["status"] == "RUNNING"
+
+
+@pytest.mark.parametrize("receipt_payload", ["{bad", "[]"])
+def test_discovery_terminal_summary_downgrades_malformed_receipt(
+    tmp_path: Path,
+    receipt_payload: str,
+) -> None:
+    summary: dict[str, object] = {
+        "research_lane": "rl_discovery",
+        "experiment_id": "TYPE2-D0",
+        "profile": "PRIMARY",
+        "status": "PRIMARY_COMPLETE",
+        "verdict": "PPO_ONLY_OVERFIT_NOT_CONFIRMED",
+        "promotion_allowed": False,
+        "profitability_claim_allowed": False,
+        "prereg_sha256": "a" * 64,
+        "fresh_oos": "NOT_RUN_NO_READ",
+    }
+    _ = (tmp_path / "terminal_receipt.json").write_text(receipt_payload, encoding="utf-8")
+
+    downgraded = require_discovery_terminal_receipt(tmp_path, summary)
+
+    assert downgraded["status"] == "RUNNING"
+    assert downgraded["verdict"] == "RUNNING_NOT_EVALUATED"
+
+
+def test_discovery_terminal_summary_rejects_jointly_unsafe_claims(tmp_path: Path) -> None:
+    unsafe: dict[str, object] = {
+        "research_lane": "rl_discovery",
+        "experiment_id": "TYPE2-D0",
+        "profile": "PRIMARY",
+        "status": "PRIMARY_COMPLETE",
+        "verdict": "PPO_ONLY_OVERFIT_CONFIRMED",
+        "promotion_allowed": True,
+        "profitability_claim_allowed": True,
+        "prereg_sha256": "a" * 64,
+        "fresh_oos": "OPENED",
+    }
+    _ = (tmp_path / "terminal_receipt.json").write_text(json.dumps(unsafe), encoding="utf-8")
+
+    downgraded = require_discovery_terminal_receipt(tmp_path, unsafe)
+
+    assert downgraded["status"] == "RUNNING"
+    assert downgraded["verdict"] == "RUNNING_NOT_EVALUATED"

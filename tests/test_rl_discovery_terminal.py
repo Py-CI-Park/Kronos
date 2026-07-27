@@ -88,6 +88,25 @@ def test_lifecycle_rejects_caller_forged_verdict(tmp_path: Path) -> None:
         lifecycle.complete(replace(computed, verdict="FORGED_GO"))
 
 
+@pytest.mark.parametrize("tamper", ["modify", "delete"])
+def test_terminalization_reverifies_recorded_model_bundle(tmp_path: Path, tamper: str) -> None:
+    lifecycle = _start(
+        tmp_path,
+        run_id=f"type2-d0-smoke-tampered-{tamper}",
+        profile="SMOKE",
+        expected=("A_PPO_ONLY:0",),
+    )
+    _record(lifecycle)
+    model_path = lifecycle.run_dir / "models" / "A_PPO_ONLY" / "seed-0" / "model.zip"
+    if tamper == "modify":
+        _ = model_path.write_bytes(b"tampered")
+    else:
+        model_path.unlink()
+
+    with pytest.raises(LifecycleIntegrityError):
+        lifecycle.complete(evaluate_discovery_gate(lifecycle.outcomes, profile="SMOKE"))
+
+
 def test_terminal_receipt_makes_resume_immutable(tmp_path: Path) -> None:
     lifecycle = _start(
         tmp_path,

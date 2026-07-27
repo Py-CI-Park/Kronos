@@ -150,6 +150,8 @@ class DiscoveryLifecycle:
         computed_gate = evaluate_discovery_gate(self._outcomes, profile=self._state.profile)
         if gate != computed_gate:
             raise LifecycleIntegrityError("gate", "must equal the gate recomputed from recorded outcomes")
+        for reference in self._state.unit_manifests:
+            self._verify_unit(self.run_dir, reference)
         receipt_path = contained_path(self.run_dir, "terminal_receipt.json")
         if receipt_path.exists():
             raise TerminalRunError(self.run_dir)

@@ -65,3 +65,15 @@ def test_primary_gate_is_incomplete_when_bc_control_arms_are_missing() -> None:
 
     assert result.status == "PRIMARY_INCOMPLETE"
     assert result.verdict == "PPO_ONLY_OVERFIT_NOT_CONFIRMED"
+
+
+def test_primary_gate_is_incomplete_when_only_shuffled_control_exists() -> None:
+    outcomes = tuple(
+        _outcome("D_SHUFFLED_REWARD_PPO", seed, 0.1, shuffled=True)
+        for seed in (0, 1, 2)
+    )
+
+    result = gates.evaluate_discovery_gate(outcomes, profile="PRIMARY")
+
+    assert result.status == "PRIMARY_INCOMPLETE"
+    assert result.verdict == "PPO_ONLY_OVERFIT_NOT_CONFIRMED"

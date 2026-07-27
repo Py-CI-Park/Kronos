@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import time
-from typing import cast
+from typing import ClassVar, Literal, cast
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from stom_rl import rl_events as _ev
 
@@ -20,6 +22,31 @@ else:  # pragma: no cover - script-style imports
     from webui.rl_dashboard_files import _is_run_file, _read_run_json, _utc_mtime
 
 DEFAULT_POLL_INTERVAL_SECONDS = 2.0
+
+
+class _TerminalBoundary(BaseModel):
+    """Strict safety and identity claims shared by terminal summary and receipt."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore")
+
+    experiment_id: str = Field(min_length=1)
+    profile: Literal["SMOKE", "PRIMARY"]
+    status: Literal["SMOKE_COMPLETE", "PRIMARY_COMPLETE"]
+    verdict: Literal[
+        "SMOKE_INCOMPLETE",
+        "PPO_ONLY_OVERFIT_CONFIRMED",
+        "PPO_ONLY_OVERFIT_NOT_CONFIRMED",
+    ]
+    promotion_allowed: Literal[False]
+    profitability_claim_allowed: Literal[False]
+    prereg_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fresh_oos: Literal["NOT_RUN_NO_READ"]
+    fixture_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    def has_valid_profile_pair(self) -> bool:
+        if self.profile == "SMOKE":
+            return self.status == "SMOKE_COMPLETE" and self.verdict == "SMOKE_INCOMPLETE"
+        return self.status == "PRIMARY_COMPLETE" and self.verdict.startswith("PPO_ONLY_OVERFIT_")
 
 
 def require_discovery_terminal_receipt(
@@ -36,21 +63,16 @@ def require_discovery_terminal_receipt(
     receipt_path = run_dir / "terminal_receipt.json"
     if not _is_run_file(run_dir, receipt_path):
         return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
-    receipt = cast(dict[str, object], _read_run_json(run_dir, receipt_path))
-    required = (
-        "experiment_id",
-        "profile",
-        "status",
-        "verdict",
-        "promotion_allowed",
-        "profitability_claim_allowed",
-        "prereg_sha256",
-        "fresh_oos",
-    )
-    if any(receipt.get(key) != summary.get(key) for key in required):
+    try:
+        summary_boundary = _TerminalBoundary.model_validate(summary)
+        receipt_boundary = _TerminalBoundary.model_validate(_read_run_json(run_dir, receipt_path))
+    except (OSError, TypeError, ValueError, ValidationError):
         return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
-    fixture_sha = summary.get("fixture_sha256")
-    if fixture_sha is not None and receipt.get("fixture_sha256") != fixture_sha:
+    if (
+        not summary_boundary.has_valid_profile_pair()
+        or not receipt_boundary.has_valid_profile_pair()
+        or summary_boundary != receipt_boundary
+    ):
         return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
     return summary
 
