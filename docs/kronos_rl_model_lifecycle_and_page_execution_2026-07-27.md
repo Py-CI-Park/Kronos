@@ -148,7 +148,7 @@ Recommended PR policy:
 
 | Check | Result |
 |---|---|
-| RL/V6/dashboard/V4 expanded Python regression | 170 passed, 2 skipped |
+| RL/V6/dashboard/V4 expanded Python regression | 176 passed, 2 skipped |
 | Ruff | Passed |
 | Basedpyright | 0 errors, 0 warnings |
 | V6 TypeScript tests | 383 passed |

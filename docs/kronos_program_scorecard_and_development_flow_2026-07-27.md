@@ -1,5 +1,9 @@
 # Kronos 프로그램 점수판 및 개발 흐름 v1
 
+> **SUPERSEDED / 역사적 기준선:** 이 문서는 D0 Primary 실행 전 62점 기준선입니다.
+> 최신 권위 상태(74점, Primary 12/12 완료)는 [RL model lifecycle and page execution](kronos_rl_model_lifecycle_and_page_execution_2026-07-27.md)과
+> [Type2 D0 Primary wiki](wiki/15-type2-d0-primary.md)를 따릅니다.
+
 **기준일:** 2026-07-27 KST
 
 **기준 계보:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`
