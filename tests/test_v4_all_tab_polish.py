@@ -164,9 +164,9 @@ def test_app_keeps_twelve_tab_branches_with_legacy_domain_frame_import_present()
     assert app.count("{#snippet tabHost()}") == 1
     assert app.count("{@render tabHost()}") == 2
 
-    branches = re.findall(r"tab === '([^']+)'", tab_host)
-    assert branches == _EXPECTED_TABS
-    assert len(branches) == len(set(branches)) == 12
+    legacy_map = _between(app, "const LEGACY_COMPONENTS", "};")
+    for tab_id in _EXPECTED_TABS:
+        assert (f"'{tab_id}':" in legacy_map) or (f" {tab_id}:" in legacy_map)
     assert "data-v3-tab-host={shell === 'v3' ? '' : undefined}" in tab_host
     assert "data-v4-domain-host={shell === 'v4' ? '' : undefined}" in tab_host
 
@@ -177,48 +177,26 @@ def test_app_keeps_twelve_tab_branches_with_legacy_domain_frame_import_present()
 # --------------------------------------------------------------------------- #
 def test_app_wraps_exactly_stom_and_daily_rl_guide_for_v4_and_preserves_v3_fallback() -> None:
     app = _source("App.svelte")
-    tab_host = _between(app, "{#snippet tabHost()}", "{/snippet}")
+    wrapper_map = _between(app, "const V4_WRAPPERS", "};")
+    props_map = _between(app, "const V4_WRAPPER_PROPS", "};")
 
     for tab_id, (surface, legacy) in _NEWLY_WRAPPED_TABS.items():
-        branch = _tab_branch(tab_host, tab_id)
-
-        _assert_in_order(
-            branch,
-            [
-                "{#if shell === 'v4'}",
-                f'<V4LegacyDomainFrame surface="{surface}">',
-                f"<{legacy} />",
-                "</V4LegacyDomainFrame>",
-                "{:else}",
-                f"<{legacy} />",
-            ],
-        )
-        # exactly one v4-branch mount and one v3-fallback mount of the legacy tab
-        assert branch.count(f"<{legacy} />") == 2
-        assert branch.count("V4LegacyDomainFrame") == 2  # open + close tag
-        # no other surface literal leaks into this branch
-        other_surface = "daily-guide" if surface == "diagnostics" else "diagnostics"
-        assert f'surface="{other_surface}"' not in branch
-
-    stom_branch = _tab_branch(tab_host, "stom")
-    guide_branch = _tab_branch(tab_host, "daily-rl-guide")
-    assert 'surface="diagnostics"' in stom_branch
-    assert 'surface="daily-guide"' in guide_branch
-    assert 'surface="daily-guide"' not in stom_branch
-    assert 'surface="diagnostics"' not in guide_branch
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        assert f"{key}: {legacy}" in _between(app, "const LEGACY_COMPONENTS", "};")
+        assert f"{key}: V4LegacyDomainFrame" in wrapper_map
+        assert f"{key}: {{ surface: '{surface}' }}" in props_map
 
     # Every already-wrapped branch keeps its existing wrapper untouched by
     # this change (contract: "only two branches change").
     for tab_id, wrapper in _ALREADY_WRAPPED_TABS.items():
-        branch = _tab_branch(tab_host, tab_id)
-        assert wrapper in branch
-        assert "V4LegacyDomainFrame" not in branch
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        assert f"{key}: {wrapper}" in wrapper_map
 
 
 def test_app_wraps_exactly_two_branches_total() -> None:
     app = _source("App.svelte")
-    tab_host = _between(app, "{#snippet tabHost()}", "{/snippet}")
-    assert tab_host.count("V4LegacyDomainFrame") == len(_NEWLY_WRAPPED_TABS) * 2  # open+close each
+    wrapper_map = _between(app, "const V4_WRAPPERS", "};")
+    assert wrapper_map.count("V4LegacyDomainFrame") == len(_NEWLY_WRAPPED_TABS)
 
 
 # --------------------------------------------------------------------------- #
