@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import re
 import json
+import re
+from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -30,9 +31,14 @@ class AuthorityError(ValueError):
 def canonical_json(value: Any) -> bytes:
     try:
         import rfc8785
+
+        from stom_rl.daily_type1_content_cache import canonical_json_cached
     except ImportError as exc:  # pragma: no cover
         raise AuthorityError("rfc8785 is required to verify an authority artifact") from exc
-    return rfc8785.dumps(value)
+    try:
+        return canonical_json_cached(value, rfc8785.dumps)
+    except RuntimeError as exc:
+        raise AuthorityError("value changed during canonical serialization") from exc
 
 
 def sha256_canonical(value: Any) -> str:
@@ -162,6 +168,16 @@ def _typed_exclusion(symbol: str, historical: Mapping[str, Any], typed: Mapping[
 
 
 def validate_authority(envelope: Mapping[str, Any]) -> None:
+    from stom_rl.daily_type1_content_cache import validate_authority_cached
+
+    validate_authority_cached(
+        envelope,
+        _validate_authority_uncached,
+        lambda: AuthorityError("authority changed during validation"),
+    )
+
+
+def _validate_authority_uncached(envelope: Mapping[str, Any]) -> None:
     _require(set(envelope) == {"authority", "integrity", "schema"}, "unexpected envelope fields")
     _require(envelope["schema"] == SCHEMA, "wrong authority schema")
     authority, integrity = envelope["authority"], envelope["integrity"]
