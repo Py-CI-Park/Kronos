@@ -9,7 +9,7 @@
   import { REVIEWED_DISCOVERY_SNAPSHOT } from '../discovery/reviewedDiscoverySnapshot';
 
   const LADDER = [
-    ['D0', 'PPO attribution', 'NO-GO complete'],
+    ['D0', 'PPO attribution', 'reviewed snapshot below'],
     ['D1', 'reward/action redesign', 'prereg required'],
     ['D2', 'representation/period expansion', 'waiting'],
     ['D3', 'reward/action ablation', 'waiting'],
