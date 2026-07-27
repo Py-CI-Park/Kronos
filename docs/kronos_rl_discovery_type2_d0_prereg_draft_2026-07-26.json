@@ -1,0 +1,122 @@
+{
+  "schema_version": "kronos.rl-discovery.prereg.draft.v1",
+  "status": "DRAFT_NOT_EXECUTABLE",
+  "created_kst": "2026-07-26",
+  "experiment_id": "type2-d0-ppo-attribution-v0",
+  "lineage": {
+    "base_commit": "73c4c1bd4885ae5cfb33595d3973ce289cd4daf9",
+    "type1_outcome": "COMPLETE_NO_GO_PRESERVED",
+    "proposal": "docs/kronos_rl_discovery_lab_proposal_2026-07-26.md"
+  },
+  "claims_boundary": {
+    "research_only": true,
+    "discovery_only": true,
+    "profitability_claim_allowed": false,
+    "promotion_allowed": false,
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "fresh_oos": "NOT_RUN_NO_READ"
+  },
+  "question": "Can MaskablePPO overfit the frozen synthetic Type1 fixture without oracle behavior cloning after PPO training?",
+  "hypothesis": {
+    "primary": "PPO-only can reach at least 0.90 oracle reward ratio on all three preregistered seeds without post-PPO oracle calibration.",
+    "null": "PPO-only cannot reach the mechanics gate or is indistinguishable from shuffled-reward learning."
+  },
+  "environment": {
+    "class": "stom_rl.daily_type1_env.Type1ClosingEnv",
+    "modification_allowed": false,
+    "fixture": "tests/fixtures/type1_synthetic_fixture.json",
+    "partition": "TRAIN_ONLY_SYNTHETIC",
+    "native_action_mask_required": true,
+    "observation_contract": "FROZEN_TYPE1_8514_WIDE",
+    "action_contract": "STOP_OR_STABLE_SLOT_0_TO_500"
+  },
+  "arms": [
+    {
+      "id": "A_PPO_ONLY",
+      "initialization": "RANDOM",
+      "oracle_bc_before_ppo": false,
+      "ppo": true,
+      "oracle_bc_after_ppo": false
+    },
+    {
+      "id": "B_BC_THEN_PPO",
+      "initialization": "ORACLE_BC_WARM_START",
+      "oracle_bc_before_ppo": true,
+      "ppo": true,
+      "oracle_bc_after_ppo": false
+    },
+    {
+      "id": "C_BC_ONLY",
+      "initialization": "ORACLE_BC",
+      "oracle_bc_before_ppo": true,
+      "ppo": false,
+      "oracle_bc_after_ppo": false
+    },
+    {
+      "id": "D_SHUFFLED_REWARD_PPO",
+      "initialization": "RANDOM",
+      "oracle_bc_before_ppo": false,
+      "ppo": true,
+      "oracle_bc_after_ppo": false,
+      "reward": "SHUFFLED_CONTROL"
+    }
+  ],
+  "seeds": [0, 1, 2],
+  "training": {
+    "primary_timesteps": 104000,
+    "preauthorized_extension_timesteps": 200000,
+    "extension_rule": "Use 200000 only if every arm and seed was preregistered for the extension before reading the 104000-step terminal comparison.",
+    "checkpoints": [0, 10000, 25000, 50000, 104000, 200000],
+    "best_seed_selection_allowed": false,
+    "best_checkpoint_selection_allowed": false,
+    "post_ppo_oracle_calibration_allowed": false
+  },
+  "required_metrics": [
+    "oracle_reward_ratio",
+    "exact_basket_accuracy",
+    "reward_improvement_from_ppo_start",
+    "policy_entropy",
+    "action_histogram",
+    "stop_action_rate",
+    "explained_variance",
+    "approximate_kl",
+    "clip_fraction",
+    "policy_parameter_update_norm",
+    "invalid_action_count",
+    "block_count",
+    "no_fill_count"
+  ],
+  "gates": {
+    "ppo_mechanics": {
+      "arm": "A_PPO_ONLY",
+      "oracle_reward_ratio_min": 0.9,
+      "required_seed_passes": 3
+    },
+    "validity": {
+      "invalid_action_count": 0,
+      "block_count": 0,
+      "no_fill_count": 0
+    },
+    "collapse": {
+      "single_action_rate_max": 0.95,
+      "exception": "Allowed only when the frozen oracle target distribution itself exceeds the same concentration."
+    },
+    "control": {
+      "primary_must_beat_shuffled_reward": true,
+      "comparison": "all seeds and the median; no best-seed comparison"
+    }
+  },
+  "terminal_outcomes": [
+    "PPO_ONLY_OVERFIT_CONFIRMED",
+    "DEGENERATE_POLICY",
+    "NO_GO_MECHANICS",
+    "BLOCKED_INVALID_ARTIFACT"
+  ],
+  "execution_blockers": [
+    "This draft must be reviewed and promoted to an immutable executable preregistration.",
+    "The trainer must separate PPO-only, BC-only, BC-then-PPO, and shuffled-reward arms.",
+    "Checkpoint diagnostics and append-only terminal receipts must be implemented and tested."
+  ]
+}
