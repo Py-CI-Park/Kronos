@@ -30,7 +30,7 @@ strategy and is not relabeled as RL.
 | Dashboard evidence | Running and terminal summaries share scanner format | `sb3_smoke_summary.json` | 100% |
 | Full-page visibility | All V6 pages show one execution strip | Score, branch, next action, ETA, safety gates | 100% |
 | Page control table | All 12 surfaces have progress/action/ETA/merge gate | Program Scorecard page | 100% |
-| Primary research result | 4 arms × 3 seeds at preregistered budget | Not executed in this change | 0% |
+| Primary research result | 4 arms × 3 seeds at preregistered budget | `PRIMARY_COMPLETE / PPO_ONLY_OVERFIT_NOT_CONFIRMED` | 100% |
 
 ## 3. Actual reinforcement-learning smoke result
 
@@ -62,12 +62,12 @@ measure expected return.
 
 | Lane | Score | Weight | Weighted points | State | Remaining gate |
 |---|---:|---:|---:|---|---|
-| Platform | 92 | 30% | 27.6 | STRONG | Bind Primary terminal artifact |
-| RL evidence | 40 | 30% | 12.0 | PARTIAL | Complete preregistered Primary |
-| Engineering | 90 | 20% | 18.0 | STRONG | Long-run interruption E2E |
-| Governance | 74 | 10% | 7.4 | PARTIAL | CI/PR protection |
+| Platform | 94 | 30% | 28.2 | STRONG | Bind future D1 prereg artifact |
+| RL evidence | 65 | 30% | 19.5 | PARTIAL | Close D0 NO-GO and preregister D1 |
+| Engineering | 92 | 20% | 18.4 | STRONG | Mid-arm checkpoint remains separate |
+| Governance | 78 | 10% | 7.8 | PARTIAL | CI/PR protection |
 | Live readiness | 0 | 10% | 0.0 | BLOCKED | No action before research gates |
-| **Overall** |  | **100%** | **65 / 100** | **PARTIAL** | Primary remains the critical path |
+| **Overall** |  | **100%** | **74 / 100** | **PARTIAL** | D0 evidence complete; hypothesis failed |
 
 ## 5. Full-page execution table
 
@@ -76,15 +76,15 @@ ETA is the expected time for the listed next action on the current local setup.
 
 | Priority | Page | Progress | Current evidence | Next action | ETA | PR merge gate |
 |---|---|---:|---|---|---|---|
-| P1 | Home | 95% | READ_ONLY | Verify Primary status link | 15 min | Verdict values agree |
-| P1 | Program Scorecard | 92% | AUDITED | Recalculate after Primary | 20 min | Weights total 100% |
-| P0 | Discovery Lab | 80% | SMOKE_COMPLETE | Run D0 Primary, 4 arms × 3 seeds | CPU 3–4 h+ | All arms/seeds and control complete |
-| P1 | Data | 85% | MIXED | Recheck Primary input provenance | 30 min | Train-only and SHA match |
-| P0 | Experiment | 88% | PREREGISTERED | Freeze run ID and prereg SHA | 20 min | No prereg mutation |
-| P0 | Training | 72% | RESUME_READY | Execute and interrupt/resume Primary | CPU 3–4 h+ | Model, normalizer, outcome persisted |
-| P0 | Evaluation | 78% | NO_GO | Calculate Primary terminal gate | 20–40 min after run | 23bp, control, collapse visible |
-| P1 | Compare | 75% | RESEARCH_ONLY | Compare all 12 Primary results | 20 min | RULE and RL remain separated |
-| P1 | Report | 82% | HAS_REPORTS | Add Primary terminal receipt | 30 min | Verdict, reason, SHA included |
+| P1 | Home | 97% | PRIMARY_NO_GO | Link D1 entry condition | 30 min | Verdict values agree |
+| P1 | Program Scorecard | 96% | AUDITED | Freeze score after PR review | 20 min | Weights total 100% |
+| P0 | Discovery Lab | 96% | PRIMARY_COMPLETE | Close D0 and preregister D1 | 4–8 h design | 12/12 and receipt verified |
+| P1 | Data | 90% | TRAIN_ONLY_LOCKED | Write D1 input contract | 1–2 h | Fresh OOS sealed and SHA matches |
+| P0 | Experiment | 95% | D0_TERMINAL | Preregister D1 reward/action redesign | 4–8 h | D0 immutable, new hypothesis separate |
+| P1 | Training | 96% | PRIMARY_COMPLETE | Run only a new D1 smoke after prereg | 30 min compute | 12 models and outcomes preserved |
+| P0 | Evaluation | 94% | NO_GO | Record PPO attribution failure | 30 min | Control and collapse visible |
+| P1 | Compare | 92% | PRIMARY_COMPARED | Freeze A/B/C/D aggregate comparison | 20 min | RULE and RL remain separated |
+| P1 | Report | 94% | PRIMARY_RECEIPT | Attach result and receipt to PR | 30 min | NO-GO reason, SHA, 12 outcomes included |
 | P2 | Insights | 70% | OBSERVATION | Strengthen observation boundary | 30–60 min | No alpha claim |
 | P2 | Other Lanes | 68% | INELIGIBLE_FOR_RL_RANK | Recheck exclusion label | 30 min | Not counted as RL performance |
 | HOLD | Settings | 80% | LOCAL_ONLY | Keep execution controls disabled | 15 min | Read-only boundary maintained |
@@ -153,8 +153,7 @@ Recommended PR policy:
 
 ## 9. Immediate next decision
 
-The platform can generate and test RL models now. The next meaningful research
-step is the immutable D0 Primary attribution run. Its purpose is deliberately
-narrow: determine whether PPO can overfit the train-only synthetic task better
-than the shuffled-reward control. Even a pass does not unlock Fresh OOS or live
-trading; it only permits the next preregistered research question.
+The platform generated and evaluated 12 Primary research models. D0 is complete
+and the PPO-only attribution hypothesis failed. The next meaningful step is not
+post-hoc tuning of D0; it is a separately preregistered D1 reward/action-design
+falsification experiment. Fresh OOS and live trading remain blocked.
