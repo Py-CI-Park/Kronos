@@ -1,8 +1,11 @@
 # Kronos 프로그램 점수판 및 개발 흐름 v1
 
-**기준일:** 2026-07-27 KST  
-**기준 계보:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`  
-**작업 브랜치:** `codex/rl-discovery-governance-v1`  
+**기준일:** 2026-07-27 KST
+
+**기준 계보:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`
+
+**작업 브랜치:** `codex/rl-discovery-governance-v1`
+
 **릴리스 태그:** `fork-v1.8.0-kronos-rl-discovery-scorecard`
 
 ## 1. 프로그램 점수

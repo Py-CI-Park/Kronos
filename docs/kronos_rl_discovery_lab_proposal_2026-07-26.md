@@ -1,10 +1,15 @@
 # Kronos 강화학습 발견 실험실 검토 및 Type2 연구 제안
 
-**작성일:** 2026-07-26 KST  
-**상태:** `PROPOSED / DISCOVERY_ONLY`  
-**기준 커밋:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`  
-**기존 Type1 판정:** `COMPLETE / NO_GO`  
-**Fresh OOS:** `NOT_RUN/no-read` 유지  
+**작성일:** 2026-07-26 KST
+
+**상태:** `PROPOSED / DISCOVERY_ONLY`
+
+**기준 커밋:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`
+
+**기존 Type1 판정:** `COMPLETE / NO_GO`
+
+**Fresh OOS:** `NOT_RUN/no-read` 유지
+
 **목적:** 수익성이나 실거래 준비를 주장하지 않고, 실제 강화학습이 무엇을 학습할 수 있는지 단계적으로 발견하는 연구 플랫폼을 제안한다.
 
 ## 1. 결론
@@ -334,4 +339,3 @@ webui/rl_runs/rl_discovery/{experiment_id}/
 - 학습은 되지만 일반화가 안 되는지.
 
 즉 목표는 당장 `GO`를 만들어내는 것이 아니라, 매 실험에서 **왜 안 되는지 또는 어느 단계까지 되는지**를 축적하는 강화학습 연구 플랫폼을 만드는 것이다.
-

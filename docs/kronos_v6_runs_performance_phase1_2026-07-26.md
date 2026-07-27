@@ -1,9 +1,13 @@
 # Kronos V6 `/api/v6/runs` 성능 P0 1단계 결과
 
-**작성일:** 2026-07-26 KST  
-**기준 커밋:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`  
-**기준 태그:** `fork-v1.7.0-kronos-dashboard-v6-type1`  
-**연구 판정:** `COMPLETE / NO_GO`  
+**작성일:** 2026-07-26 KST
+
+**기준 커밋:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`
+
+**기준 태그:** `fork-v1.7.0-kronos-dashboard-v6-type1`
+
+**연구 판정:** `COMPLETE / NO_GO`
+
 **Fresh OOS:** `NOT_RUN/no-read`
 
 ## 핸드오프 평가

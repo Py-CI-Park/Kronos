@@ -1,11 +1,17 @@
 # Kronos Type2-D0 강화학습 Discovery Smoke 실행 결과
 
-**실행일:** 2026-07-26 KST  
-**기준 커밋:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`  
-**브랜치:** `research/type1-closing-rl-v1`  
-**실험:** `type2-d0-ppo-attribution-v0`  
-**프로필:** `SMOKE`  
-**최종 아티팩트:** `webui/rl_runs/rl_discovery/type2-d0-smoke-20260726T214113+0900`  
+**실행일:** 2026-07-26 KST
+
+**기준 커밋:** `73c4c1bd4885ae5cfb33595d3973ce289cd4daf9`
+
+**브랜치:** `research/type1-closing-rl-v1`
+
+**실험:** `type2-d0-ppo-attribution-v0`
+
+**프로필:** `SMOKE`
+
+**최종 아티팩트:** `webui/rl_runs/rl_discovery/type2-d0-smoke-20260726T214113+0900`
+
 **사전등록 SHA-256:** `2c3bced20fc6b718f7c2f37963501e962b2198b8b620fd6a1e4a91e20ff0ce4d`
 
 ## 1. 결론
