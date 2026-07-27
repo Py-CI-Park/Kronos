@@ -41,6 +41,8 @@ def test_primary_gate_requires_every_ppo_seed_and_the_shuffled_control() -> None
     # Given
     outcomes = tuple(
         [_outcome("A_PPO_ONLY", seed, 0.95) for seed in (0, 1, 2)]
+        + [_outcome("B_BC_THEN_PPO", seed, 1.0) for seed in (0, 1, 2)]
+        + [_outcome("C_BC_ONLY", seed, 1.0) for seed in (0, 1, 2)]
         + [_outcome("D_SHUFFLED_REWARD_PPO", seed, 0.1, shuffled=True) for seed in (0, 1, 2)]
     )
 
@@ -51,3 +53,15 @@ def test_primary_gate_requires_every_ppo_seed_and_the_shuffled_control() -> None
     assert result.verdict == "PPO_ONLY_OVERFIT_CONFIRMED"
     assert result.promotion_allowed is False
     assert result.profitability_claim_allowed is False
+
+
+def test_primary_gate_is_incomplete_when_bc_control_arms_are_missing() -> None:
+    outcomes = tuple(
+        [_outcome("A_PPO_ONLY", seed, 0.95) for seed in (0, 1, 2)]
+        + [_outcome("D_SHUFFLED_REWARD_PPO", seed, 0.1, shuffled=True) for seed in (0, 1, 2)]
+    )
+
+    result = gates.evaluate_discovery_gate(outcomes, profile="PRIMARY")
+
+    assert result.status == "PRIMARY_INCOMPLETE"
+    assert result.verdict == "PPO_ONLY_OVERFIT_NOT_CONFIRMED"

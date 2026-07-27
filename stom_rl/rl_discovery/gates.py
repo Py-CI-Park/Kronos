@@ -62,16 +62,38 @@ def evaluate_discovery_gate(
             fresh_oos="NOT_RUN_NO_READ",
         )
 
-    ppo_only = tuple(outcome for outcome in outcomes if outcome.arm == "A_PPO_ONLY")
-    shuffled = tuple(outcome for outcome in outcomes if outcome.arm == "D_SHUFFLED_REWARD_PPO")
-    ppo_seeds = {outcome.seed for outcome in ppo_only}
-    shuffled_seeds = {outcome.seed for outcome in shuffled}
-    complete_controls = ppo_seeds == {0, 1, 2} and shuffled_seeds == {0, 1, 2}
+    expected_seeds = {0, 1, 2}
+    expected_arms = {
+        "A_PPO_ONLY",
+        "B_BC_THEN_PPO",
+        "C_BC_ONLY",
+        "D_SHUFFLED_REWARD_PPO",
+    }
+    by_arm = {
+        arm: tuple(outcome for outcome in outcomes if outcome.arm == arm)
+        for arm in expected_arms
+    }
+    ppo_only = by_arm["A_PPO_ONLY"]
+    shuffled = by_arm["D_SHUFFLED_REWARD_PPO"]
+    complete_matrix = all({outcome.seed for outcome in by_arm[arm]} == expected_seeds for arm in expected_arms)
     ratios_pass = bool(ppo_only) and all(outcome.oracle_reward_ratio >= 0.9 for outcome in ppo_only)
-    separated = bool(shuffled) and fmean(outcome.oracle_reward_ratio for outcome in ppo_only) > fmean(
-        outcome.oracle_reward_ratio for outcome in shuffled
+    shuffled_by_seed = {outcome.seed: outcome for outcome in shuffled}
+    per_seed_separated = bool(shuffled) and all(
+        outcome.oracle_reward_ratio > shuffled_by_seed[outcome.seed].oracle_reward_ratio
+        for outcome in ppo_only
+        if outcome.seed in shuffled_by_seed
     )
-    confirmed = complete_controls and ratios_pass and separated
+    mean_separated = bool(shuffled) and fmean(
+        outcome.oracle_reward_ratio for outcome in ppo_only
+    ) > fmean(outcome.oracle_reward_ratio for outcome in shuffled)
+    valid = all(
+        outcome.invalid_action_count == 0
+        and outcome.block_count == 0
+        and outcome.no_fill_count == 0
+        for outcome in outcomes
+    )
+    noncollapsed = all(outcome.dominant_action_rate < 0.95 for outcome in ppo_only)
+    confirmed = complete_matrix and ratios_pass and per_seed_separated and mean_separated and valid and noncollapsed
     reasons = (
         "all PPO-only seeds reached the preregistered memorization threshold",
         "PPO-only exceeded the shuffled-reward control",
@@ -81,7 +103,7 @@ def evaluate_discovery_gate(
         "Fresh OOS remains sealed",
     )
     return GateResult(
-        status="PRIMARY_COMPLETE" if complete_controls else "PRIMARY_INCOMPLETE",
+        status="PRIMARY_COMPLETE" if complete_matrix else "PRIMARY_INCOMPLETE",
         verdict="PPO_ONLY_OVERFIT_CONFIRMED" if confirmed else "PPO_ONLY_OVERFIT_NOT_CONFIRMED",
         reasons=reasons,
         promotion_allowed=False,

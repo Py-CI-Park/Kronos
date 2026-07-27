@@ -12,13 +12,23 @@ import hashlib
 from pathlib import Path
 import random
 import time
-from typing import TYPE_CHECKING, ClassVar, Protocol, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from pydantic import BaseModel, ConfigDict
 
-from stom_rl.rl_discovery.contract import ArmId, DiscoveryPreregistration, load_prereg
+from stom_rl.rl_discovery.contract import ArmId, load_prereg
+from stom_rl.rl_discovery.daily_adapter import (
+    build_training_config,
+    evaluate_discovery_model,
+    load_fixture_pairs,
+)
 from stom_rl.rl_discovery.gates import ArmOutcome, RunProfile, evaluate_discovery_gate
 from stom_rl.rl_discovery.lifecycle import DiscoveryLifecycle
+from stom_rl.rl_discovery.training_bundle import (
+    DiscoveryModel,
+    DiscoveryNormalizer,
+    TrainedArm,
+)
 
 if TYPE_CHECKING:
     from stom_rl.daily_type1_train import TrainingConfig
@@ -53,34 +63,6 @@ class DiscoveryPaths:
             prereg=repo_root / "docs" / "kronos_rl_discovery_type2_d0_prereg_2026-07-26.json",
             run_root=repo_root / "webui" / "rl_runs" / "rl_discovery",
         )
-
-
-class DiscoveryModel(Protocol):
-    """Minimal model surface required by the attribution runner."""
-
-    def learn(self, *, total_timesteps: int, progress_bar: bool) -> object: ...
-
-    def save(self, path: str) -> None: ...
-
-
-class DiscoveryNormalizer(Protocol):
-    """Persisted observation/reward normalization contract."""
-
-    def save(self, path: str) -> None: ...
-
-
-@dataclass(frozen=True, slots=True)
-class TrainedArm:
-    """Model bundle that must remain loadable after a run is interrupted."""
-
-    model: DiscoveryModel
-    normalizer: DiscoveryNormalizer
-
-    def save(self, run_dir: Path, *, arm: str, seed: int) -> None:
-        model_dir = run_dir / "models" / arm / f"seed-{seed}"
-        model_dir.mkdir(parents=True, exist_ok=True)
-        self.model.save(str(model_dir / "model.zip"))
-        self.normalizer.save(str(model_dir / "normalizer.pkl"))
 
 
 def shuffle_reward_pairs(
@@ -142,24 +124,6 @@ def _required_int(payload: Mapping[str, object], key: str) -> int:
     return value
 
 
-def _training_config(seed: int, profile: RunProfile, prereg: DiscoveryPreregistration) -> TrainingConfig:
-    from stom_rl.daily_type1_train import TrainingConfig
-
-    timesteps = (
-        prereg.training.smoke_timesteps
-        if profile is RunProfile.SMOKE
-        else prereg.training.primary_timesteps
-    )
-    return TrainingConfig(
-        seed=seed,
-        synthetic_timesteps=timesteps,
-        n_steps=64 if profile is RunProfile.SMOKE else 1000,
-        batch_size=64 if profile is RunProfile.SMOKE else 250,
-        n_epochs=2 if profile is RunProfile.SMOKE else 10,
-        oracle_calibration_epochs=20 if profile is RunProfile.SMOKE else 200,
-    )
-
-
 def _train_arm(
     arm: ArmId,
     pairs: Sequence[Mapping[str, object]],
@@ -203,13 +167,12 @@ def run_discovery(
 ) -> Path:
     """Execute or resume every preregistered arm with durable partial evidence."""
 
-    from stom_rl.daily_type1_train import evaluate_model, load_synthetic_fixture
-
     prereg_bytes = paths.prereg.read_bytes()
     prereg = load_prereg(paths.prereg)
-    pairs = load_synthetic_fixture(paths.fixture)
+    pairs = load_fixture_pairs(paths.fixture)
     seeds = prereg.training.smoke_seeds if profile is RunProfile.SMOKE else prereg.seeds
     prereg_sha256 = hashlib.sha256(prereg_bytes).hexdigest()
+    fixture_sha256 = hashlib.sha256(paths.fixture.read_bytes()).hexdigest()
     expected_runs = tuple(f"{arm.id.value}:{seed}" for arm in prereg.arms for seed in seeds)
     if resume_dir is None:
         timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
@@ -219,14 +182,18 @@ def run_discovery(
             experiment_id=prereg.experiment_id,
             profile=profile,
             prereg_sha256=prereg_sha256,
+            fixture_sha256=fixture_sha256,
             expected_runs=expected_runs,
         )
     else:
         lifecycle = DiscoveryLifecycle.resume(
             resume_dir,
+            run_root=paths.run_root,
             experiment_id=prereg.experiment_id,
             profile=profile,
             prereg_sha256=prereg_sha256,
+            fixture_sha256=fixture_sha256,
+            expected_runs=expected_runs,
         )
     started_at = time.monotonic()
     for arm in prereg.arms:
@@ -235,17 +202,14 @@ def run_discovery(
             if key in lifecycle.completed_keys:
                 print(f"[{profile.value}] resume skip arm={arm.id.value} seed={seed}", flush=True)
                 continue
-            config = _training_config(seed, profile, prereg)
+            config = build_training_config(seed, profile, prereg)
             print(
                 f"[{profile.value}] start arm={arm.id.value} seed={seed} timesteps={config.synthetic_timesteps if arm.ppo else 0}",
                 flush=True,
             )
             trained = _train_arm(arm.id, pairs, config)
             trained.save(lifecycle.run_dir, arm=arm.id.value, seed=seed)
-            events, metrics = cast(
-                tuple[list[dict[str, object]], dict[str, object]],
-                evaluate_model(trained.model, pairs, seed=seed),
-            )
+            events, metrics = evaluate_discovery_model(trained.model, pairs, seed=seed)
             outcome = outcome_from_evaluation(
                 arm=arm.id.value,
                 seed=seed,

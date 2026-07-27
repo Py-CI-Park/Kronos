@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import cast
 
 from stom_rl.rl_discovery import runner
+from stom_rl.rl_discovery.training_bundle import TrainedArm
 
 
 class _FakeSaver:
@@ -12,6 +13,7 @@ class _FakeSaver:
 
     def save(self, path: str) -> None:
         self.paths.append(path)
+        _ = Path(path).write_bytes(b"saved")
 
 
 class _FakeModel(_FakeSaver):
@@ -86,10 +88,12 @@ def test_default_paths_keep_fresh_oos_outside_the_runner() -> None:
 def test_trained_arm_persists_model_and_normalizer_in_seed_directory(tmp_path: Path) -> None:
     model = _FakeModel()
     normalizer = _FakeSaver()
-    trained = runner.TrainedArm(model=model, normalizer=normalizer)
+    trained = TrainedArm(model=model, normalizer=normalizer)
 
     trained.save(tmp_path, arm="A_PPO_ONLY", seed=2)
 
     expected_dir = tmp_path / "models" / "A_PPO_ONLY" / "seed-2"
-    assert model.paths == [str(expected_dir / "model.zip")]
-    assert normalizer.paths == [str(expected_dir / "normalizer.pkl")]
+    assert len(model.paths) == 1
+    assert len(normalizer.paths) == 1
+    assert (expected_dir / "model.zip").read_bytes() == b"saved"
+    assert (expected_dir / "normalizer.pkl").read_bytes() == b"saved"
