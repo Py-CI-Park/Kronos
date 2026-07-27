@@ -1,6 +1,8 @@
 # Kronos RL model lifecycle and full-page execution review
 
-**Reviewed:** 2026-07-27 KST  
+**Evidence completed:** 2026-07-27 KST
+
+**Final review:** 2026-07-28 KST
 **Work branch:** `codex/rl-model-lifecycle-v1`  
 **Base release:** `fork-v1.8.0-kronos-rl-discovery-scorecard`  
 **Research verdict:** `NO-GO`  
@@ -146,13 +148,12 @@ Recommended PR policy:
 
 | Check | Result |
 |---|---|
-| Discovery/dashboard Python regression | 128 passed, 2 skipped |
-| Lifecycle targeted tests | Included in the 123-test receipt |
+| RL/V6/dashboard/V4 expanded Python regression | 170 passed, 2 skipped |
 | Ruff | Passed |
 | Basedpyright | 0 errors, 0 warnings |
 | V6 TypeScript tests | 383 passed |
 | Svelte check | 0 errors, 0 warnings |
-| Production build | 955 modules transformed |
+| Production build | 956 modules transformed |
 | Actual SB3 smoke | 4 models + 4 normalizers + 4 outcomes persisted |
 | Resume QA | Partial-run interruption test passes; terminal resume rejects |
 | Runtime browser load | HTTP 200; V6 assets and read-only APIs loaded successfully |

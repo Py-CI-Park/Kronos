@@ -30,12 +30,11 @@ read-only `/api/docs/*` endpoints.
 - [12-portfolio-rl-roadmap](12-portfolio-rl-roadmap) - portfolio RL roadmap
 - [13-research-ledger](13-research-ledger) - current research status and evidence index
 - [14-document-standard](14-document-standard) - document taxonomy and report templates
+- [15-type2-d0-primary](15-type2-d0-primary) - Type2-D0 Primary reviewed evidence summary
 
 ### Latest Type2-D0 evidence
 
-- [Primary result](../kronos_rl_discovery_type2_d0_primary_result_2026-07-27.md) - 12/12 units, `PRIMARY_COMPLETE`, hypothesis `NO-GO`
-- [Lifecycle and full-page review](../kronos_rl_model_lifecycle_and_page_execution_2026-07-27.md) - execution, UX, score, and delivery gates
-- [Custody manifest](../evidence/type2-d0-primary-20260727.custody.json) - SHA-256 inventory for ignored model evidence
+- [Type2-D0 reviewed summary](15-type2-d0-primary) - 12/12 units, `PRIMARY_COMPLETE`, hypothesis `NO-GO`, custody limitations, and source paths
 
 ## 최신 구현 결과
 

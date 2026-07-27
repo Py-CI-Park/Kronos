@@ -1,7 +1,7 @@
 # 연구 원장 · Research Ledger
 
 > 상태: `ACTIVE_RESEARCH_INDEX`  
-> 최종 갱신: 2026-07-27
+> 최종 갱신: 2026-07-28
 > 범위: Kronos 예측, 일봉 종가매매, 포트폴리오 RL, 대시보드·연구 인프라
 
 ## 목적
