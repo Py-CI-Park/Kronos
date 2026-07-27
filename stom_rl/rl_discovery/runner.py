@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict
 
-from stom_rl.rl_discovery.artifacts import write_dashboard_artifact
 from stom_rl.rl_discovery.contract import ArmId, DiscoveryPreregistration, load_prereg
 from stom_rl.rl_discovery.gates import ArmOutcome, RunProfile, evaluate_discovery_gate
+from stom_rl.rl_discovery.lifecycle import DiscoveryLifecycle
 
 if TYPE_CHECKING:
     from stom_rl.daily_type1_train import TrainingConfig
@@ -59,6 +59,28 @@ class DiscoveryModel(Protocol):
     """Minimal model surface required by the attribution runner."""
 
     def learn(self, *, total_timesteps: int, progress_bar: bool) -> object: ...
+
+    def save(self, path: str) -> None: ...
+
+
+class DiscoveryNormalizer(Protocol):
+    """Persisted observation/reward normalization contract."""
+
+    def save(self, path: str) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class TrainedArm:
+    """Model bundle that must remain loadable after a run is interrupted."""
+
+    model: DiscoveryModel
+    normalizer: DiscoveryNormalizer
+
+    def save(self, run_dir: Path, *, arm: str, seed: int) -> None:
+        model_dir = run_dir / "models" / arm / f"seed-{seed}"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        self.model.save(str(model_dir / "model.zip"))
+        self.normalizer.save(str(model_dir / "normalizer.pkl"))
 
 
 def shuffle_reward_pairs(
@@ -142,26 +164,44 @@ def _train_arm(
     arm: ArmId,
     pairs: Sequence[Mapping[str, object]],
     config: TrainingConfig,
-) -> DiscoveryModel:
+) -> TrainedArm:
     from stom_rl.daily_type1_train import calibrate_synthetic_oracle, create_model, train_model
 
     if arm is ArmId.PPO_ONLY:
-        return cast(DiscoveryModel, train_model(pairs, config, timesteps=config.synthetic_timesteps)[0])
+        model, normalizer = cast(
+            tuple[object, object],
+            train_model(pairs, config, timesteps=config.synthetic_timesteps),
+        )
+        return TrainedArm(cast(DiscoveryModel, model), cast(DiscoveryNormalizer, normalizer))
     if arm is ArmId.BC_THEN_PPO:
-        model = cast(DiscoveryModel, create_model(pairs, config)[0])
+        raw_model, raw_normalizer = cast(tuple[object, object], create_model(pairs, config))
+        model = cast(DiscoveryModel, raw_model)
         _ = calibrate_synthetic_oracle(model, pairs, epochs=config.oracle_calibration_epochs)
         _ = model.learn(total_timesteps=config.synthetic_timesteps, progress_bar=False)
-        return model
+        return TrainedArm(model, cast(DiscoveryNormalizer, raw_normalizer))
     if arm is ArmId.BC_ONLY:
-        model = cast(DiscoveryModel, create_model(pairs, config)[0])
+        raw_model, raw_normalizer = cast(tuple[object, object], create_model(pairs, config))
+        model = cast(DiscoveryModel, raw_model)
         _ = calibrate_synthetic_oracle(model, pairs, epochs=config.oracle_calibration_epochs)
-        return model
+        return TrainedArm(model, cast(DiscoveryNormalizer, raw_normalizer))
     shuffled_pairs = shuffle_reward_pairs(pairs, seed=config.seed)
-    return cast(DiscoveryModel, train_model(shuffled_pairs, config, timesteps=config.synthetic_timesteps)[0])
+    raw_model, raw_normalizer = cast(
+        tuple[object, object],
+        train_model(shuffled_pairs, config, timesteps=config.synthetic_timesteps),
+    )
+    return TrainedArm(
+        cast(DiscoveryModel, raw_model), cast(DiscoveryNormalizer, raw_normalizer)
+    )
 
 
-def run_discovery(paths: DiscoveryPaths, *, profile: RunProfile) -> Path:
-    """Execute every preregistered arm and write one terminal evidence bundle."""
+def run_discovery(
+    paths: DiscoveryPaths,
+    *,
+    profile: RunProfile,
+    run_id: str | None = None,
+    resume_dir: Path | None = None,
+) -> Path:
+    """Execute or resume every preregistered arm with durable partial evidence."""
 
     from stom_rl.daily_type1_train import evaluate_model, load_synthetic_fixture
 
@@ -169,19 +209,42 @@ def run_discovery(paths: DiscoveryPaths, *, profile: RunProfile) -> Path:
     prereg = load_prereg(paths.prereg)
     pairs = load_synthetic_fixture(paths.fixture)
     seeds = prereg.training.smoke_seeds if profile is RunProfile.SMOKE else prereg.seeds
-    outcomes: list[ArmOutcome] = []
+    prereg_sha256 = hashlib.sha256(prereg_bytes).hexdigest()
+    expected_runs = tuple(f"{arm.id.value}:{seed}" for arm in prereg.arms for seed in seeds)
+    if resume_dir is None:
+        timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
+        lifecycle = DiscoveryLifecycle.start(
+            paths.run_root,
+            run_id=run_id or f"type2-d0-{profile.value.lower()}-{timestamp}",
+            experiment_id=prereg.experiment_id,
+            profile=profile,
+            prereg_sha256=prereg_sha256,
+            expected_runs=expected_runs,
+        )
+    else:
+        lifecycle = DiscoveryLifecycle.resume(
+            resume_dir,
+            experiment_id=prereg.experiment_id,
+            profile=profile,
+            prereg_sha256=prereg_sha256,
+        )
     started_at = time.monotonic()
     for arm in prereg.arms:
         for seed in seeds:
+            key = f"{arm.id.value}:{seed}"
+            if key in lifecycle.completed_keys:
+                print(f"[{profile.value}] resume skip arm={arm.id.value} seed={seed}", flush=True)
+                continue
             config = _training_config(seed, profile, prereg)
             print(
                 f"[{profile.value}] start arm={arm.id.value} seed={seed} timesteps={config.synthetic_timesteps if arm.ppo else 0}",
                 flush=True,
             )
-            model = _train_arm(arm.id, pairs, config)
+            trained = _train_arm(arm.id, pairs, config)
+            trained.save(lifecycle.run_dir, arm=arm.id.value, seed=seed)
             events, metrics = cast(
                 tuple[list[dict[str, object]], dict[str, object]],
-                evaluate_model(model, pairs, seed=seed),
+                evaluate_model(trained.model, pairs, seed=seed),
             )
             outcome = outcome_from_evaluation(
                 arm=arm.id.value,
@@ -191,35 +254,32 @@ def run_discovery(paths: DiscoveryPaths, *, profile: RunProfile) -> Path:
                 events=events,
                 metrics=metrics,
             )
-            outcomes.append(outcome)
+            lifecycle.record(outcome)
             elapsed = time.monotonic() - started_at
             print(
                 f"[{profile.value}] done arm={arm.id.value} seed={seed} ratio={outcome.oracle_reward_ratio:.6f} elapsed_sec={elapsed:.1f}",
                 flush=True,
             )
-    outcome_tuple = tuple(outcomes)
-    gate = evaluate_discovery_gate(outcome_tuple, profile=profile)
-    timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
-    run_dir = paths.run_root / f"type2-d0-{profile.value.lower()}-{timestamp}"
-    write_dashboard_artifact(
-        run_dir,
-        experiment_id=prereg.experiment_id,
-        profile=profile,
-        outcomes=outcome_tuple,
-        gate=gate,
-        prereg_sha256=hashlib.sha256(prereg_bytes).hexdigest(),
-    )
-    return run_dir
+    gate = evaluate_discovery_gate(lifecycle.outcomes, profile=profile)
+    lifecycle.complete(gate)
+    return lifecycle.run_dir
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     _ = parser.add_argument("--profile", choices=[profile.value for profile in RunProfile], default="SMOKE")
     _ = parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
+    _ = parser.add_argument("--run-id", help="stable direct-child run name for a new run")
+    _ = parser.add_argument("--resume", type=Path, help="existing discovery run directory")
     args = parser.parse_args()
     repo_root = cast(Path, args.repo_root)
     profile = RunProfile(cast(str, args.profile))
-    run_dir = run_discovery(DiscoveryPaths.default(repo_root.resolve()), profile=profile)
+    run_dir = run_discovery(
+        DiscoveryPaths.default(repo_root.resolve()),
+        profile=profile,
+        run_id=cast(str | None, args.run_id),
+        resume_dir=cast(Path | None, args.resume),
+    )
     print(run_dir)
     return 0
 

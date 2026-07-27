@@ -1,8 +1,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from stom_rl.rl_discovery import runner
+
+
+class _FakeSaver:
+    def __init__(self) -> None:
+        self.paths: list[str] = []
+
+    def save(self, path: str) -> None:
+        self.paths.append(path)
+
+
+class _FakeModel(_FakeSaver):
+    def learn(self, *, total_timesteps: int, progress_bar: bool) -> object:
+        _ = total_timesteps, progress_bar
+        return self
 
 
 def test_shuffle_reward_pairs_is_deterministic_and_does_not_mutate_source() -> None:
@@ -14,18 +29,18 @@ def test_shuffle_reward_pairs_is_deterministic_and_does_not_mutate_source() -> N
         }
         for index in range(4)
     )
-    original = tuple(tuple(pair["gross_returns"]) for pair in pairs)
+    original = tuple(tuple(cast(list[str], pair["gross_returns"])) for pair in pairs)
 
     # When
     first = runner.shuffle_reward_pairs(pairs, seed=7)
     second = runner.shuffle_reward_pairs(pairs, seed=7)
 
     # Then
-    assert tuple(tuple(pair["gross_returns"]) for pair in first) == tuple(
-        tuple(pair["gross_returns"]) for pair in second
+    assert tuple(tuple(cast(list[str], pair["gross_returns"])) for pair in first) == tuple(
+        tuple(cast(list[str], pair["gross_returns"])) for pair in second
     )
-    assert tuple(tuple(pair["gross_returns"]) for pair in pairs) == original
-    assert tuple(tuple(pair["gross_returns"]) for pair in first) != original
+    assert tuple(tuple(cast(list[str], pair["gross_returns"])) for pair in pairs) == original
+    assert tuple(tuple(cast(list[str], pair["gross_returns"])) for pair in first) != original
 
 
 def test_outcome_from_evaluation_uses_initial_decisions_for_collapse_rate() -> None:
@@ -66,3 +81,15 @@ def test_default_paths_keep_fresh_oos_outside_the_runner() -> None:
     assert paths.fixture == Path("D:/repo/tests/fixtures/type1_synthetic_fixture.json")
     assert "fresh" not in str(paths.fixture).lower()
     assert paths.run_root == Path("D:/repo/webui/rl_runs/rl_discovery")
+
+
+def test_trained_arm_persists_model_and_normalizer_in_seed_directory(tmp_path: Path) -> None:
+    model = _FakeModel()
+    normalizer = _FakeSaver()
+    trained = runner.TrainedArm(model=model, normalizer=normalizer)
+
+    trained.save(tmp_path, arm="A_PPO_ONLY", seed=2)
+
+    expected_dir = tmp_path / "models" / "A_PPO_ONLY" / "seed-2"
+    assert model.paths == [str(expected_dir / "model.zip")]
+    assert normalizer.paths == [str(expected_dir / "normalizer.pkl")]
