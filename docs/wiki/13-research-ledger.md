@@ -132,3 +132,15 @@
 - [강화학습 실험실](11-reinforcement-learning)
 - [포트폴리오 RL 로드맵](12-portfolio-rl-roadmap)
 - [대시보드 가이드](10-dashboard-guide)
+
+# 2026-07-27 Type2-D0 evidence update
+
+| Date | Document | Type | Status |
+|---|---|---|---|
+| 2026-07-27 | `docs/kronos_rl_discovery_type2_d0_primary_result_2026-07-27.md` | RESULT | 4 arms × 3 seeds completed. PPO-only overfit was not confirmed: `NO-GO`. Fresh OOS remains `NOT_RUN_NO_READ`. |
+| 2026-07-27 | `docs/evidence/type2-d0-primary-20260727.custody.json` | EVIDENCE_CUSTODY | 40 local files / 596,114,829 bytes bound to producer commit, fixture, preregistration, and SHA-256 inventory. |
+
+The observed run used the reduced executable D0 preregistration. Diagnostics
+that appeared only in richer planning drafts were not executed and are not
+retroactively claimed. A redesigned reward/action study requires a distinct D1
+preregistration.

@@ -26,7 +26,9 @@ strategy and is not relabeled as RL.
 | Partial evidence | One outcome JSON is written after every arm/seed | `outcomes/<arm>/seed-<n>.json` | 100% |
 | Model generation | SB3 model ZIP and normalizer are saved per arm/seed | `models/<arm>/seed-<n>/model.zip`, `normalizer.pkl` | 100% |
 | Resume | Completed arm/seed units are skipped | `--resume <run-dir>` and immutable identity checks | 100% |
-| Contract protection | Changed experiment/profile/prereg SHA cannot resume | `ResumeMismatchError` | 100% |
+| Contract protection | Experiment/profile/prereg/fixture/matrix changes cannot resume | Strict lifecycle v2 validation | 100% |
+| Terminal immutability | A completed receipt cannot be resumed or overwritten | Fail-closed terminal boundary | 100% |
+| Evidence custody | 40 ignored run files are bound by committed SHA-256 manifest | 596,114,829 bytes inventoried | 100% |
 | Dashboard evidence | Running and terminal summaries share scanner format | `sb3_smoke_summary.json` | 100% |
 | Full-page visibility | All V6 pages show one execution strip | Score, branch, next action, ETA, safety gates | 100% |
 | Page control table | All 12 surfaces have progress/action/ETA/merge gate | Program Scorecard page | 100% |
@@ -91,7 +93,8 @@ ETA is the expected time for the listed next action on the current local setup.
 
 ## 6. How to run the Primary model research
 
-Start a stable run ID so the same directory can be resumed:
+The recorded D0 run is terminal and immutable. The command below documents how
+the run was started; rerunning the same ID is intentionally rejected:
 
 ```powershell
 py -3.11 -m stom_rl.rl_discovery.runner `
@@ -99,7 +102,7 @@ py -3.11 -m stom_rl.rl_discovery.runner `
   --run-id type2-d0-primary-20260727
 ```
 
-If interrupted, resume the same immutable experiment:
+Only while a future run is still partial, resume the same immutable experiment:
 
 ```powershell
 py -3.11 -m stom_rl.rl_discovery.runner `
@@ -108,9 +111,9 @@ py -3.11 -m stom_rl.rl_discovery.runner `
 ```
 
 The resume boundary is arm/seed level. A process interrupted inside one arm/seed
-restarts that incomplete unit; completed units are not retrained. Mid-gradient
-checkpoint resumption is a separate future improvement and must not be claimed as
-implemented.
+restarts that incomplete unit; completed units are not retrained. A terminal
+receipt rejects resume. Mid-gradient checkpoint resumption is a separate future
+improvement and must not be claimed as implemented.
 
 ## 7. Branch, commit, PR, and merge plan
 
@@ -120,10 +123,12 @@ implemented.
 | 2 | Work branch | `codex/rl-model-lifecycle-v1` | Active |
 | 3 | Lifecycle commit | `54d5a3b feat(discovery): persist resumable model lifecycle` | Complete |
 | 4 | UI commit | `4546b81 feat(v6): expose lifecycle across all research pages` | Complete |
-| 5 | Documentation commit | Review, commands, ETAs, merge gates | Pending at document authoring time |
-| 6 | Dist commit | Generated V6 assets only | Pending at document authoring time |
-| 7 | PR target | `research/type1-closing-rl-v1` | Create after final QA |
-| 8 | Release tag | `fork-v1.9.0-kronos-rl-model-lifecycle` | Create after merge approval |
+| 5 | Documentation commit | `bf6ffb7`, `d067d67` | Complete |
+| 6 | Dist commit | `3d867e8`, `9b555f5` | Complete |
+| 7 | Evidence hardening | `bc9e7ad`, `e9f2b00` | Complete |
+| 8 | Primary UX correction | `acc4f6f` | Complete |
+| 9 | PR target | `research/type1-closing-rl-v1` | Local target exists; push after final QA |
+| 10 | Release tag | `fork-v1.9.0-kronos-rl-model-lifecycle` | Create after merge approval |
 
 Recommended PR policy:
 
@@ -140,16 +145,17 @@ Recommended PR policy:
 
 | Check | Result |
 |---|---|
-| Discovery/dashboard Python regression | 44 passed, 2 skipped |
-| Lifecycle targeted tests | 4 passed |
+| Discovery/dashboard Python regression | 123 passed, 2 skipped |
+| Lifecycle targeted tests | Included in the 123-test receipt |
 | Ruff | Passed |
 | Basedpyright | 0 errors, 0 warnings |
-| V6 TypeScript tests | 22 passed |
+| V6 TypeScript tests | 381 passed |
 | Svelte check | 0 errors, 0 warnings |
 | Production build | 955 modules transformed |
 | Actual SB3 smoke | 4 models + 4 normalizers + 4 outcomes persisted |
-| Resume QA | 4 completed units skipped, no retraining |
-| Desktop/mobile visual QA | Passed at 1440×1100 and 390×844 |
+| Resume QA | Partial-run interruption test passes; terminal resume rejects |
+| Runtime browser load | HTTP 200; V6 assets and read-only APIs loaded successfully |
+| Desktop/mobile screenshots | Not captured: Orca runtime unavailable; automated responsive checks/build passed |
 
 ## 9. Immediate next decision
 
@@ -157,3 +163,7 @@ The platform generated and evaluated 12 Primary research models. D0 is complete
 and the PPO-only attribution hypothesis failed. The next meaningful step is not
 post-hoc tuning of D0; it is a separately preregistered D1 reward/action-design
 falsification experiment. Fresh OOS and live trading remain blocked.
+
+The observed Primary receipt was produced by the reduced executable D0 contract,
+not by every diagnostic proposed in earlier planning drafts. Those richer checks
+remain future D1 work and are not retroactively claimed.

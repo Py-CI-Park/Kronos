@@ -8,6 +8,15 @@
 **Elapsed:** 9,546.2 seconds, approximately 2 hours 39 minutes  
 **Verdict:** `PPO_ONLY_OVERFIT_NOT_CONFIRMED`
 
+## Evidence scope
+
+This result is valid only for the reduced executable D0 contract in
+`docs/kronos_rl_discovery_type2_d0_prereg_2026-07-26.json`. Earlier planning
+notes described a richer diagnostic program; those extra diagnostics were not
+silently treated as executed and are not part of this result. Any expanded
+reward/action study must be registered as a separate D1 experiment before it
+runs.
+
 ## Terminal decision
 
 | Field | Value |
@@ -72,6 +81,10 @@ profitability claim, or live trading.
 | Total model/normalizer bytes | 596,099,180 |
 | Lifecycle completed units | 12 / 12 |
 | Terminal receipt | Present |
+| Custody manifest | `docs/evidence/type2-d0-primary-20260727.custody.json` |
+| Custody files / bytes | 40 / 596,114,829 |
+| Evidence manifest SHA-256 | `f44fc17a587050c865b22ba1cd671e276f768282afc91a6ed4168619cec59825` |
+| Producer commit | `9b555f52275bdae8f13c3c7190817a7290097b08` |
 
 ## Next research action
 

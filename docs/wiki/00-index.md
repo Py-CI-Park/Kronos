@@ -31,6 +31,12 @@ read-only `/api/docs/*` endpoints.
 - [13-research-ledger](13-research-ledger) - current research status and evidence index
 - [14-document-standard](14-document-standard) - document taxonomy and report templates
 
+### Latest Type2-D0 evidence
+
+- [Primary result](../kronos_rl_discovery_type2_d0_primary_result_2026-07-27.md) - 12/12 units, `PRIMARY_COMPLETE`, hypothesis `NO-GO`
+- [Lifecycle and full-page review](../kronos_rl_model_lifecycle_and_page_execution_2026-07-27.md) - execution, UX, score, and delivery gates
+- [Custody manifest](../evidence/type2-d0-primary-20260727.custody.json) - SHA-256 inventory for ignored model evidence
+
 ## 최신 구현 결과
 
 - `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` — Kronos Dashboard V5.1 구현·릴리스 결과. `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live 결과는 `NOT_RUN / NO-GO` 유지; branch `feature/dashboard-v5-learning-evidence`; commits `9d8e2ad` through `c1e4b37`; 다음 연구 단계는 coverage/custody 확인 후 새 사전등록 기반 15:20 H1 smoke와 H3/H5 validation variant다.
