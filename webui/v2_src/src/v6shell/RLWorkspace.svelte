@@ -3,21 +3,24 @@
   import ProcessStepper from './ProcessStepper.svelte';
   import { resolveV6Location, V6_RL_STEPS } from './registry';
   import { getV6Runs, getV6Status, type V6Status, type V6TrainingRun } from './v6Api';
+  import { rlApi } from '$lib/rlApi';
   import DataPage from './pages/DataPage.svelte';
   import ExperimentPage from './pages/ExperimentPage.svelte';
   import TrainingPage from './pages/TrainingPage.svelte';
   import EvaluationPage from './pages/EvaluationPage.svelte';
   import ComparePage from './pages/ComparePage.svelte';
   import ReportPage from './pages/ReportPage.svelte';
+  import DiscoveryPage from './pages/DiscoveryPage.svelte';
 
-  let active = $state('data');
+  let active = $state('discovery');
   let status = $state<V6Status | null>(null);
   let newestRun = $state<V6TrainingRun | null>(null);
+  let discoveryState = $state('NOT_RUN');
 
   function selectFromLocation(): void {
     const params = new URLSearchParams(window.location.search);
     const location = resolveV6Location(params.get('tab'), params.get('step'), null);
-    active = location.tab === 'rl' && location.step ? location.step : 'data';
+    active = location.tab === 'rl' && location.step ? location.step : 'discovery';
   }
   function selectStep(id: string): void {
     active = id;
@@ -25,6 +28,7 @@
   }
   function states(): Record<string, string | undefined> {
     return {
+      discovery: discoveryState,
       data: status?.journey.data.state,
       experiment: status?.journey.experiment.state,
       training: status?.journey.training.state,
@@ -34,9 +38,10 @@
     };
   }
   async function load(): Promise<void> {
-    const [statusResult, runsResult] = await Promise.all([getV6Status(), getV6Runs()]);
+    const [statusResult, runsResult, discoveryRuns] = await Promise.all([getV6Status(), getV6Runs(), rlApi.rlRuns(100)]);
     if (statusResult.ok && statusResult.data) status = statusResult.data;
     if (runsResult.ok && runsResult.data) newestRun = runsResult.data.runs?.[0] ?? null;
+    discoveryState = discoveryRuns?.runs.find((run) => run.summary?.research_lane === 'rl_discovery')?.summary?.status?.toString() ?? 'NOT_RUN';
   }
 
   onMount(() => {
@@ -54,7 +59,8 @@
   </header>
   <ProcessStepper steps={V6_RL_STEPS} {active} states={states()} onSelect={selectStep} />
   <div class="step-body">
-    {#if active === 'data'}<DataPage />
+    {#if active === 'discovery'}<DiscoveryPage />
+    {:else if active === 'data'}<DataPage />
     {:else if active === 'experiment'}<ExperimentPage />
     {:else if active === 'training'}<TrainingPage />
     {:else if active === 'evaluation'}<EvaluationPage />

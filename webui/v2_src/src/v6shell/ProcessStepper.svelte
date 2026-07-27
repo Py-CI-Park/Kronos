@@ -50,7 +50,7 @@
 </div>
 
 <style>
-  .stepper { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; width: 100%; }
+  .stepper { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; width: 100%; }
   button { min-width: 0; min-height: 118px; display: flex; flex-direction: column; align-items: flex-start; gap: 9px; border: 1px solid var(--border-strong); border-radius: 12px; padding: 14px; background: var(--surface-raised); color: var(--fg); font: inherit; text-align: left; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
   button:hover { transform: translateY(-2px); box-shadow: 0 8px 18px var(--shadow); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
