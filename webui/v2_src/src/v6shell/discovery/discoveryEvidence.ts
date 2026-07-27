@@ -3,6 +3,7 @@ import type { JsonObject, JsonValue, RlRunDetail } from '$lib/rlApi';
 export interface DiscoveryArmEvidence {
   readonly id: string;
   readonly model: string;
+  readonly seed: number;
   readonly trainingTimesteps: number;
   readonly oracleRewardRatio: number;
   readonly exactBasketAccuracy: number;
@@ -12,6 +13,14 @@ export interface DiscoveryArmEvidence {
   readonly noFillCount: number;
   readonly shuffledReward: boolean;
 }
+
+export type DiscoveryArmAggregate = {
+  readonly id: string;
+  readonly seedCount: number;
+  readonly meanOracleRewardRatio: number;
+  readonly meanExactBasketAccuracy: number;
+  readonly meanDominantActionRate: number;
+};
 
 export interface DiscoveryEvidence {
   readonly runName: string;
@@ -53,6 +62,7 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
   const arms = modelRows(run.detail).map((row) => ({
     id: textValue(row.algorithm),
     model: textValue(row.model),
+    seed: numberValue(row.seed),
     trainingTimesteps: numberValue(row.training_timesteps),
     oracleRewardRatio: numberValue(row.oracle_reward_ratio),
     exactBasketAccuracy: numberValue(row.exact_basket_accuracy),
@@ -74,4 +84,21 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     profitabilityClaimAllowed: booleanValue(summary.profitability_claim_allowed),
     arms,
   };
+}
+
+export function summarizeDiscoveryArms(
+  arms: readonly DiscoveryArmEvidence[],
+): readonly DiscoveryArmAggregate[] {
+  const armIds = [...new Set(arms.map((arm) => arm.id))];
+  return armIds.map((id) => {
+    const rows = arms.filter((arm) => arm.id === id);
+    const divisor = rows.length || 1;
+    return {
+      id,
+      seedCount: rows.length,
+      meanOracleRewardRatio: rows.reduce((sum, row) => sum + row.oracleRewardRatio, 0) / divisor,
+      meanExactBasketAccuracy: rows.reduce((sum, row) => sum + row.exactBasketAccuracy, 0) / divisor,
+      meanDominantActionRate: rows.reduce((sum, row) => sum + row.dominantActionRate, 0) / divisor,
+    };
+  });
 }

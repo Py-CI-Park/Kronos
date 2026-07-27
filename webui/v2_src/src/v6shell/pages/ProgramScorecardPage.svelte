@@ -29,7 +29,7 @@
 
   <div class="split">
     <section class="panel" aria-labelledby="capability-title"><header><div><p class="eyebrow">CAPABILITY BOUNDARY</p><h2 id="capability-title">현재 가능한 작업</h2></div></header><div class="capabilities">{#each PROGRAM_CAPABILITIES as item}<article><div><strong>{item.capability}</strong><p>{item.boundary}</p></div><span class={stateClass(item.state)}>{item.state}</span></article>{/each}</div></section>
-    <section class="panel release" aria-labelledby="flow-title"><header><div><p class="eyebrow">DELIVERY LINEAGE</p><h2 id="flow-title">브랜치·PR·태그 흐름</h2></div></header><dl><div><dt>Base tag</dt><dd>{PROGRAM_EXECUTION.baseTag}</dd></div><div><dt>Work branch</dt><dd>{PROGRAM_EXECUTION.branch}</dd></div><div><dt>PR target</dt><dd>research/type1-closing-rl-v1</dd></div><div><dt>Next tag</dt><dd>fork-v1.9.0-kronos-rl-model-lifecycle</dd></div></dl><ol><li>기능·UI·문서 커밋을 분리합니다.</li><li>전체 테스트와 브라우저 QA가 통과해야 병합합니다.</li><li>병합 뒤 annotated release tag를 생성합니다.</li></ol><p class="warning">태그는 연구 플랫폼 릴리스 표시이며 모델 GO 또는 라이브 준비도를 뜻하지 않습니다.</p></section>
+    <section class="panel release" aria-labelledby="flow-title"><header><div><p class="eyebrow">DELIVERY LINEAGE</p><h2 id="flow-title">브랜치·PR·태그 흐름</h2></div></header><dl><div><dt>Base release</dt><dd>{PROGRAM_EXECUTION.baseRelease}</dd></div><div><dt>Delivery lane</dt><dd>{PROGRAM_EXECUTION.deliveryLane}</dd></div><div><dt>PR target</dt><dd>research/type1-closing-rl-v1</dd></div><div><dt>Candidate</dt><dd>{PROGRAM_EXECUTION.releaseCandidate}</dd></div></dl><ol><li>기능·UI·문서 커밋을 분리합니다.</li><li>전체 테스트와 브라우저 QA가 통과해야 병합합니다.</li><li>병합 뒤 annotated release tag를 생성합니다.</li></ol><p class="warning">태그는 연구 플랫폼 릴리스 표시이며 모델 GO 또는 라이브 준비도를 뜻하지 않습니다.</p></section>
   </div>
 </section>
 
