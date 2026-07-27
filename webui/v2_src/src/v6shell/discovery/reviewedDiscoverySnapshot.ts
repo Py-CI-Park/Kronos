@@ -1,0 +1,51 @@
+import type { DiscoveryArmEvidence, DiscoveryEvidence } from './discoveryEvidence';
+
+const arm = (
+  id: string,
+  seed: number,
+  ratio: number,
+  accuracy: number,
+  dominant: number,
+  trainingTimesteps: number,
+  shuffledReward = false,
+): DiscoveryArmEvidence => ({
+  id,
+  model: `${id}/seed-${seed}`,
+  seed,
+  trainingTimesteps,
+  oracleRewardRatio: ratio,
+  exactBasketAccuracy: accuracy,
+  dominantActionRate: dominant,
+  invalidActionCount: 0,
+  blockCount: 0,
+  noFillCount: 0,
+  shuffledReward,
+});
+
+export const REVIEWED_DISCOVERY_SNAPSHOT: DiscoveryEvidence = {
+  authority: 'REVIEWED_SNAPSHOT',
+  evidenceManifest: 'f44fc17a587050c865b22ba1cd671e276f768282afc91a6ed4168619cec59825',
+  runName: 'type2-d0-primary-20260727',
+  status: 'PRIMARY_COMPLETE',
+  verdict: 'PPO_ONLY_OVERFIT_NOT_CONFIRMED',
+  profile: 'PRIMARY',
+  freshOos: 'NOT_RUN_NO_READ',
+  type1Outcome: 'COMPLETE_NO_GO',
+  preregSha256: '2c3bced20fc6b718f7c2f37963501e962b2198b8b620fd6a1e4a91e20ff0ce4d',
+  promotionAllowed: false,
+  profitabilityClaimAllowed: false,
+  arms: [
+    arm('A_PPO_ONLY', 0, .75, .8125, .4375, 104000),
+    arm('A_PPO_ONLY', 1, .125, .34375, .90625, 104000),
+    arm('A_PPO_ONLY', 2, .5, .625, .625, 104000),
+    arm('B_BC_THEN_PPO', 0, .875, .90625, .34375, 104000),
+    arm('B_BC_THEN_PPO', 1, .770833333333, .828125, .421875, 104000),
+    arm('B_BC_THEN_PPO', 2, 1, 1, .25, 104000),
+    arm('C_BC_ONLY', 0, 1, 1, .25, 0),
+    arm('C_BC_ONLY', 1, 1, 1, .25, 0),
+    arm('C_BC_ONLY', 2, 1, 1, .25, 0),
+    arm('D_SHUFFLED_REWARD_PPO', 0, 0, .25, 1, 104000, true),
+    arm('D_SHUFFLED_REWARD_PPO', 1, 0, .25, 1, 104000, true),
+    arm('D_SHUFFLED_REWARD_PPO', 2, 0, .25, 1, 104000, true),
+  ],
+};

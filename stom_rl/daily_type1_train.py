@@ -436,6 +436,12 @@ def _oracle_calibration(model: Any, pairs: Sequence[Mapping[str, Any]], *, epoch
     return loss_value
 
 
+def calibrate_synthetic_oracle(model: Any, pairs: Sequence[Mapping[str, Any]], *, epochs: int) -> float:
+    """Public discovery-lab boundary for disclosed synthetic-only oracle BC."""
+
+    return _oracle_calibration(model, pairs, epochs=epochs)
+
+
 def train_model(pairs: Sequence[Mapping[str, Any]], config: TrainingConfig = TrainingConfig(), *, timesteps: int | None = None):
     """Train generic Type 1 pairs with PPO only; this path never invokes oracle calibration."""
     total_timesteps = config.synthetic_timesteps if timesteps is None else timesteps

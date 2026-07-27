@@ -23,10 +23,11 @@ export interface V6StepDef {
   readonly id: string;
   readonly label: string;
   readonly labelKo: string;
-  readonly statusKey: 'data' | 'experiment' | 'training' | 'evaluation' | 'compare' | 'report';
+  readonly statusKey: 'data' | 'experiment' | 'training' | 'evaluation' | 'compare' | 'report' | 'discovery';
 }
 
 export const V6_RL_STEPS: readonly V6StepDef[] = [
+  { id: 'discovery', label: 'Discovery Lab', labelKo: 'RL 발견 실험실', statusKey: 'discovery' },
   { id: 'data', label: 'Data', labelKo: '데이터', statusKey: 'data' },
   { id: 'experiment', label: 'Experiment', labelKo: '실험 설계', statusKey: 'experiment' },
   { id: 'training', label: 'Training', labelKo: '학습', statusKey: 'training' },
@@ -43,6 +44,7 @@ export const V6_INSIGHT_SUBTABS = [
 
 export const V6_PAGES: readonly V6PageDef[] = [
   { id: 'home', label: 'Home', labelKo: '홈', group: 'COMMAND', step: 1, status: 'BUILT', description: 'V6 연구 상태와 빠른 이동을 확인하는 홈 화면입니다.' },
+  { id: 'scorecard', label: 'Program Scorecard', labelKo: '프로그램 점수', group: 'COMMAND', step: null, status: 'BUILT', description: '전체 페이지, 역량, 연구 증거와 개발 거버넌스를 점수로 감사합니다.' },
   { id: 'rl', label: 'Reinforcement Learning', labelKo: '강화학습', group: 'RESEARCH', step: 2, status: 'BUILT', description: '강화학습 연구 여정과 단계별 근거를 다루는 작업공간입니다.' },
   { id: 'insight', label: 'Insights', labelKo: '인사이트', group: 'RESEARCH', step: null, status: 'BUILT', description: '종목, 수급, 시장 국면 관찰을 다루는 작업공간입니다.' },
   { id: 'lanes', label: 'Other Lanes', labelKo: '다른 레인', group: 'PLATFORM', step: null, status: 'BUILT', description: '인트라데이 RL과 Kronos 예측 레인을 함께 확인합니다.' },

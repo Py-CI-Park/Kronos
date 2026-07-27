@@ -30,6 +30,11 @@ read-only `/api/docs/*` endpoints.
 - [12-portfolio-rl-roadmap](12-portfolio-rl-roadmap) - portfolio RL roadmap
 - [13-research-ledger](13-research-ledger) - current research status and evidence index
 - [14-document-standard](14-document-standard) - document taxonomy and report templates
+- [15-type2-d0-primary](15-type2-d0-primary) - Type2-D0 Primary reviewed evidence summary
+
+### Latest Type2-D0 evidence
+
+- [Type2-D0 reviewed summary](15-type2-d0-primary) - 12/12 units, `PRIMARY_COMPLETE`, hypothesis `NO-GO`, custody limitations, and source paths
 
 ## 최신 구현 결과
 

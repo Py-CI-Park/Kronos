@@ -109,9 +109,10 @@ def test_app_keeps_single_twelve_branch_host_and_v3_v4_coexistence() -> None:
     assert app.count("{#snippet tabHost()}") == 1
     assert app.count("{@render tabHost()}") == 2
 
-    branches = re.findall(r"tab === '([^']+)'", tab_host)
-    assert branches == _EXPECTED_TABS
-    assert len(branches) == len(set(branches)) == 12
+    legacy_map = _between(app, "const LEGACY_COMPONENTS", "};")
+    for tab_id in _EXPECTED_TABS:
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        assert f"{key}:" in legacy_map
     assert "data-v3-tab-host={shell === 'v3' ? '' : undefined}" in tab_host
     assert "data-v4-domain-host={shell === 'v4' ? '' : undefined}" in tab_host
 
@@ -119,38 +120,17 @@ def test_app_keeps_single_twelve_branch_host_and_v3_v4_coexistence() -> None:
 def test_app_wraps_only_forecast_and_daily_legacy_tabs_for_v4() -> None:
     app = _source("App.svelte")
     tab_host = _between(app, "{#snippet tabHost()}", "{/snippet}")
-    forecast_branch = _tab_branch(tab_host, "forecast")
-    daily_branch = _tab_branch(tab_host, "daily-ohlcv")
-
-    _assert_in_order(
-        forecast_branch,
-        [
-            "{#if shell === 'v4'}",
-            "<V4ForecastStudio>",
-            "<ForecastWorkbenchTab />",
-            "</V4ForecastStudio>",
-            "{:else}",
-            "<ForecastWorkbenchTab />",
-        ],
-    )
-    _assert_in_order(
-        daily_branch,
-        [
-            "{#if shell === 'v4'}",
-            "<V4DailyResearch>",
-            "<DailyOhlcvTab />",
-            "</V4DailyResearch>",
-            "{:else}",
-            "<DailyOhlcvTab />",
-        ],
-    )
-    assert tab_host.count("<V4ForecastStudio>") == tab_host.count("</V4ForecastStudio>") == 1
-    assert tab_host.count("<V4DailyResearch>") == tab_host.count("</V4DailyResearch>") == 1
-
+    wrapper_map = _between(app, "const V4_WRAPPERS", "};")
+    assert "forecast: V4ForecastStudio" in wrapper_map
+    assert "'daily-ohlcv': V4DailyResearch" in wrapper_map
     for tab_id in set(_EXPECTED_TABS) - {"forecast", "daily-ohlcv"}:
-        branch = _tab_branch(tab_host, tab_id)
-        assert "V4ForecastStudio" not in branch
-        assert "V4DailyResearch" not in branch
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        entry = re.search(rf"{re.escape(key)}:\s*([^,]+)", wrapper_map)
+        assert entry
+        assert entry.group(1) not in {"V4ForecastStudio", "V4DailyResearch"}
+    assert "{@const V4Wrapper = V4_WRAPPERS[activeRoute.componentKey]}" in tab_host
+    assert "<V4Wrapper {...V4_WRAPPER_PROPS[activeRoute.componentKey]}>" in tab_host
+    assert tab_host.count("<RouteComponent />") == 2
 
 
 def test_v4_forecast_contract_markers_lazy_child_and_payload_validation() -> None:
@@ -249,7 +229,10 @@ def test_wave5_frontend_sources_do_not_declare_backend_routes_or_duplicate_polli
     assert "startPolling" not in "\n".join(value for path, value in product.items() if path != "webui/v2_src/src/App.svelte")
     assert "setInterval" not in combined
 
-    route_ids = re.findall(r"id: '([^']+)'", _between(routes, "export const DASHBOARD_ROUTES", "] as const;"))
+    route_ids = re.findall(
+        r"id: '([^']+)'",
+        _between(routes, "export const DASHBOARD_ROUTE_MANIFEST", "] as const satisfies"),
+    )
     assert route_ids == _FROZEN_ROUTE_IDS
     assert "/api/predict" not in routes
     assert "/api/daily-ohlcv" not in routes

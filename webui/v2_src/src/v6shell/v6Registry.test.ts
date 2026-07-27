@@ -6,13 +6,13 @@ const registryPath = ['.', 'registry.ts'].join('/');
 const { V6_BRAND, V6_INSIGHT_SUBTABS, V6_PAGES, V6_RL_STEPS, resolveV6Location }: typeof Registry = await import(registryPath);
 
 test('V6 registry exposes the five-tab information architecture in navigation order', () => {
-  assert.deepEqual(V6_PAGES.map((page) => page.id), ['home', 'rl', 'insight', 'lanes', 'settings']);
-  assert.deepEqual(V6_PAGES.map((page) => page.group), ['COMMAND', 'RESEARCH', 'RESEARCH', 'PLATFORM', 'ADVANCED']);
+  assert.deepEqual(V6_PAGES.map((page) => page.id), ['home', 'scorecard', 'rl', 'insight', 'lanes', 'settings']);
+  assert.deepEqual(V6_PAGES.map((page) => page.group), ['COMMAND', 'COMMAND', 'RESEARCH', 'RESEARCH', 'PLATFORM', 'ADVANCED']);
   assert.ok(V6_PAGES.every((page) => page.status === 'BUILT'));
 });
 
 test('V6 registry keeps the RL stepper and insight subtabs ordered', () => {
-  assert.deepEqual(V6_RL_STEPS.map((step) => step.id), ['data', 'experiment', 'training', 'evaluation', 'compare', 'report']);
+  assert.deepEqual(V6_RL_STEPS.map((step) => step.id), ['discovery', 'data', 'experiment', 'training', 'evaluation', 'compare', 'report']);
   assert.deepEqual(V6_INSIGHT_SUBTABS.map((tab) => tab.id), ['symbol', 'flow', 'regime']);
 });
 
