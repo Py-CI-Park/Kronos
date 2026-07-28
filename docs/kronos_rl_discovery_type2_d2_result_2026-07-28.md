@@ -1,8 +1,8 @@
 # Kronos RL Discovery Type2-D2 결과 및 다음 연구 계획
 
-> 실행일: 2026-07-28~29 KST  
-> 최종 상태: `COMPLETE`  
-> 판정: `D2_PARTIAL_CAPACITY_CONFIRMED`  
+> 실행일: 2026-07-28~29 KST
+> 최종 상태: `COMPLETE`
+> 판정: `D2_PARTIAL_CAPACITY_CONFIRMED`
 > 범위: 실제 일봉 공개 데이터의 `TRAIN_ONLY / RESEARCH_ONLY`
 
 ## 1. 결론
