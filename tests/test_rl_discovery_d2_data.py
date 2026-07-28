@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+from io import StringIO
 from pathlib import Path
 
+import pytest
+
 from stom_rl.rl_discovery.d2_data import build_historical_episodes, iter_json_array
+from stom_rl.rl_discovery.d2_data import D2DataError
 
 
 def _row(day: int, symbol: str, score: str, gross: str | None) -> dict[str, object]:
@@ -44,3 +48,11 @@ def test_stream_and_build_use_observable_rank_and_chronological_prefix(tmp_path:
     ]
     assert episodes[0].gross_return == -0.02
     assert len(episodes[0].observation) == 29
+
+
+def test_stream_rejects_missing_leading_and_trailing_separators() -> None:
+    malformed = ('[{"a":1}{"b":2}]', '[,{"a":1}]', '[{"a":1},]')
+
+    for payload in malformed:
+        with pytest.raises(D2DataError):
+            tuple(iter_json_array(StringIO(payload), chunk_size=4))

@@ -8,11 +8,13 @@ from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
 from stom_rl.daily_type1_contract import canonical_json_bytes
 from stom_rl.rl_discovery.d2_contract import D2ArmId, D2Preregistration, load_d2_prereg_bytes
-from stom_rl.rl_discovery.d2_data import build_historical_episodes, iter_json_array, load_scales
+from stom_rl.rl_discovery.d2_custody import assert_plain_path, held_bytes, verified_bytes, verified_text_stream
+from stom_rl.rl_discovery.d2_data import build_historical_episodes, iter_json_array, load_scales_bytes
 from stom_rl.rl_discovery.d2_gates import D2GateResult, D2Outcome, evaluate_d2_gate
 from stom_rl.rl_discovery.d2_training import (
     D2Metrics,
@@ -33,20 +35,19 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _verify_inputs(repo_root: Path, prereg: D2Preregistration) -> tuple[Path, Path, dict[str, str]]:
+def _verify_inputs(repo_root: Path, prereg: D2Preregistration) -> tuple[Path, tuple[tuple[float, float], ...], dict[str, str]]:
     rows = (repo_root / prereg.dataset.rows_relative_path).resolve()
     normalizer = (repo_root / prereg.dataset.normalizer_relative_path).resolve()
     manifest = rows.parent / "dataset_manifest.json"
     receipt = rows.parent / "materializer_complete_receipt.json"
-    root = repo_root.resolve()
+    root = repo_root.absolute()
     for path in (rows, normalizer, manifest, receipt):
-        if not path.is_file() or root not in path.parents:
-            raise ValueError("D2 input must be a regular file inside the repository")
+        assert_plain_path(path, anchor=root, require_file=True)
     hashes = {
         "rows": _sha256(rows),
         "manifest": _sha256(manifest),
         "materializer_receipt": _sha256(receipt),
-        "normalizer": _sha256(normalizer),
+        "normalizer": prereg.dataset.normalizer_file_sha256,
     }
     expected = {
         "rows": prereg.dataset.rows_sha256,
@@ -56,18 +57,31 @@ def _verify_inputs(repo_root: Path, prereg: D2Preregistration) -> tuple[Path, Pa
     }
     if hashes != expected:
         raise ValueError("D2 custody hash mismatch")
-    value = json.loads(normalizer.read_text(encoding="utf-8"))
+    normalizer_bytes = verified_bytes(
+        normalizer,
+        expected_sha256=prereg.dataset.normalizer_file_sha256,
+        anchor=root,
+    )
+    value = json.loads(normalizer_bytes)
     if value.get("digest") != prereg.dataset.normalizer_digest:
         raise ValueError("D2 normalizer digest mismatch")
-    return rows, normalizer, hashes
+    return rows, load_scales_bytes(normalizer_bytes), hashes
 
 
-def _approved_smoke(path: Path | None, *, prereg_sha: str, data_sha: str) -> str:
+def _approved_smoke(path: Path | None, *, run_root: Path, prereg_sha: str, data_sha: str) -> str:
     if path is None:
         raise PermissionError("Primary requires an approved D2 Smoke receipt")
-    root = path.resolve()
+    configured_root = run_root.absolute()
+    root = path.absolute()
+    if root.parent != configured_root:
+        raise PermissionError("approved D2 Smoke must be a direct child of the configured run root")
+    assert_plain_path(root, anchor=configured_root, require_file=False)
+    for artifact in root.rglob("*"):
+        assert_plain_path(artifact, anchor=configured_root, require_file=artifact.is_file())
     receipt_path = root / "terminal_receipt.json"
-    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    summary_path = root / "summary.json"
+    receipt = json.loads(held_bytes(receipt_path, anchor=configured_root))
+    summary = json.loads(held_bytes(summary_path, anchor=configured_root))
     digest = artifact_manifest_sha256(root, excluded_relative_paths=frozenset({"terminal_receipt.json"}))
     required = {
         "profile": "SMOKE",
@@ -79,6 +93,28 @@ def _approved_smoke(path: Path | None, *, prereg_sha: str, data_sha: str) -> str
     }
     if any(receipt.get(key) != value for key, value in required.items()):
         raise PermissionError("approved D2 Smoke receipt is missing or mismatched")
+    models = summary.get("models")
+    expected_units = {
+        (count, arm.value, 0)
+        for count in (1, 8)
+        for arm in D2ArmId
+    }
+    observed_units = {
+        (item.get("episode_count"), item.get("arm"), item.get("seed"))
+        for item in models
+        if isinstance(item, dict)
+    } if isinstance(models, list) else set()
+    if (
+        summary.get("schema_version") != "kronos.rl-discovery.d2.result.v1"
+        or summary.get("profile") != "SMOKE"
+        or summary.get("status") != "COMPLETE"
+        or summary.get("verdict") != "SMOKE_COMPLETE"
+        or summary.get("prereg_sha256") != prereg_sha
+        or summary.get("episode_snapshot_sha256") != data_sha
+        or summary.get("fresh_oos") != "NOT_RUN_NO_READ"
+        or observed_units != expected_units
+    ):
+        raise PermissionError("approved D2 Smoke does not match the frozen four-unit matrix")
     return root.name
 
 
@@ -108,12 +144,13 @@ def _gate_payload(gate: D2GateResult) -> dict[str, Any]:
     return asdict(gate)
 
 
-def run_d2(
+def _run_d2(
     repo_root: Path,
     *,
     profile: RunProfile,
     run_id: str | None = None,
     approved_smoke: Path | None = None,
+    precreated_run_dir: bool = False,
 ) -> Path:
     """Run Smoke or the full 24-member Primary matrix into an immutable directory."""
 
@@ -121,24 +158,36 @@ def run_d2(
     prereg_bytes = prereg_path.read_bytes()
     prereg = load_d2_prereg_bytes(prereg_bytes)
     prereg_sha = hashlib.sha256(prereg_bytes).hexdigest()
-    rows_path, normalizer_path, input_hashes = _verify_inputs(repo_root, prereg)
-    episodes = build_historical_episodes(
-        iter_json_array(rows_path),
-        scales=load_scales(normalizer_path),
-        limit=128,
-    )
+    rows_path, scales, input_hashes = _verify_inputs(repo_root, prereg)
+    with verified_text_stream(
+        rows_path,
+        expected_sha256=prereg.dataset.rows_sha256,
+        anchor=repo_root.absolute(),
+    ) as rows_stream:
+        episodes = build_historical_episodes(
+            iter_json_array(rows_stream),
+            scales=scales,
+            limit=128,
+        )
     episode_bytes = canonical_json_bytes([asdict(episode) for episode in episodes])
     episode_sha = hashlib.sha256(episode_bytes).hexdigest()
+    run_root = repo_root / "webui" / "rl_runs" / "rl_discovery"
+    assert_plain_path(run_root, anchor=repo_root.absolute(), require_file=False)
     smoke_reference = None
     if profile is RunProfile.PRIMARY:
-        smoke_reference = _approved_smoke(approved_smoke, prereg_sha=prereg_sha, data_sha=episode_sha)
+        smoke_reference = _approved_smoke(
+            approved_smoke,
+            run_root=run_root,
+            prereg_sha=prereg_sha,
+            data_sha=episode_sha,
+        )
     timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
     selected_id = run_id or f"type2-d2-{profile.value.lower()}-{timestamp}"
-    run_root = repo_root / "webui" / "rl_runs" / "rl_discovery"
     run_dir = contained_path(run_root, selected_id)
-    if run_dir.exists():
+    if run_dir.exists() and not precreated_run_dir:
         raise FileExistsError("D2 run ID already exists")
-    run_dir.mkdir(parents=True)
+    if not precreated_run_dir:
+        run_dir.mkdir(parents=True)
     atomic_write_bytes(contained_path(run_dir, "inputs", "prereg.json"), prereg_bytes)
     atomic_write_bytes(contained_path(run_dir, "inputs", "episodes.json"), episode_bytes)
     counts = prereg.training.smoke_episode_counts if profile is RunProfile.SMOKE else prereg.episode_counts
@@ -171,6 +220,7 @@ def run_d2(
     gate = evaluate_d2_gate(tuple(outcomes), thresholds=prereg.gate) if profile is RunProfile.PRIMARY else None
     summary = {
         "schema_version": "kronos.rl-discovery.d2.result.v1",
+        "research_lane": "rl_discovery",
         "experiment_id": prereg.experiment_id,
         "profile": profile.value,
         "status": "COMPLETE",
@@ -184,6 +234,9 @@ def run_d2(
         "fresh_oos": "NOT_RUN_NO_READ",
         "profitability_claim_allowed": False,
         "promotion_allowed": False,
+        "type1_outcome": "COMPLETE_NO_GO",
+        "primary_round_trip_cost_bp": 0,
+        "diagnostic_round_trip_cost_bp": 23,
     }
     atomic_write_bytes(contained_path(run_dir, "summary.json"), canonical_json_bytes(summary))
     digest = artifact_manifest_sha256(run_dir, excluded_relative_paths=frozenset({"terminal_receipt.json"}))
@@ -200,6 +253,44 @@ def run_d2(
     return run_dir
 
 
+def run_d2(
+    repo_root: Path,
+    *,
+    profile: RunProfile,
+    run_id: str | None = None,
+    approved_smoke: Path | None = None,
+) -> Path:
+    """Run D2 and always terminalize a newly created run, including interrupts."""
+
+    run_root = repo_root / "webui" / "rl_runs" / "rl_discovery"
+    assert_plain_path(run_root, anchor=repo_root.absolute(), require_file=False)
+    timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
+    selected_id = run_id or f"type2-d2-{profile.value.lower()}-{timestamp}"
+    run_dir = contained_path(run_root, selected_id)
+    if run_dir.exists():
+        raise FileExistsError("D2 run ID already exists")
+    run_dir.mkdir(parents=True)
+    try:
+        return _run_d2(
+            repo_root,
+            profile=profile,
+            run_id=selected_id,
+            approved_smoke=approved_smoke,
+            precreated_run_dir=True,
+        )
+    except BaseException as exc:
+        receipt = contained_path(run_dir, "terminal_receipt.json")
+        if not receipt.exists():
+            atomic_write_bytes(receipt, canonical_json_bytes({
+                "profile": profile.value,
+                "status": "FAILED",
+                "verdict": "NO_GO",
+                "reason": f"{type(exc).__name__}: {exc}",
+                "fresh_oos": "NOT_RUN_NO_READ",
+            }))
+        raise
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     _ = parser.add_argument("--profile", choices=[item.value for item in RunProfile], required=True)
@@ -207,12 +298,19 @@ def main() -> int:
     _ = parser.add_argument("--run-id")
     _ = parser.add_argument("--approved-smoke", type=Path)
     args = parser.parse_args()
-    result = run_d2(
-        args.repo_root.resolve(),
-        profile=RunProfile(args.profile),
-        run_id=args.run_id,
-        approved_smoke=args.approved_smoke,
-    )
+    repo_root = args.repo_root.resolve()
+    timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
+    run_id = args.run_id or f"type2-d2-{str(args.profile).lower()}-{timestamp}"
+    try:
+        result = run_d2(
+            repo_root,
+            profile=RunProfile(args.profile),
+            run_id=run_id,
+            approved_smoke=args.approved_smoke,
+        )
+    except BaseException as exc:
+        print(f"D2 failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
     print(result)
     return 0
 

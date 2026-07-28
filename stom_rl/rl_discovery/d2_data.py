@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import numpy as np
 
@@ -17,17 +17,29 @@ class D2DataError(ValueError):
     """Frozen historical input is malformed or unsafe."""
 
 
-def iter_json_array(path: Path, *, chunk_size: int = 1 << 20) -> Iterator[Mapping[str, Any]]:
+def iter_json_array(source: Path | TextIO, *, chunk_size: int = 1 << 20) -> Iterator[Mapping[str, Any]]:
     """Stream a top-level JSON array without retaining the 438MB source."""
 
+    if isinstance(source, Path):
+        with source.open("r", encoding="utf-8") as handle:
+            yield from iter_json_array(handle, chunk_size=chunk_size)
+        return
     decoder = json.JSONDecoder()
-    with path.open("r", encoding="utf-8") as handle:
+    handle = source
+    if not handle.readable():
+        raise D2DataError("public rows stream must be readable")
+    maximum_buffer = max(chunk_size * 8, 8 << 20)
+    with _borrowed_stream(handle):
         buffer = ""
         started = False
         finished = False
+        expect_value = True
+        allow_end = True
         while not finished:
             chunk = handle.read(chunk_size)
             buffer += chunk
+            if len(buffer) > maximum_buffer:
+                raise D2DataError("public row token exceeds the bounded stream buffer")
             cursor = 0
             while True:
                 while cursor < len(buffer) and buffer[cursor].isspace():
@@ -40,13 +52,26 @@ def iter_json_array(path: Path, *, chunk_size: int = 1 << 20) -> Iterator[Mappin
                     started = True
                     cursor += 1
                     continue
-                while cursor < len(buffer) and (buffer[cursor].isspace() or buffer[cursor] == ","):
+                while cursor < len(buffer) and buffer[cursor].isspace():
                     cursor += 1
-                if cursor < len(buffer) and buffer[cursor] == "]":
+                if cursor >= len(buffer):
+                    break
+                if not expect_value:
+                    if buffer[cursor] == "]":
+                        finished = True
+                        cursor += 1
+                        break
+                    if buffer[cursor] != ",":
+                        raise D2DataError("public rows require a comma between objects")
+                    cursor += 1
+                    expect_value = True
+                    allow_end = False
+                    continue
+                if buffer[cursor] == "]":
+                    if not allow_end:
+                        raise D2DataError("public rows cannot end after a comma")
                     finished = True
                     cursor += 1
-                    break
-                if cursor >= len(buffer):
                     break
                 try:
                     value, end = decoder.raw_decode(buffer, cursor)
@@ -56,6 +81,8 @@ def iter_json_array(path: Path, *, chunk_size: int = 1 << 20) -> Iterator[Mappin
                     raise D2DataError("public row must be an object")
                 yield value
                 cursor = end
+                expect_value = False
+                allow_end = True
             buffer = buffer[cursor:]
             if not chunk and not finished:
                 raise D2DataError("public rows JSON ended before closing array")
@@ -63,10 +90,23 @@ def iter_json_array(path: Path, *, chunk_size: int = 1 << 20) -> Iterator[Mappin
             raise D2DataError("public rows JSON has trailing content")
 
 
-def load_scales(path: Path) -> tuple[tuple[float, float], ...]:
+class _borrowed_stream:
+    """Keep a caller-owned stream open while sharing one parser implementation."""
+
+    def __init__(self, stream: TextIO) -> None:
+        self._stream = stream
+
+    def __enter__(self) -> TextIO:
+        return self._stream
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+
+def load_scales_bytes(payload: bytes) -> tuple[tuple[float, float], ...]:
     """Load the custody-bound Type-7 normalizer."""
 
-    value = json.loads(path.read_text(encoding="utf-8"))
+    value = json.loads(payload)
     if not isinstance(value, Mapping) or value.get("kind") != "market_type7_train_only":
         raise D2DataError("normalizer kind is not train-only Type-7")
     raw = value.get("scales")
@@ -104,6 +144,8 @@ def build_historical_episodes(
             group = []
         current_date = decision_date
         group.append(row)
+        if len(group) > 500:
+            raise D2DataError("one D2 session cannot exceed 500 stable-symbol rows")
     else:
         if current_date is not None and len(episodes) < limit:
             episode = _episode_from_group(current_date, group, scales, len(episodes), limit)
@@ -134,7 +176,7 @@ def _episode_from_group(
         eligible.append((symbol, normalized, missing, float(gross)))
     if not eligible:
         return None
-    selected = max(eligible, key=lambda item: (item[1][0], -int(item[0])))
+    selected = sorted(eligible, key=lambda item: (-item[1][0], item[0]))[0]
     matrix = np.asarray([item[1] for item in eligible], dtype=np.float64)
     aggregate = tuple(np.clip(matrix.mean(axis=0), -10, 10)) + tuple(np.clip(matrix.std(axis=0), 0, 10))
     progress = 0.0 if limit == 1 else index / (limit - 1)

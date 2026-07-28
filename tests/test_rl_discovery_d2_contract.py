@@ -29,3 +29,11 @@ def test_d2_prereg_rejects_open_fresh_oos_or_changed_scale() -> None:
 
     with pytest.raises(ValidationError):
         load_d2_prereg_bytes(json.dumps(payload).encode())
+
+
+def test_d2_prereg_rejects_changed_or_negative_training_budget() -> None:
+    payload = json.loads(PREREG.read_text(encoding="utf-8"))
+    payload["training"]["timesteps_by_episode_count"]["128"] = -1
+
+    with pytest.raises(ValidationError):
+        load_d2_prereg_bytes(json.dumps(payload).encode())

@@ -8,6 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from stom_rl.rl_discovery.storage import artifact_manifest_sha256
+
 if __package__:
     from .rl_dashboard_files import LIVE_SUMMARY_FILE_NAMES, _int_or_zero, _is_run_file, _read_run_json
     from .rl_dashboard_opening import opening_workflow_summary
@@ -45,6 +47,43 @@ def find_json_summary(run_dir: Path, artifact_type: str) -> dict[str, Any]:
         return dict(payload.get("summary", {}))
     if artifact_type == "sb3_smoke":
         return _sb3_summary(run_dir)
+    if artifact_type == "rl_discovery_d2":
+        payload = _read_run_json(run_dir, run_dir / "summary.json")
+        receipt = _read_run_json(run_dir, run_dir / "terminal_receipt.json")
+        try:
+            digest = artifact_manifest_sha256(
+                run_dir,
+                excluded_relative_paths=frozenset({"terminal_receipt.json"}),
+            )
+        except (OSError, ValueError):
+            return {"research_lane": "rl_discovery", "status": "BLOCK", "verdict": "NO_GO"}
+        if (
+            payload.get("schema_version") != "kronos.rl-discovery.d2.result.v1"
+            or payload.get("status") != "COMPLETE"
+            or payload.get("profile") != "PRIMARY"
+            or receipt.get("status") != "COMPLETE"
+            or receipt.get("profile") != "PRIMARY"
+            or receipt.get("verdict") != payload.get("verdict")
+            or receipt.get("prereg_sha256") != payload.get("prereg_sha256")
+            or receipt.get("episode_snapshot_sha256") != payload.get("episode_snapshot_sha256")
+            or receipt.get("fresh_oos") != "NOT_RUN_NO_READ"
+            or receipt.get("artifact_manifest_sha256") != digest
+        ):
+            return {"research_lane": "rl_discovery", "status": "BLOCK", "verdict": "NO_GO"}
+        return {
+            "research_lane": "rl_discovery",
+            "status": payload.get("status"),
+            "verdict": payload.get("verdict"),
+            "profile": payload.get("profile"),
+            "fresh_oos": payload.get("fresh_oos"),
+            "type1_outcome": "COMPLETE_NO_GO",
+            "primary_round_trip_cost_bp": 0,
+            "diagnostic_round_trip_cost_bp": 23,
+            "prereg_sha256": payload.get("prereg_sha256"),
+            "promotion_allowed": False,
+            "profitability_claim_allowed": False,
+            "artifact_manifest_sha256": digest,
+        }
     if artifact_type == "contextual_bandit":
         payload = _read_run_json(run_dir, run_dir / "eval_summary.json")
         return dict(payload.get("eval_summary", payload.get("summary", {})))

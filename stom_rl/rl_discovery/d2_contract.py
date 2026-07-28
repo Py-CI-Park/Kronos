@@ -108,6 +108,9 @@ class D2Preregistration(_FrozenModel):
         expected = {str(count) for count in self.episode_counts}
         if set(self.training.timesteps_by_episode_count) != expected:
             raise PydanticCustomError("d2_budgets", "D2 budgets must cover every scale")
+        frozen_budgets = {"1": 2048, "8": 4096, "32": 8192, "128": 16384}
+        if self.training.timesteps_by_episode_count != frozen_budgets:
+            raise PydanticCustomError("d2_budget_values", "D2 timestep budgets are frozen")
         return self
 
 

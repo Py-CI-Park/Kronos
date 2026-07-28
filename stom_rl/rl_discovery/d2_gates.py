@@ -63,9 +63,9 @@ def evaluate_d2_gate(
     maximum = max(confirmed, default=0)
     verdict = (
         "D2_HISTORICAL_CAPACITY_CONFIRMED"
-        if maximum == 128
+        if maximum == 128 and separated
         else "D2_PARTIAL_CAPACITY_CONFIRMED"
-        if maximum >= 8
+        if maximum >= 8 and separated
         else "D2_HISTORICAL_CAPACITY_NOT_CONFIRMED"
     )
     return D2GateResult(
