@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hmac
 from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -115,6 +116,7 @@ class D1Lifecycle:
             if not identity:
                 raise D1LifecycleError("resume identity differs from persisted D1 lifecycle")
             lifecycle = cls(run_dir, state)
+            lifecycle._verify_inputs()
             lifecycle._verify_all()
             return lifecycle
         run_dir = create_run_directory(run_root, run_id)
@@ -130,6 +132,40 @@ class D1Lifecycle:
         )
         lifecycle = cls(run_dir, state)
         lifecycle._persist()
+        return lifecycle
+
+    @classmethod
+    def verify_terminal(
+        cls,
+        run_root: Path,
+        run_dir: Path,
+        *,
+        profile: RunProfile,
+        prereg_sha256: str,
+        fixture_sha256: str,
+        expected_runs: tuple[str, ...],
+    ) -> D1Lifecycle:
+        """Verify a receipted run without granting mutation or resume authority."""
+
+        safe_dir = validate_run_directory(run_root, run_dir)
+        if not contained_path(safe_dir, "terminal_receipt.json").is_file():
+            raise D1LifecycleError("D1 terminal receipt is missing")
+        state = D1LifecycleState.model_validate_json(
+            contained_path(safe_dir, "lifecycle.json").read_text(encoding="utf-8")
+        )
+        if (
+            state.profile is not profile
+            or state.prereg_sha256 != prereg_sha256
+            or state.fixture_sha256 != fixture_sha256
+            or state.expected_runs != expected_runs
+            or state.status != "COMPLETE_PENDING_RECEIPT"
+        ):
+            raise D1LifecycleError("terminal D1 lifecycle identity is invalid")
+        lifecycle = cls(safe_dir, state)
+        lifecycle._verify_inputs()
+        lifecycle._verify_all()
+        if lifecycle.completed_keys != frozenset(expected_runs):
+            raise D1LifecycleError("terminal D1 lifecycle matrix is incomplete")
         return lifecycle
 
     @property
@@ -176,6 +212,7 @@ class D1Lifecycle:
     def mark_complete_pending_receipt(self) -> None:
         if self.completed_keys != frozenset(self._state.expected_runs):
             raise D1LifecycleError("every D1 unit must be complete before terminal publication")
+        self._verify_inputs()
         self._verify_all()
         self._state = self._state.model_copy(update={"status": "COMPLETE_PENDING_RECEIPT"})
         self._persist()
@@ -201,6 +238,15 @@ class D1Lifecycle:
                 digest, size = file_digest(path)
                 if digest != stamp.sha256 or size != stamp.size_bytes:
                     raise D1LifecycleError(f"unit artifact changed: {reference.run_key}")
+
+    def _verify_inputs(self) -> None:
+        checks = (
+            (contained_path(self.run_dir, "inputs", "prereg.json"), self._state.prereg_sha256),
+            (contained_path(self.run_dir, "inputs", "fixture.json"), self._state.fixture_sha256),
+        )
+        for path, expected in checks:
+            if not path.is_file() or not hmac.compare_digest(file_digest(path)[0], expected):
+                raise D1LifecycleError(f"D1 input snapshot changed: {path.name}")
 
     def _persist(self) -> None:
         atomic_write_json(

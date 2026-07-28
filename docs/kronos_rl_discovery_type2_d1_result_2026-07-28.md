@@ -48,7 +48,8 @@ cost-sensitivity 단계에서 별도 사전등록한다.
 | Primary round-trip cost | 23bp (0.23%) |
 | Custody binding | `RECEIPT_BOUND` |
 | Artifact inventory | 51 files / 1,796,873 bytes |
-| Terminal artifact SHA-256 | `2920dd72303a7bef412fe8639d1086e3eeaed38e470b0f56a1bc9e01cf2faa99` |
+| Pre-terminal artifact manifest SHA-256 | `2920dd72303a7bef412fe8639d1086e3eeaed38e470b0f56a1bc9e01cf2faa99` |
+| Terminal receipt file SHA-256 | `52f7225071364d42586e44b7b31d3a6da95d1194ba6a42455d10930042039e04` |
 | Evidence manifest SHA-256 | `ef4403f2e7926008e2e58f1c83d04ccb5191ff43fba245479a80cbae4c117ede` |
 | Fresh OOS | `NOT_RUN_NO_READ` |
 

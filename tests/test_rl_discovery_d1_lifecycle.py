@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,12 @@ from stom_rl.rl_discovery.d1_gates import D1Outcome
 from stom_rl.rl_discovery.d1_lifecycle import D1Lifecycle, D1LifecycleError
 from stom_rl.rl_discovery.gates import RunProfile
 from stom_rl.rl_discovery.storage import atomic_write_json, contained_path
+
+
+PREREG_BYTES = b"frozen-prereg"
+FIXTURE_BYTES = b"frozen-fixture"
+PREREG_SHA = hashlib.sha256(PREREG_BYTES).hexdigest()
+FIXTURE_SHA = hashlib.sha256(FIXTURE_BYTES).hexdigest()
 
 
 def _outcome() -> D1Outcome:
@@ -51,16 +58,21 @@ def _write_unit_files(run_dir: Path, outcome: D1Outcome) -> None:
 
 
 def _open(run_root: Path, *, resume: bool) -> D1Lifecycle:
-    return D1Lifecycle.open(
+    lifecycle = D1Lifecycle.open(
         run_root,
         run_id="d1-resume-test",
         experiment_id="TYPE2-D1-REWARD-ACTION",
         profile=RunProfile.SMOKE,
-        prereg_sha256="a" * 64,
-        fixture_sha256="b" * 64,
+        prereg_sha256=PREREG_SHA,
+        fixture_sha256=FIXTURE_SHA,
         expected_runs=("A_BINARY_NATIVE:0",),
         resume=resume,
     )
+    if not resume:
+        _ = (lifecycle.run_dir / "inputs").mkdir()
+        _ = (lifecycle.run_dir / "inputs" / "prereg.json").write_bytes(PREREG_BYTES)
+        _ = (lifecycle.run_dir / "inputs" / "fixture.json").write_bytes(FIXTURE_BYTES)
+    return lifecycle
 
 
 def test_d1_lifecycle_resumes_only_digest_verified_units(tmp_path: Path) -> None:
@@ -93,4 +105,13 @@ def test_d1_lifecycle_rejects_resume_after_terminal_receipt(tmp_path: Path) -> N
     _ = (lifecycle.run_dir / "terminal_receipt.json").write_text("{}", encoding="utf-8")
 
     with pytest.raises(D1LifecycleError, match="immutable"):
+        _open(tmp_path, resume=True)
+
+
+@pytest.mark.parametrize("name", ["prereg.json", "fixture.json"])
+def test_d1_lifecycle_rejects_changed_input_snapshot(tmp_path: Path, name: str) -> None:
+    lifecycle = _open(tmp_path, resume=False)
+    _ = (lifecycle.run_dir / "inputs" / name).write_bytes(b"changed")
+
+    with pytest.raises(D1LifecycleError, match="input snapshot changed"):
         _open(tmp_path, resume=True)
