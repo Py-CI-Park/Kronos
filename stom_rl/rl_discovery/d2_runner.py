@@ -86,6 +86,12 @@ def _metrics(value: D2Metrics) -> dict[str, Any]:
     return asdict(value)
 
 
+def _model_arm_id(episode_count: int, arm: D2ArmId) -> str:
+    """Encode scale and arm as one custody-safe direct-child identifier."""
+
+    return f"count-{episode_count}__{arm.value}"
+
+
 def _outcome_payload(outcome: D2Outcome, *, timesteps: int) -> dict[str, Any]:
     return {
         "arm": outcome.arm.value,
@@ -145,7 +151,7 @@ def run_d2(
             for seed in seeds:
                 fit_episodes = native_episodes if arm is D2ArmId.NATIVE else shuffled_episodes(native_episodes, seed=seed)
                 trained = train_d2_model(fit_episodes, config=D2TrainingConfig(seed=seed, timesteps=timesteps))
-                trained.save(run_dir, arm=f"count-{count}/{arm.value}", seed=seed)
+                trained.save(run_dir, arm=_model_arm_id(count, arm), seed=seed)
                 fit, fit_events = evaluate_d2_model(trained.model, fit_episodes, seed=seed, cost_bp=0)
                 native, native_events = evaluate_d2_model(trained.model, native_episodes, seed=seed, cost_bp=0)
                 cost, cost_events = evaluate_d2_model(trained.model, native_episodes, seed=seed, cost_bp=23)
