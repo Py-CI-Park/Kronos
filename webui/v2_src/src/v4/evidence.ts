@@ -87,6 +87,51 @@ const LOCK_CONTAINER_KEYS = [
   'guardrail_flags',
 ] as const;
 
+const LOCK_OBJECT_KEYS = [
+  'promotion_locks',
+  'locks',
+  'safety_locks',
+] as const;
+
+const LIFECYCLE_SOURCE_KEYS = [
+  'lifecycle',
+  'freshness_status',
+  'status',
+  'run_status',
+] as const;
+
+const LIFECYCLE_OBJECT_TEXT_KEYS = [
+  'status',
+  'state',
+  'value',
+  'freshness_status',
+  'run_status',
+  'lifecycle',
+] as const;
+
+const LIFECYCLE_WRAPPER_KEYS = [
+  'run',
+  'record',
+  'payload',
+  'data',
+  'evidence',
+  'summary',
+  'detail',
+  'details',
+] as const;
+
+const EXACT_LIFECYCLE_STATES = new Set([
+  'ADVANCING',
+  'STALLED',
+  'RESUMED',
+  'RESTARTED_NON_EXACT',
+  'STOPPED',
+  'FAILED',
+  'COMPLETED',
+  'CONFLICT_BLOCKED',
+  'NOT_RUN',
+]);
+
 const STRING_FALLBACKS = {
   id: 'MISSING_ID',
   kind: 'unknown_evidence',
@@ -145,6 +190,17 @@ function exactStringOrNumber(value: unknown): string | null {
   return null;
 }
 
+function exactDeclaredStringOrNumber(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+
 function firstString(record: JsonRecord | null, keys: readonly string[]): string | null {
   if (!record) {
     return null;
@@ -166,6 +222,56 @@ function firstStringOrNumber(record: JsonRecord | null, keys: readonly string[])
     const value = exactStringOrNumber(record[key]);
     if (value !== null) {
       return value;
+    }
+  }
+  return null;
+}
+
+function firstDeclaredStringOrNumber(record: JsonRecord | null, keys: readonly string[]): string | null {
+  if (!record) {
+    return null;
+  }
+  for (const key of keys) {
+    if (!hasOwn(record, key)) {
+      continue;
+    }
+    const value = exactDeclaredStringOrNumber(record[key]);
+    if (value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function firstDeclaredValue(
+  records: readonly (JsonRecord | null)[],
+  keys: readonly string[],
+): { found: boolean; value: unknown } {
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+    for (const key of keys) {
+      if (hasOwn(record, key)) {
+        return { found: true, value: record[key] };
+      }
+    }
+  }
+  return { found: false, value: undefined };
+}
+
+function firstBooleanFromRecords(
+  records: readonly (JsonRecord | null)[],
+  keys: readonly string[],
+): boolean | null {
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+    for (const key of keys) {
+      if (hasOwn(record, key) && typeof record[key] === 'boolean') {
+        return record[key];
+      }
     }
   }
   return null;
@@ -236,8 +342,45 @@ function artifactAgeSeconds(record: JsonRecord | null, modifiedEpochMs: number |
   return null;
 }
 
+function lifecycleText(value: unknown, depth: number = 0, seen: Set<JsonRecord> = new Set()): string | null {
+  const text = exactStringOrNumber(value);
+  if (text !== null) {
+    return text;
+  }
+
+  const record = asRecord(value);
+  if (!record || depth >= 5 || seen.has(record)) {
+    return null;
+  }
+  seen.add(record);
+
+  for (const key of LIFECYCLE_OBJECT_TEXT_KEYS) {
+    if (!hasOwn(record, key)) {
+      continue;
+    }
+    const child = record[key];
+    if (child === null || child === undefined) {
+      continue;
+    }
+    return lifecycleText(child, depth + 1, seen);
+  }
+
+  for (const key of LIFECYCLE_WRAPPER_KEYS) {
+    const child = asRecord(record[key]);
+    if (!child) {
+      continue;
+    }
+    const nested = lifecycleCandidate(child, depth + 1, seen);
+    if (nested.found) {
+      return lifecycleText(nested.value, depth + 1, seen);
+    }
+  }
+
+  return null;
+}
+
 function normalizeFreshness(value: unknown): string {
-  const text = exactString(value);
+  const text = lifecycleText(value);
   if (text === null) {
     return 'MISSING';
   }
@@ -257,6 +400,9 @@ function normalizeFreshness(value: unknown): string {
   if (normalized === 'IDLE') {
     return 'IDLE';
   }
+  if (EXACT_LIFECYCLE_STATES.has(normalized)) {
+    return normalized;
+  }
   return 'MISSING';
 }
 
@@ -266,13 +412,26 @@ function normalizeLine(value: unknown): string {
     return 'research_only';
   }
   const normalized = text.trim().toLowerCase().replace(/[\s-]+/g, '_');
-  if (normalized === 'rl' || normalized === 'reinforcement_learning') {
+  if (
+    normalized === 'rl' ||
+    normalized === 'reinforcement_learning' ||
+    normalized === 'rl_experiment'
+  ) {
     return 'RL';
   }
-  if (normalized === 'rule' || normalized === 'rules' || normalized === 'rule_based') {
+  if (
+    normalized === 'rule' ||
+    normalized === 'rules' ||
+    normalized === 'rule_based' ||
+    normalized === 'rule_mainline'
+  ) {
     return 'RULE';
   }
-  if (normalized === 'supervised' || normalized === 'supervised_learning') {
+  if (
+    normalized === 'supervised' ||
+    normalized === 'supervised_learning' ||
+    normalized === 'supervised_gate'
+  ) {
     return 'supervised';
   }
   if (normalized === 'evaluation' || normalized === 'eval') {
@@ -280,27 +439,66 @@ function normalizeLine(value: unknown): string {
   }
   return text;
 }
+
 function resolveCostBps(
-  record: JsonRecord | null,
-  detail: JsonRecord | null,
+  records: readonly (JsonRecord | null)[],
   declaredDefaultCostBps: unknown,
 ): number | null {
-  const topLevel = declaredFiniteNonNegativeNumber(record, ['cost_bps', 'costBps']);
-  if (topLevel.found) {
-    return topLevel.value;
-  }
-  const nested = declaredFiniteNonNegativeNumber(detail, ['cost_bps', 'daily_cost_bps']);
-  if (nested.found) {
-    return nested.value;
+  for (const record of records) {
+    const declared = declaredFiniteNonNegativeNumber(record, [
+      'cost_bps',
+      'costBps',
+      'round_trip_cost_bp',
+    ]);
+    if (declared.found) {
+      return declared.value;
+    }
+    const nested = declaredFiniteNonNegativeNumber(record, ['daily_cost_bps']);
+    if (nested.found) {
+      return nested.value;
+    }
   }
   return finiteNonNegativeNumber(declaredDefaultCostBps);
 }
 
 
+function lifecycleCandidate(
+  record: JsonRecord | null,
+  depth: number = 0,
+  seen: Set<JsonRecord> = new Set(),
+): { found: boolean; value: unknown } {
+  if (!record || depth >= 5 || seen.has(record)) {
+    return { found: false, value: undefined };
+  }
+  seen.add(record);
+
+  for (const key of LIFECYCLE_SOURCE_KEYS) {
+    if (!hasOwn(record, key)) {
+      continue;
+    }
+    const value = record[key];
+    if (value !== null && value !== undefined) {
+      return { found: true, value };
+    }
+  }
+
+  for (const key of LIFECYCLE_WRAPPER_KEYS) {
+    const child = asRecord(record[key]);
+    if (!child) {
+      continue;
+    }
+    const nested = lifecycleCandidate(child, depth + 1, seen);
+    if (nested.found) {
+      return nested;
+    }
+  }
+
+  return { found: false, value: undefined };
+}
+
 function pickLifecycle(record: JsonRecord | null): string {
-  return normalizeFreshness(
-    firstString(record, ['lifecycle', 'freshness_status', 'status', 'run_status']) ?? null,
-  );
+  const candidate = lifecycleCandidate(record);
+  return candidate.found ? normalizeFreshness(candidate.value) : 'MISSING';
 }
 function conservativeVerdictCandidate(value: unknown): string | null {
   const text = exactStringOrNumber(value);
@@ -375,7 +573,7 @@ function readContainerLock(container: unknown, key: PromotionLockKey): LockRead 
   return null;
 }
 
-function readLock(source: JsonRecord | null, key: PromotionLockKey): LockRead {
+function readDirectLock(source: JsonRecord | null, key: PromotionLockKey): LockRead {
   if (!source) {
     return { value: false, status: 'missing' };
   }
@@ -402,6 +600,14 @@ function readLock(source: JsonRecord | null, key: PromotionLockKey): LockRead {
     return { value: false, status: 'invalid' };
   }
 
+  return { value: false, status: 'missing' };
+}
+
+function readRecordContainerLock(source: JsonRecord | null, key: PromotionLockKey): LockRead {
+  if (!source) {
+    return { value: false, status: 'missing' };
+  }
+
   for (const containerKey of LOCK_CONTAINER_KEYS) {
     const fromContainer = readContainerLock(source[containerKey], key);
     if (fromContainer) {
@@ -410,6 +616,11 @@ function readLock(source: JsonRecord | null, key: PromotionLockKey): LockRead {
   }
 
   return { value: false, status: 'missing' };
+}
+
+function readLock(source: JsonRecord | null, key: PromotionLockKey): LockRead {
+  const direct = readDirectLock(source, key);
+  return direct.status === 'missing' ? readRecordContainerLock(source, key) : direct;
 }
 
 function stateFor(key: PromotionLockKey, read: LockRead): PromotionLockState {
@@ -442,14 +653,153 @@ function blockerStrings(value: unknown): string[] {
   return result.length > 0 ? result : [STRING_FALLBACKS.blockers];
 }
 
-function nestedRecord(record: JsonRecord | null, keys: readonly string[]): JsonRecord | null {
-  if (!record) {
-    return null;
+function pushUniqueRecord(records: JsonRecord[], seen: Set<JsonRecord>, value: unknown): void {
+  const record = asRecord(value);
+  if (!record || seen.has(record)) {
+    return;
   }
-  for (const key of keys) {
-    const next = asRecord(record[key]);
-    if (next) {
-      return next;
+  seen.add(record);
+  records.push(record);
+}
+
+function collectWrapperRecords(record: JsonRecord | null, keys: readonly string[]): JsonRecord[] {
+  const records: JsonRecord[] = [];
+  const seen = new Set<JsonRecord>();
+
+  const visit = (value: unknown, depth: number): void => {
+    const next = asRecord(value);
+    if (!next || seen.has(next) || depth >= 4) {
+      return;
+    }
+    pushUniqueRecord(records, seen, next);
+    for (const key of keys) {
+      visit(next[key], depth + 1);
+    }
+  };
+
+  visit(record, 0);
+  return records;
+}
+
+function collectNestedRecords(records: readonly (JsonRecord | null)[], keys: readonly string[]): JsonRecord[] {
+  const result: JsonRecord[] = [];
+  const seen = new Set<JsonRecord>();
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+    for (const key of keys) {
+      pushUniqueRecord(result, seen, record[key]);
+    }
+  }
+  return result;
+}
+
+function collectLockObjectRecords(records: readonly (JsonRecord | null)[]): JsonRecord[] {
+  const result: JsonRecord[] = [];
+  const seen = new Set<JsonRecord>();
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+    for (const key of LOCK_OBJECT_KEYS) {
+      pushUniqueRecord(result, seen, record[key]);
+    }
+  }
+  return result;
+}
+
+type LockReader = (record: JsonRecord | null, key: PromotionLockKey) => LockRead;
+
+type LockTier = {
+  records: readonly (JsonRecord | null)[];
+  read: LockReader;
+};
+
+function firstLockRead(
+  records: readonly (JsonRecord | null)[],
+  key: PromotionLockKey,
+  readFromRecord: LockReader,
+): LockRead | null {
+  for (const record of records) {
+    const read = readFromRecord(record, key);
+    if (read.status !== 'missing') {
+      return read;
+    }
+  }
+  return null;
+}
+
+function resolvePromotionLock(
+  key: PromotionLockKey,
+  tiers: readonly LockTier[],
+): LockRead {
+  for (const tier of tiers) {
+    const read = firstLockRead(tier.records, key, tier.read);
+    if (read) {
+      return read;
+    }
+  }
+  return { value: false, status: 'missing' };
+}
+
+function promotionLocksFromReader(readForKey: (key: PromotionLockKey) => LockRead): PromotionLocksResult {
+  const locks = {} as PromotionLocks;
+  const states = {} as Record<PromotionLockKey, PromotionLockState>;
+
+  for (const key of PROMOTION_LOCK_KEYS) {
+    const state = stateFor(key, readForKey(key));
+    locks[key] = state.allowed;
+    states[key] = state;
+  }
+
+  return {
+    locks,
+    states,
+    allLocked: PROMOTION_LOCK_KEYS.every((key) => locks[key] === false),
+    hasInvalidSource: PROMOTION_LOCK_KEYS.some((key) => states[key].sourceStatus === 'invalid'),
+  };
+}
+
+function adaptPromotionLocksWithProvenance(
+  root: JsonRecord | null,
+  wrapperRecords: readonly JsonRecord[],
+  summaryRecords: readonly JsonRecord[],
+  detailRecords: readonly JsonRecord[],
+  riskPolicyRecords: readonly JsonRecord[],
+): PromotionLocksResult {
+  const rootRecords = root ? [root] : [];
+  const rootLockObjects = collectLockObjectRecords(rootRecords);
+  const wrapperLockObjects = collectLockObjectRecords(wrapperRecords);
+  const summaryLockObjects = collectLockObjectRecords(summaryRecords);
+  const detailLockObjects = collectLockObjectRecords(detailRecords);
+  const riskPolicyLockObjects = collectLockObjectRecords(riskPolicyRecords);
+  const tiers: readonly LockTier[] = [
+    { records: rootRecords, read: readDirectLock },
+    { records: rootLockObjects, read: readLock },
+    { records: rootRecords, read: readRecordContainerLock },
+    { records: wrapperRecords, read: readDirectLock },
+    { records: wrapperLockObjects, read: readLock },
+    { records: wrapperRecords, read: readRecordContainerLock },
+    { records: summaryRecords, read: readDirectLock },
+    { records: summaryLockObjects, read: readLock },
+    { records: summaryRecords, read: readRecordContainerLock },
+    { records: detailRecords, read: readDirectLock },
+    { records: detailLockObjects, read: readLock },
+    { records: detailRecords, read: readRecordContainerLock },
+    { records: riskPolicyRecords, read: readDirectLock },
+    { records: riskPolicyLockObjects, read: readLock },
+    { records: riskPolicyRecords, read: readRecordContainerLock },
+  ];
+
+  return promotionLocksFromReader((key) => resolvePromotionLock(key, tiers));
+}
+
+function firstDeclaredFromRecords(records: readonly (JsonRecord | null)[], keys: readonly string[]): string | null {
+  for (const record of records) {
+    const value = firstDeclaredStringOrNumber(record, keys);
+    if (value !== null) {
+      return value;
     }
   }
   return null;
@@ -467,21 +817,7 @@ function firstFromRecords(records: readonly (JsonRecord | null)[], keys: readonl
 
 export function adaptPromotionLocks(source: unknown): PromotionLocksResult {
   const record = asRecord(source);
-  const locks = {} as PromotionLocks;
-  const states = {} as Record<PromotionLockKey, PromotionLockState>;
-
-  for (const key of PROMOTION_LOCK_KEYS) {
-    const state = stateFor(key, readLock(record, key));
-    locks[key] = state.allowed;
-    states[key] = state;
-  }
-
-  return {
-    locks,
-    states,
-    allLocked: PROMOTION_LOCK_KEYS.every((key) => locks[key] === false),
-    hasInvalidSource: PROMOTION_LOCK_KEYS.some((key) => states[key].sourceStatus === 'invalid'),
-  };
+  return promotionLocksFromReader((key) => readLock(record, key));
 }
 
 export function adaptEvidenceIdentity(
@@ -516,36 +852,103 @@ export function adaptRunEvidence(
   options: { source_endpoint?: string; declaredDefaultCostBps?: number } = {},
 ): RunEvidence {
   const record = asRecord(source);
-  const strategy = nestedRecord(record, ['strategy_context', 'strategy', 'summary']);
-  const detail = nestedRecord(record, ['detail', 'details', 'risk_policy']);
-  const locksContainer = nestedRecord(record, ['promotion_locks', 'locks', 'safety_locks']);
-  const locksSource = locksContainer && record ? { ...locksContainer, ...record } : record;
-  const declaredCost = resolveCostBps(record, detail, options.declaredDefaultCostBps);
-  const blockerValue = record?.blocking_reasons ?? record?.blockers ?? record?.reasons;
+  const baseRecords = collectWrapperRecords(record, ['run', 'record', 'payload', 'data', 'evidence']);
+  const summaryRecords = collectNestedRecords(baseRecords, ['summary', 'run_summary', 'evidence_summary']);
+  const detailRecords = collectNestedRecords(baseRecords, ['detail', 'details']);
+  const riskPolicyRecords = collectNestedRecords([...detailRecords, ...summaryRecords, ...baseRecords], [
+    'risk_policy',
+    'risk_policy_summary',
+  ]);
+  const baseStrategyRecords = collectNestedRecords(baseRecords, ['strategy_context', 'strategy']);
+  const nestedStrategyRecords = collectNestedRecords([...summaryRecords, ...detailRecords], [
+    'strategy_context',
+    'strategy',
+  ]);
+  const strategyRecords = [...baseStrategyRecords, ...nestedStrategyRecords];
+  const strategyEvidenceRecords = [
+    ...baseStrategyRecords,
+    ...baseRecords,
+    ...nestedStrategyRecords,
+    ...summaryRecords,
+    ...detailRecords,
+  ];
+  const provenanceRecords = [
+    ...baseRecords,
+    ...summaryRecords,
+    ...detailRecords,
+    ...riskPolicyRecords,
+    ...strategyRecords,
+  ];
+  const wrapperRecords = baseRecords.slice(1);
+  const promotionLocks = adaptPromotionLocksWithProvenance(
+    record,
+    wrapperRecords,
+    summaryRecords,
+    detailRecords,
+    riskPolicyRecords,
+  );
+  const costRecords = [
+    ...baseRecords,
+    ...detailRecords,
+    ...riskPolicyRecords,
+    ...summaryRecords,
+    ...strategyRecords,
+  ];
+  const baselineRecords = [
+    ...strategyRecords,
+    ...baseRecords,
+    ...summaryRecords,
+    ...detailRecords,
+    ...riskPolicyRecords,
+  ];
+  const declaredCost = resolveCostBps(
+    costRecords,
+    options.declaredDefaultCostBps,
+  );
+  const blockerCandidate = firstDeclaredValue(
+    provenanceRecords,
+    ['blocking_reasons', 'blockers', 'reasons'],
+  );
+  const explicitRl = firstBooleanFromRecords(
+    strategyEvidenceRecords,
+    ['is_reinforcement_learning'],
+  );
 
   return {
-    run_id: firstFromRecords([record], ['run_id', 'id', 'name']) ?? STRING_FALLBACKS.run,
-    artifact_type: firstFromRecords([record], ['artifact_type', 'kind', 'type']) ?? STRING_FALLBACKS.artifactType,
+    run_id: firstFromRecords(baseRecords, ['run_id', 'id', 'name']) ?? STRING_FALLBACKS.run,
+    artifact_type: firstFromRecords(baseRecords, ['artifact_type', 'kind', 'type'])
+      ?? STRING_FALLBACKS.artifactType,
     line: normalizeLine(
-      firstFromRecords([strategy, record], ['line', 'strategy_line', 'strategy_context', 'type']),
+      firstFromRecords(
+        strategyEvidenceRecords,
+        ['line', 'strategy_line', 'strategy_context', 'type'],
+      ),
     ),
-    is_reinforcement_learning: typeof strategy?.is_reinforcement_learning === 'boolean'
-      ? strategy.is_reinforcement_learning
-      : typeof record?.is_reinforcement_learning === 'boolean'
-        ? record.is_reinforcement_learning
-        : false,
-    strategy_label: firstFromRecords([strategy, record], ['strategy_label', 'label', 'name']) ?? STRING_FALLBACKS.strategy,
-    baseline_label: firstFromRecords([record, detail], ['baseline_label', 'primary_baseline', 'baseline']) ?? STRING_FALLBACKS.baseline,
+    is_reinforcement_learning: explicitRl ?? false,
+    strategy_label: firstDeclaredFromRecords(strategyEvidenceRecords, ['strategy_label', 'label'])
+      ?? firstFromRecords(baseRecords, ['name', 'run_id', 'id'])
+      ?? STRING_FALLBACKS.strategy,
+    baseline_label: firstDeclaredFromRecords(
+      baselineRecords,
+      ['baseline_label', 'primary_baseline', 'baseline'],
+    ) ?? STRING_FALLBACKS.baseline,
     cost_bps: declaredCost,
-    seed: firstFromRecords([record, detail], ['seed', 'random_seed']) ?? STRING_FALLBACKS.seed,
-    split: firstFromRecords([record, detail], ['split', 'split_policy', 'train_test_split']) ?? STRING_FALLBACKS.split,
-    split_hash: stableSha256(firstFromRecords([record, detail], ['split_hash', 'data_split_hash']), STRING_FALLBACKS.splitHash),
-    prereg_doc: firstFromRecords([record, detail], ['prereg_doc', 'preregistration_doc', 'prereg_path']) ?? STRING_FALLBACKS.prereg,
-    source_endpoint: options.source_endpoint ?? firstString(record, ['source_endpoint', 'endpoint']) ?? STRING_FALLBACKS.endpoint,
+    seed: firstFromRecords(provenanceRecords, ['seed', 'random_seed']) ?? STRING_FALLBACKS.seed,
+    split: firstFromRecords(provenanceRecords, ['split', 'split_policy', 'train_test_split'])
+      ?? STRING_FALLBACKS.split,
+    split_hash: stableSha256(
+      firstFromRecords(provenanceRecords, ['split_hash', 'data_split_hash']),
+      STRING_FALLBACKS.splitHash,
+    ),
+    prereg_doc: firstFromRecords(provenanceRecords, ['prereg_doc', 'preregistration_doc', 'prereg_path'])
+      ?? STRING_FALLBACKS.prereg,
+    source_endpoint: options.source_endpoint
+      ?? firstFromRecords(baseRecords, ['source_endpoint', 'endpoint'])
+      ?? STRING_FALLBACKS.endpoint,
     lifecycle: pickLifecycle(record),
-    verdict: firstConservativeVerdict([record, detail]) ?? 'NO-GO/UNKNOWN_BLOCKED',
-    blocking_reasons: blockerStrings(blockerValue),
-    promotion_locks: adaptPromotionLocks(locksSource),
+    verdict: firstConservativeVerdict(provenanceRecords) ?? 'NO-GO/UNKNOWN_BLOCKED',
+    blocking_reasons: blockerStrings(blockerCandidate.found ? blockerCandidate.value : undefined),
+    promotion_locks: promotionLocks,
   };
 }
 

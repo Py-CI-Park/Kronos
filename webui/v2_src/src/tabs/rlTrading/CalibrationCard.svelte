@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { requireJsonPayload } from '$lib/http';
   import { rlApi, type RlFactoryCalibrationResponse, type RlFactoryLaneRun } from '$lib/rlApi';
   import { num } from '$lib/rlRows';
 
   let laneRun = $state<RlFactoryLaneRun | null>(null);
   let calibration = $state<RlFactoryCalibrationResponse | null>(null);
   let loading = $state(true);
+  let requestError = $state<string | null>(null);
   let foldIndex = $state(0);
 
   const available = $derived(calibration?.available === true);
@@ -25,11 +27,24 @@
 
   async function load(): Promise<void> {
     loading = true;
-    const lanePayload = await rlApi.factoryLaneRuns();
-    laneRun = lanePayload?.runs?.[0] ?? null;
-    calibration = laneRun ? await rlApi.factoryLaneCalibration(laneRun.run) : null;
+    requestError = null;
+    laneRun = null;
+    calibration = null;
     foldIndex = 0;
-    loading = false;
+    try {
+      const lanePayload = await requireJsonPayload('Lane-runs request', rlApi.factoryLaneRuns());
+      laneRun = lanePayload.runs?.[0] ?? null;
+      if (laneRun) {
+        calibration = await requireJsonPayload(
+          'Calibration request',
+          rlApi.factoryLaneCalibration(laneRun.run)
+        );
+      }
+    } catch (caught) {
+      requestError = caught instanceof Error ? caught.message : 'Lane calibration request failed';
+    } finally {
+      loading = false;
+    }
   }
 
   function barWidth(value: number | null | undefined): string {
@@ -49,8 +64,14 @@
   </div>
   {#if loading}
     <p class="text-muted">Loading lane calibration...</p>
-  {:else if !available}
+  {:else if requestError}
+    <p class="text-muted">Calibration request error: {requestError}</p>
+    <button type="button" class="fold-btn" onclick={() => void load()}>Retry calibration request</button>
+  {:else if !laneRun}
     <p class="text-muted">Calibration evidence unavailable — no probability-lane run found.</p>
+    <p class="text-caption safety-note">supervised gate (NOT RL) · read-only evidence viewer, not profitability proof.</p>
+  {:else if !available}
+    <p class="text-muted">Calibration evidence unavailable from the authoritative backend response.</p>
     <p class="text-caption safety-note">supervised gate (NOT RL) · read-only evidence viewer, not profitability proof.</p>
   {:else}
     <div class="mini-grid">

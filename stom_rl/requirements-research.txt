@@ -3,5 +3,8 @@
 # Aim's RocksDB wheel is not published for native Windows; use scripts/aim_up.bat,
 # which falls back to the local WSL installation on Windows.
 aim>=3.25,<4; platform_system != "Windows"
+# PyKRX is collector-only for immutable offline KOSPI/KOSDAQ index artifacts.
+# Dashboard/runtime validation must not import it.
+pykrx==1.2.8
 rliable>=1.2,<2
 numpy>=1.23

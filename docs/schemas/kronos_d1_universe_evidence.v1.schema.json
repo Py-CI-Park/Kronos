@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_d1_universe_evidence.v1.schema.json",
+  "title": "Kronos D1 Universe Evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "statement", "attestations", "status", "blocking_codes"],
+  "properties": {
+    "schema": {"const": "kronos_d1_universe_evidence.v1"},
+    "statement": {"$ref": "#/$defs/statement"},
+    "attestations": {"$ref": "#/$defs/attestations"},
+    "status": {"enum": ["VERIFIED", "BLOCKED"]},
+    "blocking_codes": {"type": "array", "items": {"const": "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED"}, "maxItems": 1}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "VERIFIED"}}, "required": ["status"]}, "then": {"properties": {"blocking_codes": {"const": []}}}},
+    {"if": {"properties": {"status": {"const": "BLOCKED"}}, "required": ["status"]}, "then": {"properties": {"blocking_codes": {"const": ["D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED"]}}}}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "utc": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "safeInt": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "principalUri": {"type": "string", "pattern": "^agent://[^/\\s]+$"},
+    "keyId": {"$ref": "#/$defs/uuid"},
+    "base64url64": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"},
+    "trustedUniversePath": {"type": "string", "pattern": "^_database/evidence/universe/(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//)[A-Za-z0-9._/-]+$"},
+    "dateRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {"start": {"$ref": "#/$defs/date"}, "end": {"$ref": "#/$defs/date"}}
+    },
+    "columns": {
+      "type": "array",
+      "prefixItems": [{"const": "code"}, {"const": "market"}, {"const": "issuer_name"}, {"const": "security_type"}, {"const": "listing_status"}, {"const": "disposition"}, {"const": "reason"}, {"const": "review_decision"}],
+      "minItems": 8,
+      "maxItems": 8
+    },
+    "universe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["universe_id", "official_source_path", "official_source_sha256", "source_date_range"],
+      "properties": {
+        "universe_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+        "official_source_path": {"$ref": "#/$defs/trustedUniversePath"},
+        "official_source_sha256": {"$ref": "#/$defs/sha256"},
+        "source_date_range": {"$ref": "#/$defs/dateRange"}
+      }
+    },
+    "csv": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_path", "sha256", "byte_length", "columns"],
+      "properties": {
+        "artifact_path": {"allOf": [{"$ref": "#/$defs/trustedUniversePath"}, {"pattern": "\\.csv$"}]},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"$ref": "#/$defs/safeInt"},
+        "columns": {"$ref": "#/$defs/columns"}
+      }
+    },
+    "equations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_count", "verified_zero_blockers"],
+      "properties": {
+        "row_count": {"const": "row_count == included_count + excluded_count + quarantine_count + unmatched_count"},
+        "verified_zero_blockers": {"const": "unmatched_count == 0 and quarantine_count == 0 and conflict_count == 0"}
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_count", "included_count", "excluded_count", "quarantine_count", "unmatched_count", "conflict_count"],
+      "properties": {
+        "row_count": {"$ref": "#/$defs/safeInt"},
+        "included_count": {"$ref": "#/$defs/safeInt"},
+        "excluded_count": {"$ref": "#/$defs/safeInt"},
+        "quarantine_count": {"$ref": "#/$defs/safeInt"},
+        "unmatched_count": {"$ref": "#/$defs/safeInt"},
+        "conflict_count": {"$ref": "#/$defs/safeInt"}
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "reviewed_at", "reason"],
+      "properties": {"decision": {"enum": ["APPROVE", "REJECT"]}, "reviewed_at": {"$ref": "#/$defs/utc"}, "reason": {"type": "string", "minLength": 1}}
+    },
+    "statement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "evidence_uid", "evidence_kind", "universe", "csv", "equations", "counts", "review", "conflicts", "issued_at"],
+      "properties": {
+        "schema": {"const": "kronos_d1_universe_evidence_statement.v1"},
+        "evidence_uid": {"$ref": "#/$defs/uuid"},
+        "evidence_kind": {"enum": ["REAL", "SYNTHETIC_PARSER_ONLY"]},
+        "universe": {"$ref": "#/$defs/universe"},
+        "csv": {"$ref": "#/$defs/csv"},
+        "equations": {"$ref": "#/$defs/equations"},
+        "counts": {"$ref": "#/$defs/counts"},
+        "review": {"$ref": "#/$defs/review"},
+        "conflicts": {"type": "array", "items": {"type": "string"}},
+        "issued_at": {"$ref": "#/$defs/utc"}
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principal_uri", "role", "key_id", "payload_sha256", "algorithm", "signature_encoding", "signature", "signed_at"],
+      "properties": {
+        "principal_uri": {"$ref": "#/$defs/principalUri"},
+        "role": {"enum": ["D1_ISSUER", "D1_REVIEWER"]},
+        "key_id": {"$ref": "#/$defs/keyId"},
+        "payload_sha256": {"$ref": "#/$defs/sha256"},
+        "algorithm": {"const": "Ed25519"},
+        "signature_encoding": {"const": "base64url-no-pad"},
+        "signature": {"$ref": "#/$defs/base64url64"},
+        "signed_at": {"$ref": "#/$defs/utc"}
+      }
+    },
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer", "reviewer"],
+      "properties": {
+        "issuer": {"allOf": [{"$ref": "#/$defs/attestation"}, {"properties": {"role": {"const": "D1_ISSUER"}}}]},
+        "reviewer": {"allOf": [{"$ref": "#/$defs/attestation"}, {"properties": {"role": {"const": "D1_REVIEWER"}}}]}
+      }
+    }
+  }
+}

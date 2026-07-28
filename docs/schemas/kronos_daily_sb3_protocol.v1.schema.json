@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_daily_sb3_protocol.v1.schema.json",
+  "title": "Kronos daily Portfolio SB3 immutable protocol v1",
+  "description": "Closed research-only protocol contract. Runtime semantic validation recomputes RFC 8785 SHA-256 identities and rejects drift, OOS access, training, alias variants, noncanonical codes/hashes, missing sessions, and label leakage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "identity", "statement", "matrix"],
+  "properties": {
+    "schema": {"const": "kronos_daily_sb3_protocol.v1"},
+    "identity": {"$ref": "#/$defs/identity"},
+    "statement": {"$ref": "#/$defs/statement"},
+    "matrix": {"$ref": "#/$defs/matrix"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "utc": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "uid": {"type": "string", "pattern": "^kdp1(?:-(?:cell|attempt))?-[0-9a-f]{32}$"},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol_uid", "protocol_sha256", "identity_algorithm", "cell_identity_algorithm"],
+      "properties": {
+        "protocol_uid": {"$ref": "#/$defs/uid"},
+        "protocol_sha256": {"$ref": "#/$defs/sha256"},
+        "identity_algorithm": {"const": "SHA256_RFC8785_STATEMENT_V1"},
+        "cell_identity_algorithm": {"const": "SHA256_RFC8785_CELL_BASIS_V1"}
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "uri", "sha256", "byte_length", "role"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "uri": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 1},
+        "role": {"type": "string", "minLength": 1}
+      }
+    },
+    "closedMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "semantic_runtime_validator_required", "semantic_runtime_validator", "validates_exact_train_counts_and_date_arrays", "validates_dependency_paths_sha256_byte_length", "validates_available_sessions_exact"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_protocol_closed_metadata.v1"},
+        "semantic_runtime_validator_required": {"const": true},
+        "semantic_runtime_validator": {"const": "stom_rl.daily_portfolio_sb3_protocol.validate_protocol"},
+        "validates_exact_train_counts_and_date_arrays": {"const": true},
+        "validates_dependency_paths_sha256_byte_length": {"const": true},
+        "validates_available_sessions_exact": {"const": true}
+      }
+    },
+    "researchBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "research_only", "synthetic_verification_only", "compute_mode", "no_heavy_compute_marker", "training_allowed", "sb3_learn_allowed", "fresh_oos_access_allowed", "fresh_oos_consumed", "promotion_allowed", "model_build_allowed", "paper_forward_allowed", "live_broker_order_allowed", "profitability_claim_allowed", "go_summary_allowed"],
+      "properties": {
+        "label": {"const": "portfolio RL research protocol foundation"},
+        "research_only": {"const": true},
+        "synthetic_verification_only": {"const": true},
+        "compute_mode": {"const": "synthetic_verification_only"},
+        "no_heavy_compute_marker": {"const": "NO_TRAINING_NO_SB3_LEARN_NO_FRESH_OOS_READ"},
+        "training_allowed": {"const": false},
+        "sb3_learn_allowed": {"const": false},
+        "fresh_oos_access_allowed": {"const": false},
+        "fresh_oos_consumed": {"const": false},
+        "promotion_allowed": {"const": false},
+        "model_build_allowed": {"const": false},
+        "paper_forward_allowed": {"const": false},
+        "live_broker_order_allowed": {"const": false},
+        "profitability_claim_allowed": {"const": false},
+        "go_summary_allowed": {"const": false}
+      }
+    },
+    "sessionArray": {"type": "array", "items": {"$ref": "#/$defs/date"}, "uniqueItems": true},
+    "fold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fold_id", "train_sessions", "fit_start_session", "fit_end_session", "purge_embargo_sessions", "validation_sessions", "validation_start_session", "validation_end_session", "train_session_count", "purge_embargo_session_count", "validation_session_count", "fit_label_max_session"],
+      "properties": {
+        "fold_id": {"enum": ["fold-01", "fold-02"]},
+        "train_sessions": {"$ref": "#/$defs/sessionArray"},
+        "fit_start_session": {"$ref": "#/$defs/date"},
+        "fit_end_session": {"$ref": "#/$defs/date"},
+        "purge_embargo_sessions": {"type": "array", "minItems": 5, "maxItems": 5, "items": {"$ref": "#/$defs/date"}, "uniqueItems": true},
+        "validation_sessions": {"type": "array", "minItems": 47, "maxItems": 47, "items": {"$ref": "#/$defs/date"}, "uniqueItems": true},
+        "validation_start_session": {"$ref": "#/$defs/date"},
+        "validation_end_session": {"$ref": "#/$defs/date"},
+        "train_session_count": {"type": "integer", "minimum": 1},
+        "purge_embargo_session_count": {"const": 5},
+        "validation_session_count": {"const": 47},
+        "fit_label_max_session": {"$ref": "#/$defs/date"}
+      }
+    },
+    "historicalWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window_id", "label", "usage", "sessions", "start_session", "end_session", "session_count", "pre_access_purge_embargo_sessions", "fresh_oos_access_allowed", "fresh_oos_consumed", "model_go_source"],
+      "properties": {
+        "window_id": {"const": "historical-secondary-only-2026-04-03-2026-06-12"},
+        "label": {"const": "historical_test_oos_secondary_only"},
+        "usage": {"const": "SECONDARY_DIAGNOSTIC_ONLY_NOT_MODEL_SELECTION_NOT_PROMOTION"},
+        "sessions": {"type": "array", "minItems": 47, "maxItems": 47, "items": {"$ref": "#/$defs/date"}, "uniqueItems": true},
+        "start_session": {"const": "2026-04-03"},
+        "end_session": {"const": "2026-06-12"},
+        "session_count": {"const": 47},
+        "pre_access_purge_embargo_sessions": {"type": "array", "minItems": 5, "maxItems": 5, "items": {"$ref": "#/$defs/date"}, "uniqueItems": true},
+        "fresh_oos_access_allowed": {"const": false},
+        "fresh_oos_consumed": {"const": false},
+        "model_go_source": {"const": false}
+      }
+    },
+    "calendar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calendar_id", "session_source", "holiday_exclusions", "available_sessions", "available_session_count", "purge_days", "embargo_days", "folds", "historical_secondary_only_window"],
+      "properties": {
+        "calendar_id": {"const": "krx-daily-sb3-v1-2025-05-20-2026-06-12"},
+        "session_source": {"const": "frozen_research_calendar_v1"},
+        "holiday_exclusions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["train", "validation", "historical_secondary_only"],
+          "properties": {
+            "train": {"$ref": "#/$defs/sessionArray"},
+            "validation": {"$ref": "#/$defs/sessionArray"},
+            "historical_secondary_only": {"$ref": "#/$defs/sessionArray"}
+          }
+        },
+        "available_sessions": {"type": "array", "minItems": 260, "maxItems": 260, "items": {"$ref": "#/$defs/date"}, "uniqueItems": true},
+        "available_session_count": {"const": 260},
+        "purge_days": {"const": 5},
+        "embargo_days": {"const": 5},
+        "folds": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/fold"}},
+        "historical_secondary_only_window": {"$ref": "#/$defs/historicalWindow"}
+      }
+    },
+    "candidateSourceContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_columns", "canonical_code_pattern", "canonical_code_samples", "hash_pattern", "noncanonical_code_or_hash_policy", "official_test_oos_fit_rows_allowed"],
+      "properties": {
+        "required_columns": {"const": ["timestamp", "symbol", "rank_score", "price", "fill_price", "fillable", "split", "future_return_1d", "table", "code", "source_prediction_run_id"]},
+        "canonical_code_pattern": {"const": "^[0-9]{6}$"},
+        "canonical_code_samples": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[0-9]{6}$"}, "uniqueItems": true},
+        "hash_pattern": {"const": "^[0-9a-f]{64}$"},
+        "noncanonical_code_or_hash_policy": {"const": "FAIL_CLOSED"},
+        "official_test_oos_fit_rows_allowed": {"const": 0}
+      }
+    },
+    "costScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "total_bp", "buy_commission_bp", "buy_slippage_bp", "sell_commission_bp", "sell_tax_bp", "sell_slippage_bp"],
+      "properties": {
+        "scenario_id": {"enum": ["zero_control_0bp", "base_23bp", "stress_46bp"]},
+        "total_bp": {"enum": [0, 23, 46]},
+        "buy_commission_bp": {"type": "number"},
+        "buy_slippage_bp": {"type": "number"},
+        "sell_commission_bp": {"type": "number"},
+        "sell_tax_bp": {"type": "number"},
+        "sell_slippage_bp": {"type": "number"}
+      }
+    },
+    "costModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary_cost_bps", "evaluation_costs_bps", "cost_scenarios", "accounting_horizon", "duplicate_scalar_haircut_allowed"],
+      "properties": {
+        "primary_cost_bps": {"const": 23},
+        "evaluation_costs_bps": {"const": [0, 23, 46]},
+        "cost_scenarios": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/costScenario"}},
+        "accounting_horizon": {"const": "SB3_T_DECIDE_T1_FILL_STATEFUL_V1"},
+        "duplicate_scalar_haircut_allowed": {"const": false}
+      }
+    },
+    "portfolioConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initial_cash_krw", "max_positions", "buy_fraction", "cash_reserve_fraction", "rounding", "money_quantum_krw", "ratio_quantum"],
+      "properties": {
+        "initial_cash_krw": {"const": 1000000},
+        "max_positions": {"const": 2},
+        "buy_fraction": {"const": 0.25},
+        "cash_reserve_fraction": {"const": 0.5},
+        "rounding": {"const": "Decimal ROUND_HALF_UP"},
+        "money_quantum_krw": {"const": "0.000001"},
+        "ratio_quantum": {"const": "0.000000000001"}
+      }
+    },
+    "featureNormalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "method", "fit_scope", "apply_scope", "missing_value_policy", "std_zero_policy", "clip_z_min", "clip_z_max", "causal_feature_columns", "forbidden_feature_prefixes", "label_columns"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_feature_normalization.v1"},
+        "method": {"const": "TRAIN_FOLD_ONLY_ZSCORE"},
+        "fit_scope": {"const": "fold_train_sessions_only"},
+        "apply_scope": {"const": "validation_and_historical_secondary_without_refit"},
+        "missing_value_policy": {"const": "impute_train_mean_then_z0"},
+        "std_zero_policy": {"const": "std_zero_or_missing_maps_to_z0"},
+        "clip_z_min": {"const": -8},
+        "clip_z_max": {"const": 8},
+        "causal_feature_columns": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "forbidden_feature_prefixes": {"const": ["future_", "label_", "target_"]},
+        "label_columns": {"const": ["future_return_1d"]}
+      }
+    },
+    "ppoConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "stable_baselines_family", "total_timesteps_per_seed_fold", "device_requested", "n_steps", "batch_size", "n_epochs", "top_k_candidates", "max_positions", "initial_cash_krw", "buy_fraction", "invalid_action_penalty", "turnover_penalty_lambda", "max_eval_steps", "eval_callback_frequency_steps", "fold_seed_semantics"],
+      "properties": {
+        "algorithm": {"const": "ppo"},
+        "stable_baselines_family": {"const": "PPO"},
+        "total_timesteps_per_seed_fold": {"const": 200000},
+        "device_requested": {"const": "auto"},
+        "n_steps": {"const": 256},
+        "batch_size": {"const": 64},
+        "n_epochs": {"const": 4},
+        "top_k_candidates": {"const": 3},
+        "max_positions": {"const": 2},
+        "initial_cash_krw": {"const": 1000000},
+        "buy_fraction": {"const": 0.25},
+        "invalid_action_penalty": {"const": 0.001},
+        "turnover_penalty_lambda": {"const": 0.001},
+        "max_eval_steps": {"const": 512},
+        "eval_callback_frequency_steps": {"const": 10000},
+        "fold_seed_semantics": {"const": "same_base_seed_in_every_fold_no_plus_fold_index"}
+      }
+    },
+    "seed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seed_id", "value"],
+      "properties": {
+        "seed_id": {"enum": ["seed-01", "seed-02", "seed-03", "seed-04", "seed-05"]},
+        "value": {"enum": [7, 17, 29, 41, 53]}
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant_id", "role", "trains_policy", "evaluation_cost_bps", "cost_scenario_id", "notes"],
+      "properties": {
+        "variant_id": {"enum": ["baseline", "cost-00bp", "cost-23bp", "cost-46bp", "no-trade"]},
+        "role": {"type": "string", "minLength": 1},
+        "trains_policy": {"const": false},
+        "evaluation_cost_bps": {"enum": [0, 23, 46]},
+        "cost_scenario_id": {"enum": ["zero_control_0bp", "base_23bp", "stress_46bp"]},
+        "notes": {"type": "string", "minLength": 1}
+      }
+    },
+    "matrixDimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seed_count", "fold_count", "variant_count", "cell_count", "order"],
+      "properties": {
+        "seed_count": {"const": 5},
+        "fold_count": {"const": 2},
+        "variant_count": {"const": 5},
+        "cell_count": {"const": 50},
+        "order": {"const": "seed-major/fold/variant"}
+      }
+    },
+    "prerequisites": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["d0", "d1", "custody"],
+      "properties": {
+        "d0": {"type": "object", "additionalProperties": false, "required": ["required_status_before_promotion", "blocking_code"], "properties": {"required_status_before_promotion": {"const": "VERIFIED"}, "blocking_code": {"const": "D0_PRICE_BASIS_NOT_VERIFIED"}}},
+        "d1": {"type": "object", "additionalProperties": false, "required": ["required_status_before_promotion", "blocking_code"], "properties": {"required_status_before_promotion": {"const": "VERIFIED"}, "blocking_code": {"const": "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED"}}},
+        "custody": {"type": "object", "additionalProperties": false, "required": ["fresh_oos_required_before_any_claim", "status_in_protocol", "fresh_oos_access_allowed_here"], "properties": {"fresh_oos_required_before_any_claim": {"const": true}, "status_in_protocol": {"const": "FRESH_OOS_NOT_RUN"}, "fresh_oos_access_allowed_here": {"const": false}}}
+      }
+    },
+    "stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "phase", "severity", "convenience_stop"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "phase": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["BLOCK", "STOP"]},
+        "threshold": {"type": "number"},
+        "convenience_stop": {"const": false}
+      }
+    },
+    "statement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "protocol_version", "created_at", "market", "timezone", "research_boundary", "closed_metadata", "dependencies", "calendar", "candidate_source_contract", "cost_model", "portfolio_config", "feature_normalization", "ppo_config", "seeds", "fold_order", "variant_order", "variants", "matrix_dimensions", "comparator_order", "prerequisites", "stops"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_protocol.v1.statement"},
+        "protocol_version": {"const": "2026-07-15.g008.immutable.v1"},
+        "created_at": {"$ref": "#/$defs/utc"},
+        "market": {"const": "KRX"},
+        "timezone": {"const": "Asia/Seoul"},
+        "research_boundary": {"$ref": "#/$defs/researchBoundary"},
+        "closed_metadata": {"$ref": "#/$defs/closedMetadata"},
+        "dependencies": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/dependency"}},
+        "calendar": {"$ref": "#/$defs/calendar"},
+        "candidate_source_contract": {"$ref": "#/$defs/candidateSourceContract"},
+        "cost_model": {"$ref": "#/$defs/costModel"},
+        "portfolio_config": {"$ref": "#/$defs/portfolioConfig"},
+        "feature_normalization": {"$ref": "#/$defs/featureNormalization"},
+        "ppo_config": {"$ref": "#/$defs/ppoConfig"},
+        "seeds": {"type": "array", "minItems": 5, "maxItems": 5, "items": {"$ref": "#/$defs/seed"}},
+        "fold_order": {"const": ["fold-01", "fold-02"]},
+        "variant_order": {"const": ["baseline", "cost-00bp", "cost-23bp", "cost-46bp", "no-trade"]},
+        "variants": {"type": "array", "minItems": 5, "maxItems": 5, "items": {"$ref": "#/$defs/variant"}},
+        "matrix_dimensions": {"$ref": "#/$defs/matrixDimensions"},
+        "comparator_order": {"const": ["no_trade_cash", "shuffle_control", "equal_weight_topk_momentum", "ts_imb_rule_baseline", "buy_and_hold_cash", "ppo_policy"]},
+        "prerequisites": {"$ref": "#/$defs/prerequisites"},
+        "stops": {"type": "array", "minItems": 12, "items": {"$ref": "#/$defs/stop"}}
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "ordinal", "cell_uid", "attempt_uid", "seed_id", "seed", "fold_id", "variant_id", "evaluation_cost_bps", "cost_scenario_id", "train_start_session", "train_end_session", "validation_start_session", "validation_end_session", "historical_secondary_only_window_id", "compute_mode", "heavy_compute_allowed", "fresh_oos_access_allowed", "synthetic_verification_only"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_protocol_cell.v1"},
+        "ordinal": {"type": "integer", "minimum": 1, "maximum": 50},
+        "cell_uid": {"$ref": "#/$defs/uid"},
+        "attempt_uid": {"$ref": "#/$defs/uid"},
+        "seed_id": {"enum": ["seed-01", "seed-02", "seed-03", "seed-04", "seed-05"]},
+        "seed": {"enum": [7, 17, 29, 41, 53]},
+        "fold_id": {"enum": ["fold-01", "fold-02"]},
+        "variant_id": {"enum": ["baseline", "cost-00bp", "cost-23bp", "cost-46bp", "no-trade"]},
+        "evaluation_cost_bps": {"enum": [0, 23, 46]},
+        "cost_scenario_id": {"enum": ["zero_control_0bp", "base_23bp", "stress_46bp"]},
+        "train_start_session": {"$ref": "#/$defs/date"},
+        "train_end_session": {"$ref": "#/$defs/date"},
+        "validation_start_session": {"$ref": "#/$defs/date"},
+        "validation_end_session": {"$ref": "#/$defs/date"},
+        "historical_secondary_only_window_id": {"const": "historical-secondary-only-2026-04-03-2026-06-12"},
+        "compute_mode": {"const": "synthetic_verification_only"},
+        "heavy_compute_allowed": {"const": false},
+        "fresh_oos_access_allowed": {"const": false},
+        "synthetic_verification_only": {"const": true}
+      }
+    },
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cell_count", "order", "cells"],
+      "properties": {
+        "cell_count": {"const": 50},
+        "order": {"const": "seed-major/fold/variant"},
+        "cells": {"type": "array", "minItems": 50, "maxItems": 50, "items": {"$ref": "#/$defs/cell"}}
+      }
+    }
+  }
+}

@@ -96,9 +96,16 @@ export function stopPolling(): void {
 
 // refreshSeconds 변화에 자동 재시작
 let unsub: (() => void) | null = null;
-export function installPollingWatcher(): void {
+export function installPollingWatcher(): () => void {
   unsub?.();
-  unsub = refreshSeconds.subscribe(() => {
-    startPolling();
+  let initialized = false;
+  const unsubscribe = refreshSeconds.subscribe(() => {
+    if (initialized) startPolling();
+    initialized = true;
   });
+  unsub = unsubscribe;
+  return () => {
+    if (unsub === unsubscribe) unsub = null;
+    unsubscribe();
+  };
 }

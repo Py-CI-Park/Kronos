@@ -9,6 +9,8 @@
 
   let stats = $state<RlRliableStatsResponse | null>(null);
   let loading = $state(true);
+  let requestError = $state<string | null>(null);
+  let unavailableReason = $state<string | null>(null);
 
   const algorithms = $derived(stats?.algorithms ?? []);
   const aggregates = $derived(stats?.aggregates ?? {});
@@ -22,8 +24,22 @@
 
   async function load(): Promise<void> {
     loading = true;
-    stats = await rlApi.rliableStats();
-    loading = false;
+    requestError = null;
+    unavailableReason = null;
+    try {
+      const payload = await rlApi.rliableStats();
+      if (payload === null) {
+        throw new Error('Reliability statistics request returned no payload.');
+      }
+      stats = payload;
+      unavailableReason = payload.available === false
+        ? (payload.error ?? payload.note ?? 'The backend marked reliability statistics unavailable.')
+        : null;
+    } catch (error) {
+      requestError = error instanceof Error ? error.message : 'Reliability statistics request failed.';
+    } finally {
+      loading = false;
+    }
   }
 
   function point(metric: RlRliableMetric | undefined): string {
@@ -55,8 +71,13 @@
   </p>
   {#if loading}
     <p class="text-muted">reliability 통계 로딩 중 · 연구 전용...</p>
+  {:else if requestError}
+    <p class="text-muted">reliability 통계 요청 실패: {requestError}</p>
+    <button type="button" class="retry-btn" onclick={() => void load()}>Retry</button>
+  {:else if unavailableReason}
+    <p class="text-muted">통계 사용 불가 · 연구 전용: {unavailableReason}</p>
   {:else if !hasStats}
-    <p class="text-muted">통계 없음 · 연구 전용 (rliable 산출물이 아직 생성되지 않았습니다).</p>
+    <p class="text-muted">통계 없음 · 연구 전용 (백엔드가 rliable 산출물을 반환하지 않았습니다).</p>
   {:else}
     <div class="table-wrap rliable-wrap">
       <table>
@@ -112,5 +133,13 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum', 'zero';
+  }
+  .retry-btn {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    padding: 4px 12px;
+    font: 600 11px/1 var(--font-display);
+    cursor: pointer;
   }
 </style>

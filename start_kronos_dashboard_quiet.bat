@@ -47,7 +47,7 @@ set "LOG_FILE=%LOG_DIR%\kronos_dashboard_%KRONOS_WEBUI_PORT%_quiet.log"
 
 echo [Kronos] Quiet dashboard launcher
 echo [Kronos] Repository: %CD%
-echo [Kronos] URL: http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/rl
+echo [Kronos] URL: http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/
 echo [Kronos] Log file: %LOG_FILE%
 echo [Kronos] Python: %PYTHON_CMD%
 
@@ -63,14 +63,14 @@ echo [Kronos] Starting dashboard quietly in a background window...
 start "Kronos Dashboard %KRONOS_WEBUI_PORT%" /min cmd /c "cd /d "%CD%\webui" && %PYTHON_CMD% run.py > "%LOG_FILE%" 2>&1"
 
 echo [Kronos] Waiting for dashboard readiness...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$url='http://' + $env:KRONOS_WEBUI_HOST + ':' + $env:KRONOS_WEBUI_PORT + '/rl'; for ($i=0; $i -lt 30; $i++) { try { $r=Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } } catch { }; Start-Sleep -Milliseconds 700 }; exit 1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$url='http://' + $env:KRONOS_WEBUI_HOST + ':' + $env:KRONOS_WEBUI_PORT + '/'; for ($i=0; $i -lt 30; $i++) { try { $r=Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } } catch { }; Start-Sleep -Milliseconds 700 }; exit 1"
 if errorlevel 1 (
   echo [ERROR] Dashboard did not answer within the readiness window.
   echo [ERROR] Check log: %LOG_FILE%
   exit /b 1
 )
 
-echo [OK] Dashboard started quietly: http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/rl
+echo [OK] Dashboard started quietly: http://%KRONOS_WEBUI_HOST%:%KRONOS_WEBUI_PORT%/
 echo [OK] Access logs are redirected to: %LOG_FILE%
 echo [OK] Stop with: stop_kronos_dashboard.bat
 exit /b 0

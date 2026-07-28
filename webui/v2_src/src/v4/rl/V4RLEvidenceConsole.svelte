@@ -12,6 +12,7 @@
   import type { EvidenceUiState } from '../evidenceState';
   import {
     DOCUMENTED_RL_FACTS,
+    CONFLICT_BLOCKED,
     normalizeRlProgress,
     normalizeRlRunDetail,
     choosePreferredRlRun,
@@ -19,6 +20,8 @@
     deriveRlCockpitEvidence,
     normalizeRlRuns,
     normalizeRlRows,
+    reconcileRlRunIdentity,
+    rlRunIdentityKey,
     normalizeRliableCollections,
     summarizeProgress,
     summarizeRliable,
@@ -32,6 +35,7 @@
 
   let runs = $state<readonly RlRunRecord[]>([]);
   let selectedName = $state('');
+  let selectedRunUid = $state('');
   let selectedRun = $state<RlRunDetail | null>(null);
   let progress = $state<RlProgressResponse | null>(null);
   let progressState = $state<'recorded' | 'empty' | 'not_recorded'>('not_recorded');
@@ -51,21 +55,31 @@
 
   const runSelectGate = createRequestGate();
 
-  const selectedListRecord = $derived(runs.find((run) => run.name === selectedName) ?? null);
-  const evidenceSource = $derived(selectedRun ?? selectedListRecord);
-  const cockpit = $derived(deriveRlCockpitEvidence(evidenceSource, { events }));
+  const selectedListRecords = $derived(selectedRunUid ? runs.filter((run) => rlRunIdentityKey(run) === selectedRunUid) : []);
+  const selectedListRecord = $derived(selectedListRecords[0] ?? null);
+  const reconciliation = $derived(reconcileRlRunIdentity(selectedListRecord, selectedRun, {
+    selectedRunUid,
+    selectedName,
+    listRecords: selectedListRecords,
+    detailRecorded: selectedRun !== null && detailError === null,
+  }));
+  const conflictBlocked = $derived(selectedName !== '' && !detailLoading && reconciliation.status === CONFLICT_BLOCKED);
+  const reconciliationState = $derived(detailLoading ? 'DETAIL_PENDING' : reconciliation.status);
+  const evidenceSource = $derived(selectedName ? reconciliation.source : null);
+  const cockpit = $derived(deriveRlCockpitEvidence(evidenceSource, { events: reconciliation.usable ? events : [] }));
   const identity = $derived(adaptEvidenceIdentity(evidenceSource ?? { id: 'MISSING_RUN' }, { source_endpoint: selectedName ? `/api/rl/runs/${encodeURIComponent(selectedName)}` : '/api/rl/runs' }));
   const laneRows = $derived([
     classifyRlEvidenceLane({ name: 'RULE lane contract', artifact_type: 'baseline', strategy_context: { line: 'rule_mainline', label: 'RULE baseline', is_reinforcement_learning: false } }),
     classifyRlEvidenceLane({ name: 'Supervised gate contract', artifact_type: 'factory_calibration', strategy_context: { line: 'supervised', label: 'supervised gate', is_reinforcement_learning: false } }),
     cockpit.lane,
   ]);
-  const artifactRows = $derived(selectedRun?.artifacts ?? []);
-  const lineage = $derived(selectedRun?.strategy_context ?? null);
-  const runStage = $derived(String(selectedRun?.detail?.stage ?? selectedRun?.summary?.stage ?? selectedRun?.lifecycle?.last_phase ?? 'STAGE_NOT_RECORDED'));
-  const runStatus = $derived(String(selectedRun?.detail?.status ?? selectedRun?.summary?.status ?? selectedRun?.lifecycle?.status ?? 'STATUS_NOT_RECORDED'));
-  const freshness = $derived(identity.freshness_status);
-  const selectedState = $derived.by((): EvidenceUiState => (detailError ? 'error' : detailLoading ? 'loading' : selectedRun ? 'completed' : selectedName ? 'missing' : 'empty'));
+  const artifactRows = $derived(reconciliation.usable ? selectedRun?.artifacts ?? [] : []);
+  const lineage = $derived(reconciliation.usable ? selectedRun?.strategy_context ?? null : null);
+  const runStage = $derived(conflictBlocked ? CONFLICT_BLOCKED : String(selectedRun?.detail?.stage ?? selectedRun?.summary?.stage ?? selectedRun?.lifecycle?.last_phase ?? 'STAGE_NOT_RECORDED'));
+  const runStatus = $derived(conflictBlocked ? CONFLICT_BLOCKED : String(selectedRun?.detail?.status ?? selectedRun?.summary?.status ?? selectedRun?.lifecycle?.status ?? 'STATUS_NOT_RECORDED'));
+  const freshness = $derived(conflictBlocked ? CONFLICT_BLOCKED : identity.freshness_status);
+  const conflictSummary = $derived(reconciliation.conflicts.map((item) => `${item.code}: ${item.detail}`).join(' · ') || 'MATCHED');
+  const selectedState = $derived.by((): EvidenceUiState => (detailLoading ? 'loading' : conflictBlocked ? 'error' : detailError ? 'error' : selectedRun ? 'completed' : selectedName ? 'missing' : 'empty'));
 
   onMount(() => {
     void loadConsole();
@@ -114,7 +128,7 @@
         rliableError = message(rliableResult.reason, 'rliable evidence fetch failed');
       }
       const preferred = choosePreferredRlRun(runs);
-      if (preferred) await selectRun(preferred.name);
+      if (preferred) await selectRun(rlRunIdentityKey(preferred));
     } catch (caught) {
       error = message(caught, 'RL evidence console load failed');
     } finally {
@@ -122,8 +136,11 @@
     }
   }
 
-  async function selectRun(name: string): Promise<void> {
+  async function selectRun(runUid: string): Promise<void> {
     const token = runSelectGate.next();
+    const listRecord = runs.find((run) => rlRunIdentityKey(run) === runUid) ?? null;
+    const name = listRecord?.name ?? runUid;
+    selectedRunUid = runUid;
     selectedName = name;
     selectedRun = null;
     events = [];
@@ -131,6 +148,11 @@
     eventsCollectionState = 'not_recorded';
     detailLoading = true;
     detailError = null;
+    if (!listRecord) {
+      detailError = `${runUid} list payload not recorded`;
+      detailLoading = false;
+      return;
+    }
     try {
       const [detailResult, eventResult] = await Promise.allSettled([
         requireJsonPayload(`${name} detail`, rlApi.rlRun(name)),
@@ -142,6 +164,9 @@
         if (normalizedDetail.status === 'recorded') {
           selectedRun = normalizedDetail.detail;
         } else {
+          selectedRun = detailResult.value !== null && typeof detailResult.value === 'object' && !Array.isArray(detailResult.value)
+            ? (detailResult.value as RlRunDetail)
+            : null;
           detailError = `${name} detail payload not recorded`;
         }
       } else {
@@ -190,15 +215,15 @@
       <span>Run</span>
       <select
         aria-label="RL evidence run"
-        value={selectedName}
+        value={selectedRunUid}
         disabled={loading || runCollectionState !== 'recorded'}
         onchange={(event) => void selectRun(event.currentTarget.value)}
       >
         {#if runCollectionState !== 'recorded'}
           <option value="">{runCollectionState === 'empty' ? 'RUNS_EMPTY' : 'RUNS_NOT_RECORDED'}</option>
         {:else}
-          {#each runs as run (run.name)}
-            <option value={run.name}>{run.name} · {classifyRlEvidenceLane(run).kind}</option>
+          {#each runs as run, index (run.name + ':' + rlRunIdentityKey(run) + ':' + index)}
+            <option value={rlRunIdentityKey(run)}>{run.name} · {classifyRlEvidenceLane(run).kind} · run_uid {rlRunIdentityKey(run)}</option>
           {/each}
         {/if}
       </select>
@@ -238,6 +263,40 @@
     </div>
   </section>
 
+  <section
+    class="identity-reconciliation"
+    data-v4-rl-identity-reconciliation
+    data-identity-state={reconciliationState}
+    data-conflict-state={reconciliationState}
+    aria-label="List detail provenance reconciliation"
+  >
+    <div class="section-head">
+      <p class="eyebrow">Immutable run identity</p>
+      <h3>{detailLoading ? 'DETAIL_PENDING' : conflictBlocked ? CONFLICT_BLOCKED : 'list/detail provenance checked'}</h3>
+      <p>run_uid 전체값, revision, source_sha256, protocol을 list/detail 양쪽에서 비교합니다.</p>
+    </div>
+    <div class="provenance-grid">
+      <article data-v4-rl-list-provenance data-provenance-origin="list" data-run-uid={reconciliation.list.run_uid}>
+        <span>List provenance</span>
+        <strong>{reconciliation.list.run_uid}</strong>
+        <p>name {reconciliation.list.name} · revision {reconciliation.list.revision} · source_sha256 {reconciliation.list.source_sha256} · protocol {reconciliation.list.protocol}</p>
+        <small>{reconciliation.list.endpoint} · {reconciliation.list.lane}</small>
+      </article>
+      <article data-v4-rl-detail-provenance data-provenance-origin="detail" data-run-uid={reconciliation.detail.run_uid}>
+        <span>Detail provenance</span>
+        <strong>{reconciliation.detail.run_uid}</strong>
+        <p>name {reconciliation.detail.name} · revision {reconciliation.detail.revision} · source_sha256 {reconciliation.detail.source_sha256} · protocol {reconciliation.detail.protocol}</p>
+        <small>{reconciliation.detail.endpoint} · {reconciliation.detail.lane}</small>
+      </article>
+      <article data-v4-rl-identity-conflicts data-conflict-count={reconciliation.conflicts.length}>
+        <span>Reconciliation</span>
+        <strong>{reconciliationState}</strong>
+        <p>{conflictBlocked ? `${CONFLICT_BLOCKED} · ${conflictSummary}` : detailLoading ? 'DETAIL_PENDING · locks remain fail-closed' : 'MATCHED · detail evidence usable'}</p>
+        <small>Unsafe actions and optimistic model/GO copy are suppressed unless identity is MATCHED.</small>
+      </article>
+    </div>
+  </section>
+
   <section class="lane-grid" aria-label="RULE supervised gate RL lane separation">
     {#each laneRows as lane}
       <article class="lane-card" data-v4-rl-lane data-lane={lane.kind}>
@@ -249,6 +308,9 @@
   </section>
 
   <PromotionLocksGrid result={cockpit.run.promotion_locks} compact />
+  <p class="lock-boundary" data-v4-effective-lock-boundary>
+    Source true unlock fields are provenance attempts only; V4 effective promotion locks remain false/blocked without separate reviewed authority.
+  </p>
 
   <section class="metrics" aria-label="Explicit cockpit metrics before charts and raw">
     {#each cockpit.metrics as item}
@@ -321,14 +383,26 @@
     </div>
   </EvidenceDisclosure>
 
-  <StateBoundary state={selectedState} title="Selected detail state" detail={detailError ?? '선택 run detail/events state'} />
+  <StateBoundary state={selectedState} title={conflictBlocked ? CONFLICT_BLOCKED : 'Selected detail state'} detail={conflictBlocked ? conflictSummary : detailError ?? '선택 run detail/events state'} />
 
-  <EvidenceDisclosure summary="Raw audit · legacy/full RL surface" meta="last disclosure only" open={false} lazy>
-    <div data-v4-raw-audit>
-      {#if children}
-        {@render children()}
+  <EvidenceDisclosure summary="Raw audit · legacy/full RL surface" meta="last disclosure only" open={!reconciliation.usable} lazy>
+    <div
+      data-v4-raw-audit
+      data-raw-audit-trust={reconciliation.usable ? 'MATCHED' : 'UNTRUSTED'}
+      data-legacy-child-state={reconciliation.usable ? 'MATCHED' : CONFLICT_BLOCKED}
+    >
+      {#if reconciliation.usable}
+        {#if children}
+          {@render children()}
+        {:else}
+          <p class="raw-empty">Legacy RL audit child surface not supplied. Raw audit remains last.</p>
+        {/if}
       {:else}
-        <p class="raw-empty">Legacy RL audit child surface not supplied. Raw audit remains last.</p>
+        <div class="raw-untrusted" role="alert" data-v4-raw-audit-untrusted data-raw-audit-state={CONFLICT_BLOCKED}>
+          <strong>UNTRUSTED · {CONFLICT_BLOCKED}</strong>
+          <p>Legacy RL audit child surface is fenced until reconciliation.usable is true. Independent child state is not trusted during {reconciliationState}.</p>
+          <small>{conflictSummary}</small>
+        </div>
       {/if}
     </div>
   </EvidenceDisclosure>
@@ -348,6 +422,7 @@
   .console-intro,
   .run-selector,
   .selected-run,
+  .identity-reconciliation,
   .lane-card,
   .facts,
   .metric-shell,
@@ -361,12 +436,14 @@
 
   .console-intro,
   .run-selector,
+  .identity-reconciliation,
   .facts {
     padding: 18px 20px;
   }
 
   .eyebrow,
   .selected-run span,
+  .identity-reconciliation article span,
   .lane-card span,
   .facts article span,
   .summary-grid span,
@@ -481,6 +558,7 @@
 
   .selected-run,
   .lane-grid,
+  .provenance-grid,
   .metrics,
   .metadata,
   .facts-grid,
@@ -495,6 +573,7 @@
   }
 
   .selected-run div,
+  .provenance-grid article,
   .summary-grid article,
   .facts article,
   .metadata-shell,
@@ -507,6 +586,7 @@
   }
 
   .selected-run strong,
+  .provenance-grid strong,
   .lane-card strong,
   .summary-grid strong,
   .never-trade strong {
@@ -545,6 +625,10 @@
   .metadata-shell,
   .never-trade {
     padding: 14px;
+  }
+
+  .identity-reconciliation[data-conflict-state='CONFLICT_BLOCKED'] {
+    border-color: color-mix(in oklab, var(--danger) 56%, var(--border));
   }
 
   .lane-card[data-lane='RULE'],
@@ -590,5 +674,35 @@
     border: 1px dashed var(--border);
     border-radius: 14px;
     background: var(--surface-raised);
+  }
+
+  .lock-boundary {
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--danger);
+    border-radius: 14px;
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-weight: 720;
+  }
+
+  .raw-untrusted {
+    display: grid;
+    gap: 6px;
+    padding: 14px;
+    border: 1px solid var(--danger);
+    border-radius: 14px;
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .raw-untrusted p,
+  .raw-untrusted small {
+    margin: 0;
+    color: var(--danger);
+  }
+
+  .raw-untrusted strong {
+    color: var(--danger);
   }
 </style>

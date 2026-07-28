@@ -378,30 +378,38 @@ def test_run_daily_rl_emits_research_only_gate_and_required_metrics(tmp_path: Pa
     assert observation_manifest["gate"] == "D4_OBSERVATION_STATE_MANIFEST"
     assert observation_manifest["reward_action_telemetry_sufficient_for_d4"] is False
     assert "shuffle_control" in observation_manifest["frozen_d3_comparison"]["required_baselines"]
-    state_rows = list(csv.DictReader(Path(written["state_observations_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["state_observations_path"]).open("r", encoding="utf-8", newline="") as handle:
+        state_rows = list(csv.DictReader(handle))
     assert {"cash_fraction", "exposure_fraction", "future_label_exposed"} <= set(state_rows[0])
     assert {"action_mask_hold_buy_add_sell_reduce", "mask_reason_hold", "mask_reason_buy"} <= set(state_rows[0])
     assert training_manifest["telemetry"]["training_status"] == "TABULAR_Q_TELEMETRY_RECORDED"
     assert training_manifest["artifact_hashes"]["policy_metrics"]
-    learning_curve = list(csv.DictReader(Path(written["learning_curve_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["learning_curve_path"]).open("r", encoding="utf-8", newline="") as handle:
+        learning_curve = list(csv.DictReader(handle))
     assert {"episode", "rolling_mean_reward", "best_total_reward"} <= set(learning_curve[0])
-    action_distribution = list(csv.DictReader(Path(written["action_distribution_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["action_distribution_path"]).open("r", encoding="utf-8", newline="") as handle:
+        action_distribution = list(csv.DictReader(handle))
     assert {"split", "action", "action_rate"} <= set(action_distribution[0])
     assert {"requested_action", "executed_action", "invalid_action_reason", "no_trade_action"} <= set(action_distribution[0])
-    reward_rows = list(csv.DictReader(Path(written["reward_breakdown_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["reward_breakdown_path"]).open("r", encoding="utf-8", newline="") as handle:
+        reward_rows = list(csv.DictReader(handle))
     assert {"net_return_after_cost", "no_trade_hold_reward", "mask_reason_reduce"} <= set(reward_rows[0])
-    ablation_rows = list(csv.DictReader(Path(written["reward_action_ablations_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["reward_action_ablations_path"]).open("r", encoding="utf-8", newline="") as handle:
+        ablation_rows = list(csv.DictReader(handle))
     assert {"ablation", "delta_vs_recorded_reward", "cost_round_trip_bp"} <= set(ablation_rows[0])
     assert {row["ablation"] for row in ablation_rows} >= {"recorded_reward", "without_turnover_cost"}
-    opportunity_rows = list(csv.DictReader(Path(written["no_trade_opportunity_diagnostics_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["no_trade_opportunity_diagnostics_path"]).open("r", encoding="utf-8", newline="") as handle:
+        opportunity_rows = list(csv.DictReader(handle))
     assert {"diagnostic", "top_candidate_net_after_entry_cost", "future_label_used_for_training_state"} <= set(opportunity_rows[0])
-    abstention_rows = list(csv.DictReader(Path(written["abstention_reasons_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["abstention_reasons_path"]).open("r", encoding="utf-8", newline="") as handle:
+        abstention_rows = list(csv.DictReader(handle))
     assert {"action_filter_mode", "future_label_exposed", "filter_reason_buy"} <= set(abstention_rows[0])
     assert abstention_rows[0]["future_label_exposed"] == "False"
     opportunity_summary = json.loads(Path(written["no_trade_opportunity_summary_path"]).read_text(encoding="utf-8"))
     assert opportunity_summary["guardrail"].startswith("No-trade opportunity diagnostics")
     assert opportunity_summary["training_state_uses_future_label"] is False
-    policy_rows = list(csv.DictReader(Path(written["policy_baseline_comparison_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["policy_baseline_comparison_path"]).open("r", encoding="utf-8", newline="") as handle:
+        policy_rows = list(csv.DictReader(handle))
     assert {"baseline_strategy", "policy_nav", "baseline_nav", "baseline_delta_total_net_return"} <= set(policy_rows[0])
     policy_manifest = json.loads(Path(written["policy_evaluation_manifest_path"]).read_text(encoding="utf-8"))
     assert policy_manifest["readiness_status"] == "D4_RESEARCH_ONLY_DIAGNOSTICS"
@@ -532,10 +540,12 @@ def test_learning_curve_has_val_nav(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert any(row.get("val_nav") is not None for row in result["episode_metrics"])
 
     written = write_rl_artifacts(result, run_id="portfolio_val_nav_unit")
-    curve_rows = list(csv.DictReader(Path(written["learning_curve_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["learning_curve_path"]).open("r", encoding="utf-8", newline="") as handle:
+        curve_rows = list(csv.DictReader(handle))
     assert "val_nav" in curve_rows[0]
     assert "final_shaped_equity" in curve_rows[0]
-    episode_rows = list(csv.DictReader(Path(written["episode_metrics_path"]).open("r", encoding="utf-8", newline="")))
+    with Path(written["episode_metrics_path"]).open("r", encoding="utf-8", newline="") as handle:
+        episode_rows = list(csv.DictReader(handle))
     assert "val_nav" in episode_rows[0]
     assert "final_shaped_equity" in episode_rows[0]
 

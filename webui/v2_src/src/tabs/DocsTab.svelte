@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { marked } from 'marked';
   import DOMPurify from 'dompurify';
   import { fmt } from '$lib/format';
   import { ICONS } from '$lib/icons';
   import { activeTab } from '$lib/stores';
+  import { dashboardShell, type DashboardShell } from '$lib/shellMode';
+  import V51ReportViewer from './V51ReportViewer.svelte';
 
   interface DocItem {
     slug: string;
@@ -23,6 +25,8 @@
   let content = $state<string>('');
   let contentError = $state<string | null>(null);
   let loadingContent = $state(false);
+  let shell = $state<DashboardShell>('v3');
+  const unsubscribeDashboardShell = dashboardShell.subscribe((value) => (shell = value));
 
   // marked 설정 — XSS 방지를 위해 HTML 렌더링은 안전한 옵션
   marked.setOptions({
@@ -77,6 +81,10 @@
       const idx = docs.find((d) => d.slug === '00-index') ?? docs[0];
       await loadDoc(idx.slug);
     }
+  });
+
+  onDestroy(() => {
+    unsubscribeDashboardShell();
   });
 
   // 카테고리 분류 (order prefix 기준)
@@ -147,10 +155,18 @@
   </div>
   <h1 class="text-h2" style="margin-top:8px">문서 · Wiki</h1>
   <p class="text-muted" style="margin-top:6px">
-    Kronos 프로젝트의 모든 노하우와 시행착오를 모은 살아있는 wiki. 마크다운 원본은 <code class="text-mono">docs/wiki/</code> 에 보관되며,
-    파일을 직접 수정하면 새로고침으로 즉시 반영됩니다.
+    {#if shell === 'v5'}
+      Kronos wiki와 V5.1 HTML/Markdown report catalog를 읽기 전용으로 조회합니다. V5.1 report viewer는 GET-only이며 writes/downloads를 노출하지 않습니다.
+    {:else}
+      Kronos 프로젝트의 모든 노하우와 시행착오를 모은 살아있는 wiki. 마크다운 원본은 <code class="text-mono">docs/wiki/</code> 에 보관되며,
+      파일을 직접 수정하면 새로고침으로 즉시 반영됩니다.
+    {/if}
   </p>
 </section>
+
+{#if shell === 'v5'}
+  <V51ReportViewer />
+{/if}
 
 <section class="docs-layout">
   <!-- ── Left: 문서 목록 ── -->

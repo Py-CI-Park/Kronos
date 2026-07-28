@@ -12,6 +12,10 @@
     "webui/v2_src/src/App.svelte": [
       "data-trading-command-center-redirect"
     ],
+    "webui/v2_src/src/tabs/DailyRlGuideTab.svelte": [
+      "APPROVAL_GATED_INTENT_RECORD_ONLY",
+      "RL_ENV_VISUAL_GUIDE_MVP"
+    ],
     "webui/v2_src/src/tabs/DailyRlGuideTab.svelte ::lower": [
       "fake"
     ],
@@ -28,6 +32,7 @@
       "slice(0, 4)"
     ],
     "webui/v2_src/src/tabs/dailyOhlcv/DailyVisualLabCard.svelte": [
+      "PLACEHOLDER_READY",
       "const asNumber",
       "registry?.model_build_allowed ?? false",
       "rows(decision?.blockers, 4)"
@@ -395,8 +400,8 @@
     }
   },
   "counts": {
-    "absent": 12,
-    "classified": 603,
+    "absent": 15,
+    "classified": 611,
     "e1": 0,
     "e2": 5,
     "loop_absent_expanded": 7,
@@ -404,17 +409,17 @@
     "loop_present_expanded": 59,
     "per_file": {
       "tests/test_daily_ohlcv_dashboard_tab.py": {
-        "physical_assert_nodes": 490,
-        "total_asserts": 490
+        "physical_assert_nodes": 498,
+        "total_asserts": 498
       },
       "tests/test_stom_rl_dashboard_tab.py": {
         "physical_assert_nodes": 55,
         "total_asserts": 118
       }
     },
-    "physical_assert_nodes": 545,
-    "present": 525,
-    "total_asserts": 608
+    "physical_assert_nodes": 553,
+    "present": 530,
+    "total_asserts": 616
   },
   "e1": [],
   "e2": [
@@ -460,7 +465,7 @@
     ],
     "webui/v2_src/src/layout/Header.svelte": [
       "Daily OHLCV",
-      "routeLabel(tab)",
+      "routeLabelForShell(tab, shell)",
       "일봉 RL 설명서"
     ],
     "webui/v2_src/src/layout/Sidebar.svelte": [
@@ -469,7 +474,7 @@
       "id: 'daily-ohlcv'",
       "id: 'rl'",
       "label: 'Trading Command Center'",
-      "navigateToTab(id)"
+      "navigateToTab(routeId)"
     ],
     "webui/v2_src/src/lib/cardRequest.ts": [
       "controllers.get(key)?.abort()",
@@ -597,7 +602,6 @@
     "webui/v2_src/src/tabs/DailyRlGuideTab.svelte": [
       "AI Agent",
       "AI-readable / AI 개선 지시 고정 포맷",
-      "APPROVAL_GATED_INTENT_RECORD_ONLY",
       "Agent ↔ Environment ↔ Reward",
       "Artifact-backed RL Replay",
       "D3_D4_SIGNAL_QUALITY_AUDIT",
@@ -610,9 +614,11 @@
       "MISSING_SIGNAL_QUALITY_AUDIT",
       "NON_LIVE_RESEARCH_PLATFORM_COMPLETE",
       "PAST_ONLY_MARKET_REGIME_AUDIT",
+      "READ_ONLY_WORKFLOW_CATALOG",
+      "RESEARCH_ONLY_GUIDE",
       "RESEARCH_ONLY_PERFORMANCE_DIAGNOSTIC",
-      "RL_ENV_VISUAL_GUIDE_MVP",
       "ResearchStatusShell",
+      "UNAVAILABLE_FROM_READ_ONLY_DASHBOARD",
       "activeGuideSection = $state('overview')",
       "data-daily-rl-action-probability-bars",
       "data-daily-rl-ai-guidance-format",
@@ -651,7 +657,9 @@
       "data-daily-rl-workflow-inspector",
       "data-daily-rl-workflow-picker",
       "data-daily-rl-workflow-safe-config-preview",
-      "future_return_1d",
+      "future_return_h1_1520_proxy",
+      "future_return_h3_1520_proxy",
+      "future_return_h5_1520_proxy",
       "hold · buy · add · sell · reduce",
       "isGuideSection('raw')",
       "isGuideSection('rejection')",
@@ -994,6 +1002,7 @@
       "unmatched_quarantine_count"
     ],
     "webui/v2_src/src/tabs/dailyOhlcv/DailyVisualLabCard.svelte": [
+      "BLOCKED",
       "D6는 증거를 읽는 화면",
       "D7 Research Diagnostics",
       "D7_CORRELATION_RISK",
@@ -1003,18 +1012,19 @@
       "D7_REGIME_DIAGNOSTICS",
       "D7은 실패 원인과 다음 가설",
       "INCOMPLETE_NUMERIC_EVIDENCE",
+      "MISSING_ARTIFACT",
       "MISSING_EFFECTIVE_GATE_EVIDENCE",
       "MISSING_INVARIANT_EVIDENCE",
       "MISSING_REGISTRY_FLAG_UNSAFE",
       "MISSING_SAMPLE_EVIDENCE",
-      "PLACEHOLDER_READY",
+      "NOT_STARTED",
       "STOM-inspired Visual Lab",
       "allowed_use",
       "allowed_use: card.allowed_use || fallback.allowed_use",
       "blocked_use",
       "blocked_use: card.blocked_use || fallback.blocked_use",
       "config_hash",
-      "correlation_cluster_summary.csv가 생성되기 전까지 PLACEHOLDER_READY",
+      "correlation_cluster_summary.csv has not been attached",
       "current_gap",
       "current_gap: card.current_gap || fallback.current_gap",
       "data-daily-d6-d7-usage-guide",

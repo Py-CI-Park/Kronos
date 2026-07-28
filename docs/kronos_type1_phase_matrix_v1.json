@@ -1,0 +1,31 @@
+{
+  "schema_version": "kronos_type1_phase_matrix.v1",
+  "protocol_id": "KRONOS-TYPE1-CLOSING-2026-07-23",
+  "ordering_rule": "A phase may begin only after every listed dependency has a PASS test receipt and a verified manifest. Dependencies point only to earlier phases. This matrix intentionally contains no output hashes, receipts, manifests, or predicted artifact digests.",
+  "fresh_oos": {
+    "freeze_start": "2026-08-03",
+    "freeze_end": "2027-07-30",
+    "status": "NOT_RUN",
+    "access": "FORBIDDEN"
+  },
+  "phases": [
+    {"id": "P0a", "depends_on": [], "purpose": "Freeze this preregistration and phase graph."},
+    {"id": "P0", "depends_on": ["P0a"], "purpose": "Validate canonical JSON, receipt, and manifest runtime wiring."},
+    {"id": "P1", "depends_on": ["P0a"], "purpose": "Verify exact 15:20 source custody and leading-zero symbols."},
+    {"id": "P2", "depends_on": ["P0a", "P0"], "purpose": "Build chronological causal training and validation partitions without fresh OOS."},
+    {"id": "P3", "depends_on": ["P0a", "P0"], "purpose": "Validate fixed-notional ten-slot accounting at 23bp and 0/46bp controls."},
+    {"id": "P4", "depends_on": ["P0a", "P0", "P2", "P3"], "purpose": "Define and validate action masks for cash, slot, duplicate, and missing-bar constraints."},
+    {"id": "P5", "depends_on": ["P0a", "P0", "P1", "P2", "P3", "P4"], "purpose": "Exercise environment wiring on synthetic fixtures only."},
+    {"id": "P6", "depends_on": ["P0a", "P0", "P1", "P2", "P3", "P4", "P5"], "purpose": "Specify frozen baselines and shuffled-label control contracts."},
+    {"id": "P7", "depends_on": ["P0a", "P0", "P2", "P3", "P4", "P5", "P6"], "purpose": "Run bounded historical plumbing smoke only after separate approval."},
+    {"id": "P8", "depends_on": ["P0a", "P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7"], "purpose": "Review smoke integrity, not model quality or promotion."},
+    {"id": "P9", "depends_on": ["P0a", "P1", "P6", "P8"], "purpose": "Run preregistered validation experiments with identical configuration seeds."},
+    {"id": "P10", "depends_on": ["P0a", "P1", "P6", "P8", "P9"], "purpose": "Evaluate frozen validation comparisons and controls."},
+    {"id": "P11", "depends_on": ["P0a", "P1", "P6", "P8", "P10"], "purpose": "Record a validation stop, NO_GO, or separate eligibility decision."},
+    {"id": "P12", "depends_on": ["P0a", "P1", "P6", "P8", "P11"], "purpose": "Prepare an independently approved fresh-OOS custody gate; do not access OOS."},
+    {"id": "P13", "depends_on": ["P0a", "P1", "P6", "P8", "P12"], "purpose": "One-time fresh-OOS evaluation only under a separate approved gate."},
+    {"id": "P14", "depends_on": ["P0a", "P1", "P6", "P8", "P13"], "purpose": "Reconcile OOS results, controls, uncertainty, and manifests."},
+    {"id": "P15", "depends_on": ["P0a", "P1", "P6", "P8", "P14"], "purpose": "Record research verdict; failure remains NO_GO or INCONCLUSIVE."},
+    {"id": "P16", "depends_on": ["P0a", "P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11", "P12", "P13", "P14", "P15"], "purpose": "Archive immutable research evidence; this is not a live-trading authorization."}
+  ]
+}

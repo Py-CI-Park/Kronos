@@ -1,0 +1,36 @@
+{
+  "schema": "kronos_v5_oos_custody_fixture.v1",
+  "fixture_kind": "synthetic_status_only_no_real_oos",
+  "preregistered_at": "2026-01-01T00:00:00Z",
+  "calendar_columns": ["session_date", "market", "is_open", "open_time", "close_time", "timezone"],
+  "calendar_timezone": "Asia/Seoul",
+  "first_open_session_count": 60,
+  "calendar_open_time": "09:00:00+09:00",
+  "calendar_close_time": "15:30:00+09:00",
+  "evaluator_action": "OOS_EVALUATION_NOT_RUN_STATUS_ONLY",
+  "capability_max_uses": 1,
+  "capability_max_ttl_seconds": 3600,
+  "denial_status": "FRESH_OOS_NOT_AVAILABLE",
+  "contaminated_status": "CONTAMINATED",
+  "release_status": "RELEASE_RECEIVED",
+  "result": "NOT_RUN",
+  "terminal_states": ["FRESH_OOS_NOT_AVAILABLE", "CONTAMINATED"],
+  "allowed_access_transitions": [
+    ["START", "GENESIS_SEALED", "SEALED"],
+    ["SEALED", "CAPABILITY_ISSUED", "CAPABILITY_ISSUED"],
+    ["SEALED", "DENIED", "FRESH_OOS_NOT_AVAILABLE"],
+    ["SEALED", "CONTAMINATED", "CONTAMINATED"],
+    ["CAPABILITY_ISSUED", "CAPABILITY_CONSUMED", "CAPABILITY_CONSUMED"],
+    ["CAPABILITY_ISSUED", "DENIED", "FRESH_OOS_NOT_AVAILABLE"],
+    ["CAPABILITY_ISSUED", "CONTAMINATED", "CONTAMINATED"],
+    ["CAPABILITY_CONSUMED", "RELEASE_RECEIVED", "RELEASE_RECEIVED"],
+    ["CAPABILITY_CONSUMED", "CONTAMINATED", "CONTAMINATED"]
+  ],
+  "forbidden_real_roots": ["_database", "database", "db", "OOS", "archive", "keys"],
+  "synthetic_key_seeds": {
+    "calendar": "bytes(0..31)",
+    "custodian_custody": "bytes(32..63)",
+    "custodian_capability": "bytes(64..95)",
+    "evaluator": "bytes(96..127)"
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "schema_version": "kronos.type1.g002-recovery-amendment.v1",
+  "amendment_id": "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-001",
+  "parent_protocol_id": "KRONOS-TYPE1-G002-PUBLIC-2026-07-23",
+  "status": "FROZEN_BEFORE_REPLACEMENT_MATERIALIZATION_OR_TRAINING",
+  "reason": "The first public materialization bound an ineligible code-heuristic universe instead of the approved effective-dated 2017-12-29 KRX anchor universe. Two preserved attempts stopped before the first model.",
+  "preserved_ineligible_evidence": {
+    "dataset_id": "type1-close-20260803-001",
+    "train_id": "type1-public-001",
+    "train_run_id": "train_type1-public-001",
+    "scientific_eligibility": "INELIGIBLE_BLOCKED",
+    "reuse_for_science": false,
+    "delete_or_rewrite": false,
+    "model_files_created": 0,
+    "fresh_oos_read": false
+  },
+  "replacement_identity": {
+    "authority_id": "type1-krx-authority-20260723-001",
+    "dataset_id": "type1-close-20260803-002",
+    "train_id": "type1-public-002",
+    "train_run_id": "train_type1-public-002",
+    "custody_uid": "type1-fresh-oos-20260803-002",
+    "report_family": "kronos.type1.report.v1"
+  },
+  "authority_contract": {
+    "anchor_session": "2017-12-29",
+    "master": "HISTORICAL_KRX_STOCK_TICKER_AND_NAME_AT_ANCHOR",
+    "markets": ["KOSPI", "KOSDAQ"],
+    "eligible_instrument": "DOMESTIC_ORDINARY_COMMON_STOCK_ONLY",
+    "excluded": ["ETF", "ETN", "FUND", "REIT", "PREFERRED", "SPAC", "INDEX", "DERIVATIVE", "AMBIGUOUS_IDENTITY", "LATER_LISTING"],
+    "ranking": {
+      "measure": "MEDIAN_TRADED_VALUE",
+      "sessions": 60,
+      "through": "2017-12-29",
+      "order": "MEDIAN_DESC_SYMBOL_ASC",
+      "frozen_size": 500,
+      "zero_for_missing_session_row": true
+    },
+    "retention": {
+      "later_listings": "EXCLUDED",
+      "suspended_or_delisted_anchor_members": "RETAINED",
+      "leading_zero_symbols": "PRESERVED_AS_SIX_DIGIT_STRINGS"
+    },
+    "public_calendar": {
+      "provider_surface": "PYKRX_KRX_INDEX_SESSION_RESPONSE",
+      "start": "2018-01-02",
+      "end": "2025-06-30",
+      "pairing": "WITHIN_SPLIT_AUTHORITATIVE_SESSION_INDEX_PAIRS_0_1_2_3",
+      "trailing_unpaired": "DROP_AND_RECORD_EMBARGO"
+    },
+    "integrity": {
+      "canonicalization": "RFC8785",
+      "local_signature": "ED25519_DOMAIN_SEPARATED",
+      "local_signature_claim": "LOCAL_ARTIFACT_INTEGRITY_NOT_EXTERNAL_KRX_ATTESTATION",
+      "raw_responses_embedded_and_hashed": true,
+      "fresh_oos_payload_permitted": false
+    }
+  },
+  "source_snapshot_contract": {
+    "daily_database": "READ_ONLY_FIXED_FILE_IDENTITY",
+    "query_upper_bound": "2025-06-30",
+    "exact_time": "15:20:00",
+    "official_close": false,
+    "validation_mutation_invariance_required": true,
+    "production_manifests_must_bind": [
+      "amendment_sha256",
+      "authority_sha256",
+      "source_database_identity",
+      "materializer_source_sha256",
+      "runner_source_sha256",
+      "preregistration_sha256",
+      "parent_protocol_sha256"
+    ]
+  },
+  "training_gate": {
+    "may_start_only_after": [
+      "authority_verifies",
+      "replacement_dataset_verifies",
+      "calendar_pairs_verify",
+      "independent_decimal_replay_passes",
+      "market_type7_normalizer_is_persisted",
+      "five_saved_models_reload_for_evaluation",
+      "validation_mutation_invariance_passes"
+    ],
+    "primary_seeds": [0, 1, 2, 3, 4],
+    "shuffled_seeds": [0, 1, 2, 3, 4],
+    "timesteps_each": 200000,
+    "selection_or_early_stop": false,
+    "reused_validation_can_yield": "NO_GO_ONLY",
+    "fresh_oos": "NOT_RUN"
+  },
+  "report_and_api_corrections": {
+    "report_requires": ["type1_identity", "public_run_seal", "deployment_lock", "attempt_parent", "builder_source_sha256"],
+    "catalog": "ALL_COMMITTED_REVISIONS_FOR_EXACT_DATASET_AND_TRAIN",
+    "viewer": "EXPLICIT_LOWERCASE_REPORT_SHA256_REQUIRED",
+    "latest_tip_fallback": false,
+    "failed_revisions_visible": true,
+    "m3e_truth": "LINUCB_CONTEXTUAL_BANDIT_NO_GO_FIVE_SEEDS_23BP_FRESH_OOS_NOT_RUN_UNCHANGED"
+  },
+  "fresh_oos": {
+    "state": "NOT_RUN",
+    "external_authority_absence_state": "ACCUMULATING_NOT_RUN",
+    "payload_read": false,
+    "reserve": false,
+    "open": false,
+    "decrypt": false,
+    "metrics": null
+  },
+  "frozen_utc": "2026-07-23T15:42:32Z"
+}

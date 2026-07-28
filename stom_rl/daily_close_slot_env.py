@@ -10,7 +10,7 @@ paper-forward, or profitability readiness.
 from __future__ import annotations
 
 import math
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -20,6 +20,22 @@ from .daily_close_slot_dataset import (
     DEFAULT_TOTAL_CAPITAL_KRW,
     FILL_MODE,
     ROUND_TRIP_COST_BP,
+)
+from .v5_accounting import (
+    ACCOUNTING_HORIZON_ID as CLOSE_SLOT_ACCOUNTING_HORIZON_ID,
+    BP_DENOMINATOR,
+    COST_SCENARIOS as V5_COST_SCENARIOS,
+    V5CostScenario,
+    account_close_slot_lot,
+    empty_close_slot_lot,
+    normalize_v5_code,
+    public_bp,
+    public_money,
+    public_ratio,
+    quantize_money,
+    quantize_ratio,
+    scenario_for_cost,
+    to_decimal,
 )
 
 CLOSE_SLOT_ENV_SCHEMA_VERSION = 2
@@ -37,102 +53,14 @@ ACTION_TIE_BREAK_ORDER = [
     "table_asc",
     "candidate_index_asc",
 ]
-_KRW_QUANT = Decimal("0.000001")
-_REWARD_QUANT = Decimal("0.000000000001")
-_BP_DENOMINATOR = Decimal("10000")
+_BP_DENOMINATOR = BP_DENOMINATOR
 
-
-@dataclass(frozen=True)
-class CloseSlotCostScenario:
-    scenario_id: str
-    sell_tax_bp: float
-    buy_commission_bp: float
-    sell_commission_bp: float
-    buy_slippage_bp: float
-    sell_slippage_bp: float
-
-    @property
-    def total_bp(self) -> float:
-        return (
-            self.sell_tax_bp
-            + self.buy_commission_bp
-            + self.sell_commission_bp
-            + self.buy_slippage_bp
-            + self.sell_slippage_bp
-        )
-
-    def as_payload(self) -> dict[str, Any]:
-        return {
-            "scenario_id": self.scenario_id,
-            "sell_tax_bp": self.sell_tax_bp,
-            "buy_commission_bp": self.buy_commission_bp,
-            "sell_commission_bp": self.sell_commission_bp,
-            "buy_slippage_bp": self.buy_slippage_bp,
-            "sell_slippage_bp": self.sell_slippage_bp,
-            "total_bp": self.total_bp,
-        }
-
-
-COST_SCENARIOS: dict[str, CloseSlotCostScenario] = {
-    COST_SCENARIO_ZERO_CONTROL_0BP: CloseSlotCostScenario(
-        scenario_id=COST_SCENARIO_ZERO_CONTROL_0BP,
-        sell_tax_bp=0.0,
-        buy_commission_bp=0.0,
-        sell_commission_bp=0.0,
-        buy_slippage_bp=0.0,
-        sell_slippage_bp=0.0,
-    ),
-    COST_SCENARIO_BASE_23BP: CloseSlotCostScenario(
-        scenario_id=COST_SCENARIO_BASE_23BP,
-        sell_tax_bp=20.0,
-        buy_commission_bp=1.5,
-        sell_commission_bp=1.5,
-        buy_slippage_bp=0.0,
-        sell_slippage_bp=0.0,
-    ),
-    COST_SCENARIO_STRESS_46BP: CloseSlotCostScenario(
-        scenario_id=COST_SCENARIO_STRESS_46BP,
-        sell_tax_bp=20.0,
-        buy_commission_bp=1.5,
-        sell_commission_bp=1.5,
-        buy_slippage_bp=11.5,
-        sell_slippage_bp=11.5,
-    ),
-}
-
-COST_SCENARIOS_BY_TOTAL_BP = {scenario.total_bp: scenario for scenario in COST_SCENARIOS.values()}
-
-
-def _decimal(value: Any) -> Decimal:
-    return Decimal(str(value))
-
-
-def _round_krw(value: Decimal) -> float:
-    return float(value.quantize(_KRW_QUANT, rounding=ROUND_HALF_UP))
-
-
-def _round_reward(value: Decimal) -> float:
-    return float(value.quantize(_REWARD_QUANT, rounding=ROUND_HALF_UP))
-
-
-def _component_cost(amount: float, bp: float) -> float:
-    return _round_krw((_decimal(amount) * _decimal(bp)) / _BP_DENOMINATOR)
+CloseSlotCostScenario = V5CostScenario
+COST_SCENARIOS: dict[str, CloseSlotCostScenario] = V5_COST_SCENARIOS
 
 
 def _cost_scenario_for(cost_bp: int | float, cost_scenario_id: str | None = None) -> CloseSlotCostScenario:
-    if cost_scenario_id is not None:
-        try:
-            return COST_SCENARIOS[str(cost_scenario_id)]
-        except KeyError as exc:
-            raise ValueError(f"unknown close-slot cost scenario: {cost_scenario_id}") from exc
-    total_bp = float(cost_bp)
-    scenario = COST_SCENARIOS_BY_TOTAL_BP.get(total_bp)
-    if scenario is not None:
-        return scenario
-    raise ValueError(
-        "scalar-only close-slot v2 cost accounting is not allowed; "
-        f"use one of {sorted(COST_SCENARIOS)} or a matching sensitivity bp"
-    )
+    return scenario_for_cost(cost_bp, cost_scenario_id)
 
 @dataclass(frozen=True)
 class CloseSlotCandidate:
@@ -142,6 +70,8 @@ class CloseSlotCandidate:
     score: float
     entry_close: float
     next_close: float
+    entry_close_source: Any
+    next_close_source: Any
     future_return_1d: float
     tie_score: float | None
     split: str
@@ -175,7 +105,11 @@ def _truthy(value: Any, *, default: bool = True) -> bool:
 
 
 def _candidate_code(row: Mapping[str, Any]) -> str:
-    return str(row.get("code") or "").strip().zfill(6)
+    raw_code = row.get("code")
+    try:
+        return normalize_v5_code(raw_code)
+    except ValueError:
+        return "" if raw_code is None else str(raw_code).strip()
 
 
 def _candidate_table(row: Mapping[str, Any], code: str) -> str:
@@ -199,9 +133,11 @@ def _row_future_return(row: Mapping[str, Any], entry_close: float | None, next_c
 
 
 def _invalid_row_reason(row: Mapping[str, Any], *, score_column: str) -> str | None:
-    code = _candidate_code(row)
-    if not code or code == "000000":
-        return "MISSING_CODE"
+    raw_code = row.get("code")
+    try:
+        code = normalize_v5_code(raw_code)
+    except ValueError:
+        return "MISSING_CODE" if raw_code is None or str(raw_code).strip() == "" else "INVALID_CODE"
     if not _truthy(row.get("eligible_for_selection"), default=True):
         return str(row.get("blocked_reason") or "INELIGIBLE_CANDIDATE")
     score = _row_score(row, score_column)
@@ -219,8 +155,10 @@ def _invalid_row_reason(row: Mapping[str, Any], *, score_column: str) -> str | N
 
 def _candidate_from_row(row: Mapping[str, Any], *, score_column: str, candidate_index: int) -> CloseSlotCandidate:
     code = _candidate_code(row)
-    entry_close = float(_safe_float(row.get("entry_close")) or 0.0)
-    next_close = float(_safe_float(row.get("next_close")) or 0.0)
+    entry_close_source = row.get("entry_close")
+    next_close_source = row.get("next_close")
+    entry_close = float(_safe_float(entry_close_source) or 0.0)
+    next_close = float(_safe_float(next_close_source) or 0.0)
     future_return = _row_future_return(row, entry_close, next_close)
     return CloseSlotCandidate(
         date=str(row.get("date")),
@@ -230,6 +168,8 @@ def _candidate_from_row(row: Mapping[str, Any], *, score_column: str, candidate_
         tie_score=_safe_float(row.get("tie_score")),
         entry_close=entry_close,
         next_close=next_close,
+        entry_close_source=entry_close_source,
+        next_close_source=next_close_source,
         future_return_1d=float(future_return if future_return is not None else 0.0),
         split=str(row.get("split") or ""),
         candidate_index=int(candidate_index),
@@ -246,6 +186,8 @@ def _candidate_payload(candidate: CloseSlotCandidate) -> dict[str, Any]:
         "tie_score": candidate.tie_score,
         "entry_close": candidate.entry_close,
         "next_close": candidate.next_close,
+        "entry_close_source": candidate.entry_close_source,
+        "next_close_source": candidate.next_close_source,
         "future_return_1d": candidate.future_return_1d,
         "split": candidate.split,
         "candidate_index": candidate.candidate_index,
@@ -364,7 +306,7 @@ def normalize_close_slot_action(
         ranked_by_code = {candidate.code: candidate for candidate in ranked}
         selected_seen: set[str] = set()
         for raw_code in selected_codes[:slot_count]:
-            code = str(raw_code or "").strip().zfill(6)
+            code = normalize_v5_code(raw_code)
             slot_index = len(slots)
             if code in selected_seen:
                 diagnostics["duplicate_selected_codes"].append({"code": code, "reason": "DUPLICATE_SELECTED_CODE"})
@@ -413,6 +355,21 @@ def normalize_close_slot_action(
     }
 
 
+def _candidate_accounting_mark(
+    candidate: Mapping[str, Any],
+    source_key: str,
+    display_key: str,
+    label: str,
+) -> Decimal | None:
+    raw = candidate.get(source_key) if source_key in candidate else candidate.get(display_key)
+    if raw is None:
+        return None
+    try:
+        return to_decimal(raw, label)
+    except ValueError:
+        return None
+
+
 def account_close_slot_selection(
     normalized_action: Mapping[str, Any],
     *,
@@ -425,191 +382,166 @@ def account_close_slot_selection(
 
     if int(slot_count) != DEFAULT_SLOT_COUNT:
         raise ValueError("daily close-slot accounting requires slot_count=10")
-    total_capital = int(total_capital_krw)
+    total_capital = quantize_money(to_decimal(total_capital_krw))
     if total_capital <= 0:
         raise ValueError("total_capital_krw must be positive")
-    slot_cash = total_capital / int(slot_count)
+    slot_cash = quantize_money(total_capital / Decimal(int(slot_count)))
     cost_scenario = _cost_scenario_for(cost_bp, cost_scenario_id)
-    compatibility_cost_bp = int(cost_scenario.total_bp) if cost_scenario.total_bp.is_integer() else cost_scenario.total_bp
-    cost_rate = cost_scenario.total_bp / 10_000.0
+    compatibility_cost_bp = public_bp(cost_scenario.total_bp)
+    cost_rate = public_ratio(cost_scenario.total_bp / _BP_DENOMINATOR)
     ledger: list[dict[str, Any]] = []
     filled_slots = 0
     blocked_slots = 0
     unfilled_slots = 0
-    gross_pnl_total = 0.0
-    cost_total = 0.0
-    net_pnl_total = 0.0
-    unused_cash_total = 0.0
+    gross_pnl_total = Decimal("0")
+    cost_total = Decimal("0")
+    net_pnl_total = Decimal("0")
+    unused_cash_total = Decimal("0")
     hold_cash_slots = 0
+
+    def add_totals(row: Mapping[str, Any]) -> None:
+        nonlocal filled_slots, blocked_slots, unfilled_slots, gross_pnl_total, cost_total, net_pnl_total, unused_cash_total, hold_cash_slots
+        if row.get("status") == "filled":
+            filled_slots += 1
+        else:
+            unfilled_slots += 1
+        if row.get("blocked"):
+            blocked_slots += 1
+        if row.get("slot_state") == "cash_hold":
+            hold_cash_slots += 1
+        gross_pnl_total += to_decimal(row.get("gross_pnl_krw", 0), "gross_pnl_krw")
+        cost_total += to_decimal(row.get("cost_krw", 0), "cost_krw")
+        net_pnl_total += to_decimal(row.get("net_pnl_krw", 0), "net_pnl_krw")
+        unused_cash_total += to_decimal(row.get("unused_cash_krw", 0), "unused_cash_krw")
 
     for slot in list(normalized_action.get("selection_slots") or [])[:slot_count]:
         slot_index = int(slot.get("slot", len(ledger)))
         candidate_payload = dict(slot.get("candidate") or {})
         status = str(slot.get("status") or "empty")
         reason = slot.get("reason")
-        code = str(slot.get("code") or candidate_payload.get("code") or "").zfill(6) if (slot.get("code") or candidate_payload.get("code")) else None
-        entry_close = _safe_float(candidate_payload.get("entry_close"))
-        next_close = _safe_float(candidate_payload.get("next_close"))
-        shares = 0
-        notional = 0.0
-        exit_value = 0.0
-        gross_pnl = 0.0
-        cost_krw = 0.0
-        buy_commission_krw = 0.0
-        buy_slippage_krw = 0.0
-        sell_tax_krw = 0.0
-        sell_commission_krw = 0.0
-        sell_slippage_krw = 0.0
-        net_pnl = 0.0
-        unused_cash = slot_cash
-        filled = False
-        blocked = False
+        raw_code = slot.get("code") or candidate_payload.get("code")
+        code = normalize_v5_code(raw_code) if raw_code else None
+        entry_close = _candidate_accounting_mark(
+            candidate_payload,
+            "entry_close_source",
+            "entry_close",
+            "entry_close",
+        )
+        next_close = _candidate_accounting_mark(
+            candidate_payload,
+            "next_close_source",
+            "next_close",
+            "next_close",
+        )
         slot_state = str(slot.get("slot_state") or ("filled" if status == "selected" else "cash_hold" if status == "empty" else "replay_unfilled"))
+
         if status == "selected":
-            if entry_close is None or entry_close <= 0:
-                reason = "INVALID_ENTRY_CLOSE"
-                blocked = True
+            if code is None:
+                row = empty_close_slot_lot(
+                    slot=slot_index,
+                    slot_cash_krw=slot_cash,
+                    total_capital_krw=total_capital,
+                    cost_scenario=cost_scenario,
+                    reason="MISSING_CODE",
+                    slot_state="blocked_unfilled",
+                    blocked=True,
+                    fill_mode=FILL_MODE,
+                )
+            elif entry_close is None or entry_close <= 0:
+                row = empty_close_slot_lot(
+                    slot=slot_index,
+                    code=code,
+                    slot_cash_krw=slot_cash,
+                    total_capital_krw=total_capital,
+                    cost_scenario=cost_scenario,
+                    reason="INVALID_ENTRY_CLOSE",
+                    slot_state="blocked_unfilled",
+                    blocked=True,
+                    next_close=next_close,
+                    fill_mode=FILL_MODE,
+                )
             elif next_close is None or next_close <= 0:
-                reason = "MISSING_NEXT_CLOSE"
-                blocked = True
+                row = empty_close_slot_lot(
+                    slot=slot_index,
+                    code=code,
+                    slot_cash_krw=slot_cash,
+                    total_capital_krw=total_capital,
+                    cost_scenario=cost_scenario,
+                    reason="MISSING_NEXT_CLOSE",
+                    slot_state="blocked_unfilled",
+                    blocked=True,
+                    entry_close=entry_close,
+                    fill_mode=FILL_MODE,
+                )
             else:
-                buy_rate = (cost_scenario.buy_commission_bp + cost_scenario.buy_slippage_bp) / 10_000.0
-                shares = int(math.floor(slot_cash / (entry_close * (1.0 + buy_rate))))
-                if shares <= 0:
-                    reason = "INSUFFICIENT_SLOT_CASH"
-                    blocked = True
-                else:
-                    notional = shares * entry_close
-                    exit_value = shares * next_close
-                    gross_pnl = exit_value - notional
-                    buy_commission_krw = _component_cost(notional, cost_scenario.buy_commission_bp)
-                    buy_slippage_krw = _component_cost(notional, cost_scenario.buy_slippage_bp)
-                    sell_tax_krw = _component_cost(exit_value, cost_scenario.sell_tax_bp)
-                    sell_commission_krw = _component_cost(exit_value, cost_scenario.sell_commission_bp)
-                    sell_slippage_krw = _component_cost(exit_value, cost_scenario.sell_slippage_bp)
-                    cost_krw = _round_krw(
-                        _decimal(buy_commission_krw)
-                        + _decimal(buy_slippage_krw)
-                        + _decimal(sell_tax_krw)
-                        + _decimal(sell_commission_krw)
-                        + _decimal(sell_slippage_krw)
-                    )
-                    net_pnl = _round_krw(_decimal(gross_pnl) - _decimal(cost_krw))
-                    unused_cash = slot_cash - notional - buy_commission_krw - buy_slippage_krw
-                    filled = True
-                    reason = None
-                    slot_state = "filled"
+                row = account_close_slot_lot(
+                    slot=slot_index,
+                    code=code,
+                    entry_close=entry_close,
+                    next_close=next_close,
+                    slot_cash_krw=slot_cash,
+                    total_capital_krw=total_capital,
+                    cost_scenario=cost_scenario,
+                    fill_mode=FILL_MODE,
+                    horizon_id=CLOSE_SLOT_ACCOUNTING_HORIZON_ID,
+                )
         else:
-            reason = str(reason or "EMPTY_SLOT")
-            blocked = status == "unfilled"
             if status == "empty":
                 slot_state = "cash_hold"
-        if blocked and status == "selected":
-            slot_state = "blocked_unfilled"
-        if slot_state == "cash_hold":
-            hold_cash_slots += 1
-
-
-        if filled:
-            filled_slots += 1
-        else:
-            unfilled_slots += 1
-        if blocked:
-            blocked_slots += 1
-        gross_pnl_total += gross_pnl
-        cost_total += cost_krw
-        net_pnl_total += net_pnl
-        unused_cash_total += unused_cash
-        ledger.append(
-            {
-                "slot": slot_index,
-                "code": code,
-                "status": "filled" if filled else "unfilled",
-                "unfilled_reason": None if filled else reason,
-                "slot_state": slot_state if not filled else "filled",
-                "blocked": bool(blocked),
-                "entry_close": entry_close,
-                "next_close": next_close,
-                "shares": shares,
-                "slot_cash_krw": slot_cash,
-                "notional_krw": notional,
-                "exit_value_krw": exit_value,
-                "unused_cash_krw": unused_cash,
-                "gross_pnl_krw": gross_pnl,
-                "cost_krw": cost_krw,
-                "sell_tax_bp": cost_scenario.sell_tax_bp,
-                "buy_commission_bp": cost_scenario.buy_commission_bp,
-                "sell_commission_bp": cost_scenario.sell_commission_bp,
-                "buy_slippage_bp": cost_scenario.buy_slippage_bp,
-                "sell_slippage_bp": cost_scenario.sell_slippage_bp,
-                "buy_commission_krw": buy_commission_krw,
-                "buy_slippage_krw": buy_slippage_krw,
-                "sell_tax_krw": sell_tax_krw,
-                "sell_commission_krw": sell_commission_krw,
-                "sell_slippage_krw": sell_slippage_krw,
-                "total_cost_krw": cost_krw,
-                "net_pnl_krw": net_pnl,
-                "net_return_on_total_capital": net_pnl / total_capital,
-                "fill_mode": FILL_MODE,
-            }
-        )
+            row = empty_close_slot_lot(
+                slot=slot_index,
+                code=code,
+                slot_cash_krw=slot_cash,
+                total_capital_krw=total_capital,
+                cost_scenario=cost_scenario,
+                reason=str(reason or "EMPTY_SLOT"),
+                slot_state=slot_state,
+                blocked=status == "unfilled",
+                entry_close=entry_close,
+                next_close=next_close,
+                fill_mode=FILL_MODE,
+            )
+        ledger.append(row)
+        add_totals(row)
 
     while len(ledger) < slot_count:
         slot_index = len(ledger)
-        unfilled_slots += 1
-        hold_cash_slots += 1
-        unused_cash_total += slot_cash
-        ledger.append(
-            {
-                "slot": slot_index,
-                "code": None,
-                "status": "unfilled",
-                "unfilled_reason": "EMPTY_SLOT",
-                "slot_state": "cash_hold",
-                "blocked": False,
-                "entry_close": None,
-                "next_close": None,
-                "shares": 0,
-                "slot_cash_krw": slot_cash,
-                "notional_krw": 0.0,
-                "exit_value_krw": 0.0,
-                "unused_cash_krw": slot_cash,
-                "gross_pnl_krw": 0.0,
-                "cost_krw": 0.0,
-                "sell_tax_bp": cost_scenario.sell_tax_bp,
-                "buy_commission_bp": cost_scenario.buy_commission_bp,
-                "sell_commission_bp": cost_scenario.sell_commission_bp,
-                "buy_slippage_bp": cost_scenario.buy_slippage_bp,
-                "sell_slippage_bp": cost_scenario.sell_slippage_bp,
-                "buy_commission_krw": 0.0,
-                "buy_slippage_krw": 0.0,
-                "sell_tax_krw": 0.0,
-                "sell_commission_krw": 0.0,
-                "sell_slippage_krw": 0.0,
-                "total_cost_krw": 0.0,
-                "net_pnl_krw": 0.0,
-                "net_return_on_total_capital": 0.0,
-                "fill_mode": FILL_MODE,
-            }
+        row = empty_close_slot_lot(
+            slot=slot_index,
+            slot_cash_krw=slot_cash,
+            total_capital_krw=total_capital,
+            cost_scenario=cost_scenario,
+            fill_mode=FILL_MODE,
         )
+        ledger.append(row)
+        add_totals(row)
 
     return {
         "schema_version": CLOSE_SLOT_ENV_SCHEMA_VERSION,
         "date": normalized_action.get("date"),
         "action_label": normalized_action.get("action_label"),
         "slot_count": int(slot_count),
-        "total_capital_krw": total_capital,
-        "slot_cash_krw": slot_cash,
+        "total_capital_krw": public_money(total_capital),
+        "slot_cash_krw": public_money(slot_cash),
         "round_trip_cost_bp": compatibility_cost_bp,
         "round_trip_cost_rate": cost_rate,
         "cost_scenario": cost_scenario.as_payload(),
         "cost_scenario_id": cost_scenario.scenario_id,
+        "accounting_horizon_id": CLOSE_SLOT_ACCOUNTING_HORIZON_ID,
+        "horizon_id": CLOSE_SLOT_ACCOUNTING_HORIZON_ID,
+        "carry_allowed": False,
+        "terminal_liquidation": "explicit_t1_close",
+        "rounding_mode": "ROUND_HALF_UP",
+        "money_quantum": "0.000001",
+        "ratio_quantum": "0.000000000001",
+        "cost_application_count": 1,
         "fill_mode": FILL_MODE,
-        "gross_pnl_krw": gross_pnl_total,
-        "cost_krw": cost_total,
-        "net_pnl_krw": net_pnl_total,
-        "reward": _round_reward(_decimal(net_pnl_total) / _decimal(total_capital)),
-        "unused_cash_krw": unused_cash_total,
+        "gross_pnl_krw": public_money(gross_pnl_total),
+        "cost_krw": public_money(cost_total),
+        "net_pnl_krw": public_money(net_pnl_total),
+        "terminal_nav_krw": public_money(total_capital + net_pnl_total),
+        "reward": public_ratio(net_pnl_total / total_capital),
+        "unused_cash_krw": public_money(unused_cash_total),
         "filled_slots": filled_slots,
         "unfilled_slots": unfilled_slots,
         "blocked_slots": blocked_slots,
@@ -759,7 +691,7 @@ class DailyCloseSlotEnv:
         if action is None:
             return base_rows, None
         if isinstance(action, Mapping):
-            scores_by_code = {str(code).zfill(6): _safe_float(score) for code, score in action.items()}
+            scores_by_code = {normalize_v5_code(code): _safe_float(score) for code, score in action.items()}
             for row in base_rows:
                 code = _candidate_code(row)
                 if code in scores_by_code:
@@ -768,7 +700,7 @@ class DailyCloseSlotEnv:
         if isinstance(action, Sequence) and not isinstance(action, (str, bytes)):
             values = list(action)
             if all(not isinstance(value, Mapping) for value in values):
-                return base_rows, [str(value).zfill(6) for value in values]
+                return base_rows, [normalize_v5_code(value) for value in values]
             scores_by_code = {
                 _candidate_code(value): _safe_float(value.get(self.score_column, value.get("score")))
                 for value in values
@@ -813,6 +745,7 @@ class DailyCloseSlotEnv:
 
 __all__ = [
     "CLOSE_SLOT_ENV_SCHEMA_VERSION",
+    "CLOSE_SLOT_ACCOUNTING_HORIZON_ID",
     "ACTION_TIE_BREAK_ORDER",
     "POLICY_ACTION_LABEL",
     "REPLAY_ADAPTER_LABEL",

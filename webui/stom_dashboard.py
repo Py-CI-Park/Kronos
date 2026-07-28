@@ -353,6 +353,11 @@ def _normalize_horizon_row(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _plotly_datetime_iso_sequence(values: pd.Series) -> List[Optional[str]]:
+    timestamps = pd.to_datetime(values, errors="coerce")
+    return [None if pd.isna(timestamp) else timestamp.isoformat() for timestamp in timestamps]
+
+
 def qlib_backtest_chart_json(payload: Dict[str, Any]) -> str:
     curve = pd.DataFrame(payload.get("curve", []))
     fig = go.Figure()
@@ -360,7 +365,7 @@ def qlib_backtest_chart_json(payload: Dict[str, Any]) -> str:
         curve["asof_timestamp"] = pd.to_datetime(curve["asof_timestamp"], errors="coerce")
         fig.add_trace(
             go.Scatter(
-                x=curve["asof_timestamp"],
+                x=_plotly_datetime_iso_sequence(curve["asof_timestamp"]),
                 y=curve["equity"],
                 mode="lines+markers",
                 name="Qlib Top-K equity",
@@ -598,7 +603,7 @@ def prediction_chart_json(df: pd.DataFrame, window_id: Optional[int] = None) -> 
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=chart_df["target_timestamp"],
+            x=_plotly_datetime_iso_sequence(chart_df["target_timestamp"]),
             y=chart_df["actual_close"],
             mode="lines+markers",
             name="실제 close",
@@ -607,7 +612,7 @@ def prediction_chart_json(df: pd.DataFrame, window_id: Optional[int] = None) -> 
     )
     fig.add_trace(
         go.Scatter(
-            x=chart_df["target_timestamp"],
+            x=_plotly_datetime_iso_sequence(chart_df["target_timestamp"]),
             y=chart_df["pred_close"],
             mode="lines+markers",
             name="예측 close",

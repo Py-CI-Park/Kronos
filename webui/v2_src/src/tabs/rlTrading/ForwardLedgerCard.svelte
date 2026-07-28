@@ -15,6 +15,8 @@
   let ledger = $state<RlFactoryForwardLedgerResponse | null>(null);
   let statusFilter = $state<StatusFilter>('ALL');
   let loading = $state(true);
+  let requestError = $state<string | null>(null);
+  let unavailableReason = $state<string | null>(null);
 
   const rows = $derived(ledger?.rows ?? []);
   const summary = $derived(ledger?.summary ?? {});
@@ -26,11 +28,25 @@
 
   async function load(): Promise<void> {
     loading = true;
-    const payload = await rlApi.factoryForwardLedgers();
-    runs = payload?.runs ?? [];
-    selectedRun = selectedRun || runs[0]?.run || '';
-    await loadLedger();
-    loading = false;
+    requestError = null;
+    unavailableReason = null;
+    try {
+      const payload = await rlApi.factoryForwardLedgers();
+      if (payload === null) {
+        throw new Error('Forward/paper ledger list request returned no payload.');
+      }
+      runs = payload.runs ?? [];
+      selectedRun = selectedRun || runs[0]?.run || '';
+      if (!selectedRun) {
+        ledger = null;
+        return;
+      }
+      await loadLedger();
+    } catch (error) {
+      requestError = error instanceof Error ? error.message : 'Forward/paper ledger request failed.';
+    } finally {
+      loading = false;
+    }
   }
 
   async function loadLedger(): Promise<void> {
@@ -38,27 +54,41 @@
       ledger = null;
       return;
     }
-    ledger = await rlApi.factoryForwardLedger(
+    const payload = await rlApi.factoryForwardLedger(
       selectedRun,
       200,
       statusFilter === 'ALL' ? undefined : statusFilter
     );
+    if (payload === null) {
+      throw new Error('Forward/paper ledger request returned no payload.');
+    }
+    ledger = payload;
+    unavailableReason = payload.available ? null : (payload.reason ?? 'The backend marked this ledger unavailable.');
   }
 
   async function selectRun(run: string): Promise<void> {
     if (selectedRun === run) return;
     selectedRun = run;
-    loading = true;
-    await loadLedger();
-    loading = false;
+    await refreshLedger();
   }
 
   async function setStatus(next: StatusFilter): Promise<void> {
     if (statusFilter === next) return;
     statusFilter = next;
+    await refreshLedger();
+  }
+
+  async function refreshLedger(): Promise<void> {
     loading = true;
-    await loadLedger();
-    loading = false;
+    requestError = null;
+    unavailableReason = null;
+    try {
+      await loadLedger();
+    } catch (error) {
+      requestError = error instanceof Error ? error.message : 'Forward/paper ledger request failed.';
+    } finally {
+      loading = false;
+    }
   }
 </script>
 
@@ -77,11 +107,7 @@
   <p class="text-caption safety-note">
     Generated research ledger only: no orders, no broker integration, no live-readiness or profit claim. Codes stay strings; schema/cost/duplicate policy are displayed.
   </p>
-  {#if loading}
-    <p class="text-muted">Loading forward/paper ledger...</p>
-  {:else if !runs.length}
-    <p class="text-muted">No forward/paper ledgers found.</p>
-  {:else}
+  {#if !loading && !requestError && runs.length}
     <div class="run-pills">
       {#each runs.slice(0, 4) as run}
         <button type="button" class:active={selectedRun === run.run} onclick={() => void selectRun(run.run)}>
@@ -89,6 +115,19 @@
         </button>
       {/each}
     </div>
+  {/if}
+  {#if loading}
+    <p class="text-muted">Loading forward/paper ledger...</p>
+  {:else if requestError}
+    <p class="text-muted">Forward/paper ledger request failed: {requestError}</p>
+    <button type="button" class="retry-btn" onclick={() => void load()}>Retry</button>
+  {:else if !runs.length}
+    <p class="text-muted">No forward/paper ledgers found by the backend.</p>
+  {:else if unavailableReason}
+    <p class="text-muted">Forward/paper ledger unavailable: {unavailableReason}</p>
+  {:else if !rows.length}
+    <p class="text-muted">No {statusFilter === 'ALL' ? '' : statusFilter + ' '}forward/paper ledger rows were returned by the backend.</p>
+  {:else}
     <div class="mini-grid" style="margin-top:12px">
       <div><span>Total / resolved / pending</span><strong>{summary.total_rows ?? selectedMeta?.total_count ?? '-'} / {summary.resolved_count ?? selectedMeta?.resolved_count ?? '-'} / {summary.pending_count ?? selectedMeta?.pending_count ?? '-'}</strong></div>
       <div><span>Schema</span><strong>{summary.schema_version ?? selectedMeta?.schema_version ?? '-'}</strong></div>
@@ -143,4 +182,12 @@
     box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.16);
   }
   .forward-wrap { max-height: 320px; overflow: auto; }
+  .retry-btn {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    padding: 4px 12px;
+    font: 600 11px/1 var(--font-display);
+    cursor: pointer;
+  }
 </style>

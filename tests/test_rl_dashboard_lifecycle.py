@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 import webui.rl_dashboard_runs as runs
+import webui.rl_dashboard_files as files
 from stom_rl import rl_events as ev
 
 
@@ -27,6 +28,13 @@ def _write_events(run_dir: Path, rows, *, age_sec: float = 0.0, name="rl_live_ev
         t = time.time() - age_sec
         os.utime(path, (t, t))
     return path
+
+
+def _isolated_run_root(monkeypatch, tmp_path: Path) -> Path:
+    root = tmp_path / "rl_runs"
+    root.mkdir()
+    monkeypatch.setattr(files, "RL_RUN_ROOTS", [root])
+    return root
 
 
 def test_missing_when_no_event_file(tmp_path):
@@ -106,12 +114,30 @@ def test_lifecycle_exposes_poll_interval_for_client(tmp_path):
 
 
 def test_run_record_payload_carries_lifecycle(tmp_path, monkeypatch):
-    rd = tmp_path / "stom_run"
+    root = _isolated_run_root(monkeypatch, tmp_path)
+    rd = root / "stom_run"
     _write_events(rd, [{"global_step": 7, "phase": "train", "source": "daily_rl_train"}], age_sec=9999)
     record = runs._run_record(rd)
     assert "lifecycle" in record
     assert record["lifecycle"]["status"] == ev.RUN_STATUS_COMPLETED
     assert record["lifecycle"]["is_live"] is False
+
+
+def test_run_record_rejects_run_outside_isolated_root(tmp_path, monkeypatch):
+    root = _isolated_run_root(monkeypatch, tmp_path)
+    outside = tmp_path / "outside_run"
+    _write_events(outside, [{"global_step": 1, "phase": "train"}])
+    assert root not in outside.resolve().parents
+    with pytest.raises(files.RlDashboardPathError, match="escapes RL root"):
+        runs._run_record(outside)
+
+
+def test_repo_path_rejects_traversal_and_outside_absolute(tmp_path):
+    assert files._repo_path("docs") == (files.REPO_ROOT / "docs").resolve()
+    with pytest.raises(files.RlDashboardPathError, match="outside repository"):
+        files._repo_path("../escape")
+    with pytest.raises(files.RlDashboardPathError, match="outside repository"):
+        files._repo_path(tmp_path / "outside.txt")
 
 
 def test_corrupt_last_step_does_not_crash(tmp_path):

@@ -2,209 +2,70 @@
 
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping
 
-try:
+if __package__:
     from .rl_strategy_context import build_strategy_context
     from . import rl_dashboard_files as _files
-    from .rl_dashboard_opening import load_opening_workflow_detail, opening_workflow_summary
-    from .rl_dashboard_files import ARTIFACT_SIGNATURES, LIVE_SUMMARY_FILE_NAMES, RlDashboardPathError, _int_or_zero, _is_relative_to_root, _is_run_file, _read_run_json, _safe_direct_child_name, _utc_mtime
-except ImportError:  # pragma: no cover - supports direct script-style imports
-    from rl_strategy_context import build_strategy_context
-    import rl_dashboard_files as _files
-    from rl_dashboard_opening import load_opening_workflow_detail, opening_workflow_summary
-    from rl_dashboard_files import ARTIFACT_SIGNATURES, LIVE_SUMMARY_FILE_NAMES, RlDashboardPathError, _int_or_zero, _is_relative_to_root, _is_run_file, _read_run_json, _safe_direct_child_name, _utc_mtime
+    from .rl_dashboard_opening import load_opening_workflow_detail
+    from .rl_dashboard_files import ARTIFACT_SIGNATURES, LIVE_SUMMARY_FILE_NAMES, RlDashboardPathError, _is_relative_to_root, _is_run_file, _read_run_json, _safe_direct_child_name, _utc_mtime
+    from .rl_dashboard_identity import (
+        RUN_IDENTITY_PROTOCOL as _IDENTITY_PROTOCOL,
+        canonical_path_id,
+        run_identity_fields as _run_identity_fields,
+    )
+    from .rl_dashboard_run_state import (
+        DEFAULT_POLL_INTERVAL_SECONDS as _DEFAULT_POLL_INTERVAL_SECONDS,
+        artifact_files as _artifact_files,
+        baseline_policies as _baseline_policies,
+        require_discovery_terminal_receipt as _require_discovery_terminal_receipt,
+        run_lifecycle as _run_lifecycle,
+    )
+    from .rl_dashboard_summary import find_json_summary as _find_json_summary
+else:  # pragma: no cover - supports direct script-style imports
+    from webui.rl_strategy_context import build_strategy_context
+    from webui import rl_dashboard_files as _files
+    from webui.rl_dashboard_opening import load_opening_workflow_detail
+    from webui.rl_dashboard_files import ARTIFACT_SIGNATURES, LIVE_SUMMARY_FILE_NAMES, RlDashboardPathError, _is_relative_to_root, _is_run_file, _read_run_json, _safe_direct_child_name, _utc_mtime
+    from webui.rl_dashboard_identity import (
+        RUN_IDENTITY_PROTOCOL as _IDENTITY_PROTOCOL,
+        canonical_path_id,
+        run_identity_fields as _run_identity_fields,
+    )
+    from webui.rl_dashboard_run_state import (
+        DEFAULT_POLL_INTERVAL_SECONDS as _DEFAULT_POLL_INTERVAL_SECONDS,
+        artifact_files as _artifact_files,
+        baseline_policies as _baseline_policies,
+        require_discovery_terminal_receipt as _require_discovery_terminal_receipt,
+        run_lifecycle as _run_lifecycle,
+    )
+    from webui.rl_dashboard_summary import find_json_summary as _find_json_summary
+
+RUN_IDENTITY_PROTOCOL = _IDENTITY_PROTOCOL
+DEFAULT_POLL_INTERVAL_SECONDS = _DEFAULT_POLL_INTERVAL_SECONDS
+require_discovery_terminal_receipt = _require_discovery_terminal_receipt
+
 
 def _detect_artifact_type(run_dir: Path) -> str:
+    d2_path = run_dir / "summary.json"
+    if _is_run_file(run_dir, d2_path):
+        payload = _read_run_json(run_dir, d2_path)
+        if payload.get("schema_version") == "kronos.rl-discovery.d2.result.v1":
+            return "rl_discovery_d2"
     for artifact_type, file_name in ARTIFACT_SIGNATURES:
         if _is_run_file(run_dir, run_dir / file_name):
             return artifact_type
     return "unknown"
 
 
-def _find_json_summary(run_dir: Path, artifact_type: str) -> Dict[str, Any]:
-    if artifact_type == "opening_30m_rule_filter":
-        payload = _read_run_json(run_dir, run_dir / "opening_rule_filter_summary.json")
-        summary = dict(payload)
-        summary.pop("rule_filter_lifecycle", None)
-        return summary
-    if artifact_type == "opening_30m_rl_workflow":
-        return opening_workflow_summary(run_dir)
-    if artifact_type == "orderbook_rl_readiness":
-        payload = _read_run_json(run_dir, run_dir / "orderbook_rl_readiness_summary.json")
-        return dict(payload.get("summary", {}))
-    if artifact_type == "portfolio_paper":
-        payload = _read_run_json(run_dir, run_dir / "portfolio_paper_summary.json")
-        summary = dict(payload.get("summary", {}))
-        config = payload.get("config", {})
-        if isinstance(config, dict):
-            summary.setdefault("cost_bps", config.get("cost_bps"))
-            summary.setdefault("max_positions", config.get("max_positions"))
-            summary.setdefault("top_k_candidates", config.get("top_k_candidates"))
-        return summary
-    if artifact_type == "performance_leaderboard":
-        payload = _read_run_json(run_dir, run_dir / "performance_leaderboard.json")
-        return dict(payload.get("summary", {}))
-    if artifact_type == "sb3_smoke":
-        payload = _read_run_json(run_dir, run_dir / "sb3_smoke_summary.json")
-        summary = dict(payload.get("summary", {}))
-        live_summary = payload.get("live_events")
-        if isinstance(live_summary, dict):
-            summary.setdefault("live_event_count", live_summary.get("event_count"))
-            summary.setdefault("live_event_phases", live_summary.get("phases"))
-        else:
-            for file_name in LIVE_SUMMARY_FILE_NAMES:
-                summary_path = run_dir / file_name
-                if _is_run_file(run_dir, summary_path):
-                    file_summary = _read_run_json(run_dir, summary_path)
-                    summary.setdefault("live_event_count", file_summary.get("event_count"))
-                    summary.setdefault("live_event_phases", file_summary.get("phases"))
-                    break
-        models = payload.get("models", [])
-        best_model = summary.get("best_model")
-        selected_model = next((row for row in models if row.get("model") == best_model), models[0] if models else {})
-        summary.setdefault(
-            "max_training_timesteps",
-            max((_int_or_zero(row.get("training_timesteps")) for row in models), default=0),
-        )
-        for key in (
-            "avg_episode_net_return_pct",
-            "trade_count",
-            "cost_bps",
-            "slippage_bps",
-            "passes_cost_gate",
-        ):
-            if key in selected_model:
-                summary.setdefault(key, selected_model[key])
-        return summary
-    if artifact_type == "contextual_bandit":
-        payload = _read_run_json(run_dir, run_dir / "eval_summary.json")
-        return dict(payload.get("eval_summary", payload.get("summary", {})))
-    if artifact_type == "cost_gate":
-        payload = _read_run_json(run_dir, run_dir / "cost_gate_report.json")
-        return dict(payload.get("summary", {}))
-    if artifact_type == "baseline":
-        payload = _read_run_json(run_dir, run_dir / "baseline_summary.json")
-        return dict(payload.get("summary", {}))
-    if artifact_type == "episode_manifest":
-        summary_path = run_dir / "episode_summary.json"
-        payload = _read_run_json(run_dir, summary_path if _is_run_file(run_dir, summary_path) else run_dir / "episode_manifest.json")
-        return dict(payload.get("summary", payload))
-    return {}
-
-
-def _artifact_files(run_dir: Path) -> List[Dict[str, Any]]:
-    files = []
-    for path in sorted(run_dir.rglob("*")):
-        if _is_run_file(run_dir, path):
-            rel = path.relative_to(run_dir).as_posix()
-            files.append(
-                {
-                    "name": rel,
-                    "suffix": path.suffix.lower(),
-                    "size_bytes": path.stat().st_size,
-                    "modified_at": _utc_mtime(path),
-                }
-            )
-    return files
-
-
-def _baseline_policies(run_dir: Path) -> List[str]:
-    policies = []
-    for child in sorted(run_dir.iterdir()):
-        if child.is_dir() and any((child / file_name).is_file() for file_name in ("actions.csv", "trades.csv", "equity.csv", "episodes.csv")):
-            policies.append(child.name)
-    return policies
-
-
-DEFAULT_POLL_INTERVAL_SECONDS = 2.0
-
-
-def _find_event_file(run_dir: Path) -> Path | None:
-    """Return the run's live-event JSONL file if one exists, else None."""
-    for name in _files.LIVE_EVENT_FILE_NAMES:
-        candidate = run_dir / name
-        if _is_run_file(run_dir, candidate):
-            return candidate
-    return None
-
-
-def _run_lifecycle(run_dir: Path) -> Dict[str, Any]:
-    """Truthful run-lifecycle snapshot for the dashboard (never LIVE).
-
-    A single read cannot observe an advancing step, so this returns a fail-closed
-    snapshot status (COMPLETED / REPLAY / IDLE / MISSING) via the frozen
-    ``stom_rl_live_event.v1`` contract helper ``derive_run_status`` with
-    ``declared_running=False``, plus the raw signals (``last_step``,
-    ``event_mtime_age_sec``) the live client uses to upgrade to RUNNING/STALE
-    only while the step actually advances across polls. Polling, row presence,
-    or fetch time never make a run LIVE here.
-    """
-    from stom_rl import rl_events as _ev
-
-    try:
-        from . import artifact_cache as _cache
-    except ImportError:  # pragma: no cover - script-style import
-        import artifact_cache as _cache
-
-    event_path = _find_event_file(run_dir)
-    now = time.time()
-    if event_path is None:
-        return {
-            "status": _ev.RUN_STATUS_MISSING,
-            "is_live": False,
-            "event_file": None,
-            "event_count": 0,
-            "last_step": None,
-            "event_mtime_age_sec": None,
-            "last_phase": None,
-            "is_replay": False,
-            "poll_interval_seconds": DEFAULT_POLL_INTERVAL_SECONDS,
-        }
-    # Bounded (path,mtime,size)-keyed tail-read memoization (Todo 9); re-stats
-    # every call and never serves stale data for a changed event file.
-    rows, _truncated = _cache.cached_read_live_events(event_path, limit=_ev.MAX_EVENT_LIMIT, tail=True)
-    event_count = len(rows)
-    last = rows[-1] if rows else {}
-    raw_step = last.get("global_step") if isinstance(last, Mapping) else None
-    try:
-        last_step = int(raw_step) if raw_step is not None else None
-    except (TypeError, ValueError):
-        last_step = None
-    age = max(0.0, now - event_path.stat().st_mtime)
-    last_phase = str(last.get("phase") or "") if isinstance(last, Mapping) else ""
-    last_source = str(last.get("source") or "") if isinstance(last, Mapping) else ""
-    is_replay = last_phase == "backtest" or "backtest" in last_source
-    status = _ev.derive_run_status(
-        event_file_exists=True,
-        event_count=event_count,
-        declared_running=False,  # a dashboard read is not an active-producer claim
-        last_step=last_step,
-        prev_step=None,
-        seconds_since_last_advance=age,
-        poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
-        is_replay=is_replay,
-    )
-    return {
-        "status": status,
-        "is_live": _ev.is_live_status(status),  # always False for a snapshot
-        "event_file": event_path.name,
-        "event_count": event_count,
-        "last_step": last_step,
-        "event_mtime_age_sec": round(age, 3),
-        "last_phase": last_phase or None,
-        "is_replay": is_replay,
-        "poll_interval_seconds": DEFAULT_POLL_INTERVAL_SECONDS,
-    }
-
 def _run_record(run_dir: Path) -> Dict[str, Any]:
     artifact_type = _detect_artifact_type(run_dir)
     summary = _find_json_summary(run_dir, artifact_type)
+    identity = _run_identity_fields(run_dir)
     return {
         "name": run_dir.name,
+        **identity,
         "artifact_type": artifact_type,
         "modified_at": _utc_mtime(run_dir),
         "summary": summary,
@@ -221,9 +82,13 @@ def iter_run_dirs() -> Iterable[Path]:
         if not root.is_dir():
             continue
         for child in _candidate_run_dirs(root):
-            if child.name not in seen and _is_relative_to_root(child, root):
-                seen.add(child.name)
-                yield child
+            if not _is_relative_to_root(child, root):
+                continue
+            key = canonical_path_id(child)
+            if key in seen:
+                continue
+            seen.add(key)
+            yield child
 
 
 def _candidate_run_dirs(root: Path) -> Iterable[Path]:
@@ -323,6 +188,12 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
             "feature_columns": payload["summary"].get("feature_columns", []),
             "train_summary": selected_model,
         }
+    elif artifact_type == "rl_discovery_d2":
+        payload["detail"] = (
+            _read_run_json(run_dir, run_dir / "summary.json")
+            if payload["summary"].get("status") != "BLOCK"
+            else {}
+        )
     elif artifact_type == "contextual_bandit":
         payload["detail"] = _read_run_json(run_dir, run_dir / "eval_summary.json")
         model_path = run_dir / "model.json"

@@ -1,0 +1,146 @@
+{
+  "vector_version": "kronos_attestation_v2_fixed_seed_2",
+  "fixed_seed": "root=bytes(0..31); orchestrator=bytes(32..63); d0_issuer=bytes(64..95)",
+  "canonicalization": "RFC 8785 JCS; signatures are Ed25519(domain || JCS(statement)).",
+  "domains": {
+    "lifecycle": "KRONOS-AUTHORITY-LIFECYCLE-V2\u0000",
+    "attestation": "KRONOS-ATTESTATION-V2\u0000"
+  },
+  "root_public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+  "root_key_id": "11111111-1111-4111-8111-111111111111",
+  "pinned_genesis_envelope_sha256": "52b8b3f4908e9e814c232431e949c73da61e545edc9973b3fb18e4d3c118416d",
+  "payload_utf8": "{\"artifact\":\"v2\"}",
+  "payload_schema": "kronos.test-payload.v1",
+  "positive_authority": [
+    [
+      "ORCHESTRATOR",
+      "AUTHORITY_LIFECYCLE",
+      "AUTHORITY_LIFECYCLE"
+    ],
+    [
+      "ORCHESTRATOR",
+      "OPERATOR_A",
+      "GJC_ASSIGNMENT"
+    ],
+    [
+      "ORCHESTRATOR",
+      "OPERATOR_B",
+      "GJC_ASSIGNMENT"
+    ],
+    [
+      "ORCHESTRATOR",
+      "TASK_SCORE",
+      "GJC_ASSIGNMENT"
+    ],
+    [
+      "ORCHESTRATOR",
+      "ARCHITECT_REVIEW",
+      "GJC_ASSIGNMENT"
+    ],
+    [
+      "ORCHESTRATOR",
+      "CRITIC_REVIEW",
+      "GJC_ASSIGNMENT"
+    ],
+    [
+      "ORCHESTRATOR",
+      "EXECUTOR_QA",
+      "GJC_ASSIGNMENT"
+    ],
+    [
+      "ORCHESTRATOR",
+      "TERMINAL_CLOSURE",
+      "GJC_ASSIGNMENT"
+    ],
+    [
+      "USABILITY_OPERATOR",
+      "OPERATOR_A",
+      "GJC_ROLE_OUTPUT"
+    ],
+    [
+      "USABILITY_OPERATOR",
+      "OPERATOR_B",
+      "GJC_ROLE_OUTPUT"
+    ],
+    [
+      "TASK_SCORE_REVIEWER",
+      "TASK_SCORE",
+      "GJC_ROLE_OUTPUT"
+    ],
+    [
+      "ARCHITECT_REVIEWER",
+      "ARCHITECT_REVIEW",
+      "GJC_ROLE_OUTPUT"
+    ],
+    [
+      "CRITIC_REVIEWER",
+      "CRITIC_REVIEW",
+      "GJC_ROLE_OUTPUT"
+    ],
+    [
+      "EXECUTOR_QA_REVIEWER",
+      "EXECUTOR_QA",
+      "GJC_ROLE_OUTPUT"
+    ],
+    [
+      "TERMINAL_CLOSURE_AUTHORITY",
+      "TERMINAL_CLOSURE",
+      "GJC_ROLE_OUTPUT"
+    ],
+    [
+      "D0_ISSUER",
+      "D0_EVIDENCE",
+      "D0_EVIDENCE"
+    ],
+    [
+      "D0_REVIEWER",
+      "D0_EVIDENCE",
+      "D0_EVIDENCE"
+    ],
+    [
+      "D1_ISSUER",
+      "D1_EVIDENCE",
+      "D1_EVIDENCE"
+    ],
+    [
+      "D1_REVIEWER",
+      "D1_EVIDENCE",
+      "D1_EVIDENCE"
+    ],
+    [
+      "OOS_CUSTODIAN",
+      "OOS_CUSTODY",
+      "OOS_CUSTODY"
+    ],
+    [
+      "OOS_CUSTODIAN",
+      "OOS_CAPABILITY",
+      "OOS_CAPABILITY"
+    ],
+    [
+      "OOS_CUSTODIAN",
+      "OOS_RELEASE",
+      "OOS_RELEASE"
+    ],
+    [
+      "OOS_EVALUATOR",
+      "OOS_EVALUATION",
+      "OOS_EVALUATION"
+    ]
+  ],
+  "genesis_raw": "{\"schema\":\"kronos_authority_lifecycle.v2\",\"signature\":\"Y3LX6qJ-xk2qtOOWCgfpCgRZiC_lnIndjjtJnvVP3WNolBSwmRKupXUMx6O-s1AE5HM-fDDhwUiC81pYRL66AA\",\"statement\":{\"algorithm\":\"Ed25519\",\"authority_epoch\":\"44444444-4444-4444-8444-444444444444\",\"effective_at\":\"2026-07-15T00:00:00Z\",\"expires_at\":\"2026-07-15T00:02:00Z\",\"issued_at\":\"2026-07-15T00:00:00Z\",\"previous_authority_envelope_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"principals\":[{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"22222222-2222-4222-8222-222222222222\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"Kay64UG8yvCyLhqU000LxzYeUm0L_hLIl5S8kyKWbdc\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://orchestrator\",\"roles\":[\"ORCHESTRATOR\"],\"scopes\":[\"AUTHORITY_LIFECYCLE\"],\"status\":\"ACTIVE\"},{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"33333333-3333-4333-8333-333333333333\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"JUO5L_EJVRFHatyDadtt3JM2ZaEZeN2hQE7hBmypVZ0\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://d0-issuer\",\"roles\":[\"D0_ISSUER\"],\"scopes\":[\"D0_EVIDENCE\"],\"status\":\"ACTIVE\"}],\"roster_version\":1,\"schema\":\"kronos_authority_lifecycle_statement.v2\",\"sequence\":1,\"signature_encoding\":\"base64url-no-pad\",\"signer_key_id\":\"11111111-1111-4111-8111-111111111111\",\"signer_principal_uri\":\"agent://root\"}}",
+  "rotation_raw": "{\"schema\":\"kronos_authority_lifecycle.v2\",\"signature\":\"v3HAdf0hEasSJfaBA0AEQdbEcVYwCpgelptqi4w1UofkjdoaweuJAiYJObjR9JYS-Mc--2kuIGjfoxgKd3I_AQ\",\"statement\":{\"algorithm\":\"Ed25519\",\"authority_epoch\":\"44444444-4444-4444-8444-444444444444\",\"effective_at\":\"2026-07-15T00:02:00Z\",\"expires_at\":\"2026-07-15T00:20:00Z\",\"issued_at\":\"2026-07-15T00:02:00Z\",\"previous_authority_envelope_sha256\":\"52b8b3f4908e9e814c232431e949c73da61e545edc9973b3fb18e4d3c118416d\",\"principals\":[{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"22222222-2222-4222-8222-222222222222\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"Kay64UG8yvCyLhqU000LxzYeUm0L_hLIl5S8kyKWbdc\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://orchestrator\",\"roles\":[\"ORCHESTRATOR\"],\"scopes\":[\"AUTHORITY_LIFECYCLE\"],\"status\":\"ACTIVE\"},{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"33333333-3333-4333-8333-333333333333\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"JUO5L_EJVRFHatyDadtt3JM2ZaEZeN2hQE7hBmypVZ0\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://d0-issuer\",\"roles\":[\"D0_ISSUER\"],\"scopes\":[\"D0_EVIDENCE\"],\"status\":\"ACTIVE\"}],\"roster_version\":2,\"schema\":\"kronos_authority_lifecycle_statement.v2\",\"sequence\":2,\"signature_encoding\":\"base64url-no-pad\",\"signer_key_id\":\"22222222-2222-4222-8222-222222222222\",\"signer_principal_uri\":\"agent://orchestrator\"}}",
+  "revocation_raw": "{\"schema\":\"kronos_authority_lifecycle.v2\",\"signature\":\"2Xg16LFCUOqbX0opZIOjzvrLPrPuSzEej44Bq8RjcMY6EwepuZ0N2QH9nyPluyhyMpqqe7_UUOZymGda5LZVCw\",\"statement\":{\"algorithm\":\"Ed25519\",\"authority_epoch\":\"44444444-4444-4444-8444-444444444444\",\"effective_at\":\"2026-07-15T00:20:00Z\",\"expires_at\":\"2026-07-15T00:30:00Z\",\"issued_at\":\"2026-07-15T00:20:00Z\",\"previous_authority_envelope_sha256\":\"27812ecb6508fb184688e0fe550badb19f798826a05db4d07e516562fb26dfc2\",\"principals\":[{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"22222222-2222-4222-8222-222222222222\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"Kay64UG8yvCyLhqU000LxzYeUm0L_hLIl5S8kyKWbdc\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://orchestrator\",\"roles\":[\"ORCHESTRATOR\"],\"scopes\":[\"AUTHORITY_LIFECYCLE\"],\"status\":\"ACTIVE\"},{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"33333333-3333-4333-8333-333333333333\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"JUO5L_EJVRFHatyDadtt3JM2ZaEZeN2hQE7hBmypVZ0\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":\"COMPROMISE\",\"revoked_at\":\"2026-07-15T00:20:00Z\",\"status\":\"REVOKED\"}],\"principal_uri\":\"agent://d0-issuer\",\"roles\":[\"D0_ISSUER\"],\"scopes\":[\"D0_EVIDENCE\"],\"status\":\"ACTIVE\"}],\"roster_version\":3,\"schema\":\"kronos_authority_lifecycle_statement.v2\",\"sequence\":3,\"signature_encoding\":\"base64url-no-pad\",\"signer_key_id\":\"22222222-2222-4222-8222-222222222222\",\"signer_principal_uri\":\"agent://orchestrator\"}}",
+  "attestation_raw": "{\"schema\":\"kronos_attestation.v2\",\"signature\":\"6XyfgiTu74Y-A9Jb1nVxsFJxWwI86N2aEz5hk_UYzgAO_HzSbG7K3NNXLVTK_Od5H4Xg7omWGQYu4BMCNr4bCg\",\"statement\":{\"algorithm\":\"Ed25519\",\"attestation_uid\":\"55555555-5555-4555-8555-555555555555\",\"authority_envelope_sha256\":\"27812ecb6508fb184688e0fe550badb19f798826a05db4d07e516562fb26dfc2\",\"expires_at\":\"2026-07-15T00:25:00Z\",\"issued_at\":\"2026-07-15T00:10:00Z\",\"key_id\":\"33333333-3333-4333-8333-333333333333\",\"nonce\":\"gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8\",\"payload_byte_length\":17,\"payload_schema\":\"kronos.test-payload.v1\",\"payload_sha256\":\"8a6ed1978d6e83aead148ce778afe50ebdfadf73c27eb5a443e47d5bdd1d1660\",\"purpose\":\"D0_EVIDENCE\",\"role\":\"D0_ISSUER\",\"schema\":\"kronos_attestation_statement.v2\",\"signature_encoding\":\"base64url-no-pad\",\"signer_principal_uri\":\"agent://d0-issuer\"}}",
+  "sha256": {
+    "genesis": "52b8b3f4908e9e814c232431e949c73da61e545edc9973b3fb18e4d3c118416d",
+    "rotation": "27812ecb6508fb184688e0fe550badb19f798826a05db4d07e516562fb26dfc2",
+    "revocation": "fe72a093878ecce915d29ae8ed1e1795b4900176068c571e62cb402d6601eefe"
+  },
+  "statement_raw": {
+    "genesis": "{\"algorithm\":\"Ed25519\",\"authority_epoch\":\"44444444-4444-4444-8444-444444444444\",\"effective_at\":\"2026-07-15T00:00:00Z\",\"expires_at\":\"2026-07-15T00:02:00Z\",\"issued_at\":\"2026-07-15T00:00:00Z\",\"previous_authority_envelope_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"principals\":[{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"22222222-2222-4222-8222-222222222222\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"Kay64UG8yvCyLhqU000LxzYeUm0L_hLIl5S8kyKWbdc\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://orchestrator\",\"roles\":[\"ORCHESTRATOR\"],\"scopes\":[\"AUTHORITY_LIFECYCLE\"],\"status\":\"ACTIVE\"},{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"33333333-3333-4333-8333-333333333333\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"JUO5L_EJVRFHatyDadtt3JM2ZaEZeN2hQE7hBmypVZ0\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://d0-issuer\",\"roles\":[\"D0_ISSUER\"],\"scopes\":[\"D0_EVIDENCE\"],\"status\":\"ACTIVE\"}],\"roster_version\":1,\"schema\":\"kronos_authority_lifecycle_statement.v2\",\"sequence\":1,\"signature_encoding\":\"base64url-no-pad\",\"signer_key_id\":\"11111111-1111-4111-8111-111111111111\",\"signer_principal_uri\":\"agent://root\"}",
+    "rotation": "{\"algorithm\":\"Ed25519\",\"authority_epoch\":\"44444444-4444-4444-8444-444444444444\",\"effective_at\":\"2026-07-15T00:02:00Z\",\"expires_at\":\"2026-07-15T00:20:00Z\",\"issued_at\":\"2026-07-15T00:02:00Z\",\"previous_authority_envelope_sha256\":\"52b8b3f4908e9e814c232431e949c73da61e545edc9973b3fb18e4d3c118416d\",\"principals\":[{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"22222222-2222-4222-8222-222222222222\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"Kay64UG8yvCyLhqU000LxzYeUm0L_hLIl5S8kyKWbdc\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://orchestrator\",\"roles\":[\"ORCHESTRATOR\"],\"scopes\":[\"AUTHORITY_LIFECYCLE\"],\"status\":\"ACTIVE\"},{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"33333333-3333-4333-8333-333333333333\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"JUO5L_EJVRFHatyDadtt3JM2ZaEZeN2hQE7hBmypVZ0\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://d0-issuer\",\"roles\":[\"D0_ISSUER\"],\"scopes\":[\"D0_EVIDENCE\"],\"status\":\"ACTIVE\"}],\"roster_version\":2,\"schema\":\"kronos_authority_lifecycle_statement.v2\",\"sequence\":2,\"signature_encoding\":\"base64url-no-pad\",\"signer_key_id\":\"22222222-2222-4222-8222-222222222222\",\"signer_principal_uri\":\"agent://orchestrator\"}",
+    "revocation": "{\"algorithm\":\"Ed25519\",\"authority_epoch\":\"44444444-4444-4444-8444-444444444444\",\"effective_at\":\"2026-07-15T00:20:00Z\",\"expires_at\":\"2026-07-15T00:30:00Z\",\"issued_at\":\"2026-07-15T00:20:00Z\",\"previous_authority_envelope_sha256\":\"27812ecb6508fb184688e0fe550badb19f798826a05db4d07e516562fb26dfc2\",\"principals\":[{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"22222222-2222-4222-8222-222222222222\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"Kay64UG8yvCyLhqU000LxzYeUm0L_hLIl5S8kyKWbdc\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":null,\"revoked_at\":null,\"status\":\"ACTIVE\"}],\"principal_uri\":\"agent://orchestrator\",\"roles\":[\"ORCHESTRATOR\"],\"scopes\":[\"AUTHORITY_LIFECYCLE\"],\"status\":\"ACTIVE\"},{\"keys\":[{\"algorithm\":\"Ed25519\",\"key_id\":\"33333333-3333-4333-8333-333333333333\",\"not_after\":\"2026-07-16T00:30:00Z\",\"not_before\":\"2026-07-15T00:00:00Z\",\"public_key\":\"JUO5L_EJVRFHatyDadtt3JM2ZaEZeN2hQE7hBmypVZ0\",\"public_key_encoding\":\"base64url-no-pad\",\"revocation_reason\":\"COMPROMISE\",\"revoked_at\":\"2026-07-15T00:20:00Z\",\"status\":\"REVOKED\"}],\"principal_uri\":\"agent://d0-issuer\",\"roles\":[\"D0_ISSUER\"],\"scopes\":[\"D0_EVIDENCE\"],\"status\":\"ACTIVE\"}],\"roster_version\":3,\"schema\":\"kronos_authority_lifecycle_statement.v2\",\"sequence\":3,\"signature_encoding\":\"base64url-no-pad\",\"signer_key_id\":\"22222222-2222-4222-8222-222222222222\",\"signer_principal_uri\":\"agent://orchestrator\"}",
+    "attestation": "{\"algorithm\":\"Ed25519\",\"attestation_uid\":\"55555555-5555-4555-8555-555555555555\",\"authority_envelope_sha256\":\"27812ecb6508fb184688e0fe550badb19f798826a05db4d07e516562fb26dfc2\",\"expires_at\":\"2026-07-15T00:25:00Z\",\"issued_at\":\"2026-07-15T00:10:00Z\",\"key_id\":\"33333333-3333-4333-8333-333333333333\",\"nonce\":\"gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8\",\"payload_byte_length\":17,\"payload_schema\":\"kronos.test-payload.v1\",\"payload_sha256\":\"8a6ed1978d6e83aead148ce778afe50ebdfadf73c27eb5a443e47d5bdd1d1660\",\"purpose\":\"D0_EVIDENCE\",\"role\":\"D0_ISSUER\",\"schema\":\"kronos_attestation_statement.v2\",\"signature_encoding\":\"base64url-no-pad\",\"signer_principal_uri\":\"agent://d0-issuer\"}"
+  }
+}

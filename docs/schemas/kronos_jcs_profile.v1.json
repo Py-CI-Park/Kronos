@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_jcs_profile.v1.json",
+  "title": "Kronos V5 RFC 8785 JSON Canonicalization Profile",
+  "description": "Closed canonical-byte profile for V5 signed and hashed JSON artifacts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "encoding",
+    "json_domain",
+    "canonicalization",
+    "property_order",
+    "string_serialization",
+    "number_serialization",
+    "rejected_inputs"
+  ],
+  "properties": {
+    "profile": {
+      "const": "kronos-jcs-profile-v1"
+    },
+    "encoding": {
+      "const": "UTF-8"
+    },
+    "json_domain": {
+      "const": "I-JSON"
+    },
+    "canonicalization": {
+      "const": "RFC 8785"
+    },
+    "property_order": {
+      "const": "lexicographic UTF-16 code unit order"
+    },
+    "string_serialization": {
+      "const": "RFC 8785 / ECMAScript JSON string serialization"
+    },
+    "number_serialization": {
+      "const": "RFC 8785 / ECMAScript Number serialization; negative zero serializes as 0"
+    },
+    "rejected_inputs": {
+      "type": "array",
+      "minItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "UTF-8 BOM",
+          "duplicate object member names",
+          "lone UTF-16 surrogate code points",
+          "non-finite numbers",
+          "integers outside the IEEE 754 safe integer range"
+        ]
+      }
+    }
+  }
+}

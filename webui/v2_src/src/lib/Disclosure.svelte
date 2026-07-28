@@ -7,20 +7,31 @@
     summary: string;
     meta?: string;
     open?: boolean;
+    lazy?: boolean;
     children?: Snippet;
   }
 
-  let { summary, meta = '', open = false, children }: Props = $props();
+  let { summary, meta = '', open = false, lazy = false, children }: Props = $props();
+  let hasOpened = $state(false);
+  $effect(() => {
+    if (open) hasOpened = true;
+  });
+
+  function handleToggle(event: Event): void {
+    if ((event.currentTarget as HTMLDetailsElement).open) hasOpened = true;
+  }
 </script>
 
-<details class="disclosure" {open}>
+<details class="disclosure" {open} ontoggle={handleToggle}>
   <summary>
     <span class="chev" aria-hidden="true">▶</span>
     <span class="disc-summary">{summary}</span>
     {#if meta}<span class="disc-meta">{meta}</span>{/if}
   </summary>
   <div class="disc-body">
-    {@render children?.()}
+    {#if !lazy || hasOpened}
+      {@render children?.()}
+    {/if}
   </div>
 </details>
 

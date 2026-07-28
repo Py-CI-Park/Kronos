@@ -50,7 +50,7 @@ def test_factory_status_card_shows_guardrail_and_verdict_evidence_copy():
     assert "data-rl-factory-status-card" in source
     assert "guardrail" in source
     assert "Verdict labels are evidence, not profitability." in source
-    assert "registry not found" in source.lower()
+    assert "queue?.reason ??" in source
     assert "NO-GO" in source
     assert "INCONCLUSIVE" in source
     assert "GO_CANDIDATE" in source
@@ -123,3 +123,38 @@ def test_factory_cards_consume_read_only_get_apis_only():
         assert "POST" not in source
         assert "method:" not in source
         assert "fetch(" not in source
+
+
+def test_factory_status_and_lineage_cards_distinguish_request_errors_from_empty_payloads():
+    status = _card_text("FactoryStatusCard.svelte")
+    lineage = _card_text("FactoryLineageCard.svelte")
+
+    for source in [status, lineage]:
+        for marker in [
+            "try {",
+            "catch (caught)",
+            "finally {",
+            "loadError",
+            'role="alert"',
+            "onclick={load}",
+            "payload == null",
+        ]:
+            assert marker in source
+
+    assert "queue?.reason ??" in status
+    assert "No runs registered yet." in status
+    assert "No probability-lane lineage runs found." in lineage
+    assert "runs = payload.runs ?? []" in lineage
+
+
+def test_factory_disclosures_are_lazy_and_share_a_remount_scoped_lane_runs_snapshot():
+    tab = (DASHBOARD_SRC / "tabs" / "RLTradingTab.svelte").read_text(encoding="utf-8")
+    api = RL_API.read_text(encoding="utf-8")
+    factory_section = tab.split("data-rl-factory-evidence-section", maxsplit=1)[1]
+
+    assert factory_section.count("<Disclosure lazy") >= 8
+    assert "rlApi.resetFactoryLaneRuns();" in tab
+    assert "function factoryLaneRuns()" in api
+    assert "if (factoryLaneRunsRequest) return factoryLaneRunsRequest;" in api
+    assert "function resetFactoryLaneRuns()" in api
+    assert "factoryLaneRunsRequest = null;" in api

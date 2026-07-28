@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, type Component } from 'svelte';
   import Sidebar from '$layout/Sidebar.svelte';
   import Header from '$layout/Header.svelte';
   import OpsStrip from '$layout/OpsStrip.svelte';
+  import RightDetailRail from '$layout/RightDetailRail.svelte';
   import V4Shell from '$layout/V4Shell.svelte';
   import HeroStrip from '$layout/HeroStrip.svelte';
+  import V51WorkspaceNav from '$layout/V51WorkspaceNav.svelte';
   import MissionControl from '$tabs/MissionControl.svelte';
   import LiveTrainingTab from '$tabs/LiveTrainingTab.svelte';
   import ForecastWorkbenchTab from '$tabs/ForecastWorkbenchTab.svelte';
@@ -28,38 +30,143 @@
   import SettingsTab from '$tabs/SettingsTab.svelte';
   import DocsTab from '$tabs/DocsTab.svelte';
   import { activeTab, sidebarCollapsed } from '$lib/stores';
-  import { installPollingWatcher, startPolling } from '$lib/polling';
-  import { resolveRoute, syncTabFromLocation } from '$lib/routes';
-  import { dashboardShell, initializeDashboardShell, type DashboardShell } from '$lib/shellMode';
+  import { installPollingWatcher, startPolling, stopPolling } from '$lib/polling';
+  import { resolveRoute, routeForTab, syncTabFromLocation, v5WorkspaceForRoute, type DashboardRouteComponentKey, type V5WorkspaceDomain } from '$lib/routes';
+  import { dashboardShell, DEFAULT_DASHBOARD_SHELL, initializeDashboardShell, type DashboardShell } from '$lib/shellMode';
+  import { isLearningNowRouteLocation } from './v5/learningNow';
+  import V6Shell from './v6shell/V6Shell.svelte';
+
+  const LEGACY_COMPONENTS: Record<DashboardRouteComponentKey, Component> = {
+    'mission-control': MissionControl, 'live-training': LiveTrainingTab, forecast: ForecastWorkbenchTab, stom: StomDiagnosticsTab,
+    'daily-ohlcv': DailyOhlcvTab, 'daily-rl-guide': DailyRlGuideTab, rl: RLTradingTab, artifacts: ArtifactsModelsTab,
+    history: HistoryRunsTab, 'system-health': SystemHealthTab, settings: SettingsTab, docs: DocsTab,
+  };
+  const V4_WRAPPERS: Record<DashboardRouteComponentKey, Component<any>> = {
+    'mission-control': V4MissionControl, 'live-training': V4TrainingOps, forecast: V4ForecastStudio, stom: V4LegacyDomainFrame,
+    'daily-ohlcv': V4DailyResearch, 'daily-rl-guide': V4LegacyDomainFrame, rl: V4RLEvidenceConsole, artifacts: V4ArtifactsWorkspace,
+    history: V4RunsWorkspace, 'system-health': V4SystemOps, settings: V4AdminWorkspace, docs: V4AdminWorkspace,
+  };
+  const V4_WRAPPER_PROPS: Partial<Record<DashboardRouteComponentKey, Record<string, string>>> = {
+    stom: { surface: 'diagnostics' }, 'daily-rl-guide': { surface: 'daily-guide' }, settings: { surface: 'settings' }, docs: { surface: 'docs' },
+  };
+
+  function v51WorkspaceDomainForTab(tabId: string, activeShell: DashboardShell): V5WorkspaceDomain | null {
+    return activeShell === 'v5' ? v5WorkspaceForRoute(tabId) : null;
+  }
+
+
+  function shouldRenderLearningNowRoute(
+    activeShell: DashboardShell,
+    locationLike: Pick<Location, 'pathname' | 'search'> | null,
+  ): boolean {
+    return activeShell !== 'v6' && isLearningNowRouteLocation(locationLike);
+  }
+
+  function activateLearningNowRoute(): void {
+    learningNowRouteActive = true;
+    activeTab.set('learning-now');
+    void ensureLearningNowTab();
+  }
 
   let removePopstate: (() => void) | undefined;
+  let disposePollingWatcher: (() => void) | undefined;
+
+  function startLegacyPolling(): void {
+    if (disposePollingWatcher) return;
+    startPolling();
+    disposePollingWatcher = installPollingWatcher();
+  }
+
+  function stopLegacyPolling(): void {
+    disposePollingWatcher?.();
+    disposePollingWatcher = undefined;
+    stopPolling();
+  }
+  let LearningNowTab = $state<Component | null>(null);
+  let learningNowLoading = $state(false);
+  let learningNowLoadError = $state<string | null>(null);
+
+  async function ensureLearningNowTab(): Promise<void> {
+    if (LearningNowTab || learningNowLoading) return;
+    learningNowLoading = true;
+    learningNowLoadError = null;
+    try {
+      const module = await import('./v5/LearningNowTab.svelte');
+      LearningNowTab = module.default;
+    } catch {
+      learningNowLoadError = 'Learning Now route component unavailable.';
+    } finally {
+      learningNowLoading = false;
+    }
+  }
+
 
   onMount(() => {
-    syncTabFromLocation({ replaceAlias: true });
+    const mountedShell = initializeDashboardShell();
+    if (mountedShell === 'v6') {
+      learningNowRouteActive = false;
+    } else if (shouldRenderLearningNowRoute(mountedShell, window.location)) {
+      activateLearningNowRoute();
+    } else {
+      learningNowRouteActive = false;
+      routeUnavailable = syncTabFromLocation({ replaceAlias: true }) === null;
+    }
     const handlePopstate = () => {
-      initializeDashboardShell();
-      syncTabFromLocation();
+      const nextShell = initializeDashboardShell();
+      if (nextShell === 'v6') {
+        learningNowRouteActive = false;
+      } else if (shouldRenderLearningNowRoute(nextShell, window.location)) {
+        activateLearningNowRoute();
+      } else {
+        learningNowRouteActive = false;
+        routeUnavailable = syncTabFromLocation() === null;
+      }
     };
     window.addEventListener('popstate', handlePopstate);
     removePopstate = () => window.removeEventListener('popstate', handlePopstate);
-    installPollingWatcher();
-    startPolling();
+    const unsubscribePollingShell = dashboardShell.subscribe((activeShell) => {
+      if (activeShell === 'v6') {
+        stopLegacyPolling();
+      } else {
+        startLegacyPolling();
+      }
+    });
     return () => {
       removePopstate?.();
+      unsubscribePollingShell();
+      stopLegacyPolling();
     };
   });
 
-  const initialTab = typeof window === 'undefined'
-    ? 'mission-control'
-    : (resolveRoute(window.location)?.id ?? 'mission-control');
-  activeTab.set(initialTab);
+  const currentLocation = typeof window === 'undefined' ? null : window.location;
+  const initialShell: DashboardShell = typeof window === 'undefined' ? DEFAULT_DASHBOARD_SHELL : initializeDashboardShell();
+  const initialLearningNowRoute = shouldRenderLearningNowRoute(initialShell, currentLocation);
+  const resolvedInitialTab = initialLearningNowRoute ? null : currentLocation ? resolveRoute(currentLocation)?.id : null;
+  const initialRouteUnavailable = !initialLearningNowRoute && currentLocation !== null && resolvedInitialTab === null;
+  const initialTab = initialLearningNowRoute ? 'learning-now' : (resolvedInitialTab ?? 'mission-control');
+  if (initialLearningNowRoute || resolvedInitialTab) activeTab.set(initialTab);
   let tab = $state(initialTab);
+  let learningNowRouteActive = $state(initialLearningNowRoute);
+  let routeUnavailable = $state(initialRouteUnavailable);
   const unsubscribeActiveTab = activeTab.subscribe((v) => (tab = v));
-  const initialShell: DashboardShell = typeof window === 'undefined' ? 'v3' : initializeDashboardShell();
   let shell = $state<DashboardShell>(initialShell);
   const unsubscribeDashboardShell = dashboardShell.subscribe((v) => (shell = v));
+  let activeRoute = $derived(routeUnavailable ? null : routeForTab(tab));
+  let v51WorkspaceDomain = $derived(v51WorkspaceDomainForTab(tab, shell));
   let collapsed = $state(false);
   const unsubscribeSidebarCollapsed = sidebarCollapsed.subscribe((v) => (collapsed = v));
+  $effect(() => {
+    if (tab !== 'learning-now' && learningNowRouteActive) {
+      learningNowRouteActive = false;
+    }
+    if (routeUnavailable && tab !== initialTab) {
+      routeUnavailable = false;
+    }
+  });
+  $effect(() => {
+    if (learningNowRouteActive) void ensureLearningNowTab();
+  });
+
 
   onDestroy(() => {
     unsubscribeActiveTab();
@@ -74,109 +181,57 @@
     data-v3-tab-host={shell === 'v3' ? '' : undefined}
     data-v4-domain-host={shell === 'v4' ? '' : undefined}
   >
-    {#if tab === 'mission-control'}
-      {#if shell === 'v4'}
-        <V4MissionControl />
-      {:else}
-        <MissionControl />
+    {#if v51WorkspaceDomain}
+      <V51WorkspaceNav domain={v51WorkspaceDomain} selectedRouteId={tab} />
+    {/if}
+    {#if activeRoute}
+      {@const RouteComponent = LEGACY_COMPONENTS[activeRoute.componentKey]}
+      {#if activeRoute.componentKey === 'live-training'}
+        <HeroStrip />
       {/if}
-    {:else if tab === 'live-training'}
-      <HeroStrip />
       {#if shell === 'v4'}
-        <V4TrainingOps>
-          <LiveTrainingTab />
-        </V4TrainingOps>
+        {@const V4Wrapper = V4_WRAPPERS[activeRoute.componentKey]}
+        <V4Wrapper {...V4_WRAPPER_PROPS[activeRoute.componentKey]}>
+          <RouteComponent />
+        </V4Wrapper>
       {:else}
-        <LiveTrainingTab />
+        <RouteComponent />
       {/if}
-    {:else if tab === 'forecast'}
-      {#if shell === 'v4'}
-        <V4ForecastStudio>
-          <ForecastWorkbenchTab />
-        </V4ForecastStudio>
-      {:else}
-        <ForecastWorkbenchTab />
-      {/if}
-    {:else if tab === 'stom'}
-      {#if shell === 'v4'}
-        <V4LegacyDomainFrame surface="diagnostics">
-          <StomDiagnosticsTab />
-        </V4LegacyDomainFrame>
-      {:else}
-        <StomDiagnosticsTab />
-      {/if}
-    {:else if tab === 'rl'}
-      {#if shell === 'v4'}
-        <V4RLEvidenceConsole>
-          <RLTradingTab />
-        </V4RLEvidenceConsole>
-      {:else}
-        <RLTradingTab />
-      {/if}
-    {:else if tab === 'daily-ohlcv'}
-      {#if shell === 'v4'}
-        <V4DailyResearch>
-          <DailyOhlcvTab />
-        </V4DailyResearch>
-      {:else}
-        <DailyOhlcvTab />
-      {/if}
-    {:else if tab === 'daily-rl-guide'}
-      {#if shell === 'v4'}
-        <V4LegacyDomainFrame surface="daily-guide">
-          <DailyRlGuideTab />
-        </V4LegacyDomainFrame>
-      {:else}
-        <DailyRlGuideTab />
-      {/if}
-    {:else if tab === 'artifacts'}
-      {#if shell === 'v4'}
-        <V4ArtifactsWorkspace>
-          <ArtifactsModelsTab />
-        </V4ArtifactsWorkspace>
-      {:else}
-        <ArtifactsModelsTab />
-      {/if}
-    {:else if tab === 'history'}
-      {#if shell === 'v4'}
-        <V4RunsWorkspace>
-          <HistoryRunsTab />
-        </V4RunsWorkspace>
-      {:else}
-        <HistoryRunsTab />
-      {/if}
-    {:else if tab === 'system-health'}
-      {#if shell === 'v4'}
-        <V4SystemOps>
-          <SystemHealthTab />
-        </V4SystemOps>
-      {:else}
-        <SystemHealthTab />
-      {/if}
-    {:else if tab === 'settings'}
-      {#if shell === 'v4'}
-        <V4AdminWorkspace surface="settings">
-          <SettingsTab />
-        </V4AdminWorkspace>
-      {:else}
-        <SettingsTab />
-      {/if}
-    {:else if tab === 'docs'}
-      {#if shell === 'v4'}
-        <V4AdminWorkspace surface="docs">
-          <DocsTab />
-        </V4AdminWorkspace>
-      {:else}
-        <DocsTab />
-      {/if}
+    {:else}
+      <section class="lazy-loading" role="status" aria-live="polite">
+        요청한 대시보드 경로를 사용할 수 없습니다.
+      </section>
     {/if}
   </div>
 {/snippet}
 
+{#if learningNowRouteActive}
+  <div class="app-shell" data-kronos-shell={shell} data-sidebar={collapsed ? 'collapsed' : 'expanded'}>
+    <Sidebar />
+    <div class="main">
+      <Header />
+      <OpsStrip />
+      <div class="page" data-v5-learning-host>
+        {#if LearningNowTab}
+          <LearningNowTab />
+        {:else}
+          <section class="lazy-loading" role="status" aria-live="polite">
+            {learningNowLoadError ?? 'Loading Learning Now route…'}
+          </section>
+        {/if}
+      </div>
+    </div>
+    {#if shell === 'v5'}
+      <RightDetailRail />
+    {/if}
+  </div>
+{:else}
 {#if shell === 'v4'}
   <V4Shell>
     {@render tabHost()}
   </V4Shell>
+{:else if shell === 'v6'}
+  <V6Shell />
 {:else}
   <div class="app-shell" data-kronos-shell={shell} data-sidebar={collapsed ? 'collapsed' : 'expanded'}>
     <Sidebar />
@@ -185,7 +240,11 @@
       <OpsStrip />
       {@render tabHost()}
     </div>
+    {#if shell === 'v5'}
+      <RightDetailRail />
+    {/if}
   </div>
+{/if}
 {/if}
 
 <style>
@@ -197,7 +256,15 @@
     flex-direction: column;
     gap: 24px;
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
+  }
+  .lazy-loading {
+    border: 1px dashed var(--border);
+    border-radius: 18px;
+    padding: 24px;
+    color: var(--muted);
+    background: var(--surface-sunken);
   }
   @media (max-width: 900px) {
     .page {

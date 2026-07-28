@@ -1,0 +1,49 @@
+{
+  "schema": "kronos_daily_sb3_events_fixture_summary.v1",
+  "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+  "event_count": 10,
+  "final_event_sha256": "514226c49883779cbaa101ea648d23d5d0db6de202e00a2dd621d6fe2117f326",
+  "state_sha256": "7c2f32c46280fea4526a2aa6e2829c4dbbbededd8d7dc20ba1de37329a4cad0b",
+  "run_count": 1,
+  "cell_count": 50,
+  "active_cell_count": 1,
+  "lifecycle_states": [
+    "ADVANCING",
+    "STALLED",
+    "RESUMED",
+    "RESTARTED_NON_EXACT",
+    "STOPPED",
+    "FAILED",
+    "COMPLETED",
+    "CONFLICT_BLOCKED",
+    "NOT_RUN"
+  ],
+  "locks": {
+    "promotion_allowed": false,
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "profitability_claim_allowed": false,
+    "go_summary_allowed": false
+  },
+  "first_active_cell": {
+    "cell_uid": "kdp1-cell-eb8a5e156f99afa041f59b3daf61ed52",
+    "attempt_uid": "kdp1-attempt-a576d116a13511a6ee876e5f72f276ca",
+    "attempt_number": 2,
+    "lifecycle_state": "STOPPED",
+    "phase": "STOP",
+    "last_step": 1,
+    "total_steps": 3,
+    "heartbeat_count": 0,
+    "resume_count": 2,
+    "liveness": {
+      "live": false,
+      "basis": "TERMINAL"
+    },
+    "stop": {
+      "requested": true,
+      "terminal": true,
+      "reason_code": "USER_REQUESTED_STOP"
+    }
+  }
+}

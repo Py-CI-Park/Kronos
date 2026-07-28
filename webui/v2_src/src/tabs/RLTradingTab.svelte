@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import {
     rlApi,
     type RlCostGateResponse,
@@ -8,6 +8,7 @@
     type RlRunRecord,
     type RlTableRow,
   } from '$lib/rlApi';
+  import { dashboardShell, type DashboardShell } from '$lib/shellMode';
   import { createRequestGate } from '$lib/requestGate';
   import { errorMessage } from '$lib/rlRows';
   import { humanizeVerdict } from '$lib/verdictLabel';
@@ -29,6 +30,7 @@
   import RliableStatsCard from './rlTrading/RliableStatsCard.svelte';
   import EvidenceCharts from './rlTrading/EvidenceCharts.svelte';
   import RlLiveScreen from './rlTrading/RlLiveScreen.svelte';
+  import V51ResearchEvidence from './rlTrading/V51ResearchEvidence.svelte';
   import RunTables from './rlTrading/RunTables.svelte';
   import { costGatePassCount } from './rlTrading/chartOptions';
   import ResearchStatusShell from './ResearchStatusShell.svelte';
@@ -56,8 +58,24 @@
   let loading = $state(false);
   let detailLoading = $state(false);
   let error = $state<string | null>(null);
+  let shell = $state<DashboardShell>('v3');
   const detailField = (key: string): unknown => selectedRun?.summary?.[key] ?? selectedRun?.detail?.[key];
   const textValue = (value: unknown, fallback = '—'): string => value == null || value === '' ? fallback : String(value);
+  const numericValue = (value: unknown): number | null => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const text = String(value ?? '').trim();
+    if (!text || (text.includes('%') && !/bp|bps/i.test(text))) return null;
+    const match = text.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const formatCostBp = (value: unknown, fallback: unknown = 23): string => {
+    const source = value == null || value === '' ? fallback : value;
+    const numeric = numericValue(source);
+    if (numeric === null) return textValue(source);
+    return `${(numeric / 100).toFixed(2)}% (${numeric.toFixed(0)} bp)`;
+  };
 
   const ruleRun = $derived(
     runs.find((run) => run.strategy_context?.line === 'rule_mainline' || run.artifact_type === 'baseline') ?? null
@@ -89,9 +107,9 @@
         ? 'RL experiment / research-only'
         : 'evidence artifact / research-only'
   );
-  const selectedCost = $derived(
-    textValue(selectedRun?.strategy_context?.risk_policy_summary?.cost_bps ?? detailField('cost_bps') ?? detailField('cost_round_trip_bp'), '23') + 'bp'
-  );
+  const selectedCost = $derived(formatCostBp(
+    selectedRun?.strategy_context?.risk_policy_summary?.cost_bps ?? detailField('cost_bps') ?? detailField('cost_round_trip_bp'),
+  ));
   const selectedBaseline = $derived(textValue(selectedRun?.strategy_context?.primary_baseline ?? detailField('baseline') ?? 'ts_imb RULE baseline'));
   const selectedDrawdown = $derived(textValue(detailField('max_drawdown_pct') ?? detailField('max_drawdown') ?? detailField('max_dd_pct')));
   const selectedTradeCount = $derived(textValue(detailField('trade_count') ?? detailField('trades') ?? trades.length));
@@ -102,7 +120,7 @@
     { label: 'paper forward', value: 'false', tone: 'danger' },
     { label: 'model build unlock', value: 'false', tone: 'danger' },
     { label: 'profit readiness', value: 'false', tone: 'danger' },
-    { label: 'cost assumption', value: '23bp', tone: 'warn' },
+    { label: 'cost assumption', value: '0.23% (23 bp)', tone: 'warn' },
   ] as const;
   const rlStatusBlockers = [
     'ts_imb는 RL이 아니라 RULE baseline이며, RL 실험은 비교·반증 산출물입니다.',
@@ -111,11 +129,18 @@
   ] as const;
   const rlNextInspection = [
     '선택 run의 verdict와 strategy_context를 먼저 확인합니다.',
-    '23bp cost gate, baseline 대비, drawdown, trade count를 확인합니다.',
+    '0.23% (23 bp) cost gate, baseline 대비, drawdown, trade count를 확인합니다.',
     '원시 테이블은 마지막에 열어 원인 분석용으로만 사용합니다.',
   ] as const;
+  const unsubscribeDashboardShell = dashboardShell.subscribe((value) => (shell = value));
+  rlApi.resetFactoryLaneRuns();
+
   onMount(() => {
     void loadDashboard();
+  });
+  onDestroy(() => {
+    unsubscribeDashboardShell();
+    rlApi.resetFactoryLaneRuns();
   });
 
   function choosePreferredRun(candidates: readonly RlRunRecord[]): RlRunRecord | undefined {
@@ -174,6 +199,7 @@
     // never shows run A's data under run B's label while the new fetch is
     // in flight.
     selectedRun = null;
+    costGate = null;
     detailLoading = true;
     error = null;
     leaderboardRows = [];
@@ -297,6 +323,9 @@
   blockers={rlStatusBlockers}
   nextActions={rlNextInspection}
 />
+{#if shell === 'v5'}
+  <V51ResearchEvidence />
+{/if}
 <RunSelector
   runs={runs}
   multi
@@ -311,7 +340,7 @@
     <div>
       <div class="text-eyebrow">Review flow · before raw tables</div>
       <h2 class="text-h3">선택 산출물 판정 먼저 보기</h2>
-      <p class="text-muted">raw table을 열기 전에 RULE/RL 구분, selected verdict, 23bp cost, baseline, drawdown, trade count를 확인합니다.</p>
+      <p class="text-muted">raw table을 열기 전에 RULE/RL 구분, selected verdict, 0.23% (23 bp) cost, baseline, drawdown, trade count를 확인합니다.</p>
     </div>
     <span class="pill danger"><span class="dot"></span>NOT LIVE-READY</span>
   </div>
@@ -335,31 +364,31 @@
   <OrderbookReadinessCard run={readinessRun ?? openingCandidateRun} />
 </Disclosure>
 <section class="factory-evidence" data-rl-factory-evidence-section>
-  <Disclosure summary="팩토리 큐 · read-only evidence" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="팩토리 큐 · read-only evidence" meta="RESEARCH_ONLY">
     <FactoryStatusCard />
   </Disclosure>
-  <Disclosure summary="팩토리 리니지 · fill-mode robustness (supervised gate · NOT RL)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="팩토리 리니지 · fill-mode robustness (supervised gate · NOT RL)" meta="RESEARCH_ONLY">
     <FactoryLineageCard />
   </Disclosure>
-  <Disclosure summary="확률 레인 캘리브레이션 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="확률 레인 캘리브레이션 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
     <CalibrationCard />
   </Disclosure>
-  <Disclosure summary="엣지 원장 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="엣지 원장 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
     <EdgeLedgerCard />
   </Disclosure>
-  <Disclosure summary="사이징 · 리스크 · P2 gate (P5 blocked by P2)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="사이징 · 리스크 · P2 gate (P5 blocked by P2)" meta="RESEARCH_ONLY">
     <SizingRiskCard />
   </Disclosure>
-  <Disclosure summary="모델 빌드 준비도 · RL lock" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="모델 빌드 준비도 · RL lock" meta="RESEARCH_ONLY">
     <ModelBuildReadinessCard />
   </Disclosure>
-  <Disclosure summary="포워드 · 페이퍼 원장 · read-only" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="포워드 · 페이퍼 원장 · read-only" meta="RESEARCH_ONLY">
     <ForwardLedgerCard />
   </Disclosure>
-  <Disclosure summary="세션 리플레이 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="세션 리플레이 · supervised gate (NOT RL)" meta="RESEARCH_ONLY">
     <SessionReplayCard />
   </Disclosure>
-  <Disclosure summary="rliable 신뢰도 통계 · research-only" meta="RESEARCH_ONLY">
+  <Disclosure lazy summary="rliable 신뢰도 통계 · research-only" meta="RESEARCH_ONLY">
     <RliableStatsCard />
   </Disclosure>
 </section>

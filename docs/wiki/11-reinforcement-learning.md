@@ -135,3 +135,14 @@
 ---
 
 *소스: `stom_rl/trading_env.py`, `sb3_smoke.py`, `sb3_adapter.py`, `walk_forward.py` · 대시보드: `http://127.0.0.1:5070/rl`*
+
+## 2026-07-28 현재 일봉 강화학습 상태
+
+기존 설명의 1초봉 DQN/PPO와 별도로, 실제 일봉 train-only 데이터에서 2행동 MaskablePPO
+연구를 수행했다. 모델 24개는 모두 생성됐으나 과적합 gate는 8 episode까지만 통과했다.
+따라서 강화학습 모델을 만들고 테스트하는 플랫폼은 동작하지만, 수익 가능한 종가 매매 모델은
+아직 확인되지 않았다. 판정은 `D2_PARTIAL_CAPACITY_CONFIRMED`, Fresh OOS는
+`NOT_RUN_NO_READ`, 라이브 거래는 `BLOCKED`다.
+
+다음 연구는 128 episode에서 표현(top-1/top-5/regime)과 학습예산을 분리하는 D3이다.
+상세 수치와 전체 페이지 상태는 `docs/kronos_rl_discovery_type2_d2_result_2026-07-28.md`를 본다.

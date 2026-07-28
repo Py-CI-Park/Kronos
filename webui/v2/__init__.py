@@ -28,6 +28,15 @@ def _official_ssr_fallback_requested() -> bool:
     return legacy_dist in _FALSY
 
 
+def _buffer_shell_file_response(resp):
+    """Buffer the small shell file so send_file's handle closes before return."""
+    resp.direct_passthrough = False
+    body = resp.get_data()
+    resp.close()
+    resp.set_data(body)
+    return resp
+
+
 def _serve_dashboard_shell():
     """Serve the official Kronos dashboard shell.
 
@@ -39,7 +48,9 @@ def _serve_dashboard_shell():
     dist_dir = os.path.join(current_app.static_folder or "", "v2", "dist")
     dist_index = os.path.join(dist_dir, "index.html")
     if os.path.exists(dist_index) and not _official_ssr_fallback_requested():
-        resp = send_from_directory(dist_dir, "index.html")
+        resp = _buffer_shell_file_response(
+            send_from_directory(dist_dir, "index.html")
+        )
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"
@@ -58,6 +69,12 @@ def dashboard_training_alias():
     """Serve the official dashboard for operator training bookmarks."""
     return _serve_dashboard_shell()
 
+
+@v2_bp.route("/learning-now")
+@v2_bp.route("/v5/learning-now")
+def dashboard_learning_now():
+    """Serve the Learning Now shell for direct cold browser paths."""
+    return _serve_dashboard_shell()
 
 @v2_bp.route("/rl")
 def dashboard_rl():
