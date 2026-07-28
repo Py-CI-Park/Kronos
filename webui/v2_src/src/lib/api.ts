@@ -1,5 +1,42 @@
 import { fetchJson } from './http';
 import { rlApi } from './rlApi';
+export { rlApi } from './rlApi';
+export type { DeepReadonly, V5ReadonlyRouteRootMap } from './rlApi';
+export {
+  v5RouteDescriptors,
+  validateArtifactsRoot,
+  validateD0Root,
+  validateD1Root,
+  validateErrorRoot,
+  validateEventsRoot,
+  validateFixtureRoot,
+  validateLedgerRoot,
+  validateMatrixRoot,
+  validateRunDetailRoot,
+  validateRunsRoot,
+} from './generated/kronosRlApiV2.validators';
+export type {
+  V5RouteDescriptorMap,
+  V5RouteRootMap,
+  V5Validator,
+} from './generated/kronosRlApiV2.validators';
+export { V5SemanticError, v5SemanticRules, validateV5Semantic } from './generated/kronosRlApiV2.semantic';
+export type { V5SemanticContext } from './generated/kronosRlApiV2.semantic';
+export type {
+  Error as V5Error,
+  V5ArtifactsRoot,
+  V5D0Root,
+  V5D1Root,
+  V5ErrorRoot,
+  V5EventsRoot,
+  V5FixtureRoot,
+  V5LedgerRoot,
+  V5MatrixRoot,
+  V5RouteId,
+  V5RunDetailRoot,
+  V5RunsRoot,
+} from './generated/kronosRlApiV2';
+export { V5SchemaValidationError } from './v5SchemaValidationError';
 
 export interface TrainingStatus {
   readonly run_name?: string;

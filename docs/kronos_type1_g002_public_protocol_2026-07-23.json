@@ -1,0 +1,211 @@
+{
+  "schema_version": "kronos_type1_g002_public_protocol.v1",
+  "protocol_id": "KRONOS-TYPE1-G002-PUBLIC-2026-07-23",
+  "parent_prereg_id": "KRONOS-TYPE1-CLOSING-2026-07-23",
+  "status": "FROZEN_BEFORE_PUBLIC_TRAINING",
+  "classification": "SEQUENTIAL_MASKABLEPPO_RESEARCH_EXPERIMENT",
+  "identity": {
+    "dataset_id": "type1-close-20260803-001",
+    "train_id": "type1-public-001",
+    "train_run_id": "train_type1-public-001",
+    "domain": "kronos.type1",
+    "algorithm_family": "MASKABLE_PPO"
+  },
+  "scientific_boundary": {
+    "research_only": true,
+    "official_close": false,
+    "price_basis": "EXACT_15_20_BAR_CLOSE_PROXY",
+    "primary_round_trip_cost_rate": "0.0023",
+    "fixed_notional_non_self_financing": true,
+    "fresh_oos_state": "NOT_RUN",
+    "fresh_oos_read_performed": false,
+    "fresh_oos_access": "FORBIDDEN_UNTIL_SEPARATE_APPROVED_ONE_TIME_GATE",
+    "m3e_verdict": "NO_GO",
+    "m3e_classification": "CONTEXTUAL_BANDIT_RESEARCH_EXPERIMENT",
+    "synthetic_oracle_calibration_allowed": false,
+    "go_possible_at_this_stage": false,
+    "terminal_verdict": "NO_GO"
+  },
+  "public_splits": {
+    "train": {
+      "start": "2018-01-02",
+      "end": "2023-12-29"
+    },
+    "reused_validation": {
+      "start": "2024-01-02",
+      "end": "2025-06-30"
+    },
+    "fresh_oos": {
+      "state": "NOT_RUN",
+      "metrics": null,
+      "paths_permitted": false
+    },
+    "pairing": {
+      "method": "NON_OVERLAPPING_CHRONOLOGICAL_PAIRS",
+      "index_pairs": "(0,1),(2,3),... independently within each split",
+      "odd_tail": "DROP_AND_RECORD",
+      "shuffle_market_pair_order": false
+    }
+  },
+  "features": {
+    "ordered_names": [
+      "ret_1d_prev",
+      "ret_5d_prev",
+      "ret_20d_prev",
+      "vol_z_20",
+      "foreign_ratio_prev",
+      "foreign_ratio_delta_5",
+      "inst_netbuy_norm_5"
+    ],
+    "raw_encoding": "DECIMAL_STRING_OR_NULL",
+    "fit_partition": "TRAIN_ONLY",
+    "normalizer": {
+      "quantile_method": "HYNDMAN_FAN_TYPE_7",
+      "center": "q50",
+      "scale": "q75-q25",
+      "non_positive_scale": "BLOCK",
+      "output_dtype": "float32",
+      "clip": [
+        -10.0,
+        10.0
+      ]
+    }
+  },
+  "portfolio_and_accounting": {
+    "initial_nav_krw": "60000000",
+    "slot_notional_krw": "5000000",
+    "maximum_slots": 10,
+    "maximum_exposure_krw": "50000000",
+    "nominal_reserve_krw": "10000000",
+    "duplicate_symbol_slots": false,
+    "shorting": false,
+    "leverage": false,
+    "fill_pnl": "5000000 * (gross_return - 0.0023)",
+    "stop_no_fill_pnl": "0",
+    "nav": "60000000 + cumulative Decimal P&L",
+    "audit": "Independent Decimal replay; any mismatch is BLOCK"
+  },
+  "training": {
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "timesteps_per_seed": 200000,
+    "device": "cpu",
+    "deterministic_evaluation": true,
+    "validation_visible_to_training": false,
+    "eval_callback": false,
+    "early_stopping": false,
+    "best_model_selection": false,
+    "checkpoint_selection": false,
+    "member_selection": false,
+    "saved_artifact": "FINAL_MODEL_ONLY",
+    "synthetic_oracle_calibration": false
+  },
+  "aggregation": {
+    "metric": "FIVE_SEED_IQM",
+    "formula": "sort x0..x4 ascending; 0.3*x1 + 0.4*x2 + 0.3*x3",
+    "best_seed_reporting": false
+  },
+  "controls": {
+    "stop_baseline": {
+      "definition": "Select no symbols for every pair"
+    },
+    "ridge_baseline": {
+      "inputs": "Seven train-normalized features followed by seven missing indicators",
+      "target": "gross_return - 0.0023",
+      "alpha": "1",
+      "intercept_penalized": false,
+      "tuning": false,
+      "selection": "Up to ten strictly positive predictions, descending score then ascending six-digit symbol"
+    },
+    "random_baseline": {
+      "replications": 10000,
+      "sampling": "Distinct available slots without replacement",
+      "seed": 0,
+      "favorable_rep_selection": false
+    },
+    "exposure_matched_random": {
+      "replications": 10000,
+      "seed": 0,
+      "matching": "Exact selected count for each validation pair",
+      "primary_gate": "Primary IQM NAV must exceed the matched 95th percentile",
+      "shuffle_gate": "Shuffled-policy IQM NAV must not exceed its matched 95th percentile"
+    },
+    "shuffle_retraining": {
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "timesteps_per_seed": 200000,
+      "permutation": "Fisher-Yates over train FILLED gross returns in canonical pair/slot order using the corresponding seed",
+      "unchanged": "Dates, features, missingness, masks, symbol order, pair order, and reused validation"
+    },
+    "moving_block_bootstrap": {
+      "kind": "CIRCULAR_MOVING_BLOCK",
+      "block_length_pairs": 20,
+      "replications": 10000,
+      "seed": 0,
+      "unit": "Per-pair Decimal P&L differences",
+      "confidence_interval": "95_PERCENT",
+      "comparisons": [
+        "primary five-seed IQM minus ridge",
+        "primary five-seed IQM minus random expected"
+      ]
+    },
+    "mutation_invariance": {
+      "requirement": "Mutating reused-validation-only fields cannot change any trained model byte or train-only normalizer byte"
+    }
+  },
+  "custody": {
+    "mode": "METADATA_CONTROL_PLANE_ONLY",
+    "external_authority_absence_state": "ACCUMULATING_NOT_RUN",
+    "payload_read": false,
+    "decrypt": false,
+    "reserve": false,
+    "open": false,
+    "fresh_oos_metrics": null,
+    "separate_approved_one_time_gate_required": true
+  },
+  "report": {
+    "root": "type1_reports",
+    "revision_events": "INSERT_ONLY",
+    "materialization_events": "SEPARATE_INSERT_ONLY",
+    "objects": "CREATE_NEW_SHA_BOUND",
+    "tip": "CREATE_ONCE_AFTER_MATERIALIZATION",
+    "serve_authority": "VERIFIED_COMMITTED_TIP_ONLY",
+    "failed_science_remains_visible": true
+  },
+  "failure_semantics": {
+    "integrity_schema_accounting_failure": {
+      "execution_status": "BLOCK",
+      "verdict": "NO_GO"
+    },
+    "scientific_gate_miss": {
+      "execution_status": "COMPLETE",
+      "verdict": "NO_GO"
+    },
+    "all_local_controls_pass": {
+      "execution_status": "COMPLETE",
+      "verdict": "NO_GO",
+      "reason": "Fresh OOS is untouched and this reused-validation stage cannot promote a model"
+    },
+    "inconclusive_allowed": false,
+    "go_allowed": false
+  },
+  "forbidden_claims": [
+    "official close",
+    "fresh OOS result",
+    "profitability or alpha",
+    "GO or promotion",
+    "paper, broker, live, or funded readiness",
+    "synthetic oracle calibration as market learning"
+  ],
+  "frozen_on": "2026-07-23"
+}

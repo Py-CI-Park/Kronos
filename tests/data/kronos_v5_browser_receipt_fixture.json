@@ -1,0 +1,59 @@
+{
+  "schema": "kronos_v5_browser_receipt_fixture.v1",
+  "receipt_schema": "kronos_v5_browser_receipt.v1",
+  "capture_kind": "live_browser_execution",
+  "live_browser_execution": true,
+  "nonce": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+  "captured_at": "2026-07-15T00:00:00Z",
+  "browser": {
+    "name": "chromium",
+    "version": "127.0.6533.88",
+    "user_agent": "Mozilla/5.0 KronosLiveReceipt/127.0.6533.88 Chrome/127.0.6533.88 Safari/537.36",
+    "executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "matrix": {
+    "scenario_source": "docs/kronos_dashboard_v5_browser_matrix_v1.json",
+    "base": {"count": 72, "category": "base"},
+    "lifecycle": {"count": 18, "category": "lifecycle"},
+    "governance": {"count": 10, "category": "governance"},
+    "async_security": {"count": 8, "category": "async_security"},
+    "keyboard": {"count": 4, "category": "keyboard"},
+    "count": 112
+  },
+  "scenario_ids": ["S-BASE-mission-control-light-375", "S-BASE-mission-control-light-768", "S-BASE-mission-control-light-1280", "S-BASE-mission-control-dark-375", "S-BASE-mission-control-dark-768", "S-BASE-mission-control-dark-1280", "S-BASE-forecast-light-375", "S-BASE-forecast-light-768", "S-BASE-forecast-light-1280", "S-BASE-forecast-dark-375", "S-BASE-forecast-dark-768", "S-BASE-forecast-dark-1280", "S-BASE-stom-light-375", "S-BASE-stom-light-768", "S-BASE-stom-light-1280", "S-BASE-stom-dark-375", "S-BASE-stom-dark-768", "S-BASE-stom-dark-1280", "S-BASE-daily-ohlcv-light-375", "S-BASE-daily-ohlcv-light-768", "S-BASE-daily-ohlcv-light-1280", "S-BASE-daily-ohlcv-dark-375", "S-BASE-daily-ohlcv-dark-768", "S-BASE-daily-ohlcv-dark-1280", "S-BASE-daily-rl-guide-light-375", "S-BASE-daily-rl-guide-light-768", "S-BASE-daily-rl-guide-light-1280", "S-BASE-daily-rl-guide-dark-375", "S-BASE-daily-rl-guide-dark-768", "S-BASE-daily-rl-guide-dark-1280", "S-BASE-rl-light-375", "S-BASE-rl-light-768", "S-BASE-rl-light-1280", "S-BASE-rl-dark-375", "S-BASE-rl-dark-768", "S-BASE-rl-dark-1280", "S-BASE-live-training-light-375", "S-BASE-live-training-light-768", "S-BASE-live-training-light-1280", "S-BASE-live-training-dark-375", "S-BASE-live-training-dark-768", "S-BASE-live-training-dark-1280", "S-BASE-system-health-light-375", "S-BASE-system-health-light-768", "S-BASE-system-health-light-1280", "S-BASE-system-health-dark-375", "S-BASE-system-health-dark-768", "S-BASE-system-health-dark-1280", "S-BASE-artifacts-light-375", "S-BASE-artifacts-light-768", "S-BASE-artifacts-light-1280", "S-BASE-artifacts-dark-375", "S-BASE-artifacts-dark-768", "S-BASE-artifacts-dark-1280", "S-BASE-history-light-375", "S-BASE-history-light-768", "S-BASE-history-light-1280", "S-BASE-history-dark-375", "S-BASE-history-dark-768", "S-BASE-history-dark-1280", "S-BASE-settings-light-375", "S-BASE-settings-light-768", "S-BASE-settings-light-1280", "S-BASE-settings-dark-375", "S-BASE-settings-dark-768", "S-BASE-settings-dark-1280", "S-BASE-docs-light-375", "S-BASE-docs-light-768", "S-BASE-docs-light-1280", "S-BASE-docs-dark-375", "S-BASE-docs-dark-768", "S-BASE-docs-dark-1280", "S-LIFE-ADVANCING-light", "S-LIFE-ADVANCING-dark", "S-LIFE-STALLED-light", "S-LIFE-STALLED-dark", "S-LIFE-RESUMED-light", "S-LIFE-RESUMED-dark", "S-LIFE-RESTARTED_NON_EXACT-light", "S-LIFE-RESTARTED_NON_EXACT-dark", "S-LIFE-STOPPED-light", "S-LIFE-STOPPED-dark", "S-LIFE-FAILED-light", "S-LIFE-FAILED-dark", "S-LIFE-COMPLETED-light", "S-LIFE-COMPLETED-dark", "S-LIFE-CONFLICT_BLOCKED-light", "S-LIFE-CONFLICT_BLOCKED-dark", "S-LIFE-NOT_RUN-light", "S-LIFE-NOT_RUN-dark", "S-GOV-D0_BLOCKED-light", "S-GOV-D0_BLOCKED-dark", "S-GOV-D1_BLOCKED-light", "S-GOV-D1_BLOCKED-dark", "S-GOV-FRESH_OOS_SEALED-light", "S-GOV-FRESH_OOS_SEALED-dark", "S-GOV-FRESH_OOS_NOT_AVAILABLE-light", "S-GOV-FRESH_OOS_NOT_AVAILABLE-dark", "S-GOV-MISSING_CELL-light", "S-GOV-MISSING_CELL-dark", "S-ASYNC-ISOLATED_TIMEOUT_RETRY-light", "S-ASYNC-ISOLATED_TIMEOUT_RETRY-dark", "S-ASYNC-LATE_LIST_DETAIL_RACE-light", "S-ASYNC-LATE_LIST_DETAIL_RACE-dark", "S-ASYNC-ALLOWED_DOWNLOAD-light", "S-ASYNC-ALLOWED_DOWNLOAD-dark", "S-ASYNC-DENIED_DOWNLOAD-light", "S-ASYNC-DENIED_DOWNLOAD-dark", "S-KBD-mission-control", "S-KBD-rl", "S-KBD-daily-ohlcv", "S-KBD-live-training"],
+  "viewport_heights": {"375": 240, "768": 240, "1280": 240},
+  "required_route_markers": ["kronos-v5-dashboard", "route:/v5", "scenario:<scenario_id>"],
+  "timing_budgets_ms": {
+    "first_critical_cold_ms": 3000,
+    "first_critical_warm_ms": 1500,
+    "full_hydration_cold_ms": 10000,
+    "full_hydration_warm_ms": 6000,
+    "api_cold_ms": 5000,
+    "api_warm_ms": 2000,
+    "isolated_timeout_ms": 20500,
+    "palette_ms": 100,
+    "filter_1000_ms": 150
+  },
+  "row_timing_ms": {
+    "first_critical_ms": 1200,
+    "full_hydration_ms": 4200,
+    "api_ms": 300,
+    "isolated_timeout_ms": 20500,
+    "palette_ms": 75,
+    "filter_1000_ms": 125
+  },
+  "security_checks": {"v3_rollback": true, "denied_download": true, "retry_visible": true},
+  "false_locks": {
+    "promotion_allowed": false,
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "profitability_claim_allowed": false,
+    "go_summary_allowed": false
+  },
+  "artifact_payloads": {
+    "fixture": {"schema": "kronos_fixture.v2", "kind": "live-browser-fixture", "nonce": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"},
+    "source": {"schema": "kronos_source_manifest.v1", "kind": "live-browser-source-scope", "entries": [{"path": "webui/v2_src/src", "sha256": "1111111111111111111111111111111111111111111111111111111111111111"}]},
+    "dist_manifest": {"schema": "kronos_dist_manifest.v1", "kind": "live-browser-dist-scope", "entries": [{"path": "external-captured-dist/app.js", "sha256": "2222222222222222222222222222222222222222222222222222222222222222"}]}
+  }
+}

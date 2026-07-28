@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_daily_sb3_prereg.v1.schema.json",
+  "title": "Kronos daily Portfolio SB3 preregistration freeze v1",
+  "description": "Synthetic-only preregistration gate bound to the immutable protocol, local schemas, code bytes, dependency list, device policy, session lists, historical list, PPO config, and 50-cell matrix. It records no result, profit, GO, full PPO, or fresh OOS claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "state", "identity", "statement"],
+  "properties": {
+    "schema": {"const": "kronos_daily_sb3_prereg.v1"},
+    "state": {"enum": ["DRAFT", "FROZEN"]},
+    "identity": {"$ref": "#/$defs/identity"},
+    "statement": {"$ref": "#/$defs/statement"},
+    "freeze_receipts": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/receipt"}},
+    "freeze": {"$ref": "#/$defs/freeze"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "DRAFT"}}, "required": ["state"]},
+      "then": {
+        "not": {"anyOf": [{"required": ["freeze_receipts"]}, {"required": ["freeze"]}]},
+        "properties": {
+          "identity": {
+            "type": "object",
+            "properties": {
+              "frozen_sha256": {"type": "null"},
+              "identity_algorithm": {"const": "SHA256_RFC8785_PREREG_STATEMENT_V1"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"state": {"const": "FROZEN"}}, "required": ["state"]},
+      "then": {
+        "required": ["freeze_receipts", "freeze"],
+        "properties": {
+          "identity": {
+            "type": "object",
+            "properties": {
+              "frozen_sha256": {"$ref": "#/$defs/sha256"},
+              "identity_algorithm": {"const": "SHA256_RFC8785_PREREG_FREEZE_V1"}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "utc": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "uid": {"type": "string", "pattern": "^kdp1-(?:prereg|cell)-[0-9a-f]{32}$"},
+    "sessionId": {"type": "string", "pattern": "^kdp1-prereg-session-[0-9a-f]{24}$"},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prereg_uid", "statement_sha256", "frozen_sha256", "identity_algorithm"],
+      "properties": {
+        "prereg_uid": {"$ref": "#/$defs/uid"},
+        "statement_sha256": {"$ref": "#/$defs/sha256"},
+        "frozen_sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "identity_algorithm": {"enum": ["SHA256_RFC8785_PREREG_STATEMENT_V1", "SHA256_RFC8785_PREREG_FREEZE_V1"]}
+      }
+    },
+    "fileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "role", "sha256", "byte_length"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "role": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 1}
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "uri", "sha256", "byte_length", "role"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "uri": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 1},
+        "role": {"type": "string", "minLength": 1}
+      }
+    },
+    "boundHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol_sha256", "canonical_protocol_json_sha256", "protocol_schema_sha256", "prereg_schema_sha256", "protocol_code_sha256", "prereg_code_sha256", "command_manifest_sha256", "dependency_list_sha256", "device_policy_sha256", "available_session_list_sha256", "fold_session_lists_sha256", "historical_session_list_sha256", "ppo_config_sha256", "matrix_cells_sha256", "pass_receipt_commands_sha256"],
+      "properties": {
+        "protocol_sha256": {"$ref": "#/$defs/sha256"},
+        "canonical_protocol_json_sha256": {"$ref": "#/$defs/sha256"},
+        "protocol_schema_sha256": {"$ref": "#/$defs/sha256"},
+        "prereg_schema_sha256": {"$ref": "#/$defs/sha256"},
+        "protocol_code_sha256": {"$ref": "#/$defs/sha256"},
+        "prereg_code_sha256": {"$ref": "#/$defs/sha256"},
+        "command_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "dependency_list_sha256": {"$ref": "#/$defs/sha256"},
+        "device_policy_sha256": {"$ref": "#/$defs/sha256"},
+        "available_session_list_sha256": {"$ref": "#/$defs/sha256"},
+        "fold_session_lists_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_session_list_sha256": {"$ref": "#/$defs/sha256"},
+        "ppo_config_sha256": {"$ref": "#/$defs/sha256"},
+        "matrix_cells_sha256": {"$ref": "#/$defs/sha256"},
+        "pass_receipt_commands_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "computeLocks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["full_ppo_training_allowed", "sb3_learn_allowed", "fresh_oos_access_allowed"],
+      "properties": {
+        "full_ppo_training_allowed": {"const": false},
+        "sb3_learn_allowed": {"const": false},
+        "fresh_oos_access_allowed": {"const": false}
+      }
+    },
+    "promotionLocks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_build_allowed", "promotion_allowed", "paper_forward_allowed", "live_broker_order_allowed", "profitability_claim_allowed", "go_summary_allowed"],
+      "properties": {
+        "model_build_allowed": {"const": false},
+        "promotion_allowed": {"const": false},
+        "paper_forward_allowed": {"const": false},
+        "live_broker_order_allowed": {"const": false},
+        "profitability_claim_allowed": {"const": false},
+        "go_summary_allowed": {"const": false}
+      }
+    },
+    "passReceiptCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "command_id", "argv", "not_run_synthetic_receipt", "synthetic_only", "heavy_compute_run", "fresh_oos_accessed", "full_ppo_status", "fresh_oos_status"],
+      "properties": {
+        "component": {"enum": ["protocol", "runner", "evaluator"]},
+        "command_id": {"enum": ["not-run-protocol-synthetic-receipt", "not-run-runner-synthetic-receipt", "not-run-evaluator-synthetic-receipt"]},
+        "argv": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1}},
+        "not_run_synthetic_receipt": {"const": true},
+        "synthetic_only": {"const": true},
+        "heavy_compute_run": {"const": false},
+        "fresh_oos_accessed": {"const": false},
+        "full_ppo_status": {"const": "NOT_RUN"},
+        "fresh_oos_status": {"const": "NOT_RUN"}
+      }
+    },
+    "commandManifestBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "path", "sha256", "byte_length", "command_id_policy", "forbidden_token_policy", "forbidden_argv_tokens", "pass_receipt_commands_sha256", "pass_receipt_commands"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_prereg_command_manifest_binding.v1"},
+        "path": {"const": "docs/kronos_dashboard_v5_runner_command_manifest_v1.json"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 1},
+        "command_id_policy": {"const": "EXACT_APPROVED_COMMAND_ID_AND_ARGV_ONLY"},
+        "forbidden_token_policy": {"const": "CASE_INSENSITIVE_SUBSTRING_REJECT"},
+        "forbidden_argv_tokens": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "pass_receipt_commands_sha256": {"$ref": "#/$defs/sha256"},
+        "pass_receipt_commands": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/passReceiptCommand"}}
+      }
+    },
+    "noHeavyComputeState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "approval_state", "compute_mode", "no_heavy_compute_marker", "full_ppo_status", "fresh_oos_status", "compute_locks", "promotion_locks"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_prereg_no_heavy_compute_state.v1"},
+        "approval_state": {"const": "APPROVED_NO_HEAVY_COMPUTE_SYNTHETIC_ONLY"},
+        "compute_mode": {"const": "synthetic_verification_only"},
+        "no_heavy_compute_marker": {"const": "NO_TRAINING_NO_SB3_LEARN_NO_FRESH_OOS_READ"},
+        "full_ppo_status": {"const": "NOT_RUN"},
+        "fresh_oos_status": {"const": "NOT_RUN"},
+        "compute_locks": {"$ref": "#/$defs/computeLocks"},
+        "promotion_locks": {"$ref": "#/$defs/promotionLocks"}
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "component", "status", "session_id", "protocol_sha256", "scope", "command", "command_manifest_sha256", "approved_command_id", "approved_argv", "forbidden_argv_tokens", "forbidden_token_policy", "not_run_synthetic_receipt", "synthetic_only", "heavy_compute_run", "fresh_oos_accessed", "full_ppo_status", "fresh_oos_status", "receipt_sha256"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_prereg_test_receipt.v1"},
+        "component": {"enum": ["protocol", "runner", "evaluator"]},
+        "status": {"const": "PASS"},
+        "session_id": {"$ref": "#/$defs/sessionId"},
+        "protocol_sha256": {"$ref": "#/$defs/sha256"},
+        "scope": {"type": "string", "minLength": 1},
+        "command": {"const": "NOT_RUN_SYNTHETIC_RECEIPT"},
+        "command_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "approved_command_id": {"type": "string", "minLength": 1},
+        "approved_argv": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}},
+        "forbidden_argv_tokens": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "forbidden_token_policy": {"const": "CASE_INSENSITIVE_SUBSTRING_REJECT"},
+        "not_run_synthetic_receipt": {"const": true},
+        "synthetic_only": {"const": true},
+        "heavy_compute_run": {"const": false},
+        "fresh_oos_accessed": {"const": false},
+        "full_ppo_status": {"const": "NOT_RUN"},
+        "fresh_oos_status": {"const": "NOT_RUN"},
+        "receipt_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "freeze": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "frozen_at", "receipt_components", "receipt_sha256s", "receipt_count", "immutable", "no_heavy_compute_confirmed", "no_fresh_oos_access_confirmed"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_prereg_freeze.v1"},
+        "frozen_at": {"$ref": "#/$defs/utc"},
+        "receipt_components": {"const": ["protocol", "runner", "evaluator"]},
+        "receipt_sha256s": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/sha256"}},
+        "receipt_count": {"const": 3},
+        "immutable": {"const": true},
+        "no_heavy_compute_confirmed": {"const": true},
+        "no_fresh_oos_access_confirmed": {"const": true}
+      }
+    },
+    "statement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "created_at", "bound_at", "label", "research_label", "claim_boundary", "protocol_binding", "file_bindings", "command_manifest_binding", "bound_hashes", "dependency_binding", "session_binding", "historical_binding", "matrix_binding", "ppo_binding", "device_binding", "no_heavy_compute_state", "receipt_gate"],
+      "properties": {
+        "schema": {"const": "kronos_daily_sb3_prereg.v1.statement"},
+        "created_at": {"$ref": "#/$defs/utc"},
+        "bound_at": {"$ref": "#/$defs/utc"},
+        "label": {"type": "string", "minLength": 1},
+        "research_label": {"const": "portfolio RL research preregistration"},
+        "claim_boundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["result_claim_status", "profitability_claim_status", "go_claim_status", "no_result_profit_or_go_claims"],
+          "properties": {
+            "result_claim_status": {"const": "NOT_RUN"},
+            "profitability_claim_status": {"const": "NOT_RUN"},
+            "go_claim_status": {"const": "NOT_RUN"},
+            "no_result_profit_or_go_claims": {"const": true}
+          }
+        },
+        "protocol_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["protocol_schema", "protocol_schema_id", "protocol_version", "protocol_created_at", "protocol_uid", "protocol_sha256", "identity_algorithm", "cell_identity_algorithm"],
+          "properties": {
+            "protocol_schema": {"const": "kronos_daily_sb3_protocol.v1"},
+            "protocol_schema_id": {"const": "https://kronos.local/schemas/kronos_daily_sb3_protocol.v1.schema.json"},
+            "protocol_version": {"const": "2026-07-15.g008.immutable.v1"},
+            "protocol_created_at": {"$ref": "#/$defs/utc"},
+            "protocol_uid": {"type": "string", "pattern": "^kdp1-[0-9a-f]{32}$"},
+            "protocol_sha256": {"$ref": "#/$defs/sha256"},
+            "identity_algorithm": {"const": "SHA256_RFC8785_STATEMENT_V1"},
+            "cell_identity_algorithm": {"const": "SHA256_RFC8785_CELL_BASIS_V1"}
+          }
+        },
+        "file_bindings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemas", "code"],
+          "properties": {
+            "schemas": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/fileRef"}},
+            "code": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/fileRef"}}
+          }
+        },
+        "command_manifest_binding": {"$ref": "#/$defs/commandManifestBinding"},
+        "bound_hashes": {"$ref": "#/$defs/boundHashes"},
+        "dependency_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dependency_count", "dependency_list_sha256", "dependencies"],
+          "properties": {
+            "dependency_count": {"const": 3},
+            "dependency_list_sha256": {"$ref": "#/$defs/sha256"},
+            "dependencies": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/dependency"}}
+          }
+        },
+        "session_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "synthetic_session_id", "available_session_count", "available_session_list_sha256", "fold_session_lists_sha256", "fold_order"],
+          "properties": {
+            "schema": {"const": "kronos_daily_sb3_prereg_session_binding.v1"},
+            "synthetic_session_id": {"$ref": "#/$defs/sessionId"},
+            "available_session_count": {"const": 260},
+            "available_session_list_sha256": {"$ref": "#/$defs/sha256"},
+            "fold_session_lists_sha256": {"$ref": "#/$defs/sha256"},
+            "fold_order": {"const": ["fold-01", "fold-02"]}
+          }
+        },
+        "historical_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "window_id", "status", "fresh_oos_access_allowed", "fresh_oos_consumed", "historical_session_list_sha256"],
+          "properties": {
+            "schema": {"const": "kronos_daily_sb3_prereg_historical_binding.v1"},
+            "window_id": {"const": "historical-secondary-only-2026-04-03-2026-06-12"},
+            "status": {"const": "NOT_RUN"},
+            "fresh_oos_access_allowed": {"const": false},
+            "fresh_oos_consumed": {"const": false},
+            "historical_session_list_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "matrix_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cell_count", "order", "first_cell_uid", "last_cell_uid", "matrix_cells_sha256"],
+          "properties": {
+            "cell_count": {"const": 50},
+            "order": {"const": "seed-major/fold/variant"},
+            "first_cell_uid": {"$ref": "#/$defs/uid"},
+            "last_cell_uid": {"$ref": "#/$defs/uid"},
+            "matrix_cells_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "ppo_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "stable_baselines_family", "full_ppo_status", "ppo_config_sha256"],
+          "properties": {
+            "algorithm": {"const": "ppo"},
+            "stable_baselines_family": {"const": "PPO"},
+            "full_ppo_status": {"const": "NOT_RUN"},
+            "ppo_config_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "device_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy", "device_policy_sha256"],
+          "properties": {
+            "policy": {"type": "object", "additionalProperties": true},
+            "device_policy_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "no_heavy_compute_state": {"$ref": "#/$defs/noHeavyComputeState"},
+        "receipt_gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "required_receipt_components", "required_status", "required_session_id", "required_protocol_sha256", "required_command_manifest_sha256", "receipt_command_policy", "required_forbidden_token_policy", "not_run_synthetic_receipt_allowed", "exact_receipt_order_required", "heavy_compute_run_allowed", "fresh_oos_access_allowed", "missing_receipt_policy", "missing_session_policy"],
+          "properties": {
+            "schema": {"const": "kronos_daily_sb3_prereg_receipt_gate.v1"},
+            "required_receipt_components": {"const": ["protocol", "runner", "evaluator"]},
+            "required_status": {"const": "PASS"},
+            "required_session_id": {"$ref": "#/$defs/sessionId"},
+            "required_protocol_sha256": {"$ref": "#/$defs/sha256"},
+            "required_command_manifest_sha256": {"$ref": "#/$defs/sha256"},
+            "receipt_command_policy": {"const": "EXACT_APPROVED_COMMAND_ID_AND_ARGV_ONLY"},
+            "required_forbidden_token_policy": {"const": "CASE_INSENSITIVE_SUBSTRING_REJECT"},
+            "not_run_synthetic_receipt_allowed": {"const": true},
+            "exact_receipt_order_required": {"const": true},
+            "heavy_compute_run_allowed": {"const": false},
+            "fresh_oos_access_allowed": {"const": false},
+            "missing_receipt_policy": {"const": "REJECT"},
+            "missing_session_policy": {"const": "REJECT"}
+          }
+        }
+      }
+    }
+  }
+}

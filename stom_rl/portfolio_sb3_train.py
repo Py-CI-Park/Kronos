@@ -44,7 +44,18 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from .portfolio_env import ACTION_HOLD, PortfolioEnv
+from .portfolio_env import (
+    ACTION_HOLD,
+    REWARD_MODE_ECONOMIC_ONLY,
+    SB3_ACCOUNTING_HORIZON,
+    PortfolioEnv,
+)
+from .v5_accounting import (
+    COST_SCENARIO_BASE_23BP,
+    COST_SCENARIO_STRESS_46BP,
+    COST_SCENARIO_ZERO_CONTROL_0BP,
+)
+
 from .daily_portfolio_sb3_dataset import (
     DailyPortfolioSb3DatasetConfig,
     build_daily_portfolio_sb3_dataset,
@@ -91,12 +102,17 @@ class PortfolioSb3TrainConfig:
     max_positions: int = 2
     initial_cash: float = 1_000_000.0
     buy_fraction: float = 0.25
-    cost_bps: float = 25.0
+    cost_bps: float = 23.0
     slippage_bps: float = 0.0
+    cost_scenario_id: Optional[str] = None
+    legacy_scalar_cost_label: Optional[str] = None
+    accounting_horizon: str = SB3_ACCOUNTING_HORIZON
+    allow_legacy_same_bar_fill: bool = False
+
     invalid_action_penalty: float = 0.001
-    # Cost-aware reward: must be > 0 for Stage B (the env teaches the policy to
-    # trade only when worth the execution cost).
-    turnover_penalty_lambda: float = 1.0
+    # Cost-aware shaping uses NAV after execution costs, then subtracts a small
+    # train-only turnover penalty; validation switches to economic_only reward.
+    turnover_penalty_lambda: float = 0.001
     seed: int = 100
     device: str = "cpu"  # pinned for determinism (see apply_determinism)
     ppo_n_steps: int = 256
@@ -334,6 +350,12 @@ def _make_train_env(
         buy_fraction=config.buy_fraction,
         cost_bps=config.cost_bps,
         slippage_bps=config.slippage_bps,
+        cost_scenario_id=config.cost_scenario_id,
+        legacy_scalar_cost_label=config.legacy_scalar_cost_label,
+        accounting_horizon=config.accounting_horizon,
+        allow_legacy_same_bar_fill=config.allow_legacy_same_bar_fill,
+
+
         invalid_action_penalty=config.invalid_action_penalty,
         turnover_penalty_lambda=config.turnover_penalty_lambda,
         seed=config.seed,
@@ -448,6 +470,11 @@ def train_portfolio_model(
             progress_bar=False,
             callback=callback,
         )
+        runtime = {
+            **runtime,
+            "training_rollout_deterministic": False,
+            "validation_predict_deterministic": True,
+        }
         if callback is not None:
             runtime = {**runtime, "last_training_event_step": int(getattr(callback, "last_global_step", live_event_step_offset))}
         return model, runtime
@@ -455,10 +482,10 @@ def train_portfolio_model(
         env.close()
 
 
-def _predict_action(model: Any, observation: np.ndarray) -> int:
-    """REUSE: sb3_smoke ``model.predict(deterministic=True)`` (:354) pattern."""
+def _predict_action(model: Any, observation: np.ndarray, *, deterministic: bool = True) -> int:
+    """Call SB3 ``model.predict`` with an explicit deterministic flag."""
 
-    action, _ = model.predict(observation, deterministic=True)
+    action, _ = model.predict(observation, deterministic=deterministic)
     return int(np.asarray(action).item())
 
 
@@ -522,6 +549,12 @@ def measure_invalid_action_rate(
         buy_fraction=config.buy_fraction,
         cost_bps=config.cost_bps,
         slippage_bps=config.slippage_bps,
+        cost_scenario_id=config.cost_scenario_id,
+        legacy_scalar_cost_label=config.legacy_scalar_cost_label,
+        accounting_horizon=config.accounting_horizon,
+        allow_legacy_same_bar_fill=config.allow_legacy_same_bar_fill,
+
+
         invalid_action_penalty=config.invalid_action_penalty,
         turnover_penalty_lambda=config.turnover_penalty_lambda,
         seed=config.seed,
@@ -577,7 +610,7 @@ class DailyPortfolioSb3TrainConfig:
     control_cost_bps: Tuple[float, float] = (0.0, 46.0)
     slippage_bps: float = 0.0
     invalid_action_penalty: float = 0.001
-    turnover_penalty_lambda: float = 1.0
+    turnover_penalty_lambda: float = 0.001
     max_eval_steps: int = 512
     rank_score_column: str = "score_supervised_linear_ranker"
     ppo_n_steps: int = 256
@@ -621,12 +654,21 @@ def _write_json_sorted(path: Path, payload: Mapping[str, Any]) -> None:
 def _daily_cost_label(cost_bps: float) -> str:
     value = float(cost_bps)
     if value == 23.0:
-        return "base_23bp"
+        return COST_SCENARIO_BASE_23BP
     if value == 0.0:
-        return "control_0bp"
+        return COST_SCENARIO_ZERO_CONTROL_0BP
     if value == 46.0:
-        return "control_46bp"
-    return f"cost_{value:g}bp"
+        return COST_SCENARIO_STRESS_46BP
+    return f"legacy_scalar_{value:g}bp"
+
+
+V5_COST_LABELS = {COST_SCENARIO_ZERO_CONTROL_0BP, COST_SCENARIO_BASE_23BP, COST_SCENARIO_STRESS_46BP}
+
+
+def _expected_v5_cost_label(config: PortfolioSb3TrainConfig) -> str:
+    return str(config.cost_scenario_id or _daily_cost_label(float(config.cost_bps)))
+
+
 def _daily_run_contract(config: DailyPortfolioSb3TrainConfig) -> Dict[str, Any]:
     stage = str(config.run_stage).strip()
     status = str(config.run_status).strip()
@@ -666,6 +708,8 @@ def _daily_run_contract(config: DailyPortfolioSb3TrainConfig) -> Dict[str, Any]:
         raise ValueError("Daily R3b contract requires primary_cost_bps=23.0.")
     if (requests_smoke or requests_full) and tuple(float(value) for value in config.control_cost_bps) != (0.0, 46.0):
         raise ValueError("Daily R3b contract requires control_cost_bps=(0.0, 46.0).")
+    if (requests_smoke or requests_full) and float(config.slippage_bps) != 0.0:
+        raise ValueError("Daily R3b V5 component scenarios require slippage_bps=0.0.")
     if (requests_smoke or requests_full) and not config.write_artifacts:
         raise ValueError("Daily R3b contract requires write_artifacts=True.")
     if (requests_smoke or requests_full) and not config.stream_training_events:
@@ -681,7 +725,16 @@ def _daily_run_contract(config: DailyPortfolioSb3TrainConfig) -> Dict[str, Any]:
 
 
 def _finite_metrics(metrics: Mapping[str, Any]) -> bool:
-    for key in ("final_nav", "return_pct", "max_drawdown_pct", "turnover", "total_cost", "total_reward", "raw_invalid_action_rate"):
+    for key in (
+        "final_nav",
+        "return_pct",
+        "max_drawdown_pct",
+        "turnover_krw",
+        "turnover_ratio",
+        "total_cost",
+        "total_reward",
+        "raw_invalid_action_rate",
+    ):
         try:
             value = float(metrics[key])
         except (KeyError, TypeError, ValueError):
@@ -695,7 +748,8 @@ def _daily_source_baselines(dataset_manifest: Mapping[str, Any]) -> Dict[str, An
     rows = dataset_manifest.get("source_baseline_metrics")
     if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
         raise ValueError("Daily Portfolio SB3 dataset manifest missing source baseline metrics")
-    primary_label = "base_23bp"
+    primary_label = COST_SCENARIO_BASE_23BP
+
     required = {"no_trade_cash", "shuffle_control", "equal_weight_topk_momentum"}
     selected: Dict[str, Dict[str, Any]] = {}
     rule_candidates: List[Dict[str, Any]] = []
@@ -804,6 +858,10 @@ def _evaluate_model_on_candidates(
     fold_index: int,
     cost_label: str,
 ) -> Dict[str, Any]:
+    if cost_label in V5_COST_LABELS:
+        expected_label = _expected_v5_cost_label(train_config)
+        if expected_label != cost_label or float(train_config.slippage_bps) != 0.0:
+            raise ValueError("V5 cost labels require matching exact 0/23/46 side component schedules")
     env = make_portfolio_sb3_env(
         candidate_path=None,
         candidates=candidates,
@@ -813,8 +871,13 @@ def _evaluate_model_on_candidates(
         buy_fraction=train_config.buy_fraction,
         cost_bps=train_config.cost_bps,
         slippage_bps=train_config.slippage_bps,
+        cost_scenario_id=train_config.cost_scenario_id,
+        legacy_scalar_cost_label=train_config.legacy_scalar_cost_label,
+        accounting_horizon=train_config.accounting_horizon,
+        allow_legacy_same_bar_fill=train_config.allow_legacy_same_bar_fill,
         invalid_action_penalty=train_config.invalid_action_penalty,
         turnover_penalty_lambda=0.0,
+        reward_mode=REWARD_MODE_ECONOMIC_ONLY,
         seed=train_config.seed + fold_index,
     )
     observation, info = env.reset(seed=train_config.seed + fold_index)
@@ -828,28 +891,49 @@ def _evaluate_model_on_candidates(
             if train_config.max_eval_steps and steps >= int(train_config.max_eval_steps):
                 break
             mask = list(info["action_mask"])
-            predicted = _predict_action(model, observation)
+            predicted = _predict_action(model, observation, deterministic=True)
             if not (0 <= predicted < len(mask)) or not mask[predicted]:
                 raw_invalid += 1
-            action = _best_valid_action(predicted, mask)
-            observation, reward, terminated, truncated, info = env.step(action)
+            observation, reward, terminated, truncated, info = env.step(predicted)
             rewards.append(float(reward))
             steps += 1
         nav_curve = [float(row["nav"]) for row in env.raw_env.nav_log] or [float(train_config.initial_cash)]
-        turnover = float(sum(float(fill.get("gross_value", 0.0)) for fill in env.raw_env.trade_log))
+        turnover_krw = float(sum(float(fill.get("gross_value", 0.0)) for fill in env.raw_env.trade_log))
+        turnover_ratio = turnover_krw / max(float(train_config.initial_cash), 1e-12)
         total_cost = float(sum(float(fill.get("cost", 0.0)) for fill in env.raw_env.trade_log))
+        cost_components_krw = {
+            key: float(sum(float(fill.get(key, 0.0)) for fill in env.raw_env.trade_log))
+            for key in (
+                "buy_commission_krw",
+                "buy_slippage_krw",
+                "sell_tax_krw",
+                "sell_commission_krw",
+                "sell_slippage_krw",
+            )
+        }
         final_nav = float(info["nav"])
+
         return {
             "fold_index": int(fold_index),
             "cost_label": cost_label,
             "cost_bps": float(train_config.cost_bps),
+            "accounting_horizon": info.get("accounting_horizon", SB3_ACCOUNTING_HORIZON),
+            "cost_scenario_id": info.get("cost_scenario_id"),
+            "cost_model": info.get("cost_model"),
+            "cost_components": info.get("cost_components"),
+
+            "reward_mode": REWARD_MODE_ECONOMIC_ONLY,
             "steps": int(steps),
             "final_nav": final_nav,
             "return_pct": (final_nav / float(train_config.initial_cash) - 1.0) * 100.0,
             "max_drawdown_pct": _max_drawdown_pct(nav_curve),
-            "turnover": turnover,
+            "turnover_krw": turnover_krw,
+            "turnover_ratio": turnover_ratio,
+
             "trade_count": int(info["trade_count"]),
             "total_cost": total_cost,
+            "total_cost_krw": total_cost,
+            "cost_components_krw": cost_components_krw,
             "total_reward": float(sum(rewards)),
             "raw_invalid_action_count": int(raw_invalid),
             "raw_invalid_action_rate": float(raw_invalid) / float(steps) if steps else 0.0,
@@ -869,11 +953,24 @@ def _no_trade_metrics(
         "fold_index": int(fold_index),
         "cost_label": cost_label,
         "cost_bps": float(train_config.cost_bps),
+        "accounting_horizon": SB3_ACCOUNTING_HORIZON if cost_label in {COST_SCENARIO_ZERO_CONTROL_0BP, COST_SCENARIO_BASE_23BP, COST_SCENARIO_STRESS_46BP} else "SB3_LEGACY_SCALAR_T_DECIDE_T1_FILL_V0",
+        "cost_scenario_id": cost_label,
+
         "policy": "no_trade_cash",
         "final_nav": float(train_config.initial_cash),
         "return_pct": 0.0,
         "trade_count": 0,
+        "turnover_krw": 0.0,
+        "turnover_ratio": 0.0,
         "total_cost": 0.0,
+        "total_cost_krw": 0.0,
+        "cost_components_krw": {
+            "buy_commission_krw": 0.0,
+            "buy_slippage_krw": 0.0,
+            "sell_tax_krw": 0.0,
+            "sell_commission_krw": 0.0,
+            "sell_slippage_krw": 0.0,
+        },
     }
 
 
@@ -892,6 +989,7 @@ def _daily_source_hashes() -> Dict[str, str]:
         Path(__file__).with_name("daily_portfolio_sb3_dataset.py"),
         Path(__file__).with_name("portfolio_env.py"),
         Path(__file__).with_name("accounting.py"),
+        Path(__file__).with_name("v5_accounting.py"),
         Path(__file__).with_name("symbol_norm.py"),
         Path(__file__).with_name("trading_env.py"),
     ]
@@ -1060,7 +1158,7 @@ def _daily_rl_manifest(
         "primary_cost_label": summary.get("primary_cost_label"),
         "primary_cost_bps": summary.get("primary_cost_bps"),
         "control_cost_bps": summary.get("control_cost_bps"),
-        "controls": {"control_0bp": 0.0, "control_46bp": 46.0},
+        "controls": {COST_SCENARIO_ZERO_CONTROL_0BP: 0.0, COST_SCENARIO_STRESS_46BP: 46.0},
         "oos_rows_used_for_fit": 0,
         "fold_count": summary.get("fold_count"),
         "model_hashes": dict(source_hash_manifest.get("model_hashes", {})),
@@ -1188,7 +1286,8 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
             "algorithm": algorithm,
             "seed": int(config.seed),
             "device_requested": str(config.device),
-            "primary_cost_label": "base_23bp",
+            "primary_cost_label": COST_SCENARIO_BASE_23BP,
+
             "primary_cost_bps": float(config.primary_cost_bps),
             "control_cost_bps": [float(value) for value in config.control_cost_bps],
             "total_timesteps": int(config.total_timesteps),
@@ -1482,7 +1581,7 @@ def run_daily_portfolio_sb3(config: DailyPortfolioSb3TrainConfig) -> Dict[str, A
             }
             for fold in fold_summaries
         ],
-        "primary_cost_label": "base_23bp",
+        "primary_cost_label": COST_SCENARIO_BASE_23BP,
         "primary_cost_bps": float(config.primary_cost_bps),
         "control_cost_bps": [float(value) for value in config.control_cost_bps],
         "total_timesteps": int(config.total_timesteps),
@@ -1726,10 +1825,12 @@ def trained_eval_metrics(model: Any, candidate_path: Optional[str], *, n_folds: 
                 "fold_index": row["fold_index"],
                 "return_pct": float(row["return_pct"]),
                 "max_drawdown_pct": float(row["max_drawdown_pct"]),
-                "turnover": float(row["turnover"]),
+                "turnover_krw": float(row["turnover"]),
+                "turnover_ratio": float(row["turnover"]) / max(float(cfg.initial_cash), 1e-12),
             }
             for row in payload["folds"]
         ]
+
     finally:
         pwf.unregister_trained_policy_factory(factory_key)
 
@@ -1744,7 +1845,8 @@ def assert_reproducible(
 
     Determinism gate (V4): without the pins in :func:`apply_determinism` this is
     untestable, so the pins are applied at every train.  Compares per-fold
-    ``return_pct``/``max_drawdown_pct``/``turnover`` within the explicit tolerance.
+    ``return_pct``/``max_drawdown_pct``/``turnover_krw`` within the explicit tolerance.
+
     """
 
     model_a, _ = train_portfolio_model(config)
@@ -1754,7 +1856,7 @@ def assert_reproducible(
 
     assert len(folds_a) == len(folds_b), "fold count diverged across reruns"
     for fa, fb in zip(folds_a, folds_b):
-        for key in ("return_pct", "max_drawdown_pct", "turnover"):
+        for key in ("return_pct", "max_drawdown_pct", "turnover_krw", "turnover_ratio"):
             np.testing.assert_allclose(
                 fa[key], fb[key], atol=atol, rtol=rtol,
                 err_msg=f"determinism: fold {fa['fold_index']} {key} diverged",
@@ -1863,8 +1965,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> Tuple[PortfolioSb3Train
     parser.add_argument("--total-timesteps", type=int, default=5_000)
     parser.add_argument("--top-k-candidates", type=int, default=3)
     parser.add_argument("--max-positions", type=int, default=2)
-    parser.add_argument("--cost-bps", type=float, default=25.0)
-    parser.add_argument("--turnover-penalty-lambda", type=float, default=1.0)
+    parser.add_argument("--cost-bps", type=float, default=23.0)
+    parser.add_argument("--turnover-penalty-lambda", type=float, default=0.001)
     parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--n-folds", type=int, default=2)
     parser.add_argument("--no-write", action="store_true")

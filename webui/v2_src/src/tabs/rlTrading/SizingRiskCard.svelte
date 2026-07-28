@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { requireJsonPayload } from '$lib/http';
   import { rlApi, type RlFactorySizingRun } from '$lib/rlApi';
   import { num, pct } from '$lib/rlRows';
 
   let runs = $state<readonly RlFactorySizingRun[]>([]);
   let loading = $state(true);
-
+  let requestError = $state<string | null>(null);
   const hasRuns = $derived(runs.length > 0);
 
   onMount(() => {
@@ -14,9 +15,16 @@
 
   async function load(): Promise<void> {
     loading = true;
-    const payload = await rlApi.factorySizingRuns();
-    runs = payload?.runs ?? [];
-    loading = false;
+    requestError = null;
+    runs = [];
+    try {
+      const payload = await requireJsonPayload('Sizing/risk request', rlApi.factorySizingRuns());
+      runs = payload.runs ?? [];
+    } catch (caught) {
+      requestError = caught instanceof Error ? caught.message : 'Sizing/risk request failed';
+    } finally {
+      loading = false;
+    }
   }
 
   function statusTone(row: RlFactorySizingRun): string {
@@ -38,8 +46,11 @@
   </p>
   {#if loading}
     <p class="text-muted">Loading sizing/risk evidence...</p>
+  {:else if requestError}
+    <p class="text-muted">Sizing/risk request error: {requestError}</p>
+    <button type="button" class="retry-btn" onclick={() => void load()}>Retry sizing/risk request</button>
   {:else if !hasRuns}
-    <p class="text-muted">No sizing/risk artifacts found.</p>
+    <p class="text-muted">No sizing/risk artifacts found in the authoritative backend response.</p>
   {:else}
     <div class="table-wrap sizing-wrap">
       <table>

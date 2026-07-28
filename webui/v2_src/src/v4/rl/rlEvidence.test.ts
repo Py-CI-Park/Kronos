@@ -6,6 +6,7 @@ import type * as RlEvidence from './rlEvidence';
 const evidencePath = ['./rlEvidence.ts'].join('/');
 const {
   DOCUMENTED_RL_FACTS,
+  CONFLICT_BLOCKED,
   choosePreferredRlRun,
   classifyRlEvidenceLane,
   deriveRlCockpitEvidence,
@@ -14,10 +15,206 @@ const {
   normalizeRliableCollections,
   normalizeRlProgress,
   normalizeRlRunDetail,
+  reconcileRlRunIdentity,
+  rlRunIdentityKey,
 }: typeof RlEvidence = await import(evidencePath);
 const consoleSource = readFileSync(new URL('./V4RLEvidenceConsole.svelte', import.meta.url), 'utf8');
 
 const { PROMOTION_LOCK_KEYS } = await import('../evidence');
+
+const SHA_A = 'a'.repeat(64);
+const SHA_B = 'b'.repeat(64);
+const PROTOCOL = 'rl-evidence-v4';
+
+function optimisticPromotionLocks(): Record<string, boolean> {
+  const locks: Record<string, boolean> = {};
+  for (const key of PROMOTION_LOCK_KEYS) {
+    locks[key] = true;
+  }
+  return locks;
+}
+
+
+function identityRun(overrides: Record<string, unknown> = {}): any {
+  return {
+    name: '000031',
+    run_uid: 'run-uid-full-000031-20260715T000000Z',
+    artifact_type: 'opening_30m_rl_workflow',
+    revision: 7,
+    source_sha256: SHA_A,
+    source_protocol: PROTOCOL,
+    strategy_context: { line: 'rl', label: 'identity candidate', is_reinforcement_learning: true },
+    ...overrides,
+  };
+}
+
+function conflictCodes(result: ReturnType<typeof reconcileRlRunIdentity>): string[] {
+  return result.conflicts.map((item) => item.code);
+}
+
+test('run identity reconciliation keeps matching full run_uid revision and provenance usable', () => {
+  const list = identityRun();
+  const detail = identityRun({
+    detail: { trade_count: 0 },
+    artifacts: [{ name: 'model.zip' }],
+  });
+  const reconciled = reconcileRlRunIdentity(list, detail, {
+    selectedRunUid: rlRunIdentityKey(list),
+    selectedName: '000031',
+    listRecords: [list],
+  });
+  const cockpit = deriveRlCockpitEvidence(reconciled.source);
+
+  assert.equal(reconciled.status, 'MATCHED');
+  assert.equal(reconciled.usable, true);
+  assert.equal(reconciled.source, detail);
+  assert.deepEqual(conflictCodes(reconciled), []);
+  assert.equal(cockpit.run.run_id, '000031');
+  assert.equal(cockpit.neverTradeStatus, 'NEVER_TRADE');
+});
+
+test('matched source true promotion locks remain provenance attempts with effective false locks', () => {
+  const sourceLocks = optimisticPromotionLocks();
+  const list = identityRun({ promotion_locks: sourceLocks });
+  const detail = identityRun({ promotion_locks: sourceLocks, detail: { trade_count: 0 } });
+  const reconciled = reconcileRlRunIdentity(list, detail, {
+    selectedRunUid: rlRunIdentityKey(list),
+    selectedName: '000031',
+    listRecords: [list],
+  });
+  const cockpit = deriveRlCockpitEvidence(reconciled.source);
+
+  assert.equal(reconciled.status, 'MATCHED');
+  assert.equal(reconciled.usable, true);
+  assert.equal(cockpit.run.promotion_locks.allLocked, true);
+  for (const key of PROMOTION_LOCK_KEYS) {
+    const state = cockpit.run.promotion_locks.states[key];
+    assert.equal(cockpit.run.promotion_locks.locks[key], false);
+    assert.equal(state.allowed, false);
+    assert.equal(state.sourceStatus, 'declared');
+    assert.equal(state.reason, 'UNLOCKED_BY_SOURCE');
+  }
+  assert.ok(cockpit.run.blocking_reasons.some((reason) => reason.includes('SOURCE_TRUE_UNLOCK_PROVENANCE_ATTEMPT_BLOCKED')));
+});
+
+
+test('run identity reconciliation blocks stale detail races with false promotion locks', () => {
+  const list = identityRun({ revision: 9 });
+  const staleDetail = identityRun({ revision: 8 });
+  const reconciled = reconcileRlRunIdentity(list, staleDetail, {
+    selectedRunUid: rlRunIdentityKey(list),
+    selectedName: '000031',
+    listRecords: [list],
+  });
+  const cockpit = deriveRlCockpitEvidence(reconciled.source);
+
+  assert.equal(reconciled.status, CONFLICT_BLOCKED);
+  assert.equal(reconciled.usable, false);
+  assert.ok(conflictCodes(reconciled).includes('REVISION_MISMATCH_STALE_DETAIL'));
+  assert.equal(cockpit.run.verdict, CONFLICT_BLOCKED);
+  assert.equal(cockpit.run.promotion_locks.allLocked, true);
+  assert.equal(Object.values(cockpit.run.promotion_locks.locks).every((value) => value === false), true);
+});
+
+test('conflict source true promotion locks remain conflict-blocked effective false locks', () => {
+  const sourceLocks = optimisticPromotionLocks();
+  const list = identityRun({ revision: 9, promotion_locks: sourceLocks });
+  const staleDetail = identityRun({ revision: 8, promotion_locks: sourceLocks });
+  const reconciled = reconcileRlRunIdentity(list, staleDetail, {
+    selectedRunUid: rlRunIdentityKey(list),
+    selectedName: '000031',
+    listRecords: [list],
+  });
+  const cockpit = deriveRlCockpitEvidence(reconciled.source);
+
+  assert.equal(reconciled.status, CONFLICT_BLOCKED);
+  assert.equal(reconciled.usable, false);
+  assert.ok(conflictCodes(reconciled).includes('REVISION_MISMATCH_STALE_DETAIL'));
+  assert.equal(cockpit.run.verdict, CONFLICT_BLOCKED);
+  assert.equal(cockpit.run.promotion_locks.allLocked, true);
+  for (const key of PROMOTION_LOCK_KEYS) {
+    assert.equal(cockpit.run.promotion_locks.locks[key], false);
+    assert.equal(cockpit.run.promotion_locks.states[key].allowed, false);
+  }
+});
+
+
+test('run identity reconciliation blocks UID mismatch and list UID collisions', () => {
+  const list = identityRun();
+  const mismatch = reconcileRlRunIdentity(list, identityRun({ run_uid: 'run-uid-full-other-20260715T000000Z' }), {
+    selectedRunUid: rlRunIdentityKey(list),
+    selectedName: '000031',
+    listRecords: [list],
+  });
+  const collision = reconcileRlRunIdentity(list, identityRun(), {
+    selectedRunUid: rlRunIdentityKey(list),
+    selectedName: '000031',
+    listRecords: [list, identityRun({ name: '000032' })],
+  });
+
+  assert.equal(mismatch.status, CONFLICT_BLOCKED);
+  assert.ok(conflictCodes(mismatch).includes('RUN_UID_MISMATCH'));
+  assert.equal(collision.status, CONFLICT_BLOCKED);
+  assert.ok(conflictCodes(collision).includes('LIST_UID_COLLISION'));
+});
+
+test('run identity reconciliation blocks newer detail, source hash, protocol, and malformed provenance', () => {
+  const newerSourceConflict = reconcileRlRunIdentity(
+    identityRun(),
+    identityRun({ revision: 8, source_sha256: SHA_B, source_protocol: 'rl-evidence-v4-replay' }),
+    { selectedRunUid: rlRunIdentityKey(identityRun()), selectedName: '000031', listRecords: [identityRun()] },
+  );
+  const malformed = reconcileRlRunIdentity(
+    identityRun({ run_uid: '', source_sha256: 'not-a-sha', source_protocol: '' }),
+    identityRun(),
+    { selectedRunUid: 'RUN_UID_NOT_RECORDED:000031', selectedName: '000031', listRecords: [identityRun({ run_uid: '' })] },
+  );
+  const malformedDetail = reconcileRlRunIdentity(
+    identityRun(),
+    identityRun(),
+    { selectedRunUid: rlRunIdentityKey(identityRun()), selectedName: '000031', listRecords: [identityRun()], detailRecorded: false },
+  );
+
+  assert.equal(newerSourceConflict.status, CONFLICT_BLOCKED);
+  assert.ok(conflictCodes(newerSourceConflict).includes('REVISION_MISMATCH_NEWER_DETAIL'));
+  assert.ok(conflictCodes(newerSourceConflict).includes('SOURCE_SHA_CONFLICT'));
+  assert.ok(conflictCodes(newerSourceConflict).includes('PROTOCOL_CONFLICT'));
+  assert.equal(malformed.status, CONFLICT_BLOCKED);
+  assert.ok(conflictCodes(malformed).includes('LIST_RUN_UID_INVALID'));
+  assert.ok(conflictCodes(malformed).includes('LIST_SOURCE_SHA_INVALID'));
+  assert.ok(conflictCodes(malformed).includes('LIST_PROTOCOL_INVALID'));
+  assert.equal(malformedDetail.status, CONFLICT_BLOCKED);
+  assert.ok(conflictCodes(malformedDetail).includes('DETAIL_RECORD_MALFORMED'));
+});
+
+test('RL console exposes list/detail provenance markers and conflict-blocked source state', () => {
+  assert.match(consoleSource, /data-v4-rl-identity-reconciliation/);
+  assert.match(consoleSource, /data-v4-rl-list-provenance/);
+  assert.match(consoleSource, /data-v4-rl-detail-provenance/);
+  assert.match(consoleSource, /data-v4-rl-identity-conflicts/);
+  assert.match(consoleSource, /data-identity-state=\{reconciliationState\}/);
+  assert.match(consoleSource, /CONFLICT_BLOCKED/);
+  assert.match(consoleSource, /rlRunIdentityKey\(preferred\)/);
+  assert.match(consoleSource, /value=\{selectedRunUid\}/);
+  assert.match(consoleSource, /reconcileRlRunIdentity\(selectedListRecord, selectedRun/);
+  assert.match(consoleSource, /Unsafe actions and optimistic model\/GO copy are suppressed/);
+});
+
+test('RL console gates raw audit legacy child behind usable reconciliation markers', () => {
+  const rawAudit = consoleSource.slice(consoleSource.indexOf('data-v4-raw-audit'));
+  const gateIndex = rawAudit.indexOf('{#if reconciliation.usable}');
+  const renderIndex = rawAudit.indexOf('{@render children()}');
+
+  assert.match(consoleSource, /data-v4-effective-lock-boundary/);
+  assert.match(consoleSource, /Source true unlock fields are provenance attempts only/);
+  assert.match(consoleSource, /open=\{!reconciliation\.usable\}/);
+  assert.match(rawAudit, /data-raw-audit-trust=\{reconciliation\.usable \? 'MATCHED' : 'UNTRUSTED'\}/);
+  assert.match(rawAudit, /data-legacy-child-state=\{reconciliation\.usable \? 'MATCHED' : CONFLICT_BLOCKED\}/);
+  assert.match(rawAudit, /data-v4-raw-audit-untrusted/);
+  assert.match(rawAudit, /UNTRUSTED · \{CONFLICT_BLOCKED\}/);
+  assert.match(rawAudit, /Independent child state is not trusted/);
+  assert.ok(gateIndex >= 0 && renderIndex > gateIndex);
+});
 
 test('classifies RULE, RL, and supervised gate lanes without relabeling RULE as RL', () => {
   const rule = classifyRlEvidenceLane({

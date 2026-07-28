@@ -1,0 +1,74 @@
+{
+  "schema_version": "kronos.type1.g002-recovery-amendment.v3",
+  "amendment_id": "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003",
+  "supersedes": "KRONOS-TYPE1-G002-RECOVERY-2026-07-23-002",
+  "status": "FROZEN_BEFORE_V4_MATERIALIZATION_OR_TRAINING",
+  "reason": "MDCSTAT23801 may encode a delisted instrument identity as a six-digit historical ISU_CD. Authority -002 was generated before that identity form was recognized, is quarantined, and must never be reused.",
+  "preserved_aborted_evidence": [
+    {
+      "dataset_id": "type1-close-20260803-001",
+      "train_id": "type1-public-001",
+      "train_run_id": "train_type1-public-001",
+      "status": "INELIGIBLE_BLOCKED",
+      "models_created": 0
+    },
+    {
+      "dataset_id": "type1-close-20260803-002",
+      "train_id": "type1-public-002",
+      "train_run_id": "train_type1-public-002",
+      "status": "INELIGIBLE_BLOCKED",
+      "models_created": 0
+    },
+    {
+      "dataset_id": "type1-close-20260803-003",
+      "train_id": "type1-public-003",
+      "train_run_id": "train_type1-public-003",
+      "status": "NON_MATERIALIZED_INELIGIBLE",
+      "models_created": 0,
+      "fresh_oos": {"status": "NOT_RUN", "no_read": true}
+    }
+  ],
+  "quarantined_authorities": [
+    {
+      "authority_id": "type1-krx-authority-20260723-002",
+      "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2",
+      "status": "QUARANTINED",
+      "models_created": 0,
+      "fresh_oos": {"status": "NOT_RUN", "no_read": true}
+    }
+  ],
+  "replacement_identity": {
+    "authority_id": "type1-krx-authority-20260724-003",
+    "dataset_id": "type1-close-20260803-004",
+    "train_id": "type1-public-004",
+    "train_run_id": "train_type1-public-004",
+    "custody_uid": "type1-fresh-oos-20260803-004"
+  },
+  "authority_contract": {
+    "anchor_date": "2017-12-29",
+    "authority_metadata_cutoff": "2026-07-24",
+    "authority_metadata_scope": "MDCSTAT23801 instrument-master metadata only; this does not extend price, calendar, ranking, public-row, or fresh-OOS access beyond 2025-06-30.",
+    "official_krx_surfaces": {
+      "current_typed_master": "MDCSTAT01901",
+      "delisted_typed_history": "MDCSTAT23801",
+      "historical_anchor_membership_and_name": "MDCSTAT01501"
+    },
+    "identity_join": "Exact ISU_CD first; then only a unique six-digit ticker fallback. ISU_SRT_CD, a six-digit ISU_CD, and KR7 ISIN-derived tickers are recognized; ambiguous ticker reuse is rejected.",
+    "effective_dating": "LIST_DD<=2017-12-29<DELIST_DD, or active where DELIST_DD is empty",
+    "markets": ["KOSPI", "KOSDAQ"],
+    "typed_inclusion": {
+      "SECUGRP_NM": "주권",
+      "KIND_STKCERT_TP_NM": "보통주",
+      "domestic_group": "domestic/non-foreign typed field only"
+    },
+    "typed_exclusion": ["ETF", "ETN", "fund", "REIT", "preferred", "index", "derivative", "foreign", "later_listing"],
+    "name_exception": "Historical-name SPAC exclusion only when these KRX surfaces provide no SPAC typed field; no 리츠, 인프라, or terminal 우 heuristic is allowed.",
+    "retained": ["delisted anchor members", "suspended anchor members", "메리츠화재", "메리츠증권", "메리츠금융지주", "HD현대인프라코어", "연우"],
+    "ranking": {"measure": "60-session median traded value", "through": "2017-12-29", "order": "median descending then symbol ascending", "size": 500},
+    "calendar": {"source": "official KRX public calendar", "start": "2018-01-02", "end": "2025-06-30"},
+    "reconstruction": "Embed and RFC8785-hash exact typed raw responses, endpoint queries, and delisted chunk bounds. Local Ed25519 signature establishes only local artifact integrity. Derived self-consistency never substitutes for KRX typed fields."
+  },
+  "execution_contract": {"proxy_time": "15:20:00", "cost_bps": 23, "fixed_notional": 60000000, "primary_seeds": 5, "shuffled_seeds": 5, "timesteps_per_seed": 200000, "outcome": "NO_GO_ONLY"},
+  "fresh_oos": {"custody_uid": "type1-fresh-oos-20260803-004", "status": "NOT_RUN", "no_read": true, "no_price_or_oos_query_after": "2025-06-30"},
+  "frozen_utc": "2026-07-24T00:00:00Z"
+}

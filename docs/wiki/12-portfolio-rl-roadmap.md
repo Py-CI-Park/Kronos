@@ -41,3 +41,14 @@
 
 ### 단계 1 추가 feature (목표 +8, 총 ~17개)
 호가불균형, 호가스프레드, 체결강도, 체결강도평균대비, 초당매수수량, 초당매도수량, 순매수수량, 거래대금각도.
+
+## 2026-07-28 D2 실제 일봉 연구 업데이트
+
+- 실제 train-only 일봉으로 MaskablePPO 24개 모델을 생성·학습했다.
+- 1/8/32/128 episode 사다리 중 사전등록 과적합 gate를 확인한 최대 규모는 8이다.
+- 판정은 `D2_PARTIAL_CAPACITY_CONFIRMED`이며 수익성·승격·라이브 준비 판정은 아니다.
+- 128 episode 원래 수익률 보상비는 native 평균 0.440, shuffled 평균 -0.095였다.
+- 다음 단계는 D3 top-1/top-5 표현·행동 및 1×/4× 학습예산 ablation이다.
+- Fresh OOS는 `NOT_RUN_NO_READ`를 유지한다.
+
+상세 결과: `docs/kronos_rl_discovery_type2_d2_result_2026-07-28.md`

@@ -65,13 +65,11 @@ _DANGEROUS_VOCABULARY = [
     "navigator.sendBeacon",
 ]
 
+# V5 intentionally owns the shell, Flask route registration, and generated-client
+# dependencies. Keep the historical V4 freeze on untouched V4 authorities.
 _FROZEN_BOUNDARY_SHA256 = {
-    "webui/app.py": "7f4f78729685b01937767e4bc041e1c053c532c3be9594f795fe247fb6754b42",
     "webui/rl_dashboard_tables.py": "b3cebec1bc4f698435f8fa42277a6de5aa495e07c1fd5c5f14dfc605ba8a60b6",
-    "webui/v2/__init__.py": "73b017458c5aa8b2a47e28397353144833db3b175fb69bdd291c455ed1167402",
     "stom_rl/rl_events.py": "4764308da956babcbc3b9c385aff59a52f27dc41816971a1c9be08f0a740a701",
-    "webui/v2_src/package.json": "4757ada6e8c99587cde4acb7abf325fb84c512445eb849cd7ecd362790f51b40",
-    "webui/v2_src/package-lock.json": "b16bdad8496eb8f415f2e0db39bba34645d58b15aaa0b845f102c8a361a4fca7",
 }
 
 
@@ -146,9 +144,10 @@ def test_app_keeps_twelve_tab_branches_with_wave6_imports_present() -> None:
     assert app.count("{#snippet tabHost()}") == 1
     assert app.count("{@render tabHost()}") == 2
 
-    branches = re.findall(r"tab === '([^']+)'", tab_host)
-    assert branches == _EXPECTED_TABS
-    assert len(branches) == len(set(branches)) == 12
+    legacy_map = _between(app, "const LEGACY_COMPONENTS", "};")
+    for tab_id in _EXPECTED_TABS:
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        assert f"{key}:" in legacy_map
     assert "data-v3-tab-host={shell === 'v3' ? '' : undefined}" in tab_host
     assert "data-v4-domain-host={shell === 'v4' ? '' : undefined}" in tab_host
 
@@ -177,27 +176,12 @@ def test_app_wraps_exactly_the_six_wave6_tabs_for_v4_and_preserves_v3_fallback()
         "docs": "DocsTab",
     }
 
+    wrapper_map = _between(app, "const V4_WRAPPERS", "};")
+    legacy_map = _between(app, "const LEGACY_COMPONENTS", "};")
     for tab_id in _WAVE6_TABS:
-        branch = _tab_branch(tab_host, tab_id)
-        wrapper = wrapper_by_tab[tab_id]
-        legacy = legacy_by_tab[tab_id]
-
-        _assert_in_order(
-            branch,
-            [
-                "{#if shell === 'v4'}",
-                f"<{wrapper}",
-                f"<{legacy} />",
-                f"</{wrapper}>",
-                "{:else}",
-                f"<{legacy} />",
-            ],
-        )
-        # exactly one v4 branch and one v3 fallback occurrence of the legacy tab
-        assert branch.count(f"<{legacy} />") == 2
-        # every other wrapper stays out of this branch
-        for other_wrapper in set(wrapper_by_tab.values()) - {wrapper}:
-            assert other_wrapper not in branch
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        assert f"{key}: {wrapper_by_tab[tab_id]}" in wrapper_map
+        assert f"{key}: {legacy_by_tab[tab_id]}" in legacy_map
 
     # G008: stom/daily-rl-guide are now wrapped by V4LegacyDomainFrame (not
     # one of the six wave6 wrappers). They must still preserve their legacy
@@ -208,28 +192,15 @@ def test_app_wraps_exactly_the_six_wave6_tabs_for_v4_and_preserves_v3_fallback()
         "daily-rl-guide": "DailyRlGuideTab",
     }
     for tab_id, legacy in legacy_by_v4_legacy_tab.items():
-        branch = _tab_branch(tab_host, tab_id)
-        _assert_in_order(
-            branch,
-            [
-                "{#if shell === 'v4'}",
-                "<V4LegacyDomainFrame",
-                f"<{legacy} />",
-                "</V4LegacyDomainFrame>",
-                "{:else}",
-                f"<{legacy} />",
-            ],
-        )
-        assert branch.count(f"<{legacy} />") == 2
-        for wrapper in set(wrapper_by_tab.values()):
-            assert wrapper not in branch
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        assert f"{key}: V4LegacyDomainFrame" in wrapper_map
+        assert f"{key}: {legacy}" in legacy_map
 
-    settings_branch = _tab_branch(tab_host, "settings")
-    docs_branch = _tab_branch(tab_host, "docs")
-    assert "surface=\"settings\"" in settings_branch
-    assert "surface=\"docs\"" in docs_branch
-    assert "surface=\"docs\"" not in settings_branch
-    assert "surface=\"settings\"" not in docs_branch
+    props_map = _between(app, "const V4_WRAPPER_PROPS", "};")
+    assert "settings: { surface: 'settings' }" in props_map
+    assert "docs: { surface: 'docs' }" in props_map
+    assert "{@const RouteComponent = LEGACY_COMPONENTS[activeRoute.componentKey]}" in tab_host
+    assert "{@const V4Wrapper = V4_WRAPPERS[activeRoute.componentKey]}" in tab_host
 
 
 # --------------------------------------------------------------------------- #

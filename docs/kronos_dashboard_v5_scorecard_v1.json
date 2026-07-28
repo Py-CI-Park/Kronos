@@ -1,0 +1,1037 @@
+{
+  "schema": "kronos_dashboard_v5_scorecard.v1",
+  "scorecard_id": "kronos_dashboard_v5_engineering",
+  "point_basis": "Only authenticated kronos_claim_verification.v1 receipts bound to the exact C2 source identity and claim-definition JCS hash are point-bearing. Model verdicts, D0, D1, OOS outcomes, alpha, return, and promotion outcomes contribute zero points.",
+  "total_claims": 100,
+  "categories": {
+    "A": {
+      "name": "evidence and contract integrity",
+      "weight": 25,
+      "floor": 23,
+      "claim_ids": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12",
+        "A13",
+        "A14",
+        "A15",
+        "A16",
+        "A17",
+        "A18",
+        "A19",
+        "A20",
+        "A21",
+        "A22",
+        "A23",
+        "A24",
+        "A25"
+      ]
+    },
+    "B": {
+      "name": "dashboard correctness and accessibility",
+      "weight": 25,
+      "floor": 23,
+      "claim_ids": [
+        "B01",
+        "B02",
+        "B03",
+        "B04",
+        "B05",
+        "B06",
+        "B07",
+        "B08",
+        "B09",
+        "B10",
+        "B11",
+        "B12",
+        "B13",
+        "B14",
+        "B15",
+        "B16",
+        "B17",
+        "B18",
+        "B19",
+        "B20",
+        "B21",
+        "B22",
+        "B23",
+        "B24",
+        "B25"
+      ]
+    },
+    "C": {
+      "name": "research engineering",
+      "weight": 20,
+      "floor": 18,
+      "claim_ids": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13",
+        "C14",
+        "C15",
+        "C16",
+        "C17",
+        "C18",
+        "C19",
+        "C20"
+      ]
+    },
+    "D": {
+      "name": "reproducibility and controls",
+      "weight": 15,
+      "floor": 13,
+      "claim_ids": [
+        "D01",
+        "D02",
+        "D03",
+        "D04",
+        "D05",
+        "D06",
+        "D07",
+        "D08",
+        "D09",
+        "D10",
+        "D11",
+        "D12",
+        "D13",
+        "D14",
+        "D15"
+      ]
+    },
+    "E": {
+      "name": "release and operational quality",
+      "weight": 15,
+      "floor": 13,
+      "claim_ids": [
+        "E01",
+        "E02",
+        "E3.R",
+        "E04",
+        "E05",
+        "E06",
+        "E07",
+        "E08",
+        "E09",
+        "E10",
+        "E11",
+        "E12",
+        "E13",
+        "E14",
+        "E15"
+      ]
+    }
+  },
+  "claims": {
+    "A01": {
+      "criterion": "JCS UTF-8 acceptance",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for JCS UTF-8 acceptance.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": [
+        "unapproved_contract_or_api_change"
+      ]
+    },
+    "A02": {
+      "criterion": "JCS duplicate-key rejection",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for JCS duplicate-key rejection.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A03": {
+      "criterion": "JCS safe-integer rejection",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for JCS safe-integer rejection.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A04": {
+      "criterion": "JCS surrogate rejection",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for JCS surrogate rejection.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A05": {
+      "criterion": "JCS canonical vector replay",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for JCS canonical vector replay.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A06": {
+      "criterion": "Ed25519 authority root pin",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for Ed25519 authority root pin.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A07": {
+      "criterion": "lifecycle predecessor binding",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for lifecycle predecessor binding.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A08": {
+      "criterion": "attestation payload hash binding",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for attestation payload hash binding.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A09": {
+      "criterion": "attestation payload length binding",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for attestation payload length binding.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A10": {
+      "criterion": "attestation purpose authorization",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for attestation purpose authorization.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A11": {
+      "criterion": "assignment projection derivation",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for assignment projection derivation.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A12": {
+      "criterion": "output projection derivation",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for output projection derivation.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A13": {
+      "criterion": "request one-use control",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for request one-use control.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A14": {
+      "criterion": "request expiry chronology",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for request expiry chronology.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A15": {
+      "criterion": "role/scope tuple closure",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for role/scope tuple closure.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A16": {
+      "criterion": "principal independence",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for principal independence.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A17": {
+      "criterion": "authority revocation handling",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for authority revocation handling.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A18": {
+      "criterion": "nonce replay prevention",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for nonce replay prevention.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A19": {
+      "criterion": "object reference hash binding",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for object reference hash binding.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A20": {
+      "criterion": "raw canonical byte equality",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for raw canonical byte equality.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A21": {
+      "criterion": "claims-99 cardinality",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for claims-99 cardinality.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A22": {
+      "criterion": "E3.R preclosure edge",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for E3.R preclosure edge.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A23": {
+      "criterion": "candidate-100 keyed preservation",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for candidate-100 keyed preservation.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A24": {
+      "criterion": "candidate claim ordering",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for candidate claim ordering.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "A25": {
+      "criterion": "point-score input closure",
+      "pass_condition": "Authenticated kronos_architect_review.v2 proof verifies PASS for point-score input closure.",
+      "accepted_evidence": "kronos_architect_review.v2",
+      "verifier": "ARCHITECT_REVIEWER",
+      "required_evidence_schema": "kronos_architect_review.v2",
+      "hard_cap_ids": []
+    },
+    "B01": {
+      "criterion": "API schema root closure",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for API schema root closure.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": [
+        "unapproved_contract_or_api_change"
+      ]
+    },
+    "B02": {
+      "criterion": "API error envelope closure",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for API error envelope closure.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B03": {
+      "criterion": "run-summary nullability",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for run-summary nullability.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B04": {
+      "criterion": "matrix tuple completeness",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for matrix tuple completeness.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B05": {
+      "criterion": "matrix conservation counts",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for matrix conservation counts.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B06": {
+      "criterion": "progress total_steps naming",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for progress total_steps naming.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B07": {
+      "criterion": "progress decimal rounding",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for progress decimal rounding.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B08": {
+      "criterion": "artifact filename grammar",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for artifact filename grammar.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B09": {
+      "criterion": "artifact MIME mapping",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for artifact MIME mapping.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B10": {
+      "criterion": "download allowlist",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for download allowlist.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B11": {
+      "criterion": "download size limit",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for download size limit.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B12": {
+      "criterion": "route cursor ordering",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for route cursor ordering.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B13": {
+      "criterion": "event discriminator closure",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for event discriminator closure.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B14": {
+      "criterion": "event payload hash",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for event payload hash.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B15": {
+      "criterion": "six-lock false invariant",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for six-lock false invariant.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B16": {
+      "criterion": "V3 rollback query contract",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for V3 rollback query contract.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B17": {
+      "criterion": "accessibility keyboard flow",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for accessibility keyboard flow.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B18": {
+      "criterion": "accessibility focus restoration",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for accessibility focus restoration.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B19": {
+      "criterion": "operator task T01 trace",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for operator task T01 trace.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B20": {
+      "criterion": "operator task T02 trace",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for operator task T02 trace.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B21": {
+      "criterion": "operator task T03 trace",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for operator task T03 trace.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B22": {
+      "criterion": "operator task T04 trace",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for operator task T04 trace.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B23": {
+      "criterion": "operator task T05 trace",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for operator task T05 trace.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B24": {
+      "criterion": "operator task T06 trace",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for operator task T06 trace.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "B25": {
+      "criterion": "operator task T07 trace",
+      "pass_condition": "Authenticated kronos_operator_trace.v2 proof verifies PASS for operator task T07 trace.",
+      "accepted_evidence": "kronos_operator_trace.v2",
+      "verifier": "USABILITY_OPERATOR",
+      "required_evidence_schema": "kronos_operator_trace.v2",
+      "hard_cap_ids": []
+    },
+    "C01": {
+      "criterion": "D0 evidence provenance",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for D0 evidence provenance.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C02": {
+      "criterion": "D0 blocker honesty",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for D0 blocker honesty.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C03": {
+      "criterion": "D1 evidence provenance",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for D1 evidence provenance.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C04": {
+      "criterion": "fresh OOS custody separation",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for fresh OOS custody separation.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": [
+        "fresh_oos_misrepresentation"
+      ]
+    },
+    "C05": {
+      "criterion": "fresh OOS capability one-use",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for fresh OOS capability one-use.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": [
+        "fresh_oos_misrepresentation"
+      ]
+    },
+    "C06": {
+      "criterion": "fresh OOS release authorization",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for fresh OOS release authorization.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": [
+        "fresh_oos_misrepresentation"
+      ]
+    },
+    "C07": {
+      "criterion": "fresh OOS evaluator independence",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for fresh OOS evaluator independence.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": [
+        "fresh_oos_misrepresentation"
+      ]
+    },
+    "C08": {
+      "criterion": "historical OOS labeling",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for historical OOS labeling.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": [
+        "fresh_oos_misrepresentation"
+      ]
+    },
+    "C09": {
+      "criterion": "fresh OOS status honesty",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for fresh OOS status honesty.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": [
+        "fresh_oos_misrepresentation"
+      ]
+    },
+    "C10": {
+      "criterion": "accounting commission oracle",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for accounting commission oracle.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C11": {
+      "criterion": "accounting slippage oracle",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for accounting slippage oracle.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C12": {
+      "criterion": "accounting tax oracle",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for accounting tax oracle.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C13": {
+      "criterion": "cost sensitivity 0bp",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for cost sensitivity 0bp.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C14": {
+      "criterion": "cost sensitivity 23bp",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for cost sensitivity 23bp.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C15": {
+      "criterion": "cost sensitivity 46bp",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for cost sensitivity 46bp.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C16": {
+      "criterion": "close-slot horizon separation",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for close-slot horizon separation.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C17": {
+      "criterion": "SB3 horizon separation",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for SB3 horizon separation.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C18": {
+      "criterion": "D1 quarantine accounting",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for D1 quarantine accounting.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C19": {
+      "criterion": "D1 unmatched accounting",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for D1 unmatched accounting.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "C20": {
+      "criterion": "research NOT_RUN honesty",
+      "pass_condition": "Authenticated kronos_task_score_review.v2 proof verifies PASS for research NOT_RUN honesty.",
+      "accepted_evidence": "kronos_task_score_review.v2",
+      "verifier": "TASK_SCORE_REVIEWER",
+      "required_evidence_schema": "kronos_task_score_review.v2",
+      "hard_cap_ids": []
+    },
+    "D01": {
+      "criterion": "Git SHA-1 object format",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for Git SHA-1 object format.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D02": {
+      "criterion": "Git commit identity",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for Git commit identity.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D03": {
+      "criterion": "Git tree identity",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for Git tree identity.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D04": {
+      "criterion": "raw blob content hashing",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for raw blob content hashing.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D05": {
+      "criterion": "regular-file mode binding",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for regular-file mode binding.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D06": {
+      "criterion": "UTF-8 NFC path enforcement",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for UTF-8 NFC path enforcement.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D07": {
+      "criterion": "case-fold collision rejection",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for case-fold collision rejection.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D08": {
+      "criterion": "restricted glob validation",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for restricted glob validation.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D09": {
+      "criterion": "include/exclude precedence",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for include/exclude precedence.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D10": {
+      "criterion": "source file UTF-8 sorting",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for source file UTF-8 sorting.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D11": {
+      "criterion": "source add mutation",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for source add mutation.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D12": {
+      "criterion": "source delete mutation",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for source delete mutation.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D13": {
+      "criterion": "source content mutation",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for source content mutation.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D14": {
+      "criterion": "source mode mutation",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for source mode mutation.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "D15": {
+      "criterion": "dirty worktree independence",
+      "pass_condition": "Authenticated kronos_executor_qa_review.v2 proof verifies PASS for dirty worktree independence.",
+      "accepted_evidence": "kronos_executor_qa_review.v2",
+      "verifier": "EXECUTOR_QA_REVIEWER",
+      "required_evidence_schema": "kronos_executor_qa_review.v2",
+      "hard_cap_ids": []
+    },
+    "E01": {
+      "criterion": "operator A assignment independence",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for operator A assignment independence.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E02": {
+      "criterion": "operator B assignment independence",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for operator B assignment independence.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E04": {
+      "criterion": "task-score objective failure closure",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for task-score objective failure closure.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E05": {
+      "criterion": "architect invariant closure",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for architect invariant closure.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E06": {
+      "criterion": "critic hundred-claim coverage",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for critic hundred-claim coverage.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E07": {
+      "criterion": "executor command manifest binding",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for executor command manifest binding.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E08": {
+      "criterion": "executor skip prohibition",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for executor skip prohibition.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E09": {
+      "criterion": "executor warning prohibition",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for executor warning prohibition.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E10": {
+      "criterion": "head/tree/dist drift detection",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for head/tree/dist drift detection.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E11": {
+      "criterion": "dual scorer byte equality",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for dual scorer byte equality.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E12": {
+      "criterion": "assurance-score separation",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for assurance-score separation.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E13": {
+      "criterion": "terminal prior-chain resolution",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for terminal prior-chain resolution.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E14": {
+      "criterion": "terminal blocker equation",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for terminal blocker equation.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E15": {
+      "criterion": "release eligibility closure",
+      "pass_condition": "Authenticated kronos_terminal_closure.v2 proof verifies PASS for release eligibility closure.",
+      "accepted_evidence": "kronos_terminal_closure.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_terminal_closure.v2",
+      "hard_cap_ids": []
+    },
+    "E3.R": {
+      "criterion": "E3.R immutable preclosure binding",
+      "pass_condition": "Authenticated kronos_e3_runtime.v2 proof verifies PASS for E3.R immutable preclosure binding.",
+      "accepted_evidence": "kronos_e3_runtime.v2",
+      "verifier": "TERMINAL_CLOSURE_AUTHORITY",
+      "required_evidence_schema": "kronos_e3_runtime.v2",
+      "hard_cap_ids": []
+    }
+  },
+  "model_verdict": {
+    "point_bearing": false,
+    "allowed_values": [
+      "GO",
+      "NO-GO",
+      "SEED_NOISE_NO_GO",
+      "NOT_RUN",
+      "NOT_RUN_NOT_PROMOTED",
+      "INCONCLUSIVE",
+      "FRESH_OOS_NOT_RUN"
+    ],
+    "honesty_rules": {
+      "D0": "D0 blockers remain explicit and score no model points.",
+      "D1": "D1 blockers remain explicit and score no model points.",
+      "FRESH_OOS_NOT_RUN": "FRESH_OOS_NOT_RUN is a valid honest substitute for an unavailable fresh OOS result and scores no model points."
+    }
+  },
+  "hard_caps": [
+    {
+      "id": "candidate_source_identity_invalid",
+      "caps_total_at": 0,
+      "trigger": "invalid_receipt_binding",
+      "description": "candidate source identity is absent, foreign, stale, duplicated, or invalid"
+    },
+    {
+      "id": "evidence_fabrication",
+      "caps_total_at": 0,
+      "trigger": "orphan_or_unresolved_receipt",
+      "description": "evidence fabrication or false candidate attribution"
+    },
+    {
+      "id": "failed_required_engineering_gate",
+      "caps_total_below": 90,
+      "trigger": "ordinary_fail_zero_points_no_cap",
+      "description": "ordinary verified FAIL contributes zero points; it is not a hard-cap event"
+    },
+    {
+      "id": "missing_required_control",
+      "caps_total_below": 90,
+      "trigger": "structural_missing_claim_rejected_before_scoring",
+      "description": "missing candidate claims are invalid inputs, not scoreable cap events"
+    },
+    {
+      "id": "unapproved_contract_or_api_change",
+      "caps_total_below": 90,
+      "trigger": "verified_violation:UNAPPROVED_CONTRACT_OR_API_CHANGE",
+      "description": "verified contract or API control violation"
+    },
+    {
+      "id": "fresh_oos_misrepresentation",
+      "caps_total_below": 90,
+      "trigger": "verified_violation:FRESH_OOS_MISREPRESENTATION",
+      "description": "verified false representation of fresh OOS evidence"
+    }
+  ],
+  "gate": {
+    "id": "engineering_90",
+    "total_min": 90,
+    "requires_all_category_floors": true,
+    "requires_no_active_hard_cap": true
+  },
+  "determinism": {
+    "result_encoding": "RFC8785/JCS UTF-8 bytes plus LF terminator, with no timestamps",
+    "same_input_same_bytes": true
+  },
+  "authority_proof": {
+    "schema": "kronos_claim_authority_proof.v1",
+    "algorithm": "Ed25519",
+    "public_key_encoding": "base64url-no-pad",
+    "public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "domain_separator": "KRONOS-CLAIM-AUTHORITY-V1",
+    "violation_code_enum": [
+      "FRESH_OOS_MISREPRESENTATION",
+      "UNAPPROVED_CONTRACT_OR_API_CHANGE"
+    ]
+  }
+}

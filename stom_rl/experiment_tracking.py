@@ -6,9 +6,9 @@ Design contract (read before wiring anything into training):
   ``KRONOS_MLFLOW_ENABLED`` is set to a truthy value (``1``/``true``/``yes``/``on``)
   AND ``mlflow`` is importable. If either is false, every public function here
   is a silent no-op that never raises.
-* SELF-HOST, NO EGRESS. The tracking URI is always a local ``file:`` store
-  resolved to ``<repo>/artifacts/mlruns``. This module never targets a remote
-  or HTTP tracking server, and it makes no external network calls.
+* SELF-HOST, NO EGRESS. The tracking URI is always a local SQLite store
+  resolved to ``<repo>/artifacts/mlruns/mlflow.db``. This module never targets
+  a remote or HTTP tracking server, and it makes no external network calls.
 * NOT WIRED INTO TRAINING BY DEFAULT. This is a standalone scaffold that
   training/research code MAY call later. Nothing in the contract-bearing event
   path (``stom_rl/rl_events.py``, ``daily_rl_train.py``,
@@ -102,19 +102,15 @@ def tracking_dir(base_dir: str | os.PathLike[str] | None = None) -> Path:
 
 
 def tracking_uri(base_dir: str | os.PathLike[str] | None = None) -> str:
-    """Return a self-host ``file:`` tracking URI for the local store.
-
-    The directory is created if missing so that ``Path.as_uri()`` produces a
-    stable absolute file URI (e.g. ``file:///D:/.../artifacts/mlruns``).
-    """
+    """Return a self-hosted SQLite tracking URI under the local store directory."""
 
     path = tracking_dir(base_dir)
     try:
         path.mkdir(parents=True, exist_ok=True)
     except Exception:
-        # Directory creation is best-effort; still return a usable URI.
         pass
-    return path.as_uri()
+    database = (path / "mlflow.db").as_posix()
+    return f"sqlite:///{database}"
 
 
 def _coerce_params(params: Optional[Mapping[str, Any]]) -> dict[str, str]:

@@ -26,6 +26,85 @@ export interface EvidenceStateMeta {
 }
 
 const STATE_SET = new Set<string>(EVIDENCE_UI_STATES);
+type StateRecord = Record<string, unknown>;
+
+const STATE_OBJECT_KEYS = [
+  'state',
+  'lifecycleState',
+  'status',
+  'value',
+  'lifecycle',
+  'freshness_status',
+  'run_status',
+] as const;
+
+function asStateRecord(value: unknown): StateRecord | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as StateRecord)
+    : null;
+}
+
+function hasOwn(record: StateRecord, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function stateText(source: unknown, depth: number = 0, seen: Set<StateRecord> = new Set()): string | null {
+  if (typeof source === 'string') {
+    return source;
+  }
+
+  const record = asStateRecord(source);
+  if (!record || depth >= 5 || seen.has(record)) {
+    return null;
+  }
+  seen.add(record);
+
+  for (const key of STATE_OBJECT_KEYS) {
+    if (!hasOwn(record, key)) {
+      continue;
+    }
+    const value = record[key];
+    if (value === null || value === undefined) {
+      continue;
+    }
+    return stateText(value, depth + 1, seen);
+  }
+
+  return null;
+}
+
+function normalizeEvidenceStateText(text: string): EvidenceUiState {
+  if (STATE_SET.has(text)) {
+    return text as EvidenceUiState;
+  }
+
+  const normalized = text.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  if (normalized === 'COMPLETED' || normalized === 'COMPLETE' || normalized === 'DONE') {
+    return 'completed';
+  }
+  if (normalized === 'STALE' || normalized === 'EXPIRED') {
+    return 'stale';
+  }
+  if (normalized === 'REPLAY' || normalized === 'REPLAYED') {
+    return 'replay';
+  }
+  if (normalized === 'IDLE' || normalized === 'EMPTY') {
+    return 'empty';
+  }
+  if (normalized === 'MISSING' || normalized === 'NOT_RUN') {
+    return 'missing';
+  }
+  if (
+    normalized === 'NO_GO' ||
+    normalized === 'CONFLICT_BLOCKED' ||
+    normalized === 'FAILED' ||
+    normalized === 'STOPPED'
+  ) {
+    return 'no-go';
+  }
+  return 'missing';
+}
+
 
 const EVIDENCE_STATE_META: Record<EvidenceUiState, EvidenceStateMeta> = {
   loading: {
@@ -121,7 +200,8 @@ const EVIDENCE_STATE_META: Record<EvidenceUiState, EvidenceStateMeta> = {
 };
 
 export function normalizeEvidenceState(source: unknown): EvidenceUiState {
-  return typeof source === 'string' && STATE_SET.has(source) ? (source as EvidenceUiState) : 'missing';
+  const text = stateText(source);
+  return text === null ? 'missing' : normalizeEvidenceStateText(text);
 }
 
 export function evidenceStateMeta(source: unknown): EvidenceStateMeta {

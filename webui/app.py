@@ -1,10 +1,11 @@
 import os
+import tempfile
 import re as _re
 import pandas as pd
 import json
 import plotly.graph_objects as go
 import plotly.utils
-from flask import Flask, Response, render_template, request, jsonify
+from flask import Blueprint, Flask, Response, render_template, request, jsonify
 from flask_cors import CORS
 import sys
 import warnings
@@ -395,10 +396,186 @@ except Exception as exc:
     print(f"Warning: v2 blueprint cannot be imported ({exc})")
     v2_bp = None
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_WEBUI_ROOT = Path(__file__).resolve().parent
+_V5_DEFAULT_REGISTRY_PATH = _WEBUI_ROOT / "rl_runs" / "kronos_v5_registry.sqlite"
+_V5_DEFAULT_ARTIFACT_ROOT = _WEBUI_ROOT / "rl_runs" / "kronos_v5_artifacts"
+_V5_SAFE_FIXTURE_CURSOR_KEY = b"kronos-v5-local-fixture-mode-cursor-key"
+_V5_ROUTE_METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+_V5_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _v5_env_truthy(name):
+    return os.environ.get(name, "").strip().lower() in _V5_TRUTHY
+
+
+def _v5_is_relative_to(path, root):
+    try:
+        return path == root or path.is_relative_to(root)
+    except ValueError:
+        return False
+
+
+def _v5_approved_roots():
+    roots = [_REPO_ROOT.resolve()]
+    try:
+        roots.append(Path(tempfile.gettempdir()).resolve())
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return tuple(roots)
+
+
+def _v5_config_path(env_name, default_path):
+    raw_value = os.environ.get(env_name)
+    try:
+        submitted = Path(raw_value).expanduser() if raw_value else default_path
+        candidate = (submitted if submitted.is_absolute() else _REPO_ROOT / submitted).resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None, f"{env_name} is not a valid filesystem path"
+    if any(_v5_is_relative_to(candidate, root) for root in _v5_approved_roots()):
+        return candidate, None
+    return None, f"{env_name} must stay inside the repository or approved temp directory"
+
+
+def _v5_cursor_key(fixture_mode):
+    hex_value = os.environ.get("KRONOS_V5_CURSOR_KEY_HEX", "").strip()
+    if hex_value:
+        try:
+            key = bytes.fromhex(hex_value)
+        except ValueError:
+            return None, "KRONOS_V5_CURSOR_KEY_HEX is invalid"
+        if key:
+            return key, None
+        return None, "KRONOS_V5_CURSOR_KEY_HEX must be non-empty"
+    raw_value = os.environ.get("KRONOS_V5_CURSOR_KEY", "")
+    if raw_value.strip():
+        return raw_value.encode("utf-8"), None
+    if fixture_mode:
+        return _V5_SAFE_FIXTURE_CURSOR_KEY, None
+    return None, "KRONOS_V5_CURSOR_KEY_HEX or KRONOS_V5_CURSOR_KEY must be configured"
+
+
+def _v5_registry_provider(registry_path, cursor_key, unavailable_reason):
+    cache = {"registry": None}
+
+    def provider():
+        if unavailable_reason:
+            raise RuntimeError(unavailable_reason)
+        if not registry_path.is_file():
+            raise RuntimeError("V5 registry store is unavailable")
+        if cache["registry"] is None:
+            from stom_rl.v5_registry import KronosV5Registry
+            cache["registry"] = KronosV5Registry(registry_path, cursor_keys={"api": cursor_key})
+        return cache["registry"]
+
+    return provider
+
+
+def _create_unavailable_v5_rl_blueprint(reason):
+    message = str(reason or "V5 API is unavailable")
+    bp = Blueprint("kronos_v5_rl_api_unavailable", __name__, url_prefix="/api/v5/rl")
+    routes = (
+        ("/runs", "RUNS"),
+        ("/runs/<run_id>", "RUN_DETAIL"),
+        ("/runs/<run_id>/events", "EVENTS"),
+        ("/matrix", "MATRIX"),
+        ("/ledger", "LEDGER"),
+        ("/artifacts", "ARTIFACTS"),
+        ("/artifacts/<artifact_id>/download", "ARTIFACTS"),
+        ("/d0", "D0"),
+        ("/d1", "D1"),
+        ("/fixture", "FIXTURE"),
+    )
+
+    for index, (rule, route_id) in enumerate(routes):
+        def handler(route_id=route_id, **_kwargs):
+            if request.method != "GET":
+                response = jsonify({"route_id": route_id, "error": {"code": "BAD_REQUEST", "message": "method not allowed"}})
+                response.status_code = 405
+                response.headers["Allow"] = "GET"
+                return response
+            return jsonify({"route_id": route_id, "error": {"code": "INTERNAL_ERROR", "message": message}}), 503
+
+        bp.add_url_rule(rule, endpoint=f"unavailable_{index}", view_func=handler, methods=list(_V5_ROUTE_METHODS), provide_automatic_options=False)
+
+    return bp
+
+
+def _build_kronos_v5_blueprint():
+    registry_path, registry_error = _v5_config_path("KRONOS_V5_REGISTRY_PATH", _V5_DEFAULT_REGISTRY_PATH)
+    artifact_root, artifact_error = _v5_config_path("KRONOS_V5_ARTIFACT_ROOT", _V5_DEFAULT_ARTIFACT_ROOT)
+    fixture_mode = _v5_env_truthy("KRONOS_V5_FIXTURE_MODE")
+    cursor_key, key_error = _v5_cursor_key(fixture_mode)
+    unavailable_reason = registry_error or artifact_error or key_error
+    if unavailable_reason is None and registry_path is not None and not registry_path.is_file():
+        unavailable_reason = "V5 registry store is unavailable"
+
+    config = {
+        "KRONOS_V5_REGISTRY_PATH": str(registry_path or _V5_DEFAULT_REGISTRY_PATH),
+        "KRONOS_V5_ARTIFACT_ROOT": str(artifact_root or _V5_DEFAULT_ARTIFACT_ROOT),
+        "KRONOS_V5_FIXTURE_MODE": fixture_mode,
+        "KRONOS_V5_AVAILABLE": unavailable_reason is None,
+    }
+
+    try:
+        try:
+            from .v5_rl_api import create_v5_rl_api_blueprint
+        except ImportError:
+            from v5_rl_api import create_v5_rl_api_blueprint
+        blueprint = create_v5_rl_api_blueprint(
+            registry_path=registry_path,
+            registry_provider=_v5_registry_provider(registry_path, cursor_key, unavailable_reason),
+            cursor_key=cursor_key,
+            artifact_root=artifact_root,
+            unavailable_reason=unavailable_reason,
+        )
+        return blueprint, config
+    except Exception as exc:
+        config["KRONOS_V5_AVAILABLE"] = False
+        config["KRONOS_V5_CONSTRUCTION_ERROR_TYPE"] = type(exc).__name__
+        return _create_unavailable_v5_rl_blueprint("V5 API is unavailable"), config
+
+
+def _v51_config_path():
+    raw_value = os.environ.get("KRONOS_V51_ARTIFACT_DIR", "").strip()
+    if not raw_value:
+        return None, None
+    try:
+        submitted = Path(raw_value).expanduser()
+        candidate = (submitted if submitted.is_absolute() else _REPO_ROOT / submitted).resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None, "KRONOS_V51_ARTIFACT_DIR is not a valid filesystem path"
+    if any(_v5_is_relative_to(candidate, root) for root in _v5_approved_roots()):
+        return candidate, None
+    return None, "KRONOS_V51_ARTIFACT_DIR must stay inside the repository or approved temp directory"
+
+
+def _build_kronos_v51_blueprint():
+    artifact_dir, artifact_error = _v51_config_path()
+    config = {
+        "KRONOS_V51_ARTIFACT_DIR": str(artifact_dir) if artifact_dir is not None else "",
+        "KRONOS_V51_AVAILABLE": artifact_error is None and artifact_dir is not None and artifact_dir.is_dir(),
+        "KRONOS_V51_READ_ONLY": True,
+    }
+    try:
+        try:
+            from .v51_research_api import create_v51_research_api_blueprint
+        except ImportError:
+            from v51_research_api import create_v51_research_api_blueprint
+        return create_v51_research_api_blueprint(artifact_dir=artifact_dir), config
+    except Exception as exc:
+        config["KRONOS_V51_AVAILABLE"] = False
+        config["KRONOS_V51_CONSTRUCTION_ERROR_TYPE"] = type(exc).__name__
+        try:
+            from .v51_research_api import create_v51_research_api_blueprint
+        except ImportError:
+            from v51_research_api import create_v51_research_api_blueprint
+        return create_v51_research_api_blueprint(artifact_provider=None, artifact_dir=None), config
+
+# Legacy handlers below are registered once on this private route template.  Each
+# application factory instance clones those rules onto its own Flask instance.
 app = Flask(__name__)
-CORS(app, origins=[origin.strip() for origin in os.environ.get("KRONOS_WEBUI_CORS_ORIGINS", f"http://127.0.0.1:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))},http://localhost:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))}").split(",") if _re.fullmatch(r"https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?", origin.strip())], supports_credentials=False)
-if v2_bp is not None:
-    app.register_blueprint(v2_bp)
+_legacy_route_app = app
 
 # Global variables to store models
 tokenizer = None
@@ -2509,6 +2686,118 @@ def docs_read():
         'modified_at': st.st_mtime,
     })
 
+
+def _cors_origins():
+    default_origins = (
+        f"http://127.0.0.1:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))},"
+        f"http://localhost:{os.environ.get('KRONOS_WEBUI_PORT', os.environ.get('PORT', '7070'))}"
+    )
+    return [
+        origin.strip()
+        for origin in os.environ.get("KRONOS_WEBUI_CORS_ORIGINS", default_origins).split(",")
+        if _re.fullmatch(r"https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?", origin.strip())
+    ]
+
+
+def _construction_failure(exc):
+    """Expose construction state without returning exception text or secrets."""
+    return {
+        "available": False,
+        "error": {
+            "type": type(exc).__name__,
+            "message": "subsystem construction failed",
+        },
+    }
+
+
+def _register_legacy_routes(target):
+    for rule in _legacy_route_app.url_map.iter_rules():
+        if rule.endpoint == "static":
+            continue
+        target.add_url_rule(
+            rule.rule,
+            endpoint=rule.endpoint,
+            view_func=_legacy_route_app.view_functions[rule.endpoint],
+            defaults=rule.defaults,
+            subdomain=rule.subdomain,
+            methods=set(rule.methods),
+            provide_automatic_options=False,
+        )
+
+
+def _create_v6_platform_blueprint():
+    try:
+        from .v6_platform_api import create_v6_platform_blueprint
+    except ImportError:
+        from v6_platform_api import create_v6_platform_blueprint
+    return create_v6_platform_blueprint()
+
+
+def _create_v6_insight_blueprint():
+    try:
+        from .v6_insight_api import create_v6_insight_blueprint
+    except ImportError:
+        from v6_insight_api import create_v6_insight_blueprint
+    return create_v6_insight_blueprint()
+
+
+def create_app(config=None, *, blueprint_factories=None):
+    """Create an isolated dashboard app while preserving process-wide model state."""
+    target = Flask(__name__)
+    if config is not None:
+        target.config.update(config)
+    CORS(target, origins=_cors_origins(), supports_credentials=False)
+
+    factories = {
+        "v2": lambda: v2_bp,
+        "v5": _build_kronos_v5_blueprint,
+        "v51": _build_kronos_v51_blueprint,
+        "v6_platform": _create_v6_platform_blueprint,
+        "v6_insight": _create_v6_insight_blueprint,
+    }
+    if blueprint_factories is not None:
+        factories.update(blueprint_factories)
+
+    diagnostics = {}
+
+    for subsystem in ("v2", "v5", "v51", "v6_platform", "v6_insight"):
+        try:
+            result = factories[subsystem]()
+            blueprint, subsystem_config = result if subsystem in {"v5", "v51"} and isinstance(result, tuple) else (result, {})
+            if subsystem_config:
+                target.config.update(subsystem_config)
+            if blueprint is None:
+                diagnostics[subsystem] = {
+                    "available": False,
+                    "error": {"type": "Unavailable", "message": "subsystem blueprint is unavailable"},
+                }
+                continue
+            target.register_blueprint(blueprint)
+            available_key = f"KRONOS_{subsystem.upper()}_AVAILABLE"
+            error_type = subsystem_config.get(
+                f"KRONOS_{subsystem.upper()}_CONSTRUCTION_ERROR_TYPE",
+            )
+            available = bool(subsystem_config.get(available_key, True))
+            diagnostics[subsystem] = {"available": available}
+            if not available:
+                diagnostics[subsystem]["error"] = {
+                    "type": error_type or "Unavailable",
+                    "message": "subsystem construction failed" if error_type else "subsystem is unavailable",
+                }
+        except Exception as exc:
+            diagnostics[subsystem] = _construction_failure(exc)
+
+    try:
+        _register_legacy_routes(target)
+        diagnostics["legacy"] = {"available": True}
+    except Exception as exc:
+        diagnostics["legacy"] = _construction_failure(exc)
+
+    target.config["KRONOS_SUBSYSTEM_DIAGNOSTICS"] = diagnostics
+    return target
+
+
+app = create_app()
 
 if __name__ == '__main__':
     print("Kronos 웹 UI 시작 중...")

@@ -1,0 +1,172 @@
+{
+  "schema": "kronos_dashboard_v5_release_closure.v1",
+  "contract_id": "G010-conditional-default-and-local-closure",
+  "phase_machine": [
+    "BIND_HEAD",
+    "PREFLIGHT",
+    "QA",
+    "GENERIC_CAPTURE",
+    "OPERATOR_A",
+    "OPERATOR_B",
+    "TASK_SCORE",
+    "EVIDENCE",
+    "PRECLOSURE",
+    "ASSURANCE",
+    "FINAL_MAP",
+    "SCORE_A",
+    "SCORE_B",
+    "TERMINAL"
+  ],
+  "terminal_statuses": [
+    "ACTIVE",
+    "INVALIDATED",
+    "TERMINAL_BLOCKED",
+    "TERMINAL_CLOSED"
+  ],
+  "default_equation": "V5_DEFAULT := RELEASE_CLOSED && POINT_SCORE_A_EQ_B && ENGINEERING_90_PASS && ASSURANCE_ELIGIBLE && PRIOR_CHAINS_RESOLVED && HEAD_MATCH && TREE_MATCH && DIST_MATCH && CONFIG_MATCH && WORKTREE_CLEAN && SOURCE_IDENTITY_BOUND && ROLLBACK_V3_AVAILABLE && ROLLBACK_QUERY_PASS && LIVE_BROWSER_DISTINCT && SECURITY_CLEAR && SIX_LOCKS_FALSE && NO_PUBLICATION_ACTION && !DRY_RUN_FIXTURE",
+  "gate_terms": [
+    "release_closed",
+    "point_score_a_eq_b",
+    "engineering_90_pass",
+    "assurance_eligible",
+    "prior_chains_resolved",
+    "head_match",
+    "tree_match",
+    "dist_match",
+    "config_match",
+    "worktree_clean",
+    "source_identity_bound",
+    "rollback_v3_available",
+    "rollback_query_pass",
+    "live_browser_distinct",
+    "security_clear",
+    "six_locks_false",
+    "no_publication_action",
+    "not_dry_run_fixture"
+  ],
+  "blocking_codes": [
+    "POINT_SCORE_MISMATCH",
+    "POINT_SCORE_FAIL",
+    "ASSURANCE_BLOCK",
+    "PRIOR_CHAIN_RERESOLUTION_FAIL",
+    "HEAD_DRIFT",
+    "TREE_DRIFT",
+    "DIST_DRIFT",
+    "CONFIG_DRIFT",
+    "DIRTY_WORKTREE",
+    "SOURCE_IDENTITY_MISMATCH",
+    "ROLLBACK_UNAVAILABLE",
+    "ROLLBACK_QUERY_FAIL",
+    "BROWSER_EVIDENCE_NOT_LIVE",
+    "BROWSER_EVIDENCE_SYNTHETIC",
+    "BROWSER_EVIDENCE_REUSED",
+    "BROWSER_MATRIX_FAIL",
+    "SECURITY_GATE_FAIL",
+    "PUBLICATION_ACTION_FORBIDDEN",
+    "LOCK_INVARIANT_FAIL",
+    "DRY_RUN_FIXTURE_NOT_RELEASABLE"
+  ],
+  "six_locks_false": {
+    "promotion_allowed": false,
+    "model_build_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "profitability_claim_allowed": false,
+    "go_summary_allowed": false
+  },
+  "source_inputs": [
+    "source_identity_bound",
+    "head_matches",
+    "tree_matches",
+    "candidate_source_sha256"
+  ],
+  "dist_inputs": [
+    "dist_manifest_sha256",
+    "dist_matches",
+    "config_sha256",
+    "config_matches"
+  ],
+  "head_inputs": [
+    "head_sha256",
+    "tree_sha256",
+    "worktree_clean",
+    "dirty_status_porcelain_sha256"
+  ],
+  "rollback_inputs": {
+    "required": [
+      "v3_available",
+      "query_contract_passed"
+    ],
+    "default_when_blocked": "RETAIN_V3"
+  },
+  "browser_inputs": {
+    "live_browser_required": true,
+    "distinct_from_synthetic_required": true,
+    "matrix_pass_required": true,
+    "synthetic_fixture_label": "synthetic_fixture_evidence",
+    "synthetic_can_grant_browser_gate": false,
+    "dry_run_fixture_can_grant_browser_gate": false
+  },
+  "security_inputs": {
+    "mutation_probes_rejected_required": true,
+    "download_policy_passed_required": true,
+    "forbidden_publication_actions": [
+      "commit",
+      "push",
+      "tag",
+      "merge",
+      "publish",
+      "deploy",
+      "promote",
+      "trade",
+      "broker_order",
+      "paper_forward"
+    ],
+    "publication_action_allowed": false
+  },
+  "worktree_policy": {
+    "inspection_only": true,
+    "dirty_worktree_blocks_release": true,
+    "tracked_dist_mutation_allowed": false,
+    "commit_push_tag_allowed": false
+  },
+  "pointer_lifecycle": {
+    "temp_root_required": true,
+    "atomic_pointer": true,
+    "history_entries": true,
+    "failed_roots_immutable": true,
+    "terminal_reuse_returns_existing_root": true,
+    "random_nonce_is_nonsemantic": true,
+    "active_head_dist_config_drift_invalidates": true
+  },
+  "subprocess_policy": {
+    "inspection_only": true,
+    "allowed_git_subcommands": [
+      "rev-parse",
+      "status"
+    ],
+    "heavy_oos_mutation_commands_allowed": false,
+    "forbidden_tokens": [
+      "backtest",
+      "broker",
+      "deploy",
+      "finetune",
+      "npm",
+      "node",
+      "oos",
+      "ppo",
+      "pytest",
+      "publish",
+      "tag",
+      "train",
+      "trading"
+    ]
+  },
+  "claims": {
+    "model_verdict_point_bearing": false,
+    "dry_run_fixture_mode_can_use_synthetic_receipts": true,
+    "dry_run_fixture_mode_can_grant_browser_gate": false,
+    "live_trading_readiness_claimed": false,
+    "profitability_claimed": false
+  }
+}

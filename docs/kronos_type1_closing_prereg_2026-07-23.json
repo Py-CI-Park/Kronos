@@ -1,0 +1,80 @@
+{
+  "schema_version": "kronos_type1_closing_prereg.v1",
+  "prereg_id": "KRONOS-TYPE1-CLOSING-2026-07-23",
+  "status": "FROZEN_PROTOCOL_NOT_RUN",
+  "external_prereg_evidence": {
+    "rfc3161_status": "BLOCKED",
+    "calendar_status": "ACCUMULATING_NOT_RUN",
+    "fresh_oos_status": "NOT_RUN",
+    "window": "2026-08-03..2027-07-30",
+    "statement": "No RFC3161 timestamp or qualifying calendar evidence is present for this fresh window. This record does not backdate evidence, claim TSA success, or authorize fresh OOS access."
+  },
+  "classification": "SEQUENTIAL_MASKABLEPPO_RESEARCH_EXPERIMENT",
+  "scope": {
+    "research_only": true,
+    "live_trading": false,
+    "fixed_notional": true,
+    "official_close": false,
+    "price_basis": "15:20_bar_close_proxy",
+    "timezone": "Asia/Seoul",
+    "decision_time": "15:20:00",
+    "statement": "The D-day 15:20 bar close is a research proxy, not the KRX 15:30 official close. This protocol is not a broker, order, paper-forward, or profitability claim."
+  },
+  "m3e_context": {
+    "prereg_id": "KRONOS-V8-PREREG-M3E-2026-07-21",
+    "classification": "CONTEXTUAL_BANDIT_RESEARCH_EXPERIMENT",
+    "verdict": "NO_GO",
+    "fresh_oos_status": "NOT_RUN",
+    "statement": "M3E remains contextual-bandit research context only. Type 1 does not revise, replace, or soften its NO_GO verdict and does not consume its fresh OOS."
+  },
+  "portfolio": {
+    "research_capital_krw": 60000000,
+    "slot_count": 10,
+    "notional_per_slot_krw": 5000000,
+    "max_notional_exposure_krw": 50000000,
+    "reserve_krw": 10000000,
+    "shorting": false,
+    "leverage": false,
+    "duplicate_symbol_slots": false
+  },
+  "costs": {
+    "primary_round_trip_bp": 23,
+    "primary_rate": 0.0023,
+    "zero_control_bp": 0,
+    "stress_control_bp": 46,
+    "statement": "23bp is the primary round-trip research assumption; 0bp and 46bp are controls, not alternative headlines."
+  },
+  "algorithm": {
+    "family": "MaskablePPO",
+    "decision_type": "sequential portfolio management",
+    "action": "select or hold eligible fixed-notional slots subject to the action mask",
+    "action_mask": "Invalid actions, unavailable slots, duplicate symbols, missing exact-15:20 bars, and infeasible cash states are masked rather than repaired after selection.",
+    "reward": "research economic NAV change net of the frozen 23bp primary cost assumption",
+    "synthetic_policy": "Synthetic data may exercise schema, masks, accounting, receipts, and CLI wiring only. Synthetic results cannot establish signal, performance, alpha, promotion, or OOS evidence."
+  },
+  "data_and_custody": {
+    "exact_bar_required": true,
+    "fallback": "none",
+    "symbol_contract": "Symbols are strings; leading-zero six-digit codes such as 000250 are preserved.",
+    "fresh_oos_freeze_start": "2026-08-03",
+    "fresh_oos_freeze_end": "2027-07-30",
+    "fresh_oos_access": "FORBIDDEN_UNTIL_SEPARATE_APPROVED_ONE_TIME_GATE",
+    "statement": "This preregistration neither reads nor evaluates fresh OOS data."
+  },
+  "evaluation": {
+    "primary_horizon": "H1: D 15:20 proxy entry to D+1 15:20 proxy settlement",
+    "validation_variants": ["H3", "H5"],
+    "required_comparators": ["no_trade", "frozen_RULE", "frozen_supervised_if_available", "shuffle_retraining"],
+    "seed_policy": "Multiple identical configuration seeds are required before any research comparison; no best-seed selection.",
+    "promotion": "No promotion, GO, live, paper-forward, or profitability claim is permitted by this foundation."
+  },
+  "forbidden_claims": [
+    "official-close execution",
+    "fresh OOS result",
+    "profitability or alpha",
+    "GO or model promotion",
+    "live broker, order, account, or paper-forward readiness",
+    "synthetic overfit as model evidence"
+  ],
+  "frozen_on": "2026-07-23"
+}

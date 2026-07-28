@@ -93,6 +93,38 @@ def test_evidence_lock_keys_are_exact_and_fail_closed_reasons_are_typed() -> Non
     assert not re.search(r"promotionAllowed|modelBuildAllowed|brokerOrderAllowed", evidence)
 
 
+def test_evidence_adapters_normalize_nested_lifecycle_and_wrappers_conservatively() -> None:
+    evidence = _source("v4/evidence.ts")
+    state_source = _source("v4/evidenceState.ts")
+
+    assert "lifecycleText" in evidence
+    assert "lifecycleCandidate" in evidence
+    assert "CONFLICT_BLOCKED" in evidence
+    assert "collectWrapperRecords" in evidence
+    assert "collectNestedRecords" in evidence
+    assert "collectLockObjectRecords" in evidence
+    assert "resolvePromotionLock" in evidence
+    assert "adaptPromotionLocksWithProvenance" in evidence
+    assert "mergeRecordsPreservingDeclared" not in evidence
+    assert "firstBooleanFromRecords" in evidence
+    assert "String(source)" not in evidence
+    assert "stateText" in state_source
+    assert "normalizeEvidenceStateText" in state_source
+    assert "String(source)" not in state_source
+
+def test_promotion_lock_precedence_regressions_cover_all_six_keys() -> None:
+    evidence_test = _source("v4/evidence.test.ts")
+
+    assert "assertAllLocks" in evidence_test
+    assert "root false ahead of nested true for all six keys" in evidence_test
+    assert "wrapper direct false ahead of container true for all six keys" in evidence_test
+    assert "invalid root sources ahead of nested true for all six keys" in evidence_test
+    assert "legitimate nested false when root authority is absent for all six keys" in evidence_test
+    assert "PROMOTION_LOCK_KEYS.map" in evidence_test
+    for key in _LOCK_KEYS:
+        assert key in evidence_test
+
+
 def test_evidence_states_are_exact_nine_shared_values_and_preview_renders_each() -> None:
     state_source = _source("v4/evidenceState.ts")
     preview = _source("v4/EvidenceSystemPreview.svelte")

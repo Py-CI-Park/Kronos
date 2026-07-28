@@ -75,19 +75,17 @@ def test_tracked_run_yields_none_when_disabled(monkeypatch):
         assert run is None
 
 
-def test_tracking_uri_is_local_file(monkeypatch, tmp_path):
+def test_tracking_uri_is_local_sqlite(monkeypatch, tmp_path):
     et = _import_experiment_tracking()
     monkeypatch.delenv(et.DIR_ENV_VAR, raising=False)
-    # Default resolves under the repo's artifacts/mlruns and is a file: URI.
     default_uri = et.tracking_uri()
-    assert default_uri.startswith("file:")
-    assert "mlruns" in default_uri
-    assert "://" in default_uri  # never a bare remote host / http scheme
-    assert not default_uri.startswith("http")
-    # Override resolves under the provided temp dir (self-host, no egress).
+    assert default_uri.startswith("sqlite:///")
+    assert "artifacts/mlruns/mlflow.db" in default_uri.replace("\\", "/")
+    assert not default_uri.startswith(("http:", "https:"))
     override_uri = et.tracking_uri(base_dir=tmp_path)
-    assert override_uri.startswith("file:")
-    assert (tmp_path).as_uri() in override_uri or str(tmp_path.name) in override_uri
+    assert override_uri.startswith("sqlite:///")
+    assert override_uri.endswith("/mlflow.db")
+    assert str(tmp_path.name) in override_uri
 
 
 # --------------------------------------------------------------------------- #
@@ -97,9 +95,20 @@ def test_tracking_uri_is_local_file(monkeypatch, tmp_path):
 
 def test_log_run_enabled_writes_to_temp_store(monkeypatch, tmp_path):
     et = _import_experiment_tracking()
-    pytest.importorskip("mlflow")
+    mlflow = pytest.importorskip("mlflow")
 
     store = tmp_path / "mlruns"
+    for key in (
+        "MLFLOW_RUN_ID",
+        "MLFLOW_PARENT_RUN_ID",
+        "MLFLOW_TRACKING_URI",
+        "MLFLOW_EXPERIMENT_NAME",
+        "MLFLOW_EXPERIMENT_ID",
+        "MLFLOW_REGISTRY_URI",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    while mlflow.active_run() is not None:
+        mlflow.end_run()
     monkeypatch.setenv(et.ENABLED_ENV_VAR, "1")
     monkeypatch.setenv(et.DIR_ENV_VAR, str(store))
 
@@ -110,7 +119,10 @@ def test_log_run_enabled_writes_to_temp_store(monkeypatch, tmp_path):
         params={"seed": 100, "cost_bps": 23.0},
         metrics={"final_equity_mult": 1.08, "nan_metric": float("nan")},
         tags={"stage": "smoke", "research_only": "true"},
+        base_dir=store,
     )
+    while mlflow.active_run() is not None:
+        mlflow.end_run()
     assert isinstance(run_id, str) and run_id
 
     # The local file store must have been created under the temp dir only.

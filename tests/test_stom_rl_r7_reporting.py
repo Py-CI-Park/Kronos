@@ -133,9 +133,43 @@ def test_rliable_report_happy_path_is_deterministic_and_exposes_contract_metadat
     assert report_a["seed_set"] == [7, 17, 29, 41]
     assert report_a["input_sha256"] == rl_report_rliable._sha256_file(sweep_path)
     assert report_a["source_summary_hash"] == sweep["deterministic_content_hash"]
-    assert report_a["metrics"]["iqm"]["ci_lower"] <= report_a["metrics"]["iqm"]["point"] <= report_a["metrics"]["iqm"]["ci_upper"]
-    assert [row["threshold_total_net_return"] for row in report_a["performance_profile"]] == [-0.10, -0.05, 0.0, 0.05, 0.10]
-    assert all(row["ci_lower"] <= row["fraction_above_threshold"] <= row["ci_upper"] for row in report_a["performance_profile"])
+    assert report_a["metrics"]["iqm"] == {
+        "point": 0.02,
+        "ci_lower": -0.02,
+        "ci_upper": 0.04,
+    }
+    assert report_a["performance_profile"] == [
+        {
+            "threshold_total_net_return": -0.10,
+            "fraction_above_threshold": 1.0,
+            "ci_lower": 1.0,
+            "ci_upper": 1.0,
+        },
+        {
+            "threshold_total_net_return": -0.05,
+            "fraction_above_threshold": 1.0,
+            "ci_lower": 1.0,
+            "ci_upper": 1.0,
+        },
+        {
+            "threshold_total_net_return": 0.0,
+            "fraction_above_threshold": 0.75,
+            "ci_lower": 0.25,
+            "ci_upper": 1.0,
+        },
+        {
+            "threshold_total_net_return": 0.05,
+            "fraction_above_threshold": 0.0,
+            "ci_lower": 0.0,
+            "ci_upper": 0.0,
+        },
+        {
+            "threshold_total_net_return": 0.10,
+            "fraction_above_threshold": 0.0,
+            "ci_lower": 0.0,
+            "ci_upper": 0.0,
+        },
+    ]
     assert report_a["source_hashes_by_run_id"]["daily_d4_stability_2026_07_12_seed7_ep128"]
     assert report_a["artifact_hashes_by_run_id"]["daily_d4_stability_2026_07_12_seed7_ep128"]
 

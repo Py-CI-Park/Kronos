@@ -1,0 +1,685 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kronos.local/schemas/kronos_daily_v51_causal_panel.v1.schema.json",
+  "title": "Kronos Daily V5.1 Causal Panel v1",
+  "description": "Executable contract for build_causal_panel() output built only from exact 15:20 KST proxy marks. The panel is research-only, not an official close, requires explicit source identity with a non-null lowercase SHA-256 for the source DB, and forbids daily OHLCV labels, nearest fallback, live/paper/broker claims, nested observation payloads, and price*volume amount approximation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "official_close",
+    "price_basis",
+    "causal_cutoff_kst",
+    "cutoff",
+    "horizon_days",
+    "label_columns",
+    "fallback_policy",
+    "amount_policy",
+    "source_identity",
+    "forbidden_daily_fields",
+    "forbidden_observation_source_suffix",
+    "locks",
+    "promotion_claims",
+    "contract",
+    "audit",
+    "coverage",
+    "rows",
+    "panel_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "kronos_daily_v51_causal_panel.v1"},
+    "official_close": {"const": false},
+    "price_basis": {"const": "15:20_bar_close_proxy"},
+    "causal_cutoff_kst": {"const": "15:20:00"},
+    "cutoff": {"const": "15:20:00"},
+    "horizon_days": {"const": [1, 3, 5]},
+    "label_columns": {"const": ["future_return_h1_1520_proxy", "future_return_h3_1520_proxy", "future_return_h5_1520_proxy"]},
+    "fallback_policy": {"const": "none_exact_1520_only_nearest_forbidden"},
+    "amount_policy": {"const": "no_price_times_volume_approximation_only_verified_source_fields"},
+    "source_identity": {"$ref": "#/$defs/sourceIdentity"},
+    "forbidden_daily_fields": {"$ref": "#/$defs/forbiddenDailyFields"},
+    "forbidden_observation_source_suffix": {"const": "_database/Stock_Database_ohlcv_1day.db"},
+    "locks": {"$ref": "#/$defs/locks"},
+    "promotion_claims": {"$ref": "#/$defs/promotionClaims"},
+    "contract": {"$ref": "#/$defs/contract"},
+    "audit": {"$ref": "#/$defs/audit"},
+    "coverage": {"$ref": "#/$defs/coverage"},
+    "rows": {"type": "array", "items": {"$ref": "#/$defs/panelRow"}},
+    "panel_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "h1": {"const": "future_return_h1_1520_proxy"},
+    "h3": {"const": "future_return_h3_1520_proxy"},
+    "h5": {"const": "future_return_h5_1520_proxy"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "nullableDate": {
+      "oneOf": [
+        {"$ref": "#/$defs/date"},
+        {"type": "null"}
+      ]
+    },
+    "causalObservationTimestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T(?:(?:0[0-9]|1[0-4]):[0-5]\\d:[0-5]\\d|15:(?:[01]\\d:[0-5]\\d|20:00))\\+09:00$"
+    },
+    "timestamp1520": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T15:20:00\\+09:00$"
+    },
+    "compactTimestamp1520": {
+      "type": "string",
+      "pattern": "^\\d{8}1520$",
+      "description": "JSON artifact string YYYYMMDD1520 compact timestamp for the exact 15:20 KST bar."
+    },
+    "symbol": {"type": "string", "pattern": "^[0-9]{6}$"},
+    "sourceTable": {"type": "string", "pattern": "^A[0-9]{6}$"},
+    "safeInt": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "positiveInt": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "finiteNumber": {"type": "number"},
+    "nonNegativeNumber": {"type": "number", "minimum": 0, "maximum": 9007199254740991},
+    "returnRatio": {"type": "number", "minimum": -1},
+    "approvedSourcePath": {
+      "type": "string",
+      "pattern": "(?:^|[\\\\/])_database[\\\\/]Stock_Database_ohlcv_5min\\.db$",
+      "not": {"pattern": "[Nn][Aa][Vv][Ee][Rr]|[Uu][Nn][Kk][Nn][Oo][Ww][Nn]|ohlcv_1d|^https?://"}
+    },
+    "approvedCausalSource": {
+      "oneOf": [
+        {"$ref": "#/$defs/approvedSourcePath"},
+        {"$ref": "#/$defs/sourceTable"}
+      ]
+    },
+    "sourceColumns": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "date"},
+        {"const": "open"},
+        {"const": "high"},
+        {"const": "low"},
+        {"const": "close"},
+        {"const": "volume"}
+      ],
+      "items": false,
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "exactSourceColumnSet": {
+      "type": "array",
+      "description": "Sorted source-column identity set used in exact-source audits: close, date, high, low, open, volume. This is intentionally sorted for deterministic identity and differs from the table-order source_columns array.",
+      "prefixItems": [
+        {"const": "close"},
+        {"const": "date"},
+        {"const": "high"},
+        {"const": "low"},
+        {"const": "open"},
+        {"const": "volume"}
+      ],
+      "items": false,
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true
+    },
+    "sourceIdentity": {
+      "type": "object",
+      "description": "Closed explicit source identity copied from the validated exact 15:20 source artifact. identity_basis must be explicit and source_db_sha256 must be the non-null lowercase SHA-256 of the source DB bytes; derived or null hash modes are invalid.",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "identity_basis",
+        "source_db_path",
+        "source_db_paths",
+        "source_db_sha256",
+        "source_tables",
+        "schema_versions",
+        "source_columns",
+        "exact_1520_row_count",
+        "source_identity_sha256"
+      ],
+      "properties": {
+        "schema_version": {"const": "kronos_daily_1520_source.v1"},
+        "identity_basis": {"const": "explicit"},
+        "source_db_path": {"$ref": "#/$defs/approvedSourcePath"},
+        "source_db_paths": {"type": "array", "minItems": 1, "maxItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/approvedSourcePath"}},
+        "source_db_sha256": {"$ref": "#/$defs/sha256"},
+        "source_tables": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sourceTable"}},
+        "schema_versions": {"const": ["kronos_daily_1520_source.v1"]},
+        "source_columns": {"$ref": "#/$defs/sourceColumns"},
+        "exact_1520_row_count": {"$ref": "#/$defs/safeInt"},
+        "source_identity_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "scalarValue": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "boolean"},
+        {"type": "number"},
+        {"type": "string"}
+      ]
+    },
+    "forbiddenDailyFields": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1},
+      "allOf": [
+        {"contains": {"const": "open"}},
+        {"contains": {"const": "close"}},
+        {"contains": {"const": "volume"}},
+        {"contains": {"const": "amount"}},
+        {"contains": {"const": "future_return_1d"}},
+        {"contains": {"const": "daily_open"}},
+        {"contains": {"const": "daily_close"}},
+        {"contains": {"const": "daily_amount"}},
+        {"contains": {"const": "full_day_close"}},
+        {"contains": {"const": "one_day_close"}},
+        {"contains": {"const": "ohlcv_1day_close"}},
+        {"contains": {"const": "ohlcv_1day_amount"}}
+      ]
+    },
+    "forbiddenDailyPropertyName": {
+      "anyOf": [
+        {"enum": ["open", "high", "low", "close", "volume", "amount", "future_return_1d", "legacy_future_return_1d", "future_direction_1d", "future_rank_pct_1d", "entry_close", "next_close", "daily_ohlcv", "price_x_volume_amount"]},
+        {"pattern": "^future_return_"},
+        {"pattern": "(^|_)(ohlcv_1d|ohlcv_1day|one_day|1day|1d)(_|$)"},
+        {"pattern": "^(daily|final|final_daily|full_day|one_day)_(open|high|low|close|volume|amount)$"},
+        {"pattern": "(^|_)(daily|final|full_day|one_day)_(open|high|low|close|volume|amount)$"},
+        {"pattern": "(^|_)(open|high|low|close|volume|amount)_(daily|final|one_day|1day|1d)$"}
+      ]
+    },
+    "locks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["official_close", "full_day_daily_ohlcv", "live_trading", "profit_claim", "paper_trading", "broker_integration"],
+      "properties": {
+        "official_close": {"const": false},
+        "full_day_daily_ohlcv": {"const": false},
+        "live_trading": {"const": false},
+        "profit_claim": {"const": false},
+        "paper_trading": {"const": false},
+        "broker_integration": {"const": false}
+      }
+    },
+    "promotionClaims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["live_trading", "profit", "paper_trading", "broker_integration"],
+      "properties": {
+        "live_trading": {"const": false},
+        "profit": {"const": false},
+        "paper_trading": {"const": false},
+        "broker_integration": {"const": false}
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proxy_1520_not_official_close", "official_close", "no_nearest_fallback", "no_full_day_daily_ohlcv", "no_legacy_future_return_1d", "no_price_volume_amount_approximation", "trading_session_order_labels"],
+      "properties": {
+        "proxy_1520_not_official_close": {"const": true},
+        "official_close": {"const": false},
+        "no_nearest_fallback": {"const": true},
+        "no_full_day_daily_ohlcv": {"const": true},
+        "no_legacy_future_return_1d": {"const": true},
+        "no_price_volume_amount_approximation": {"const": true},
+        "trading_session_order_labels": {"const": true}
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation_sources", "observation_field_policy", "exact_1520_source", "source_audit", "source_identity_present"],
+      "properties": {
+        "observation_sources": {"$ref": "#/$defs/observationSourcesAudit"},
+        "observation_field_policy": {"$ref": "#/$defs/observationFieldPolicy"},
+        "exact_1520_source": {"$ref": "#/$defs/exactSourceAudit"},
+        "source_audit": {"$ref": "#/$defs/sourceAudit"},
+        "source_identity_present": {"const": true}
+      }
+    },
+    "observationSourcesAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "forbidden", "rejected"],
+      "properties": {
+        "allowed": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/approvedCausalSource"}},
+        "forbidden": {"type": "array", "maxItems": 0},
+        "rejected": {"type": "array", "maxItems": 0}
+      }
+    },
+    "observationFieldPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forbidden_daily_fields", "legacy_future_return_1d_allowed"],
+      "properties": {
+        "forbidden_daily_fields": {"$ref": "#/$defs/forbiddenDailyFields"},
+        "legacy_future_return_1d_allowed": {"const": false}
+      }
+    },
+    "exactSourceAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_count", "source_db_paths", "source_tables", "schema_versions", "source_columns", "price_basis", "official_close"],
+      "properties": {
+        "row_count": {"$ref": "#/$defs/safeInt"},
+        "source_db_paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/approvedSourcePath"}},
+        "source_tables": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sourceTable"}},
+        "schema_versions": {"const": ["kronos_daily_1520_source.v1"]},
+        "source_columns": {"$ref": "#/$defs/exactSourceColumnSet"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false}
+      }
+    },
+    "sourceAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved_source_db_paths", "approved_source_tables", "approved_schema_versions", "approved_source_columns", "rejected_source_db_paths", "rejected_source_tables", "forbidden_sources"],
+      "properties": {
+        "approved_source_db_paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/approvedSourcePath"}},
+        "approved_source_tables": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sourceTable"}},
+        "approved_schema_versions": {"const": ["kronos_daily_1520_source.v1"]},
+        "approved_source_columns": {"$ref": "#/$defs/exactSourceColumnSet"},
+        "rejected_source_db_paths": {"type": "array", "maxItems": 0},
+        "rejected_source_tables": {"type": "array", "maxItems": 0},
+        "forbidden_sources": {"type": "array", "maxItems": 0, "description": "Empty list of encountered forbidden sources. Runtime rejects forbidden sources before artifact creation, so a successful artifact records no forbidden encounters."}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation_row_count", "panel_row_count", "exact_1520_row_count", "symbol_count", "session_count", "trading_sessions", "labels"],
+      "properties": {
+        "observation_row_count": {"$ref": "#/$defs/safeInt"},
+        "panel_row_count": {"$ref": "#/$defs/safeInt"},
+        "exact_1520_row_count": {"$ref": "#/$defs/safeInt"},
+        "symbol_count": {"$ref": "#/$defs/safeInt"},
+        "session_count": {"$ref": "#/$defs/safeInt"},
+        "trading_sessions": {"type": "array", "items": {"$ref": "#/$defs/date"}, "uniqueItems": true},
+        "labels": {"$ref": "#/$defs/labelCoverageMap"}
+      }
+    },
+    "labelCoverageMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["future_return_h1_1520_proxy", "future_return_h3_1520_proxy", "future_return_h5_1520_proxy"],
+      "properties": {
+        "future_return_h1_1520_proxy": {"$ref": "#/$defs/labelCoverage"},
+        "future_return_h3_1520_proxy": {"$ref": "#/$defs/labelCoverage"},
+        "future_return_h5_1520_proxy": {"$ref": "#/$defs/labelCoverage"}
+      }
+    },
+    "labelCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "missing_entry", "missing_exit"],
+      "properties": {
+        "available": {"$ref": "#/$defs/safeInt"},
+        "missing_entry": {"$ref": "#/$defs/safeInt"},
+        "missing_exit": {"$ref": "#/$defs/safeInt"}
+      }
+    },
+    "panelRow": {
+      "type": "object",
+      "description": "Schema fixes row shape and availability branches; validate_causal_panel enforces equality between duplicate top-level future_return_h*_1520_proxy values and the nested labels map because JSON Schema cannot cross-compare those values.",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "session",
+        "causal_cutoff_kst",
+        "cutoff",
+        "cutoff_timestamp",
+        "max_observation_timestamp",
+        "official_close",
+        "observation_count",
+        "observations",
+        "entry_1520_status",
+        "entry_1520",
+        "exit_1520_by_label",
+        "labels",
+        "label_statuses",
+        "future_return_h1_1520_proxy",
+        "future_return_h3_1520_proxy",
+        "future_return_h5_1520_proxy"
+      ],
+      "properties": {
+        "symbol": {"$ref": "#/$defs/symbol"},
+        "session": {"$ref": "#/$defs/date"},
+        "causal_cutoff_kst": {"const": "15:20:00"},
+        "cutoff": {"const": "15:20:00"},
+        "cutoff_timestamp": {"$ref": "#/$defs/timestamp1520"},
+        "max_observation_timestamp": {"$ref": "#/$defs/causalObservationTimestamp"},
+        "official_close": {"const": false},
+        "observation_count": {"$ref": "#/$defs/safeInt"},
+        "observations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/observation"}},
+        "entry_1520_status": {"enum": ["available", "missing_entry"]},
+        "entry_1520": {"oneOf": [{"$ref": "#/$defs/exactMark"}, {"type": "null"}]},
+        "exit_1520_by_label": {"$ref": "#/$defs/labelExactMarkMap"},
+        "labels": {"$ref": "#/$defs/labelValueMap"},
+        "label_statuses": {"$ref": "#/$defs/labelStatusMap"},
+        "future_return_h1_1520_proxy": {"$ref": "#/$defs/nullableReturn"},
+        "future_return_h3_1520_proxy": {"$ref": "#/$defs/nullableReturn"},
+        "future_return_h5_1520_proxy": {"$ref": "#/$defs/nullableReturn"}
+      },
+      "not": {"$ref": "#/$defs/forbiddenDailyObject"},
+      "allOf": [
+        {"if": {"properties": {"entry_1520_status": {"const": "available"}}, "required": ["entry_1520_status"]}, "then": {"properties": {"entry_1520": {"$ref": "#/$defs/exactMark"}}}},
+        {"if": {"properties": {"entry_1520_status": {"const": "missing_entry"}}, "required": ["entry_1520_status"]}, "then": {"properties": {"entry_1520": {"type": "null"}}}},
+        {"$ref": "#/$defs/h1AvailabilityRules"},
+        {"$ref": "#/$defs/h3AvailabilityRules"},
+        {"$ref": "#/$defs/h5AvailabilityRules"}
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "required": ["symbol", "session", "timestamp", "max_source_timestamp"],
+      "properties": {
+        "symbol": {"$ref": "#/$defs/symbol"},
+        "session": {"$ref": "#/$defs/date"},
+        "timestamp": {"$ref": "#/$defs/causalObservationTimestamp"},
+        "max_source_timestamp": {"$ref": "#/$defs/causalObservationTimestamp"},
+        "official_close": {"const": false},
+        "source_db_path": {"$ref": "#/$defs/approvedSourcePath"},
+        "db_path": {"$ref": "#/$defs/approvedSourcePath"},
+        "database_path": {"$ref": "#/$defs/approvedSourcePath"},
+        "database": {"$ref": "#/$defs/approvedSourcePath"},
+        "db": {"$ref": "#/$defs/approvedSourcePath"},
+        "source_database": {"$ref": "#/$defs/approvedSourcePath"},
+        "source_db": {"$ref": "#/$defs/approvedSourcePath"},
+        "source_path": {"$ref": "#/$defs/approvedSourcePath"},
+        "source_file": {"$ref": "#/$defs/approvedSourcePath"},
+        "source_uri": {"$ref": "#/$defs/approvedSourcePath"},
+        "source_table": {"$ref": "#/$defs/sourceTable"}
+      },
+      "additionalProperties": {"$ref": "#/$defs/scalarValue"},
+      "propertyNames": {"not": {"$ref": "#/$defs/forbiddenDailyPropertyName"}},
+      "not": {"$ref": "#/$defs/forbiddenDailyObject"},
+      "anyOf": [
+        {"required": ["source_db_path"]},
+        {"required": ["db_path"]},
+        {"required": ["database_path"]},
+        {"required": ["database"]},
+        {"required": ["db"]},
+        {"required": ["source_database"]},
+        {"required": ["source_db"]},
+        {"required": ["source_path"]},
+        {"required": ["source_file"]},
+        {"required": ["source_uri"]},
+        {"required": ["source_table"]}
+      ]
+    },
+    "nullableReturn": {
+      "oneOf": [
+        {"$ref": "#/$defs/returnRatio"},
+        {"type": "null"}
+      ]
+    },
+    "labelValueMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["future_return_h1_1520_proxy", "future_return_h3_1520_proxy", "future_return_h5_1520_proxy"],
+      "properties": {
+        "future_return_h1_1520_proxy": {"$ref": "#/$defs/nullableReturn"},
+        "future_return_h3_1520_proxy": {"$ref": "#/$defs/nullableReturn"},
+        "future_return_h5_1520_proxy": {"$ref": "#/$defs/nullableReturn"}
+      }
+    },
+    "labelStatusMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["future_return_h1_1520_proxy", "future_return_h3_1520_proxy", "future_return_h5_1520_proxy"],
+      "properties": {
+        "future_return_h1_1520_proxy": {"$ref": "#/$defs/labelStatusPayloadH1"},
+        "future_return_h3_1520_proxy": {"$ref": "#/$defs/labelStatusPayloadH3"},
+        "future_return_h5_1520_proxy": {"$ref": "#/$defs/labelStatusPayloadH5"}
+      }
+    },
+    "labelExactMarkMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["future_return_h1_1520_proxy", "future_return_h3_1520_proxy", "future_return_h5_1520_proxy"],
+      "properties": {
+        "future_return_h1_1520_proxy": {"oneOf": [{"$ref": "#/$defs/exactMark"}, {"type": "null"}]},
+        "future_return_h3_1520_proxy": {"oneOf": [{"$ref": "#/$defs/exactMark"}, {"type": "null"}]},
+        "future_return_h5_1520_proxy": {"oneOf": [{"$ref": "#/$defs/exactMark"}, {"type": "null"}]}
+      }
+    },
+    "labelStatusPayloadH1": {"$ref": "#/$defs/labelStatusPayloadBaseH1"},
+    "labelStatusPayloadH3": {"$ref": "#/$defs/labelStatusPayloadBaseH3"},
+    "labelStatusPayloadH5": {"$ref": "#/$defs/labelStatusPayloadBaseH5"},
+    "labelStatusPayloadBaseH1": {"$ref": "#/$defs/labelStatusPayload1"},
+    "labelStatusPayloadBaseH3": {"$ref": "#/$defs/labelStatusPayload3"},
+    "labelStatusPayloadBaseH5": {"$ref": "#/$defs/labelStatusPayload5"},
+    "labelStatusPayload1": {"$ref": "#/$defs/labelStatusPayloadHorizon1"},
+    "labelStatusPayload3": {"$ref": "#/$defs/labelStatusPayloadHorizon3"},
+    "labelStatusPayload5": {"$ref": "#/$defs/labelStatusPayloadHorizon5"},
+    "labelStatusPayloadHorizon1": {
+      "allOf": [
+        {"$ref": "#/$defs/labelStatusPayload"},
+        {"properties": {"horizon_trading_sessions": {"const": 1}}}
+      ]
+    },
+    "labelStatusPayloadHorizon3": {
+      "allOf": [
+        {"$ref": "#/$defs/labelStatusPayload"},
+        {"properties": {"horizon_trading_sessions": {"const": 3}}}
+      ]
+    },
+    "labelStatusPayloadHorizon5": {
+      "allOf": [
+        {"$ref": "#/$defs/labelStatusPayload"},
+        {"properties": {"horizon_trading_sessions": {"const": 5}}}
+      ]
+    },
+    "labelStatusPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "horizon_trading_sessions", "entry_session", "exit_session", "entry_timestamp", "exit_timestamp", "official_close", "fallback_used"],
+      "properties": {
+        "status": {"enum": ["available", "missing_entry", "missing_exit"]},
+        "horizon_trading_sessions": {"$ref": "#/$defs/positiveInt"},
+        "entry_session": {"$ref": "#/$defs/date"},
+        "exit_session": {"$ref": "#/$defs/nullableDate"},
+        "entry_timestamp": {"oneOf": [{"$ref": "#/$defs/timestamp1520"}, {"type": "null"}]},
+        "exit_timestamp": {"oneOf": [{"$ref": "#/$defs/timestamp1520"}, {"type": "null"}]},
+        "official_close": {"const": false},
+        "fallback_used": {"const": false}
+      }
+    },
+    "h1AvailabilityRules": {"$ref": "#/$defs/hAvailabilityRules1"},
+    "h3AvailabilityRules": {"$ref": "#/$defs/hAvailabilityRules3"},
+    "h5AvailabilityRules": {"$ref": "#/$defs/hAvailabilityRules5"},
+    "hAvailabilityRules1": {"$ref": "#/$defs/h1RuleSet"},
+    "hAvailabilityRules3": {"$ref": "#/$defs/h3RuleSet"},
+    "hAvailabilityRules5": {"$ref": "#/$defs/h5RuleSet"},
+    "h1RuleSet": {
+      "allOf": [
+        {"$ref": "#/$defs/h1AvailableRule"},
+        {"$ref": "#/$defs/h1MissingEntryRule"},
+        {"$ref": "#/$defs/h1MissingExitRule"}
+      ]
+    },
+    "h3RuleSet": {
+      "allOf": [
+        {"$ref": "#/$defs/h3AvailableRule"},
+        {"$ref": "#/$defs/h3MissingEntryRule"},
+        {"$ref": "#/$defs/h3MissingExitRule"}
+      ]
+    },
+    "h5RuleSet": {
+      "allOf": [
+        {"$ref": "#/$defs/h5AvailableRule"},
+        {"$ref": "#/$defs/h5MissingEntryRule"},
+        {"$ref": "#/$defs/h5MissingExitRule"}
+      ]
+    },
+    "h1AvailableRule": {"$ref": "#/$defs/h1AvailableRuleBody"},
+    "h3AvailableRule": {"$ref": "#/$defs/h3AvailableRuleBody"},
+    "h5AvailableRule": {"$ref": "#/$defs/h5AvailableRuleBody"},
+    "h1MissingEntryRule": {"$ref": "#/$defs/h1MissingEntryRuleBody"},
+    "h3MissingEntryRule": {"$ref": "#/$defs/h3MissingEntryRuleBody"},
+    "h5MissingEntryRule": {"$ref": "#/$defs/h5MissingEntryRuleBody"},
+    "h1MissingExitRule": {"$ref": "#/$defs/h1MissingExitRuleBody"},
+    "h3MissingExitRule": {"$ref": "#/$defs/h3MissingExitRuleBody"},
+    "h5MissingExitRule": {"$ref": "#/$defs/h5MissingExitRuleBody"},
+    "h1AvailableRuleBody": {"$ref": "#/$defs/availableRuleH1"},
+    "h3AvailableRuleBody": {"$ref": "#/$defs/availableRuleH3"},
+    "h5AvailableRuleBody": {"$ref": "#/$defs/availableRuleH5"},
+    "h1MissingEntryRuleBody": {"$ref": "#/$defs/missingEntryRuleH1"},
+    "h3MissingEntryRuleBody": {"$ref": "#/$defs/missingEntryRuleH3"},
+    "h5MissingEntryRuleBody": {"$ref": "#/$defs/missingEntryRuleH5"},
+    "h1MissingExitRuleBody": {"$ref": "#/$defs/missingExitRuleH1"},
+    "h3MissingExitRuleBody": {"$ref": "#/$defs/missingExitRuleH3"},
+    "h5MissingExitRuleBody": {"$ref": "#/$defs/missingExitRuleH5"},
+    "availableRuleH1": {"if": {"$ref": "#/$defs/statusAvailableH1"}, "then": {"$ref": "#/$defs/thenAvailableH1"}},
+    "availableRuleH3": {"if": {"$ref": "#/$defs/statusAvailableH3"}, "then": {"$ref": "#/$defs/thenAvailableH3"}},
+    "availableRuleH5": {"if": {"$ref": "#/$defs/statusAvailableH5"}, "then": {"$ref": "#/$defs/thenAvailableH5"}},
+    "missingEntryRuleH1": {"if": {"$ref": "#/$defs/statusMissingEntryH1"}, "then": {"$ref": "#/$defs/thenMissingEntryH1"}},
+    "missingEntryRuleH3": {"if": {"$ref": "#/$defs/statusMissingEntryH3"}, "then": {"$ref": "#/$defs/thenMissingEntryH3"}},
+    "missingEntryRuleH5": {"if": {"$ref": "#/$defs/statusMissingEntryH5"}, "then": {"$ref": "#/$defs/thenMissingEntryH5"}},
+    "missingExitRuleH1": {"if": {"$ref": "#/$defs/statusMissingExitH1"}, "then": {"$ref": "#/$defs/thenMissingExitH1"}},
+    "missingExitRuleH3": {"if": {"$ref": "#/$defs/statusMissingExitH3"}, "then": {"$ref": "#/$defs/thenMissingExitH3"}},
+    "missingExitRuleH5": {"if": {"$ref": "#/$defs/statusMissingExitH5"}, "then": {"$ref": "#/$defs/thenMissingExitH5"}},
+    "statusAvailableH1": {"properties": {"label_statuses": {"properties": {"future_return_h1_1520_proxy": {"properties": {"status": {"const": "available"}}, "required": ["status"]}}, "required": ["future_return_h1_1520_proxy"]}}, "required": ["label_statuses"]},
+    "statusAvailableH3": {"properties": {"label_statuses": {"properties": {"future_return_h3_1520_proxy": {"properties": {"status": {"const": "available"}}, "required": ["status"]}}, "required": ["future_return_h3_1520_proxy"]}}, "required": ["label_statuses"]},
+    "statusAvailableH5": {"properties": {"label_statuses": {"properties": {"future_return_h5_1520_proxy": {"properties": {"status": {"const": "available"}}, "required": ["status"]}}, "required": ["future_return_h5_1520_proxy"]}}, "required": ["label_statuses"]},
+    "statusMissingEntryH1": {"properties": {"label_statuses": {"properties": {"future_return_h1_1520_proxy": {"properties": {"status": {"const": "missing_entry"}}, "required": ["status"]}}, "required": ["future_return_h1_1520_proxy"]}}, "required": ["label_statuses"]},
+    "statusMissingEntryH3": {"properties": {"label_statuses": {"properties": {"future_return_h3_1520_proxy": {"properties": {"status": {"const": "missing_entry"}}, "required": ["status"]}}, "required": ["future_return_h3_1520_proxy"]}}, "required": ["label_statuses"]},
+    "statusMissingEntryH5": {"properties": {"label_statuses": {"properties": {"future_return_h5_1520_proxy": {"properties": {"status": {"const": "missing_entry"}}, "required": ["status"]}}, "required": ["future_return_h5_1520_proxy"]}}, "required": ["label_statuses"]},
+    "statusMissingExitH1": {"properties": {"label_statuses": {"properties": {"future_return_h1_1520_proxy": {"properties": {"status": {"const": "missing_exit"}}, "required": ["status"]}}, "required": ["future_return_h1_1520_proxy"]}}, "required": ["label_statuses"]},
+    "statusMissingExitH3": {"properties": {"label_statuses": {"properties": {"future_return_h3_1520_proxy": {"properties": {"status": {"const": "missing_exit"}}, "required": ["status"]}}, "required": ["future_return_h3_1520_proxy"]}}, "required": ["label_statuses"]},
+    "statusMissingExitH5": {"properties": {"label_statuses": {"properties": {"future_return_h5_1520_proxy": {"properties": {"status": {"const": "missing_exit"}}, "required": ["status"]}}, "required": ["future_return_h5_1520_proxy"]}}, "required": ["label_statuses"]},
+    "thenAvailableH1": {"properties": {"future_return_h1_1520_proxy": {"$ref": "#/$defs/returnRatio"}, "entry_1520_status": {"const": "available"}, "entry_1520": {"$ref": "#/$defs/exactMark"}, "labels": {"properties": {"future_return_h1_1520_proxy": {"$ref": "#/$defs/returnRatio"}}}, "exit_1520_by_label": {"properties": {"future_return_h1_1520_proxy": {"$ref": "#/$defs/exactMark"}}}, "label_statuses": {"properties": {"future_return_h1_1520_proxy": {"properties": {"entry_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_session": {"$ref": "#/$defs/date"}}}}}}},
+    "thenAvailableH3": {"properties": {"future_return_h3_1520_proxy": {"$ref": "#/$defs/returnRatio"}, "entry_1520_status": {"const": "available"}, "entry_1520": {"$ref": "#/$defs/exactMark"}, "labels": {"properties": {"future_return_h3_1520_proxy": {"$ref": "#/$defs/returnRatio"}}}, "exit_1520_by_label": {"properties": {"future_return_h3_1520_proxy": {"$ref": "#/$defs/exactMark"}}}, "label_statuses": {"properties": {"future_return_h3_1520_proxy": {"properties": {"entry_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_session": {"$ref": "#/$defs/date"}}}}}}},
+    "thenAvailableH5": {"properties": {"future_return_h5_1520_proxy": {"$ref": "#/$defs/returnRatio"}, "entry_1520_status": {"const": "available"}, "entry_1520": {"$ref": "#/$defs/exactMark"}, "labels": {"properties": {"future_return_h5_1520_proxy": {"$ref": "#/$defs/returnRatio"}}}, "exit_1520_by_label": {"properties": {"future_return_h5_1520_proxy": {"$ref": "#/$defs/exactMark"}}}, "label_statuses": {"properties": {"future_return_h5_1520_proxy": {"properties": {"entry_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_session": {"$ref": "#/$defs/date"}}}}}}},
+    "thenMissingEntryH1": {"properties": {"future_return_h1_1520_proxy": {"type": "null"}, "entry_1520_status": {"const": "missing_entry"}, "entry_1520": {"type": "null"}, "labels": {"properties": {"future_return_h1_1520_proxy": {"type": "null"}}}, "exit_1520_by_label": {"properties": {"future_return_h1_1520_proxy": {"type": "null"}}}, "label_statuses": {"properties": {"future_return_h1_1520_proxy": {"properties": {"entry_timestamp": {"type": "null"}, "exit_timestamp": {"type": "null"}, "exit_session": {"type": "null"}}}}}}},
+    "thenMissingEntryH3": {"properties": {"future_return_h3_1520_proxy": {"type": "null"}, "entry_1520_status": {"const": "missing_entry"}, "entry_1520": {"type": "null"}, "labels": {"properties": {"future_return_h3_1520_proxy": {"type": "null"}}}, "exit_1520_by_label": {"properties": {"future_return_h3_1520_proxy": {"type": "null"}}}, "label_statuses": {"properties": {"future_return_h3_1520_proxy": {"properties": {"entry_timestamp": {"type": "null"}, "exit_timestamp": {"type": "null"}, "exit_session": {"type": "null"}}}}}}},
+    "thenMissingEntryH5": {"properties": {"future_return_h5_1520_proxy": {"type": "null"}, "entry_1520_status": {"const": "missing_entry"}, "entry_1520": {"type": "null"}, "labels": {"properties": {"future_return_h5_1520_proxy": {"type": "null"}}}, "exit_1520_by_label": {"properties": {"future_return_h5_1520_proxy": {"type": "null"}}}, "label_statuses": {"properties": {"future_return_h5_1520_proxy": {"properties": {"entry_timestamp": {"type": "null"}, "exit_timestamp": {"type": "null"}, "exit_session": {"type": "null"}}}}}}},
+    "thenMissingExitH1": {"properties": {"future_return_h1_1520_proxy": {"type": "null"}, "entry_1520_status": {"const": "available"}, "entry_1520": {"$ref": "#/$defs/exactMark"}, "labels": {"properties": {"future_return_h1_1520_proxy": {"type": "null"}}}, "exit_1520_by_label": {"properties": {"future_return_h1_1520_proxy": {"type": "null"}}}, "label_statuses": {"properties": {"future_return_h1_1520_proxy": {"properties": {"entry_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_timestamp": {"type": "null"}, "exit_session": {"$ref": "#/$defs/nullableDate"}}}}}}},
+    "thenMissingExitH3": {"properties": {"future_return_h3_1520_proxy": {"type": "null"}, "entry_1520_status": {"const": "available"}, "entry_1520": {"$ref": "#/$defs/exactMark"}, "labels": {"properties": {"future_return_h3_1520_proxy": {"type": "null"}}}, "exit_1520_by_label": {"properties": {"future_return_h3_1520_proxy": {"type": "null"}}}, "label_statuses": {"properties": {"future_return_h3_1520_proxy": {"properties": {"entry_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_timestamp": {"type": "null"}, "exit_session": {"$ref": "#/$defs/nullableDate"}}}}}}},
+    "thenMissingExitH5": {"properties": {"future_return_h5_1520_proxy": {"type": "null"}, "entry_1520_status": {"const": "available"}, "entry_1520": {"$ref": "#/$defs/exactMark"}, "labels": {"properties": {"future_return_h5_1520_proxy": {"type": "null"}}}, "exit_1520_by_label": {"properties": {"future_return_h5_1520_proxy": {"type": "null"}}}, "label_statuses": {"properties": {"future_return_h5_1520_proxy": {"properties": {"entry_timestamp": {"$ref": "#/$defs/timestamp1520"}, "exit_timestamp": {"type": "null"}, "exit_session": {"$ref": "#/$defs/nullableDate"}}}}}}},
+    "exactMark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "session",
+        "timestamp",
+        "close",
+        "price",
+        "open",
+        "high",
+        "low",
+        "price_1520_close_proxy",
+        "bar_volume_1520",
+        "bar_volume_status",
+        "volume_to_1520",
+        "volume_to_1520_status",
+        "cumulative_volume_to_1520",
+        "cumulative_volume_to_1520_status",
+        "amount_to_1520",
+        "amount_to_1520_status",
+        "tradable",
+        "exclusion_reason",
+        "price_basis",
+        "official_close",
+        "source_db_path",
+        "source_table",
+        "schema_version",
+        "causal_cutoff_kst",
+        "source_columns",
+        "date",
+        "session_date",
+        "timestamp_kst",
+        "timestamp_yyyymmddhhmm",
+        "table",
+        "source_timestamp_column",
+        "source_price_column",
+        "source_volume_column"
+      ],
+      "properties": {
+        "symbol": {"$ref": "#/$defs/symbol"},
+        "session": {"$ref": "#/$defs/date"},
+        "timestamp": {"$ref": "#/$defs/timestamp1520"},
+        "close": {"$ref": "#/$defs/finiteNumber"},
+        "price": {"$ref": "#/$defs/finiteNumber"},
+        "open": {"$ref": "#/$defs/finiteNumber"},
+        "high": {"$ref": "#/$defs/finiteNumber"},
+        "low": {"$ref": "#/$defs/finiteNumber"},
+        "price_1520_close_proxy": {"$ref": "#/$defs/finiteNumber"},
+        "price_basis": {"const": "15:20_bar_close_proxy"},
+        "official_close": {"const": false},
+        "bar_volume_1520": {"$ref": "#/$defs/nonNegativeNumber"},
+        "bar_volume_status": {"const": "SINGLE_5MIN_BAR_VOLUME_AT_15_20_ONLY"},
+        "volume_to_1520": {"type": "null"},
+        "volume_to_1520_status": {"const": "NOT_AVAILABLE_SOURCE_HAS_SINGLE_5MIN_BAR_VOLUME_ONLY"},
+        "cumulative_volume_to_1520": {"type": "null"},
+        "cumulative_volume_to_1520_status": {"const": "NOT_AVAILABLE_SOURCE_HAS_SINGLE_5MIN_BAR_VOLUME_ONLY"},
+        "amount_to_1520": {"type": "null"},
+        "amount_to_1520_status": {"const": "NOT_AVAILABLE_5MIN_DB_HAS_NO_AMOUNT_COLUMN_DO_NOT_APPROXIMATE_PRICE_X_VOLUME"},
+        "tradable": {"const": true},
+        "exclusion_reason": {"type": "null"},
+        "source_db_path": {"$ref": "#/$defs/approvedSourcePath"},
+        "source_table": {"$ref": "#/$defs/sourceTable"},
+        "schema_version": {"const": "kronos_daily_1520_source.v1"},
+        "causal_cutoff_kst": {"const": "15:20:00"},
+        "source_columns": {"$ref": "#/$defs/sourceColumns"},
+        "date": {"$ref": "#/$defs/date"},
+        "session_date": {"$ref": "#/$defs/date"},
+        "timestamp_kst": {"$ref": "#/$defs/timestamp1520"},
+        "timestamp_yyyymmddhhmm": {"$ref": "#/$defs/compactTimestamp1520"},
+        "table": {"$ref": "#/$defs/sourceTable"},
+        "source_timestamp_column": {"const": "date"},
+        "source_price_column": {"const": "close"},
+        "source_volume_column": {"const": "volume"}
+      }
+    },
+    "forbiddenDailyObject": {
+      "anyOf": [
+        {"required": ["open"]},
+        {"required": ["high"]},
+        {"required": ["low"]},
+        {"required": ["close"]},
+        {"required": ["volume"]},
+        {"required": ["amount"]},
+        {"required": ["future_return_1d"]},
+        {"required": ["legacy_future_return_1d"]},
+        {"required": ["future_direction_1d"]},
+        {"required": ["future_rank_pct_1d"]},
+        {"required": ["entry_close"]},
+        {"required": ["next_close"]},
+        {"required": ["daily_open"]},
+        {"required": ["daily_high"]},
+        {"required": ["daily_low"]},
+        {"required": ["daily_close"]},
+        {"required": ["daily_volume"]},
+        {"required": ["daily_amount"]},
+        {"required": ["daily_ohlcv"]},
+        {"required": ["final_open"]},
+        {"required": ["final_high"]},
+        {"required": ["final_low"]},
+        {"required": ["final_close"]},
+        {"required": ["final_volume"]},
+        {"required": ["final_amount"]},
+        {"required": ["full_day_open"]},
+        {"required": ["full_day_high"]},
+        {"required": ["full_day_low"]},
+        {"required": ["full_day_close"]},
+        {"required": ["full_day_volume"]},
+        {"required": ["full_day_amount"]},
+        {"required": ["one_day_open"]},
+        {"required": ["one_day_high"]},
+        {"required": ["one_day_low"]},
+        {"required": ["one_day_close"]},
+        {"required": ["one_day_volume"]},
+        {"required": ["one_day_amount"]},
+        {"required": ["ohlcv_1day_open"]},
+        {"required": ["ohlcv_1day_high"]},
+        {"required": ["ohlcv_1day_low"]},
+        {"required": ["ohlcv_1day_close"]},
+        {"required": ["ohlcv_1day_volume"]},
+        {"required": ["ohlcv_1day_amount"]},
+        {"required": ["price_x_volume_amount"]}
+      ]
+    }
+  }
+}

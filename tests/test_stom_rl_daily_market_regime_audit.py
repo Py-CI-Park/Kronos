@@ -74,17 +74,20 @@ def test_market_regime_audit_writes_research_only_artifacts(tmp_path):
     assert price_basis["status"] == "UNKNOWN_CONFIRMED"
     assert "model_build_or_candidate_promotion" in price_basis["blocked_uses"]
 
-    universe_rows = list(csv.DictReader((run_dir / "universe_quality.csv").open(encoding="utf-8")))
+    with (run_dir / "universe_quality.csv").open(encoding="utf-8") as handle:
+        universe_rows = list(csv.DictReader(handle))
     assert {row["code"] for row in universe_rows} == {"000250", "ABC123"}
     assert all(row["code_preserved_as_string"] == "True" for row in universe_rows)
 
-    proxy_rows = list(csv.DictReader((run_dir / "regime_proxy_metrics.csv").open(encoding="utf-8")))
+    with (run_dir / "regime_proxy_metrics.csv").open(encoding="utf-8") as handle:
+        proxy_rows = list(csv.DictReader(handle))
     assert proxy_rows
     assert {row["future_label_used"] for row in proxy_rows} == {"False"}
     assert {row["promotion_allowed"] for row in proxy_rows} == {"False"}
     assert {row["source_timing"] for row in proxy_rows} == {"past_or_current_ohlcv_only"}
 
-    controls = list(csv.DictReader((run_dir / "baseline_control_metrics.csv").open(encoding="utf-8")))
+    with (run_dir / "baseline_control_metrics.csv").open(encoding="utf-8") as handle:
+        controls = list(csv.DictReader(handle))
     assert {int(row["cost_round_trip_bp"]) for row in controls} == {0, 23, 46}
     assert {row["control"] for row in controls} == {"no_trade", "shuffle", "equal_weight_top_k", "frozen_d3"}
 

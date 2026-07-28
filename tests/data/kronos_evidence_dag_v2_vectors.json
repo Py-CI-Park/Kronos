@@ -1,0 +1,33 @@
+{
+  "candidate_contract": {
+    "schema": "kronos_candidate_map.v2",
+    "keys": ["schema", "complete", "candidate_source_ref", "scorecard_ref", "capabilities", "claims"],
+    "claims": 100,
+    "claim_record_keys": ["claim_id", "evidence_ref"],
+    "claim_ref_schema": "kronos_evidence_claim.v2",
+    "capabilities_schema": "kronos_candidate_capabilities.v2"
+  },
+  "cases": [
+    {"id": "duplicate_json_member", "stage": "parse_raw_jcs", "raw": "{\"schema\":\"x\",\"schema\":\"x\"}"},
+    {"id": "noncanonical_jcs", "stage": "parse_raw_jcs", "raw": "{ \"schema\":\"x\"}"},
+    {"id": "hash_consistent_claim_mutation", "stage": "candidate", "mutation": {"claim_id": "A01", "evidence_refs": []}},
+    {"id": "preclosure_alias", "stage": "candidate", "mutation": {"dependency": "candidate_source", "alias": "scorecard"}},
+    {"id": "immutable_ref_tamper", "stage": "candidate", "mutation": {"field": "candidate_source_ref", "uri": "agent://evidence/scorecard"}},
+    {"id": "disconnected_edge", "stage": "topology", "expected_error": "evidence graph contains disconnected objects", "mutation": {"uri": "agent://evidence/disconnected", "raw": {"schema": "kronos_seed.v2", "kind": "disconnected"}}},
+    {"id": "self_edge", "stage": "topology", "expected_error": "evidence graph contains a self edge", "mutation": {"source": "agent://evidence/final-map", "field": "candidate_map_ref", "uri": "agent://evidence/final-map"}},
+    {"id": "future_edge", "stage": "topology", "expected_error": "evidence graph contains a non-backward future edge", "mutation": {"source": "agent://map", "field": "candidate_source_ref", "uri": "agent://receipt_operator_a"}},
+    {"id": "assurance_wrong_schema", "stage": "final", "mutation": {"schema": "kronos_seed.v2"}},
+    {"id": "assurance_duplicate", "stage": "final", "mutation": {"duplicate": true}},
+    {"id": "assurance_reordered", "stage": "final", "mutation": {"reordered": true}},
+    {"id": "embedded_claim", "stage": "candidate", "mutation": {"field": "kind", "value": "claim-99"}},
+    {"id": "reordered_claim_record", "stage": "candidate", "mutation": {"field": "claims", "operation": "reverse"}},
+    {"id": "duplicate_claim_ref", "stage": "candidate", "mutation": {"field": "claims", "operation": "duplicate_first"}},
+    {"id": "missing_claim", "stage": "candidate", "mutation": {"field": "claims", "operation": "remove_first"}},
+    {"id": "foreign_claim_ref", "stage": "candidate", "mutation": {"field": "claims", "claim_id": "Z99"}},
+    {"id": "tampered_claim", "stage": "candidate", "mutation": {"claim_id": "A01", "evidence_refs": []}},
+    {"id": "e3_without_preclosure", "stage": "candidate", "mutation": {"claim_id": "E3.R", "evidence_refs": [{"uri": "agent://evidence/seed"}]}},
+    {"id": "candidate_incomplete", "stage": "candidate", "mutation": {"field": "complete", "value": false}},
+    {"id": "forward_edge", "stage": "topology", "expected_error": "evidence graph contains a non-backward future edge", "mutation": {"source": "agent://pre", "dependency": "candidate_source", "uri": "agent://receipt_operator_a"}},
+    {"id": "transitive_cycle", "stage": "topology", "expected_error": "evidence graph contains a transitive cycle", "mutation": {"first": "agent://pre", "second": "agent://map"}}
+  ]
+}

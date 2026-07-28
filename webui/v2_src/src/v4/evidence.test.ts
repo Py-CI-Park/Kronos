@@ -30,6 +30,20 @@ const ALL_TRUE = {
   go_summary_allowed: true,
 };
 
+function assertAllLocks(
+  result: Evidence.PromotionLocksResult,
+  expected: boolean,
+  sourceStatus: Evidence.LockSourceStatus,
+): void {
+  const expectedReason = expected ? 'UNLOCKED_BY_SOURCE' : 'LOCKED_BY_SOURCE';
+  assert.deepEqual(result.locks, Object.fromEntries(PROMOTION_LOCK_KEYS.map((key) => [key, expected])));
+  for (const key of PROMOTION_LOCK_KEYS) {
+    assert.equal(result.states[key].allowed, expected);
+    assert.equal(result.states[key].sourceStatus, sourceStatus);
+    assert.equal(result.states[key].reason, sourceStatus === 'declared' ? expectedReason : 'LOCK_SOURCE_INVALID');
+  }
+}
+
 test('promotion locks always expose the exact six keys and fail closed when missing', () => {
   const result = adaptPromotionLocks({});
 
@@ -232,6 +246,109 @@ test('raw LIVE, ACTIVE, READY, and profitable run statuses fail closed for lifec
     assert.equal(run.verdict, 'NO-GO/UNKNOWN_BLOCKED');
   }
 });
+test('run lifecycle accepts primitive and nested object variants without object-string artifacts', () => {
+  assert.equal(adaptRunEvidence({ lifecycle: 'completed' }).lifecycle, 'COMPLETED');
+  assert.equal(adaptRunEvidence({ lifecycle: { status: 'replayed' } }).lifecycle, 'REPLAY');
+  assert.equal(adaptRunEvidence({ summary: { status: 'stale' } }).lifecycle, 'STALE');
+  assert.equal(
+    adaptEvidenceIdentity({ lifecycle: { status: 'completed' } }).freshness_status,
+    'COMPLETED',
+  );
+  assert.equal(
+    adaptRunEvidence({ lifecycle: { state: 'CONFLICT_BLOCKED' }, summary: { status: 'completed' } }).lifecycle,
+    'CONFLICT_BLOCKED',
+  );
+
+  const malformed = adaptRunEvidence({
+    lifecycle: { status: { unexpected: 'completed' } },
+    status: 'completed',
+  });
+
+  assert.equal(malformed.lifecycle, 'MISSING');
+  assert.notEqual(malformed.lifecycle, '[object Object]');
+});
+
+test('run evidence extracts nested summary and strategy wrappers with conservative provenance', () => {
+  const run = adaptRunEvidence({
+    data: {
+      name: '000123',
+      artifact_type: 'opening_30m_rl_workflow',
+      lifecycle: { status: 'completed' },
+      summary: {
+        strategy_context: {
+          line: 'supervised_gate',
+          is_reinforcement_learning: false,
+          label: '감독 게이트 000123',
+          primary_baseline: 'rule_23bp',
+        },
+        cost_bps: 23,
+        seed: '000007',
+        split: 'train/test/oos',
+        split_hash: 'c'.repeat(64),
+        prereg_doc: 'docs/prereg.md',
+        verdict: 'NO-GO_RESEARCH_ONLY',
+      },
+    },
+  });
+
+  assert.equal(run.run_id, '000123');
+  assert.equal(run.line, 'supervised');
+  assert.equal(run.is_reinforcement_learning, false);
+  assert.equal(run.strategy_label, '감독 게이트 000123');
+  assert.equal(run.baseline_label, 'rule_23bp');
+  assert.equal(run.cost_bps, 23);
+  assert.equal(run.seed, '000007');
+  assert.equal(run.split, 'train/test/oos');
+  assert.equal(run.split_hash, 'c'.repeat(64));
+  assert.equal(run.prereg_doc, 'docs/prereg.md');
+  assert.equal(run.lifecycle, 'COMPLETED');
+  assert.equal(run.verdict, 'NO-GO_RESEARCH_ONLY');
+});
+
+test('explicit false zero and empty strategy values are not overwritten by wrapper fallbacks', () => {
+  const run = adaptRunEvidence({
+    run_id: '000000',
+    cost_bps: 0,
+    strategy_context: {
+      line: 'rule_mainline',
+      is_reinforcement_learning: false,
+      label: '',
+      primary_baseline: '',
+    },
+    summary: {
+      strategy_context: {
+        line: 'rl_experiment',
+        is_reinforcement_learning: true,
+        label: 'optimistic fallback',
+        primary_baseline: 'optimistic baseline',
+      },
+      cost_bps: 23,
+    },
+    promotion_locks: ALL_FALSE,
+  });
+
+  assert.equal(run.run_id, '000000');
+  assert.equal(run.line, 'RULE');
+  assert.equal(run.is_reinforcement_learning, false);
+  assert.equal(run.strategy_label, '');
+  assert.equal(run.baseline_label, '');
+  assert.equal(run.cost_bps, 0);
+  assert.deepEqual(run.promotion_locks.locks, ALL_FALSE);
+});
+
+test('unknown optimistic lifecycle fails closed while verdict never uses optimistic fallback', () => {
+  const run = adaptRunEvidence({
+    lifecycle: { status: 'LIVE' },
+    status: 'completed',
+    verdict: 'READY_FOR_GO',
+    summary: { verdict: 'NO-GO_RESEARCH_ONLY' },
+    blocking_reasons: [],
+  });
+
+  assert.equal(run.lifecycle, 'MISSING');
+  assert.equal(run.verdict, 'NO-GO_RESEARCH_ONLY');
+  assert.deepEqual(run.blocking_reasons, ['BLOCKERS_NOT_RECORDED']);
+});
 
 test('run verdict ignores lifecycle status but preserves explicit conservative verdict and readiness fields', () => {
   const nestedNoGo = adaptRunEvidence({
@@ -305,6 +422,62 @@ test('run evidence adapts nested locks and legacy profitability alias fail-close
   assert.equal(run.promotion_locks.states.live_broker_order_allowed.sourceStatus, 'missing');
   assert.equal(run.promotion_locks.locks.go_summary_allowed, true);
 });
+
+test('run promotion locks keep root false ahead of nested true for all six keys', () => {
+  const run = adaptRunEvidence({
+    promotion_locks: ALL_FALSE,
+    payload: { promotion_locks: ALL_TRUE },
+    summary: { promotion_locks: ALL_TRUE },
+    detail: { locks: ALL_TRUE },
+    risk_policy: { safety_locks: ALL_TRUE },
+  });
+
+  assertAllLocks(run.promotion_locks, false, 'declared');
+  assert.equal(run.promotion_locks.allLocked, true);
+  assert.equal(run.promotion_locks.hasInvalidSource, false);
+});
+
+test('run promotion locks keep wrapper direct false ahead of container true for all six keys', () => {
+  const run = adaptRunEvidence({
+    payload: {
+      ...ALL_FALSE,
+      promotion_locks: ALL_TRUE,
+      locks: ALL_TRUE,
+      safety_locks: ALL_TRUE,
+    },
+  });
+
+  assertAllLocks(run.promotion_locks, false, 'declared');
+  assert.equal(run.promotion_locks.allLocked, true);
+  assert.equal(run.promotion_locks.hasInvalidSource, false);
+});
+
+test('run promotion locks keep invalid root sources ahead of nested true for all six keys', () => {
+  const invalidRootLocks = Object.fromEntries(PROMOTION_LOCK_KEYS.map((key) => [key, 'true']));
+  const run = adaptRunEvidence({
+    ...invalidRootLocks,
+    summary: { promotion_locks: ALL_TRUE },
+  });
+
+  assertAllLocks(run.promotion_locks, false, 'invalid');
+  assert.equal(run.promotion_locks.allLocked, true);
+  assert.equal(run.promotion_locks.hasInvalidSource, true);
+});
+
+test('run promotion locks accept legitimate nested false when root authority is absent for all six keys', () => {
+  const run = adaptRunEvidence({
+    summary: { promotion_locks: { promotion_allowed: false, model_build_allowed: false } },
+    detail: { locks: { paper_forward_allowed: false, live_broker_order_allowed: false } },
+    risk_policy: {
+      safety_locks: { profitability_claim_allowed: false, go_summary_allowed: false },
+    },
+  });
+
+  assertAllLocks(run.promotion_locks, false, 'declared');
+  assert.equal(run.promotion_locks.allLocked, true);
+  assert.equal(run.promotion_locks.hasInvalidSource, false);
+});
+
 test('invalid or missing split hashes use the split-specific fallback', () => {
   assert.equal(adaptRunEvidence({ split_hash: 'not-a-hash' }).split_hash, 'SPLIT_HASH_NOT_RECORDED');
   assert.equal(adaptRunEvidence({}).split_hash, 'SPLIT_HASH_NOT_RECORDED');

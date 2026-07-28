@@ -19,3 +19,69 @@ body {
   color: var(--fg);
   background: var(--bg);
 }
+
+/* 4) V5 shell-only responsive IA. V3/V4 keep the imported component defaults. */
+.app-shell[data-kronos-shell="v5"] {
+  --content-max: var(--v5-content-max);
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) auto;
+  align-items: start;
+  max-width: 100%;
+}
+
+.app-shell[data-kronos-shell="v5"][data-sidebar="collapsed"] {
+  grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr) auto;
+}
+
+.app-shell[data-kronos-shell="v5"] > *,
+.app-shell[data-kronos-shell="v5"] .main,
+.app-shell[data-kronos-shell="v5"] .page {
+  min-width: 0;
+}
+
+.app-shell[data-kronos-shell="v5"] .main {
+  width: 100%;
+}
+
+.app-shell[data-kronos-shell="v5"] .page {
+  max-width: min(var(--content-max), 100%);
+}
+
+@media (min-width: 1920px) {
+  .app-shell[data-kronos-shell="v5"] {
+    --content-max: var(--v5-content-max-wide);
+  }
+}
+
+@media (min-width: 2560px) {
+  .app-shell[data-kronos-shell="v5"] {
+    --content-max: var(--v5-content-max-ultrawide);
+  }
+}
+
+@media (max-width: 1180px), (orientation: portrait) {
+  .app-shell[data-kronos-shell="v5"],
+  .app-shell[data-kronos-shell="v5"][data-sidebar="collapsed"] {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+
+  .app-shell[data-kronos-shell="v5"] .page {
+    padding-inline: clamp(16px, 3vw, 28px);
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell[data-kronos-shell="v5"],
+  .app-shell[data-kronos-shell="v5"][data-sidebar="collapsed"] {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell[data-kronos-shell="v5"] .main {
+    max-width: 100vw;
+  }
+}
+
+@media (max-width: 520px) {
+  .app-shell[data-kronos-shell="v5"] .page {
+    padding-inline: 12px;
+  }
+}

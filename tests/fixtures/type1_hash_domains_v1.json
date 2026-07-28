@@ -1,0 +1,46 @@
+{
+  "schema_version": "kronos.type1.hash-domain-kats.v1",
+  "genesis_commitment_sha256": "4127aeb000000000000000000000000000000000000000000000000000002301",
+  "cases": [
+    {
+      "domain": "access_ledger",
+      "parts_hex": ["7b7d"],
+      "sha256": "f9756641eabab1d4060fe5524086f7b0b3ec9e4718e1e55471ac7934adc015de"
+    },
+    {
+      "domain": "commitment",
+      "parts_hex": ["0000000000000001", "7b7d"],
+      "sha256": "a28876db38c5313fb3aa86f2e6a3953b5f9c1f25ac5b0d44b34c0da0cb8ba326"
+    },
+    {
+      "domain": "merkle_leaf",
+      "parts_hex": ["0000000000000001", "a28876db38c5313fb3aa86f2e6a3953b5f9c1f25ac5b0d44b34c0da0cb8ba326"],
+      "sha256": "941de4206c05cfa8b2b4db8e3202ba2f92eeede6499a9b57511e3505c393a6f9"
+    },
+    {
+      "domain": "merkle_node",
+      "parts_hex": ["941de4206c05cfa8b2b4db8e3202ba2f92eeede6499a9b57511e3505c393a6f9", "941de4206c05cfa8b2b4db8e3202ba2f92eeede6499a9b57511e3505c393a6f9"],
+      "sha256": "75f20c93f660d1d17435844071c29d9a0a5429d3e5ee20a358746afec28a01d2"
+    },
+    {
+      "domain": "event",
+      "parts_hex": ["7b7d"],
+      "sha256": "5755737b3541aa1d72522c6fa693c247316cef835b9bd8744e939e84da907c53"
+    },
+    {
+      "domain": "seal",
+      "parts_hex": ["7b7d"],
+      "sha256": "e7c5c307c8c062c682da33510d04bc3d08c23a5c3c9b293882208b4d26e24d56"
+    },
+    {
+      "domain": "block",
+      "parts_hex": ["3030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030"],
+      "sha256": "eede46ed8003aa9f31b7116bf23e0de41eb0bfc7db1e20113795db1670d2bd19"
+    },
+    {
+      "domain": "gate",
+      "parts_hex": ["7b7d"],
+      "sha256": "f497fe4e2b9f7efdf50b703a6c04be77c2b896663fad3aa2e84e07570733fd1b"
+    }
+  ]
+}

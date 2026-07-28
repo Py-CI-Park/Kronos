@@ -45,13 +45,11 @@ _FROZEN_ROUTE_IDS = [
     "settings",
     "docs",
 ]
+# V5 intentionally owns the shell, Flask route registration, and generated-client
+# dependencies. Keep the historical V4 freeze on untouched V4 authorities.
 _FROZEN_BOUNDARY_SHA256 = {
-    "webui/app.py": "7f4f78729685b01937767e4bc041e1c053c532c3be9594f795fe247fb6754b42",
     "webui/rl_dashboard_tables.py": "b3cebec1bc4f698435f8fa42277a6de5aa495e07c1fd5c5f14dfc605ba8a60b6",
-    "webui/v2/__init__.py": "73b017458c5aa8b2a47e28397353144833db3b175fb69bdd291c455ed1167402",
     "stom_rl/rl_events.py": "4764308da956babcbc3b9c385aff59a52f27dc41816971a1c9be08f0a740a701",
-    "webui/v2_src/package.json": "4757ada6e8c99587cde4acb7abf325fb84c512445eb849cd7ecd362790f51b40",
-    "webui/v2_src/package-lock.json": "b16bdad8496eb8f415f2e0db39bba34645d58b15aaa0b845f102c8a361a4fca7",
 }
 
 
@@ -111,9 +109,10 @@ def test_app_keeps_single_twelve_branch_host_and_v3_v4_coexistence() -> None:
     assert app.count("{#snippet tabHost()}") == 1
     assert app.count("{@render tabHost()}") == 2
 
-    branches = re.findall(r"tab === '([^']+)'", tab_host)
-    assert branches == _EXPECTED_TABS
-    assert len(branches) == len(set(branches)) == 12
+    legacy_map = _between(app, "const LEGACY_COMPONENTS", "};")
+    for tab_id in _EXPECTED_TABS:
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        assert f"{key}:" in legacy_map
     assert "data-v3-tab-host={shell === 'v3' ? '' : undefined}" in tab_host
     assert "data-v4-domain-host={shell === 'v4' ? '' : undefined}" in tab_host
 
@@ -121,38 +120,17 @@ def test_app_keeps_single_twelve_branch_host_and_v3_v4_coexistence() -> None:
 def test_app_wraps_only_forecast_and_daily_legacy_tabs_for_v4() -> None:
     app = _source("App.svelte")
     tab_host = _between(app, "{#snippet tabHost()}", "{/snippet}")
-    forecast_branch = _tab_branch(tab_host, "forecast")
-    daily_branch = _tab_branch(tab_host, "daily-ohlcv")
-
-    _assert_in_order(
-        forecast_branch,
-        [
-            "{#if shell === 'v4'}",
-            "<V4ForecastStudio>",
-            "<ForecastWorkbenchTab />",
-            "</V4ForecastStudio>",
-            "{:else}",
-            "<ForecastWorkbenchTab />",
-        ],
-    )
-    _assert_in_order(
-        daily_branch,
-        [
-            "{#if shell === 'v4'}",
-            "<V4DailyResearch>",
-            "<DailyOhlcvTab />",
-            "</V4DailyResearch>",
-            "{:else}",
-            "<DailyOhlcvTab />",
-        ],
-    )
-    assert tab_host.count("<V4ForecastStudio>") == tab_host.count("</V4ForecastStudio>") == 1
-    assert tab_host.count("<V4DailyResearch>") == tab_host.count("</V4DailyResearch>") == 1
-
+    wrapper_map = _between(app, "const V4_WRAPPERS", "};")
+    assert "forecast: V4ForecastStudio" in wrapper_map
+    assert "'daily-ohlcv': V4DailyResearch" in wrapper_map
     for tab_id in set(_EXPECTED_TABS) - {"forecast", "daily-ohlcv"}:
-        branch = _tab_branch(tab_host, tab_id)
-        assert "V4ForecastStudio" not in branch
-        assert "V4DailyResearch" not in branch
+        key = f"'{tab_id}'" if "-" in tab_id else tab_id
+        entry = re.search(rf"{re.escape(key)}:\s*([^,]+)", wrapper_map)
+        assert entry
+        assert entry.group(1) not in {"V4ForecastStudio", "V4DailyResearch"}
+    assert "{@const V4Wrapper = V4_WRAPPERS[activeRoute.componentKey]}" in tab_host
+    assert "<V4Wrapper {...V4_WRAPPER_PROPS[activeRoute.componentKey]}>" in tab_host
+    assert tab_host.count("<RouteComponent />") == 2
 
 
 def test_v4_forecast_contract_markers_lazy_child_and_payload_validation() -> None:
@@ -251,7 +229,10 @@ def test_wave5_frontend_sources_do_not_declare_backend_routes_or_duplicate_polli
     assert "startPolling" not in "\n".join(value for path, value in product.items() if path != "webui/v2_src/src/App.svelte")
     assert "setInterval" not in combined
 
-    route_ids = re.findall(r"id: '([^']+)'", _between(routes, "export const DASHBOARD_ROUTES", "] as const;"))
+    route_ids = re.findall(
+        r"id: '([^']+)'",
+        _between(routes, "export const DASHBOARD_ROUTE_MANIFEST", "] as const satisfies"),
+    )
     assert route_ids == _FROZEN_ROUTE_IDS
     assert "/api/predict" not in routes
     assert "/api/daily-ohlcv" not in routes

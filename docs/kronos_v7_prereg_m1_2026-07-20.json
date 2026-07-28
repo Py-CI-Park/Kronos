@@ -1,0 +1,95 @@
+{
+  "schema_version": "kronos_v7_prereg.v1",
+  "prereg_id": "KRONOS-V7-PREREG-M1-2026-07-20",
+  "frozen_utc": "2026-07-20T07:30:00Z",
+  "status": "FROZEN",
+  "supersedes": "KRONOS-V6-PREREG-H1-2026-07-19",
+  "change_justification": {
+    "source_result": "docs/kronos_v6_daily_h1_rl_result_2026-07-19.md",
+    "flaw": "v1 negative-control rule compared the shuffled-label policy against no-trade only; in a drifting market any exposure can beat no-trade, so the control can trigger NO_GO (or pass) for reasons unrelated to label leakage.",
+    "fix": "v2 requires the shuffled-label control to also exceed its exposure-matched random distribution (same per-session pick counts, R repetitions) by more than two standard deviations before it invalidates the run."
+  },
+  "hypothesis": {
+    "primary": "A constrained 10-slot daily-close tabular-Q policy on D-1 daily-DB features with exact 15:20 proxy execution achieves validation economic NAV above no-trade and at least equal to the best frozen RULE/random baseline at 0.23% round-trip cost, in a majority of seeds.",
+    "null": "The policy does not satisfy the criterion in a majority of seeds net of 0.23% cost on validation.",
+    "negative_controls": [
+      "shuffled-label control must NOT exceed max(no_trade, exposure-matched random mean + 2*std) at primary cost",
+      "zero-cost scenario is display-only and never used for the verdict"
+    ]
+  },
+  "not_claimed_even_if_success": [
+    "profitability in live trading",
+    "official-close executability",
+    "model promotion",
+    "paper-forward readiness",
+    "broker/order readiness",
+    "GO"
+  ],
+  "dataset": {
+    "contract": "kronos_v6_joined_dataset.v1",
+    "builder": "stom_rl.daily_v6_dataset",
+    "full_dataset_run_id": "v6_dataset_full_001",
+    "full_dataset_sha256": "ae44c8056be90124c715f9accff51feabe767291ab65e8a5654e67d6ccf849b5",
+    "smoke_dataset_run_id": "v6_dataset_smoke_001",
+    "smoke_dataset_sha256": "02e7be1a03eacf4e28fdbdf13d2a7775e886c89771bdc53984a1235e2b6b763f",
+    "splits": {
+      "train": "<=20231231",
+      "val": "20240101-20250630",
+      "test": "20250701-20260612",
+      "embargo": "rows whose max-horizon exit crosses a split boundary are dropped"
+    },
+    "labels": {
+      "primary": "future_return_h1_1520_proxy",
+      "price_basis": "15:20_bar_close_proxy",
+      "official_close": false,
+      "fallback": "none_exact_1520_only"
+    }
+  },
+  "environment": {
+    "capital_krw": 60000000,
+    "slots": 10,
+    "slot_budget_krw": 5000000,
+    "max_invested_krw": 50000000,
+    "reserve_krw": 10000000,
+    "costs": {
+      "primary_display": "0.23%",
+      "zero_control_display": "0.00%",
+      "stress_display": "0.46%"
+    }
+  },
+  "algorithm": {
+    "family": "tabular_q_learning_on_bucketed_daily_features",
+    "trainer": "stom_rl.daily_v7_train",
+    "trainer_version": "kronos_v7_m1_tabular_q.v2",
+    "state_features": ["ret_5d_prev", "vol_z_20", "foreign_ratio_delta_5", "inst_netbuy_norm_5"],
+    "hyperparams_frozen": {
+      "alpha": 0.1,
+      "epsilon_initial": 0.1,
+      "epsilon_decay": 0.98,
+      "epsilon_floor": 0.01,
+      "episodes_max": 300,
+      "early_stop": "rolling-3 val NAV declines 3 consecutive checks after episode 10"
+    },
+    "seeds": [0, 1, 2, 3, 4]
+  },
+  "baselines": {
+    "no_trade": "hold 60,000,000 KRW",
+    "rule_topk_ret5": "top-10 by ret_5d_prev (momentum RULE)",
+    "rule_topk_low_vol": "top-10 by lowest vol_z_20 (low-volatility RULE)",
+    "rule_topk_inst": "top-10 by inst_netbuy_norm_5 (institutional-flow RULE)",
+    "random_topk": "seeded random 10 per session",
+    "exposure_matched_random": {
+      "definition": "for each shuffled-label control seed, replay the same per-session pick counts with uniformly random distinct symbols",
+      "repetitions": 20,
+      "rng": "random.Random(1000 + seed)"
+    }
+  },
+  "verdict_rules": {
+    "negative_control_fail": "any shuffled seed final val NAV > max(60000000, exposure_matched mean + 2*std) => NO_GO",
+    "go_candidate": ">=3 of 5 seeds with val NAV > 60000000 AND >= best of (rule/random baselines) => GO_CANDIDATE_VALIDATION_ONLY",
+    "inconclusive": "1-2 qualifying seeds => INCONCLUSIVE",
+    "no_go": "0 qualifying seeds => NO_GO",
+    "test_oos": "untouched test split is read once only if GO_CANDIDATE_VALIDATION_ONLY; otherwise NOT_RUN",
+    "post_hoc_retune": "forbidden; any change requires a new preregistration version"
+  }
+}

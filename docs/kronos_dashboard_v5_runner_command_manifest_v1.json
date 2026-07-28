@@ -1,0 +1,99 @@
+{
+  "schema": "kronos_dashboard_v5_runner_command_manifest.v1",
+  "protocol_schema": "kronos_daily_sb3_protocol.v1",
+  "protocol_sha256": "0bab93ddaaebe0f3b5aaa6d0f538b5a79cd6aa880c7a8bee188aa2f17ee811fc",
+  "purpose": "synthetic_verification_only",
+  "synthetic_verification_only": true,
+  "no_heavy_compute": true,
+  "fresh_oos_access_allowed": false,
+  "command_id_policy": "EXACT_APPROVED_COMMAND_ID_AND_ARGV_ONLY",
+  "forbidden_token_policy": "CASE_INSENSITIVE_SUBSTRING_REJECT",
+  "commands": [
+    {
+      "command_id": "emit-canonical-protocol-json",
+      "argv": [
+        "py",
+        "-3.11",
+        "-m",
+        "stom_rl.daily_portfolio_sb3_protocol",
+        "--emit-protocol",
+        "--synthetic-verification-only",
+        "--no-heavy-compute"
+      ],
+      "may_train": false,
+      "may_read_fresh_oos": false,
+      "expected_exit": 0,
+      "max_cells_executable": 0
+    },
+    {
+      "command_id": "emit-protocol-fixture-summary",
+      "argv": [
+        "py",
+        "-3.11",
+        "-m",
+        "stom_rl.daily_portfolio_sb3_protocol",
+        "--emit-fixture-summary",
+        "--synthetic-verification-only",
+        "--no-heavy-compute"
+      ],
+      "may_train": false,
+      "may_read_fresh_oos": false,
+      "expected_exit": 0,
+      "max_cells_executable": 0
+    }
+  ],
+  "pass_receipt_commands": [
+    {
+      "component": "protocol",
+      "command_id": "not-run-protocol-synthetic-receipt",
+      "argv": [
+        "NOT_RUN_SYNTHETIC_RECEIPT",
+        "protocol"
+      ],
+      "not_run_synthetic_receipt": true,
+      "synthetic_only": true,
+      "heavy_compute_run": false,
+      "fresh_oos_accessed": false,
+      "full_ppo_status": "NOT_RUN",
+      "fresh_oos_status": "NOT_RUN"
+    },
+    {
+      "component": "runner",
+      "command_id": "not-run-runner-synthetic-receipt",
+      "argv": [
+        "NOT_RUN_SYNTHETIC_RECEIPT",
+        "runner"
+      ],
+      "not_run_synthetic_receipt": true,
+      "synthetic_only": true,
+      "heavy_compute_run": false,
+      "fresh_oos_accessed": false,
+      "full_ppo_status": "NOT_RUN",
+      "fresh_oos_status": "NOT_RUN"
+    },
+    {
+      "component": "evaluator",
+      "command_id": "not-run-evaluator-synthetic-receipt",
+      "argv": [
+        "NOT_RUN_SYNTHETIC_RECEIPT",
+        "evaluator"
+      ],
+      "not_run_synthetic_receipt": true,
+      "synthetic_only": true,
+      "heavy_compute_run": false,
+      "fresh_oos_accessed": false,
+      "full_ppo_status": "NOT_RUN",
+      "fresh_oos_status": "NOT_RUN"
+    }
+  ],
+  "forbidden_argv_tokens": [
+    "--train",
+    "--fit-model",
+    "learn",
+    "ppo-learn",
+    "stable-baselines3",
+    "fresh-oos",
+    "oos-release",
+    "--execute"
+  ]
+}

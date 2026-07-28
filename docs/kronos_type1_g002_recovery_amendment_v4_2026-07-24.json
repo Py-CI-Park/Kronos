@@ -1,0 +1,33 @@
+{
+  "schema_version": "kronos.type1.g002-recovery-amendment.v4",
+  "amendment_id": "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-004",
+  "supersedes": "KRONOS-TYPE1-G002-RECOVERY-2026-07-24-003",
+  "status": "FROZEN_BEFORE_V5_MATERIALIZATION_OR_TRAINING",
+  "reason": "Authorities -002 and -003 are quarantined. -003 materialized a dataset but did not train; v5 requires separate per-market KRX captures and typed domestic identity evidence before any materialization or training.",
+  "preserved_aborted_evidence": [
+    {"dataset_id": "type1-close-20260803-001", "train_id": "type1-public-001", "train_run_id": "train_type1-public-001", "status": "INELIGIBLE_BLOCKED", "models_created": 0},
+    {"dataset_id": "type1-close-20260803-002", "train_id": "type1-public-002", "train_run_id": "train_type1-public-002", "status": "INELIGIBLE_BLOCKED", "models_created": 0},
+    {"dataset_id": "type1-close-20260803-003", "train_id": "type1-public-003", "train_run_id": "train_type1-public-003", "status": "NON_MATERIALIZED_INELIGIBLE", "models_created": 0, "fresh_oos": {"status": "NOT_RUN", "no_read": true}},
+    {"dataset_id": "type1-close-20260803-004", "train_id": "type1-public-004", "train_run_id": "train_type1-public-004", "status": "MATERIALIZED_NOT_TRAINED_QUARANTINED", "models_created": 0, "fresh_oos": {"status": "NOT_RUN", "no_read": true}}
+  ],
+  "quarantined_authorities": [
+    {"authority_id": "type1-krx-authority-20260723-002", "authority_sha256": "7d0ea6d76e3181da6caef232ce0c152645c290a290021e906d700667f8a059a2", "status": "QUARANTINED", "models_created": 0, "fresh_oos": {"status": "NOT_RUN", "no_read": true}},
+    {"authority_id": "type1-krx-authority-20260724-003", "authority_sha256": "30e34b05fe65e31b2cbb826a48628946fa3f03dc7fc7f868ebd41ff36fcef1fe", "rows_sha256": "0af2be6cba26827f48ea00bf0caf700b1ce40e6fc1c2cfdebf1710ae39dfbd11", "status": "QUARANTINED_MATERIALIZED_NOT_TRAINED", "models_created": 0, "fresh_oos": {"status": "NOT_RUN", "no_read": true}}
+  ],
+  "replacement_identity": {"authority_id": "type1-krx-authority-20260724-004", "dataset_id": "type1-close-20260803-005", "train_id": "type1-public-005", "train_run_id": "train_type1-public-005", "custody_uid": "type1-fresh-oos-20260803-005"},
+  "authority_contract": {
+    "anchor_date": "2017-12-29",
+    "authority_metadata_cutoff": "2026-07-24",
+    "authority_metadata_scope": "MDCSTAT23801 instrument-master metadata only; price, calendar, ranking, public-row, and fresh-OOS access end at 2025-06-30.",
+    "official_krx_surfaces": {"current_typed_master": "MDCSTAT01901", "delisted_typed_history": "MDCSTAT23801", "historical_anchor_membership_and_name": "MDCSTAT01501"},
+    "identity_join": "Exact ISU_CD requires one non-conflicting typed row. Six-digit ticker fallback first filters LIST_DD<=2017-12-29<DELIST_DD or active, then requires exactly one candidate.",
+    "typed_inclusion": {"current_isin": "KR7 country/security identifier", "historical_six_digit": "MDCSTAT23801 six-digit ISU_CD", "SECUGRP_NM": "주권", "KIND_STKCERT_TP_NM": "보통주", "domestic_group": "every present domestic/foreign field is explicitly 국내 or DOMESTIC"},
+    "per_market_capture": "Store and RFC8785-hash separate {query,response} captures for STK/KOSPI and KSQ/KOSDAQ; each row must retain matching market provenance.",
+    "retained": ["delisted anchor members", "suspended anchor members", "메리츠화재", "메리츠증권", "메리츠금융지주", "HD현대인프라코어", "연우"],
+    "ranking": {"measure": "60-session median traded value", "through": "2017-12-29", "order": "median descending then symbol ascending", "size": 500},
+    "calendar": {"source": "official KRX public calendar", "start": "2018-01-02", "end": "2025-06-30"}
+  },
+  "execution_contract": {"proxy_time": "15:20:00", "cost_bps": 23, "fixed_notional": 60000000, "primary_seeds": 5, "shuffled_seeds": 5, "timesteps_per_seed": 200000, "outcome": "NO_GO_ONLY"},
+  "fresh_oos": {"custody_uid": "type1-fresh-oos-20260803-005", "status": "NOT_RUN", "no_read": true, "no_price_or_oos_query_after": "2025-06-30"},
+  "frozen_utc": "2026-07-24T00:00:00Z"
+}

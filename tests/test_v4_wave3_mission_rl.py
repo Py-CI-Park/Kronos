@@ -61,6 +61,14 @@ _RL_MARKERS = [
     "data-v4-rl-lane",
     "data-v4-rl-facts",
     "data-v4-raw-audit",
+    "data-v4-rl-identity-reconciliation",
+    "data-v4-rl-list-provenance",
+    "data-v4-rl-detail-provenance",
+    "data-v4-rl-identity-conflicts",
+    "data-v4-effective-lock-boundary",
+    "data-v4-raw-audit-untrusted",
+    "data-raw-audit-trust",
+    "data-legacy-child-state",
 ]
 
 _RL_SHARED_COMPONENTS = [
@@ -289,6 +297,34 @@ def test_v4_rl_console_declares_required_markers_components_and_research_boundar
         "stale response guarded",
     ]:
         assert stale_guard in rl
+    for identity_contract in [
+        "CONFLICT_BLOCKED",
+        "reconcileRlRunIdentity",
+        "rlRunIdentityKey",
+        "selectedRunUid",
+        "run_uid",
+        "source_sha256",
+        "source_protocol",
+        "data-identity-state",
+        "data-conflict-state",
+        "REVISION_MISMATCH_STALE_DETAIL",
+        "SOURCE_SHA_CONFLICT",
+        "PROTOCOL_CONFLICT",
+        "DETAIL_RECORD_MALFORMED",
+    ]:
+        assert identity_contract in rl
+    for effective_lock_contract in [
+        "withV4EffectiveLocksBlocked",
+        "blockedV4PromotionLocks",
+        "SOURCE_TRUE_UNLOCK_PROVENANCE_ATTEMPT_BLOCKED",
+        "Source true unlock fields are provenance attempts only",
+        "reconciliation.usable ? 'MATCHED' : 'UNTRUSTED'",
+        "open={!reconciliation.usable}",
+        "{#if reconciliation.usable}",
+        "UNTRUSTED · {CONFLICT_BLOCKED}",
+        "Independent child state is not trusted",
+    ]:
+        assert effective_lock_contract in rl
     for error_marker in [
         "RLIABLE_FETCH_FAILED",
         "EVENTS_FETCH_FAILED",

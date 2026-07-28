@@ -1,0 +1,29 @@
+{
+  "schema_version": "kronos.rl-discovery.d1.prereg.v1",
+  "status": "APPROVED_EXECUTABLE",
+  "experiment_id": "TYPE2-D1-REWARD-ACTION",
+  "primary_round_trip_cost_bp": 23,
+  "hypothesis": "A two-action observed-candidate decoder reduces the 501-way policy-head collapse while preserving train-only native economic reward separation from a shuffled-reward control.",
+  "claims_boundary": {
+    "research_only": true,
+    "profitability_claim_allowed": false,
+    "fresh_oos": "NOT_RUN_NO_READ"
+  },
+  "arms": [
+    {"id": "A_BINARY_NATIVE", "reward": "NATIVE_ECONOMIC"},
+    {"id": "B_BINARY_DIAGNOSTIC", "reward": "FIRST_DECISION_DIAGNOSTIC"},
+    {"id": "C_BINARY_SHUFFLED", "reward": "SHUFFLED_NATIVE"}
+  ],
+  "seeds": [0, 1, 2],
+  "training": {
+    "smoke_timesteps": 2048,
+    "primary_timesteps": 16384,
+    "smoke_seeds": [0]
+  },
+  "gate": {
+    "native_min_reward_ratio": 0.75,
+    "native_min_delta_vs_shuffled": 0.25,
+    "diagnostic_min_initial_accuracy": 0.90,
+    "max_dominant_initial_action_rate": 0.90
+  }
+}

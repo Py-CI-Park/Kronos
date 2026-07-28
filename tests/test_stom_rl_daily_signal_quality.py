@@ -102,7 +102,8 @@ def test_signal_quality_audit_emits_frozen_causal_diagnostics(tmp_path: Path) ->
     for path in artifacts.values():
         assert path.exists(), path
 
-    bucket_rows = list(csv.DictReader(artifacts["signal_quality_bucket_metrics"].open(encoding="utf-8")))
+    with artifacts["signal_quality_bucket_metrics"].open(encoding="utf-8") as handle:
+        bucket_rows = list(csv.DictReader(handle))
     assert {row["split"] for row in bucket_rows} >= {"train", "val", "test"}
     assert {row["fold"] for row in bucket_rows if row["split"] == "test"} >= {"F01", "F02"}
     assert {"score_magnitude_bucket", "score_margin_bucket", "d3_confidence_bucket"} <= {
@@ -113,7 +114,8 @@ def test_signal_quality_audit_emits_frozen_causal_diagnostics(tmp_path: Path) ->
     assert all(row["future_label_used_for_bucket"] == "False" for row in bucket_rows)
     assert all(row["future_label_used_for_evaluation"] == "True" for row in bucket_rows)
 
-    risk_rows = list(csv.DictReader(artifacts["risk_proxy_bucket_metrics"].open(encoding="utf-8")))
+    with artifacts["risk_proxy_bucket_metrics"].open(encoding="utf-8") as handle:
+        risk_rows = list(csv.DictReader(handle))
     assert {"recent_score_volatility_bucket", "past_return_volatility_bucket", "drawdown_bucket"} <= {
         row["proxy_name"] for row in risk_rows
     }
@@ -125,7 +127,8 @@ def test_signal_quality_audit_emits_frozen_causal_diagnostics(tmp_path: Path) ->
     assert any(float(row["turnover_proxy"]) != 0.0 for row in risk_rows)
 
 
-    baseline_rows = list(csv.DictReader(artifacts["baseline_control_metrics"].open(encoding="utf-8")))
+    with artifacts["baseline_control_metrics"].open(encoding="utf-8") as handle:
+        baseline_rows = list(csv.DictReader(handle))
     assert {"no_trade_cash", "shuffle_control", "equal_weight_topk", "frozen_d3_baseline"} <= {
         row["baseline_strategy"] for row in baseline_rows
     }

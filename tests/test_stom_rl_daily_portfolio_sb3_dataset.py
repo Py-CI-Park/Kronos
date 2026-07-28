@@ -302,7 +302,8 @@ def test_write_rejects_unsafe_run_id(tmp_path):
 def test_missing_next_close_fails_closed(tmp_path):
     run_dir = _make_official_prediction_run(tmp_path)
     prediction_path = run_dir / "predictions.csv"
-    rows = list(csv.DictReader(prediction_path.open("r", encoding="utf-8", newline="")))
+    with prediction_path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
     rows[-1]["date"] = "2024-01-05"
     rows[-1]["future_return_1d"] = "0.1"
     _write_csv(prediction_path, rows)

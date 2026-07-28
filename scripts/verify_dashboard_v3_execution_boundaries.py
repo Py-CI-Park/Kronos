@@ -6,8 +6,9 @@ narrow Gate-A allowlist. It performs NO code mutation and never writes to git.
 
 It verifies:
   * the working tree is clean (informational + gate flag),
-  * the current branch is the expected integration branch,
+  * the current branch is the expected integration branch or an approved purpose branch,
   * the integration base SHA is an ancestor of HEAD,
+  * the exact dashboard-v4 ancestor SHA is an ancestor of HEAD,
   * upstream tracking state (reported),
   * every "archival" branch is an ancestor of HEAD (so calling it archival is
     truthful; a diverged branch is flagged and must NOT be treated as merged),
@@ -33,7 +34,9 @@ from typing import Any, Dict, List, Optional, Tuple
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 INTEGRATION_BASE_SHA = "044b5468be2baa11ef451da32ff3999c7c8ab83b"
+DASHBOARD_V4_ANCESTOR_SHA = "dd5393bd4c075a0b37f49e2f31bcff3b5ef64384"
 EXPECTED_BRANCH = "dashboard-v3"
+APPROVED_V5_BRANCH = "feature/dashboard-v5-learning-evidence"
 
 # Branches proven archival (fully merged into dashboard-v3). Any branch here that
 # is NOT an ancestor of HEAD is a hard failure: it cannot be called archival.
@@ -62,6 +65,7 @@ PERMITTED_PURPOSE_BRANCHES: Tuple[str, ...] = (
     "feature/rl-governance-r6-r7",
     "release/dashboard-v3-95",
     "feature/dashboard-v4-ux-rearchitecture",
+    APPROVED_V5_BRANCH,
 )
 
 # Frozen-file ownership. rl_events.py is SCHEMA-frozen (additive info permitted),
@@ -210,10 +214,24 @@ def app_py_route_snapshot(repo_root: Path, path: str = "webui/app.py") -> Dict[s
     }
 
 
+def app_py_guard_base_ref(
+    branch: str,
+    *,
+    integration_base_sha: str = INTEGRATION_BASE_SHA,
+    dashboard_v4_ancestor_sha: str = DASHBOARD_V4_ANCESTOR_SHA,
+) -> str:
+    """Return the base ref used for the Gate-A app.py diff guard."""
+
+    if branch == APPROVED_V5_BRANCH:
+        return dashboard_v4_ancestor_sha
+    return integration_base_sha
+
+
 def verify_boundaries(
     repo_root: Path = _REPO_ROOT,
     *,
     integration_base_sha: str = INTEGRATION_BASE_SHA,
+    dashboard_v4_ancestor_sha: str = DASHBOARD_V4_ANCESTOR_SHA,
     expected_branch: str = EXPECTED_BRANCH,
     archival_branches: Tuple[str, ...] = ARCHIVAL_BRANCHES,
 ) -> Dict[str, Any]:
@@ -234,7 +252,13 @@ def verify_boundaries(
         archival[ref] = {"exists": exists, "is_ancestor": anc}
 
     base_is_ancestor = is_ancestor(repo_root, integration_base_sha)
-    allowlist_report = check_app_py_diff_within_allowlist(repo_root, base_ref=integration_base_sha)
+    dashboard_v4_is_ancestor = is_ancestor(repo_root, dashboard_v4_ancestor_sha)
+    app_py_base_ref = app_py_guard_base_ref(
+        branch,
+        integration_base_sha=integration_base_sha,
+        dashboard_v4_ancestor_sha=dashboard_v4_ancestor_sha,
+    )
+    allowlist_report = check_app_py_diff_within_allowlist(repo_root, base_ref=app_py_base_ref)
     snapshot = app_py_route_snapshot(repo_root)
 
     diverged = sorted(r for r, v in archival.items() if v["exists"] and not v["is_ancestor"])
@@ -244,6 +268,7 @@ def verify_boundaries(
         "clean_tree": clean,
         "on_expected_branch": branch == expected_branch or branch in PERMITTED_PURPOSE_BRANCHES,
         "integration_base_is_ancestor": base_is_ancestor,
+        "dashboard_v4_ancestor_is_ancestor": dashboard_v4_is_ancestor,
         "all_archival_are_ancestors": not diverged and not missing,
         "app_py_within_gate_a_allowlist": allowlist_report["ok"],
     }
@@ -252,6 +277,9 @@ def verify_boundaries(
         "branch": branch,
         "expected_branch": expected_branch,
         "integration_base_sha": integration_base_sha,
+        "dashboard_v4_ancestor_sha": dashboard_v4_ancestor_sha,
+        "approved_v5_branch": APPROVED_V5_BRANCH,
+        "app_py_gate_base_ref": app_py_base_ref,
         "clean_tree": clean,
         "dirty_paths": [] if clean else status.strip().splitlines(),
         "upstream": upstream.strip() if up_code == 0 else None,
@@ -275,9 +303,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--repo-root", default=str(_REPO_ROOT))
     parser.add_argument("--base", default=INTEGRATION_BASE_SHA, help="integration base SHA")
     parser.add_argument("--out", default=None, help="optional path to write the JSON report")
+    parser.add_argument("--v4-ancestor", default=DASHBOARD_V4_ANCESTOR_SHA, help="dashboard-v4 ancestor SHA")
     args = parser.parse_args(argv)
 
-    report = verify_boundaries(Path(args.repo_root), integration_base_sha=args.base)
+    report = verify_boundaries(Path(args.repo_root), integration_base_sha=args.base, dashboard_v4_ancestor_sha=args.v4_ancestor)
     encoded = json.dumps(report, indent=2, sort_keys=True)
     if args.out:
         Path(args.out).write_text(encoded + "\n", encoding="utf-8")

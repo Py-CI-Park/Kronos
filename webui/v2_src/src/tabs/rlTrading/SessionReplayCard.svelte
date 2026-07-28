@@ -1,12 +1,20 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { rlApi, type RlFactoryEdgeLedgerRow, type RlFactoryLaneRun } from '$lib/rlApi';
+  import {
+    rlApi,
+    type RlFactoryEdgeLedgerResponse,
+    type RlFactoryEdgeLedgerRow,
+    type RlFactoryLaneRun,
+  } from '$lib/rlApi';
   import { num, numberValue, pct } from '$lib/rlRows';
 
   let laneRun = $state<RlFactoryLaneRun | null>(null);
   let rows = $state<readonly RlFactoryEdgeLedgerRow[]>([]);
   let available = $state(false);
   let loading = $state(true);
+  let requestError = $state<string | null>(null);
+  let unavailableReason = $state<string | null>(null);
+  let laneRunsLoaded = $state(false);
   let session = $state('');
   let stepIndex = $state(0);
 
@@ -35,16 +43,39 @@
 
   async function load(): Promise<void> {
     loading = true;
-    const lanePayload = await rlApi.factoryLaneRuns();
-    laneRun = lanePayload?.runs?.[0] ?? null;
-    const ledger = laneRun ? await rlApi.factoryLaneEdgeLedger(laneRun.run, 2000) : null;
-    available = ledger?.available === true;
-    rows = ledger?.rows ?? [];
-    session = '';
-    stepIndex = 0;
-    const first = rows.find((row) => String(row.session ?? ''));
-    if (first) session = String(first.session ?? '');
-    loading = false;
+    requestError = null;
+    unavailableReason = null;
+    try {
+      if (!laneRunsLoaded) {
+        const lanePayload = await rlApi.factoryLaneRuns();
+        if (lanePayload === null) {
+          throw new Error('Probability-lane run request returned no payload.');
+        }
+        laneRun = lanePayload.runs?.[0] ?? null;
+        laneRunsLoaded = true;
+      }
+      if (!laneRun) {
+        rows = [];
+        session = '';
+        stepIndex = 0;
+        return;
+      }
+      const ledger: RlFactoryEdgeLedgerResponse | null = await rlApi.factoryLaneEdgeLedger(laneRun.run, 2000);
+      if (ledger === null) {
+        throw new Error('Session ledger request returned no payload.');
+      }
+      available = ledger.available === true;
+      unavailableReason = ledger.available ? null : (ledger.reason ?? 'The backend marked this session ledger unavailable.');
+      rows = ledger.rows ?? [];
+      session = '';
+      stepIndex = 0;
+      const first = rows.find((row) => String(row.session ?? ''));
+      if (first) session = String(first.session ?? '');
+    } catch (error) {
+      requestError = error instanceof Error ? error.message : 'Session replay request failed.';
+    } finally {
+      loading = false;
+    }
   }
 
   function chooseSession(next: string): void {
@@ -70,8 +101,15 @@
   </p>
   {#if loading}
     <p class="text-muted">Loading session ledger...</p>
-  {:else if !available || !sessions.length}
-    <p class="text-muted">Replay unavailable — no probability-lane ledger rows found.</p>
+  {:else if requestError}
+    <p class="text-muted">Session replay request failed: {requestError}</p>
+    <button type="button" class="retry-btn" onclick={() => void load()}>Retry</button>
+  {:else if !laneRun}
+    <p class="text-muted">Replay unavailable — the backend returned no probability-lane runs.</p>
+  {:else if !available}
+    <p class="text-muted">Replay unavailable — {unavailableReason ?? 'no probability-lane ledger rows found.'}</p>
+  {:else if !sessions.length}
+    <p class="text-muted">Replay empty — the backend returned no session ledger rows.</p>
   {:else}
     <div class="replay-controls">
       <select value={session} onchange={(event) => chooseSession((event.currentTarget as HTMLSelectElement).value)}>
@@ -148,5 +186,13 @@
   .replay-wrap {
     max-height: 300px;
     overflow: auto;
+  }
+  .retry-btn {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    padding: 4px 12px;
+    font: 600 11px/1 var(--font-display);
+    cursor: pointer;
   }
 </style>

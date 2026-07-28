@@ -9,10 +9,39 @@ share the same invariants without introducing a broker dependency.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from decimal import Decimal
 from typing import Dict, Mapping, Optional
+from .v5_accounting import BP_DENOMINATOR, public_money, to_decimal
+
+
 
 
 FLOAT_TOLERANCE = 1e-8
+LEGACY_SCALAR_COST_MODEL = "legacy_scalar_per_fill"
+LEGACY_SCALAR_ACCOUNTING_HORIZON = "SB3_LEGACY_SCALAR_PER_FILL_V0"
+V5_SIDE_COMPONENT_COST_MODEL = "v5_side_components"
+
+_COMPONENT_ATTRS = (
+    "sell_tax_bps",
+    "buy_commission_bps",
+    "sell_commission_bps",
+    "buy_slippage_bps",
+    "sell_slippage_bps",
+)
+
+
+
+
+def _component_amount(gross_value: float, bp: float) -> float:
+    return public_money((to_decimal(gross_value, "gross_value") * to_decimal(bp, "component_bp")) / BP_DENOMINATOR)
+
+
+def _money_sum(values: Mapping[str, float]) -> float:
+    total = Decimal("0")
+    for value in values.values():
+        total += to_decimal(value, "component_cost")
+    return public_money(total)
+
 
 
 @dataclass
@@ -52,8 +81,25 @@ class TradeFill:
     cost: float
     cash_after: float
     realized_pnl: float = 0.0
+    cost_scenario_id: str = LEGACY_SCALAR_COST_MODEL
+    cost_model: str = LEGACY_SCALAR_COST_MODEL
+    accounting_horizon: str = LEGACY_SCALAR_ACCOUNTING_HORIZON
+    cost_application_count: int = 1
+    sell_tax_bp: float = 0.0
+    buy_commission_bp: float = 0.0
+    sell_commission_bp: float = 0.0
+    buy_slippage_bp: float = 0.0
+    sell_slippage_bp: float = 0.0
+    sell_tax_krw: float = 0.0
+    buy_commission_krw: float = 0.0
+    sell_commission_krw: float = 0.0
+    buy_slippage_krw: float = 0.0
+    sell_slippage_krw: float = 0.0
+    total_cost_krw: float = 0.0
 
-    def to_dict(self) -> Dict[str, float | str]:
+
+    def to_dict(self) -> Dict[str, object]:
+
         return asdict(self)
 
 
@@ -61,14 +107,25 @@ class TradeFill:
 class PortfolioAccount:
     """Long-only cash account with explicit NAV invariants.
 
-    Costs are applied exactly once per fill as ``gross_value * cost_pct`` where
-    ``cost_pct = (cost_bps + slippage_bps) / 10_000``.  Margin is deliberately
+    Costs are applied exactly once per fill. Legacy scalar accounts charge
+    ``cost_bps + slippage_bps`` per side; V5 component accounts charge the exact
+    side component schedule supplied by the caller.
+
     unsupported; buy orders that would make cash negative are rejected.
     """
 
     initial_cash: float = 1_000_000.0
     cost_bps: float = 25.0
     slippage_bps: float = 0.0
+    cost_scenario_id: Optional[str] = None
+    cost_model: str = LEGACY_SCALAR_COST_MODEL
+    accounting_horizon: str = LEGACY_SCALAR_ACCOUNTING_HORIZON
+    sell_tax_bps: Optional[float] = None
+    buy_commission_bps: Optional[float] = None
+    sell_commission_bps: Optional[float] = None
+    buy_slippage_bps: Optional[float] = None
+    sell_slippage_bps: Optional[float] = None
+
     cash: Optional[float] = None
     positions: Dict[str, PositionLot] = field(default_factory=dict)
     realized_pnl: float = 0.0
@@ -81,10 +138,95 @@ class PortfolioAccount:
             self.cash = float(self.initial_cash)
         if self.cash < -FLOAT_TOLERANCE:
             raise ValueError("cash cannot be negative")
+        if self.cost_bps < 0 or self.slippage_bps < 0:
+            raise ValueError("cost_bps and slippage_bps must be non-negative")
+        if self._has_side_component_schedule():
+            missing = [name for name in _COMPONENT_ATTRS if getattr(self, name) is None]
+            if missing:
+                raise ValueError(f"side component cost schedule is incomplete: {missing}")
+        for label, value in self._component_bps().items():
+            if value < 0:
+                raise ValueError(f"{label}_bp must be non-negative")
+
+
+    @property
+    def buy_cost_pct(self) -> float:
+        bps = self._component_bps()
+        return (bps["buy_commission"] + bps["buy_slippage"]) / 10_000.0
+
+    @property
+    def sell_cost_pct(self) -> float:
+        bps = self._component_bps()
+        return (bps["sell_tax"] + bps["sell_commission"] + bps["sell_slippage"]) / 10_000.0
 
     @property
     def cost_pct(self) -> float:
-        return (float(self.cost_bps) + float(self.slippage_bps)) / 10_000.0
+        """Backward-compatible alias for the buy-side cash reservation rate."""
+
+        return self.buy_cost_pct
+
+    @property
+    def effective_cost_scenario_id(self) -> str:
+        return str(self.cost_scenario_id or self.cost_model)
+
+    def _has_side_component_schedule(self) -> bool:
+        return any(getattr(self, name) is not None for name in _COMPONENT_ATTRS)
+
+    def _component_bps(self) -> Dict[str, float]:
+        if self._has_side_component_schedule():
+            return {
+                "sell_tax": float(self.sell_tax_bps or 0.0),
+                "buy_commission": float(self.buy_commission_bps or 0.0),
+                "sell_commission": float(self.sell_commission_bps or 0.0),
+                "buy_slippage": float(self.buy_slippage_bps or 0.0),
+                "sell_slippage": float(self.sell_slippage_bps or 0.0),
+            }
+        return {
+            "sell_tax": 0.0,
+            "buy_commission": float(self.cost_bps),
+            "sell_commission": float(self.cost_bps),
+            "buy_slippage": float(self.slippage_bps),
+            "sell_slippage": float(self.slippage_bps),
+        }
+
+    def cost_component_bps(self) -> Dict[str, float]:
+        bps = self._component_bps()
+        return {
+            "sell_tax_bp": bps["sell_tax"],
+            "buy_commission_bp": bps["buy_commission"],
+            "sell_commission_bp": bps["sell_commission"],
+            "buy_slippage_bp": bps["buy_slippage"],
+            "sell_slippage_bp": bps["sell_slippage"],
+        }
+
+    def _fill_cost_details(self, side: str, gross_value: float) -> Dict[str, float | int | str]:
+        bps = self._component_bps()
+        amounts = {
+            "sell_tax_krw": 0.0,
+            "buy_commission_krw": 0.0,
+            "sell_commission_krw": 0.0,
+            "buy_slippage_krw": 0.0,
+            "sell_slippage_krw": 0.0,
+        }
+        if side == "buy":
+            amounts["buy_commission_krw"] = _component_amount(gross_value, bps["buy_commission"])
+            amounts["buy_slippage_krw"] = _component_amount(gross_value, bps["buy_slippage"])
+        elif side == "sell":
+            amounts["sell_tax_krw"] = _component_amount(gross_value, bps["sell_tax"])
+            amounts["sell_commission_krw"] = _component_amount(gross_value, bps["sell_commission"])
+            amounts["sell_slippage_krw"] = _component_amount(gross_value, bps["sell_slippage"])
+        else:
+            raise ValueError(f"unsupported side for cost details: {side}")
+        return {
+            "cost_scenario_id": self.effective_cost_scenario_id,
+            "cost_model": str(self.cost_model),
+            "accounting_horizon": str(self.accounting_horizon),
+            "cost_application_count": 1,
+            **self.cost_component_bps(),
+            **amounts,
+            "total_cost_krw": _money_sum(amounts),
+        }
+
 
     def clone(self) -> "PortfolioAccount":
         return PortfolioAccount(
@@ -95,6 +237,14 @@ class PortfolioAccount:
             positions={symbol: PositionLot(pos.symbol, pos.quantity, pos.average_price) for symbol, pos in self.positions.items()},
             realized_pnl=float(self.realized_pnl),
             trade_count=int(self.trade_count),
+            cost_scenario_id=self.cost_scenario_id,
+            cost_model=str(self.cost_model),
+            accounting_horizon=str(self.accounting_horizon),
+            sell_tax_bps=self.sell_tax_bps,
+            buy_commission_bps=self.buy_commission_bps,
+            sell_commission_bps=self.sell_commission_bps,
+            buy_slippage_bps=self.buy_slippage_bps,
+            sell_slippage_bps=self.sell_slippage_bps,
         )
 
     def position(self, symbol: str) -> PositionLot:
@@ -147,8 +297,10 @@ class PortfolioAccount:
         if quantity <= 0:
             raise ValueError("quantity must be positive")
         gross = price * quantity
-        cost = gross * self.cost_pct
+        cost_details = self._fill_cost_details("buy", gross)
+        cost = float(cost_details["total_cost_krw"])
         cash_needed = gross + cost
+
         if cash_needed > float(self.cash or 0.0) + FLOAT_TOLERANCE:
             raise ValueError("buy would make cash negative")
 
@@ -167,6 +319,8 @@ class PortfolioAccount:
             gross_value=gross,
             cost=cost,
             cash_after=float(self.cash),
+            **cost_details,
+
         )
 
     def sell(
@@ -192,9 +346,11 @@ class PortfolioAccount:
 
         sell_qty = min(sell_qty, position.quantity)
         gross = price * sell_qty
-        cost = gross * self.cost_pct
+        cost_details = self._fill_cost_details("sell", gross)
+        cost = float(cost_details["total_cost_krw"])
         realized = (price - position.average_price) * sell_qty - cost
         self.cash = float(self.cash or 0.0) + gross - cost
+
         remaining = position.quantity - sell_qty
         if remaining <= FLOAT_TOLERANCE:
             self.positions.pop(symbol, None)
@@ -212,6 +368,7 @@ class PortfolioAccount:
             cost=cost,
             cash_after=float(self.cash),
             realized_pnl=realized,
+            **cost_details,
         )
 
     def snapshot(self, prices: Mapping[str, float]) -> Dict[str, object]:

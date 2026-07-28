@@ -5,6 +5,7 @@
 
   let runs = $state<readonly RlFactoryLaneRun[]>([]);
   let loading = $state(true);
+  let loadError = $state<string | null>(null);
 
   const hasRuns = $derived(runs.length > 0);
 
@@ -14,9 +15,17 @@
 
   async function load(): Promise<void> {
     loading = true;
-    const payload = await rlApi.factoryLaneRuns();
-    runs = payload?.runs ?? [];
-    loading = false;
+    loadError = null;
+    runs = [];
+    try {
+      const payload = await rlApi.factoryLaneRuns();
+      if (payload == null) throw new Error('Factory lane runs returned no response.');
+      runs = payload.runs ?? [];
+    } catch (caught) {
+      loadError = caught instanceof Error ? caught.message : 'Factory lineage request failed.';
+    } finally {
+      loading = false;
+    }
   }
 
   function verdictTone(verdict: string | null | undefined): string {
@@ -41,6 +50,9 @@
   </p>
   {#if loading}
     <p class="text-muted">Loading lineage evidence...</p>
+  {:else if loadError}
+    <p class="text-muted" role="alert">Factory lineage request failed: {loadError}</p>
+    <button type="button" onclick={load}>Retry lineage evidence</button>
   {:else if !hasRuns}
     <p class="text-muted">No probability-lane lineage runs found.</p>
   {:else}
