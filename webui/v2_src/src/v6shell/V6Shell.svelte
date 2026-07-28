@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import V6SafetyStrip from './V6SafetyStrip.svelte';
   import ProgramExecutionStrip from './ProgramExecutionStrip.svelte';
+  import D2ResearchContext from './D2ResearchContext.svelte';
   import HomePage from './pages/HomePage.svelte';
   import ProgramScorecardPage from './pages/ProgramScorecardPage.svelte';
   import RLWorkspace from './RLWorkspace.svelte';
@@ -60,6 +61,7 @@
   <main class="v6-main">
     <V6SafetyStrip />
     <ProgramExecutionStrip />
+    <D2ResearchContext />
     {#if page.id === 'home'}<HomePage />
     {:else if page.id === 'scorecard'}<ProgramScorecardPage />
     {:else if page.id === 'rl'}<RLWorkspace />
