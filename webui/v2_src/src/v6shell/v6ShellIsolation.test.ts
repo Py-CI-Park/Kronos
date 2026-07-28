@@ -8,4 +8,6 @@ test('V6 shell uses isolated navigation and main class names', async () => {
   assert.match(source, /class="v6-sidebar"/u);
   assert.match(source, /class="v6-main"/u);
   assert.doesNotMatch(source, /class="sidebar"/u);
+  assert.match(source, /D2ResearchContext/u);
+  assert.match(source, /<D2ResearchContext \/>/u);
 });

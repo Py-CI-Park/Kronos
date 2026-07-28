@@ -48,6 +48,11 @@ require_discovery_terminal_receipt = _require_discovery_terminal_receipt
 
 
 def _detect_artifact_type(run_dir: Path) -> str:
+    d2_path = run_dir / "summary.json"
+    if _is_run_file(run_dir, d2_path):
+        payload = _read_run_json(run_dir, d2_path)
+        if payload.get("schema_version") == "kronos.rl-discovery.d2.result.v1":
+            return "rl_discovery_d2"
     for artifact_type, file_name in ARTIFACT_SIGNATURES:
         if _is_run_file(run_dir, run_dir / file_name):
             return artifact_type
@@ -183,6 +188,12 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
             "feature_columns": payload["summary"].get("feature_columns", []),
             "train_summary": selected_model,
         }
+    elif artifact_type == "rl_discovery_d2":
+        payload["detail"] = (
+            _read_run_json(run_dir, run_dir / "summary.json")
+            if payload["summary"].get("status") != "BLOCK"
+            else {}
+        )
     elif artifact_type == "contextual_bandit":
         payload["detail"] = _read_run_json(run_dir, run_dir / "eval_summary.json")
         model_path = run_dir / "model.json"

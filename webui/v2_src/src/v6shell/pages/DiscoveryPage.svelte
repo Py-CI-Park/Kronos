@@ -11,8 +11,8 @@
   const LADDER = [
     ['D0', 'PPO attribution', 'NO-GO closed'],
     ['D1', 'action / reward', 'train-only confirmed'],
-    ['D2', 'episode scale', 'preregister next'],
-    ['D3', 'representation', 'waiting'],
+    ['D2', 'historical scale', 'partial capacity confirmed'],
+    ['D3', 'representation', 'preregister next'],
     ['D4', 'cost sensitivity', 'waiting'],
     ['D5', 'full train + control', 'waiting'],
     ['D6', 'reused validation', 'locked'],
@@ -36,7 +36,9 @@
   const ratioWidth = (value: number) => `${Math.max(0, Math.min(100, value * 100))}%`;
   const outcomeClass = (value: number) => value >= .9 ? 'pass' : value > 0 ? 'warn' : 'fail';
   const armLabel = (id: string) => ARM_LABELS[id] ?? id;
-  const isD1 = (value: DiscoveryEvidence) => value.arms.some((arm) => arm.id.startsWith('A_BINARY'));
+  const phaseLabel = (value: DiscoveryEvidence) => value.verdict.startsWith('D2_')
+    ? 'D2 historical scale'
+    : value.arms.some((arm) => arm.id.startsWith('A_BINARY')) ? 'D1 action / reward' : 'D0 attribution';
 
   async function load(): Promise<void> {
     loading = true;
@@ -44,9 +46,8 @@
     try {
       const runs = await rlApi.rlRuns(100);
       const discoveryRuns = runs?.runs.filter((run) => run.summary?.research_lane === 'rl_discovery') ?? [];
-      const record = discoveryRuns.find((run) => run.name === REVIEWED_DISCOVERY_SNAPSHOT.runName)
-        ?? discoveryRuns.find((run) => run.summary?.profile === 'PRIMARY' && run.summary?.status === 'PRIMARY_COMPLETE');
-      if (!record || record.name === REVIEWED_DISCOVERY_SNAPSHOT.runName) {
+      const record = discoveryRuns.find((run) => run.name === REVIEWED_DISCOVERY_SNAPSHOT.runName);
+      if (!record) {
         evidence = REVIEWED_DISCOVERY_SNAPSHOT;
         notice = '검토·보관된 Primary snapshot을 표시합니다.';
         return;
@@ -80,13 +81,13 @@
     <article><span>FRESH OOS</span><strong>NOT_RUN / NO_READ</strong><small>봉인 유지</small></article>
     <article><span>PROMOTION</span><strong>BLOCKED</strong><small>train-only 확인은 승격 근거가 아님</small></article>
     <article><span>CLAIMS</span><strong>RESEARCH ONLY</strong><small>수익·실거래 주장 금지</small></article>
-    <article><span>PRIMARY COST</span><strong>23 BP ROUND TRIP</strong><small>0.23% 비용 가정</small></article>
+    <article><span>TRAIN / DIAGNOSTIC COST</span><strong>{evidence?.primaryRoundTripCostBp ?? 0} / {evidence?.diagnosticRoundTripCostBp ?? 23} BP</strong><small>23bp diagnostic, 승격 게이트 아님</small></article>
   </section>
   {#if notice}<section class="state notice" aria-live="polite">{notice}</section>{/if}
 
   <section class="ladder" aria-labelledby="ladder-title">
     <div class="section-title"><p>PROGRAM MAP</p><h2 id="ladder-title">Discovery 연구 사다리</h2></div>
-    <ol>{#each LADDER as stage, index}<li class:active={index === 1} class:next={index === 2} class:locked={index >= 6}><span>{stage[0]}</span><strong>{stage[1]}</strong><small>{stage[2]}</small></li>{/each}</ol>
+    <ol>{#each LADDER as stage, index}<li class:active={index === 2} class:next={index === 3} class:locked={index >= 6}><span>{stage[0]}</span><strong>{stage[1]}</strong><small>{stage[2]}</small></li>{/each}</ol>
   </section>
 
   {#if loading}
@@ -95,11 +96,10 @@
     <section class="state"><strong>아직 Discovery 실행이 없습니다.</strong><p>실행 후 arm·seed 귀속성 결과가 표시됩니다.</p></section>
   {:else}
     {@const aggregates = summarizeDiscoveryArms(evidence.arms)}
-    {@const d1Evidence = isD1(evidence)}
-    {@const disposition = evidence.verdict === 'D1_ACTION_REWARD_CONFIRMED' ? 'TRAIN_ONLY_CONFIRMED / RESEARCH-ONLY' : evidence.verdict === 'PPO_ONLY_OVERFIT_NOT_CONFIRMED' ? 'NO-GO' : 'RESEARCH-ONLY'}
+    {@const disposition = evidence.verdict === 'D2_PARTIAL_CAPACITY_CONFIRMED' ? 'PARTIAL CAPACITY / RESEARCH-ONLY' : evidence.verdict === 'D1_ACTION_REWARD_CONFIRMED' ? 'TRAIN_ONLY_CONFIRMED / RESEARCH-ONLY' : evidence.verdict === 'PPO_ONLY_OVERFIT_NOT_CONFIRMED' ? 'NO-GO' : 'RESEARCH-ONLY'}
     <section class="verdict-grid">
       <article class="verdict-card"><p>{evidence.authority} VERDICT</p><strong>{evidence.verdict}</strong><span>{evidence.status} · {evidence.profile} · {evidence.arms.length}/{evidence.arms.length} units</span></article>
-      <article class="receipt"><dl><div><dt>Authority</dt><dd>{evidence.authority}</dd></div><div><dt>Run</dt><dd>{evidence.runName}</dd></div><div><dt>Manifest</dt><dd>{evidence.evidenceManifest?.slice(0, 16) ?? 'LIVE SCAN'}…</dd></div><div><dt>Prereg SHA</dt><dd>{evidence.preregSha256.slice(0, 16)}…</dd></div><div><dt>Primary cost</dt><dd>{evidence.primaryRoundTripCostBp} bp round trip</dd></div><div><dt>Fresh OOS</dt><dd>{evidence.freshOos}</dd></div></dl></article>
+      <article class="receipt"><dl><div><dt>Authority</dt><dd>{evidence.authority}</dd></div><div><dt>Run</dt><dd>{evidence.runName}</dd></div><div><dt>Manifest</dt><dd>{evidence.evidenceManifest?.slice(0, 16) ?? 'LIVE SCAN'}…</dd></div><div><dt>Prereg SHA</dt><dd>{evidence.preregSha256.slice(0, 16)}…</dd></div><div><dt>Train / diagnostic cost</dt><dd>{evidence.primaryRoundTripCostBp} / {evidence.diagnosticRoundTripCostBp ?? 23} bp</dd></div><div><dt>Confirmed scale</dt><dd>{evidence.maximumConfirmedEpisodeCount ?? 'N/A'} episodes</dd></div><div><dt>Native − shuffle @128</dt><dd>{evidence.nativeDeltaVsShuffled?.toFixed(3) ?? 'N/A'}×</dd></div><div><dt>Fresh OOS</dt><dd>{evidence.freshOos}</dd></div></dl></article>
     </section>
 
     <section class="aggregates" aria-labelledby="aggregate-title">
@@ -108,13 +108,13 @@
     </section>
 
     <section class="arms" aria-labelledby="arms-title">
-      <div class="section-title"><p>CONTROL MATRIX</p><h2 id="arms-title">{d1Evidence ? 'D1 action / reward' : 'D0 attribution'} · arm × seed 상세</h2></div>
-      <div class="arm-grid">{#each evidence.arms as arm}<article><div class="arm-head"><span>{armLabel(arm.id)} <b>SEED {arm.seed}</b></span><strong class={outcomeClass(arm.oracleRewardRatio)}>{arm.oracleRewardRatio.toFixed(3)}×</strong></div><div class="meter" aria-label={`${arm.id} seed ${arm.seed} oracle reward ratio`}><i style:width={ratioWidth(arm.oracleRewardRatio)}></i></div><dl><div><dt>Economic reward</dt><dd>{arm.oracleRewardRatio.toFixed(3)}×</dd></div><div><dt>Initial accuracy</dt><dd>{pct(arm.exactBasketAccuracy)}</dd></div><div><dt>Dominant action</dt><dd class:danger={arm.dominantActionRate >= .95}>{pct(arm.dominantActionRate)}</dd></div><div><dt>Train steps</dt><dd>{arm.trainingTimesteps.toLocaleString()}</dd></div></dl><p class="validity">invalid {arm.invalidActionCount} · block {arm.blockCount} · no-fill {arm.noFillCount}</p>{#if arm.shuffledReward}<span class="control">NEGATIVE CONTROL</span>{/if}</article>{/each}</div>
+      <div class="section-title"><p>CONTROL MATRIX</p><h2 id="arms-title">{phaseLabel(evidence)} · arm × seed 상세</h2></div>
+      <div class="arm-grid">{#each evidence.arms as arm}<article><div class="arm-head"><span>{armLabel(arm.id)} <b>SEED {arm.seed}</b></span><strong class={outcomeClass(arm.oracleRewardRatio)}>{arm.oracleRewardRatio.toFixed(3)}×</strong></div><div class="meter" aria-label={`${arm.id} seed ${arm.seed} oracle reward ratio`}><i style:width={ratioWidth(arm.oracleRewardRatio)}></i></div><dl>{#if arm.episodeCount !== undefined}<div><dt>Episodes</dt><dd>{arm.episodeCount}</dd></div>{/if}<div><dt>Fit reward</dt><dd>{(arm.fitRewardRatio ?? arm.oracleRewardRatio).toFixed(3)}×</dd></div><div><dt>Native reward</dt><dd>{arm.oracleRewardRatio.toFixed(3)}×</dd></div>{#if arm.diagnosticCostRewardRatio !== undefined}<div><dt>23bp diagnostic</dt><dd>{arm.diagnosticCostRewardRatio.toFixed(3)}×</dd></div>{/if}<div><dt>Fit accuracy</dt><dd>{pct(arm.exactBasketAccuracy)}</dd></div><div><dt>Dominant action</dt><dd class:danger={arm.dominantActionRate >= .95}>{pct(arm.dominantActionRate)}</dd></div><div><dt>Train steps</dt><dd>{arm.trainingTimesteps.toLocaleString()}</dd></div></dl><p class="validity">invalid {arm.invalidActionCount} · block {arm.blockCount} · no-fill {arm.noFillCount}</p>{#if arm.shuffledReward}<span class="control">NEGATIVE CONTROL</span>{/if}</article>{/each}</div>
     </section>
 
     <section class="interpretation">
       <div><p>PRIMARY RECEIPT</p><h2>Artifact 기반 판정</h2></div>
-      <ul><li>화면의 평균과 seed 값은 선택된 artifact에서 계산되며 고정 결론을 덮어쓰지 않습니다.</li><li>Receipt 판정: <b>{evidence.verdict} / {disposition}</b>.</li><li>Promotion <b>{evidence.promotionAllowed ? 'ALLOWED' : 'BLOCKED'}</b>, profitability claim <b>{evidence.profitabilityClaimAllowed ? 'ALLOWED' : 'BLOCKED'}</b>.</li><li><b>D2 episode scale</b>은 1/8/32/128 train-only episode로 별도 사전등록해야 하며 Fresh OOS는 열지 않습니다.</li></ul>
+      <ul><li>화면의 평균과 seed 값은 선택된 artifact에서 계산되며 고정 결론을 덮어쓰지 않습니다.</li><li>Receipt 판정: <b>{evidence.verdict} / {disposition}</b>.</li><li>D2 historical scale은 최대 <b>{evidence.maximumConfirmedEpisodeCount ?? 0} episodes</b>까지만 과적합을 확인했습니다.</li><li>Promotion <b>{evidence.promotionAllowed ? 'ALLOWED' : 'BLOCKED'}</b>, profitability claim <b>{evidence.profitabilityClaimAllowed ? 'ALLOWED' : 'BLOCKED'}</b>.</li><li><b>D3 representation/action ablation</b>을 다음으로 사전등록하며 Fresh OOS는 열지 않습니다.</li></ul>
     </section>
   {/if}
 </section>

@@ -71,11 +71,13 @@ test('discovery page keeps conclusions artifact-driven and handles API failure',
   assert.doesNotMatch(discoveryPage, /\/ NO-GO<\/b>/);
 });
 
-test('reviewed snapshot keeps clean-checkout evidence bound to the committed manifest', () => {
+test('reviewed snapshot keeps D2 historical-scale evidence bound to the committed manifest', () => {
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.authority, 'REVIEWED_SNAPSHOT');
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.runName, 'type2-d1-primary-v3-20260728');
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.verdict, 'D1_ACTION_REWARD_CONFIRMED');
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.arms.length, 9);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.runName, 'type2-d2-primary-20260728-v1');
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.verdict, 'D2_PARTIAL_CAPACITY_CONFIRMED');
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.arms.length, 24);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.maximumConfirmedEpisodeCount, 8);
+  assert.ok((REVIEWED_DISCOVERY_SNAPSHOT.nativeDeltaVsShuffled ?? 0) > .53);
   assert.match(REVIEWED_DISCOVERY_SNAPSHOT.evidenceManifest ?? '', /^[0-9a-f]{64}$/);
   assert.deepEqual(
     [...new Set(REVIEWED_DISCOVERY_SNAPSHOT.arms.map((row) => row.seed))],
@@ -103,5 +105,41 @@ test('D1 primary parser preserves all reduced-action arm seeds', () => {
 
   assert.deepEqual(evidence?.arms.map((arm) => arm.seed), [0, 1, 2]);
   assert.match(discoveryPage, /D1 action \/ reward/);
-  assert.match(discoveryPage, /D2 episode scale/);
+  assert.match(discoveryPage, /D2 historical scale/);
+});
+
+test('D2 reviewed page exposes capacity, cost diagnostic, and blocked claims', () => {
+  assert.match(discoveryPage, /D2 historical scale/);
+  assert.match(discoveryPage, /23bp diagnostic/i);
+  assert.match(discoveryPage, /maximumConfirmedEpisodeCount/);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.primaryRoundTripCostBp, 0);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.diagnosticRoundTripCostBp, 23);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.promotionAllowed, false);
+});
+
+test('live D2 nested summary parses without falling back to the reviewed snapshot', () => {
+  const evidence = parseDiscoveryEvidence({
+    name: 'type2-d2-primary-20260728-v1',
+    summary: {
+      research_lane: 'rl_discovery', status: 'COMPLETE', verdict: 'D2_PARTIAL_CAPACITY_CONFIRMED',
+      profile: 'PRIMARY', fresh_oos: 'NOT_RUN_NO_READ', type1_outcome: 'COMPLETE_NO_GO',
+      prereg_sha256: 'abc123', primary_round_trip_cost_bp: 0,
+      diagnostic_round_trip_cost_bp: 23, promotion_allowed: false,
+      profitability_claim_allowed: false,
+    },
+    detail: { gate: {
+      maximum_confirmed_episode_count: 8,
+      native_delta_vs_shuffled_at_128: .5355,
+    }, models: [{
+      arm: 'A_NATIVE', episode_count: 128, seed: 2, training_timesteps: 16384,
+      fit: { accuracy: .71, reward_ratio: .52, dominant_action_rate: .8, invalid_action_count: 0 },
+      native: { reward_ratio: .52 }, cost_23bp: { reward_ratio: .519 },
+    }] },
+  });
+
+  assert.equal(evidence?.arms[0]?.id, 'D2-128/A_NATIVE');
+  assert.equal(evidence?.arms[0]?.diagnosticCostRewardRatio, .519);
+  assert.equal(evidence?.diagnosticRoundTripCostBp, 23);
+  assert.equal(evidence?.maximumConfirmedEpisodeCount, 8);
+  assert.equal(evidence?.nativeDeltaVsShuffled, .5355);
 });

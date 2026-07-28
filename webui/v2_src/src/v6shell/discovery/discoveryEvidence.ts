@@ -12,6 +12,9 @@ export interface DiscoveryArmEvidence {
   readonly blockCount: number;
   readonly noFillCount: number;
   readonly shuffledReward: boolean;
+  readonly episodeCount?: number;
+  readonly fitRewardRatio?: number;
+  readonly diagnosticCostRewardRatio?: number;
 }
 
 export type DiscoveryArmAggregate = {
@@ -35,6 +38,9 @@ export interface DiscoveryEvidence {
   readonly preregSha256: string;
   readonly promotionAllowed: boolean;
   readonly profitabilityClaimAllowed: boolean;
+  readonly diagnosticRoundTripCostBp?: number;
+  readonly maximumConfirmedEpisodeCount?: number;
+  readonly nativeDeltaVsShuffled?: number;
   readonly arms: readonly DiscoveryArmEvidence[];
 }
 
@@ -59,10 +65,38 @@ function modelRows(detail: JsonObject | undefined): readonly JsonObject[] {
   return value.map(objectValue).filter((row): row is JsonObject => row !== null);
 }
 
+function d2Arm(row: JsonObject): DiscoveryArmEvidence | null {
+  const fit = objectValue(row.fit);
+  const native = objectValue(row.native);
+  const cost = objectValue(row.cost_23bp);
+  const arm = textValue(row.arm, '');
+  const count = numberValue(row.episode_count);
+  if (!fit || !native || !cost || !arm || count <= 0) return null;
+  return {
+    id: `D2-${count}/${arm}`,
+    model: `count-${count}__${arm}/seed-${numberValue(row.seed)}`,
+    seed: numberValue(row.seed),
+    trainingTimesteps: numberValue(row.training_timesteps),
+    oracleRewardRatio: numberValue(native.reward_ratio),
+    exactBasketAccuracy: numberValue(fit.accuracy),
+    dominantActionRate: numberValue(fit.dominant_action_rate),
+    invalidActionCount: numberValue(fit.invalid_action_count),
+    blockCount: 0,
+    noFillCount: 0,
+    shuffledReward: arm === 'B_SHUFFLED',
+    episodeCount: count,
+    fitRewardRatio: numberValue(fit.reward_ratio),
+    diagnosticCostRewardRatio: numberValue(cost.reward_ratio),
+  };
+}
+
 export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary' | 'detail'>): DiscoveryEvidence | null {
   const summary = run.summary;
   if (!summary || summary.research_lane !== 'rl_discovery') return null;
-  const arms = modelRows(run.detail).map((row) => ({
+  const rows = modelRows(run.detail);
+  const d2Rows = rows.map(d2Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
+  const gate = objectValue(run.detail?.gate);
+  const arms = d2Rows.length ? d2Rows : rows.map((row) => ({
     id: textValue(row.algorithm),
     model: textValue(row.model),
     seed: numberValue(row.seed),
@@ -88,6 +122,9 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     preregSha256: textValue(summary.prereg_sha256),
     promotionAllowed: booleanValue(summary.promotion_allowed),
     profitabilityClaimAllowed: booleanValue(summary.profitability_claim_allowed),
+    diagnosticRoundTripCostBp: numberValue(summary.diagnostic_round_trip_cost_bp),
+    maximumConfirmedEpisodeCount: numberValue(gate?.maximum_confirmed_episode_count),
+    nativeDeltaVsShuffled: numberValue(gate?.native_delta_vs_shuffled_at_128),
     arms,
   };
 }

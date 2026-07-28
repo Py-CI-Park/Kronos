@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from webui import rl_dashboard, rl_dashboard_runs  # noqa: E402
 from webui.app import app as flask_app  # noqa: E402
+from stom_rl.rl_discovery.storage import artifact_manifest_sha256  # noqa: E402
 
 
 IDENTITY_FIELDS = ("run_uid", "revision", "source_sha256", "source_protocol")
@@ -47,6 +48,47 @@ def _write_minimal_baseline_run(run_dir: Path) -> None:
         json.dumps({"mode": "stom_rl_baseline_run", "summary": {"policy_count": 1}}),
         encoding="utf-8-sig",
     )
+
+
+def test_d2_summary_and_receipt_are_discoverable_as_read_only_rl_evidence(tmp_path, monkeypatch):
+    run = tmp_path / "type2-d2-primary"
+    run.mkdir()
+    summary = {
+        "schema_version": "kronos.rl-discovery.d2.result.v1",
+        "status": "COMPLETE",
+        "verdict": "D2_PARTIAL_CAPACITY_CONFIRMED",
+        "profile": "PRIMARY",
+        "fresh_oos": "NOT_RUN_NO_READ",
+        "prereg_sha256": "a" * 64,
+        "episode_snapshot_sha256": "b" * 64,
+        "models": [],
+    }
+    (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    receipt = {
+        "status": "COMPLETE",
+        "profile": "PRIMARY",
+        "verdict": summary["verdict"],
+        "prereg_sha256": summary["prereg_sha256"],
+        "episode_snapshot_sha256": summary["episode_snapshot_sha256"],
+        "fresh_oos": "NOT_RUN_NO_READ",
+        "artifact_manifest_sha256": artifact_manifest_sha256(run),
+    }
+    (run / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    record = next(item for item in rl_dashboard.list_rl_runs() if item["name"] == run.name)
+    detail = rl_dashboard.load_rl_run(run.name)
+
+    assert record["artifact_type"] == "rl_discovery_d2"
+    assert record["summary"]["research_lane"] == "rl_discovery"
+    assert record["summary"]["fresh_oos"] == "NOT_RUN_NO_READ"
+    assert detail["detail"]["verdict"] == "D2_PARTIAL_CAPACITY_CONFIRMED"
+
+    summary["models"] = [{"tampered": True}]
+    (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    blocked = rl_dashboard.load_rl_run(run.name)
+    assert blocked["summary"]["status"] == "BLOCK"
+    assert blocked["detail"] == {}
 
 def _write_csv(path: Path, header: str, rows: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
