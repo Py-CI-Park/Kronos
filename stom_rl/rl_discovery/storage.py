@@ -138,6 +138,36 @@ def file_digest(path: Path) -> tuple[str, int]:
     return digest.hexdigest(), size_bytes
 
 
+def artifact_manifest_sha256(
+    run_dir: Path,
+    *,
+    excluded_relative_paths: frozenset[str] = frozenset(),
+) -> str:
+    """Hash every regular, non-reparse artifact in a run with path and size."""
+
+    root = run_dir.resolve(strict=True)
+    if _is_reparse_point(run_dir):
+        raise UnsafeArtifactPathError(run_dir, "run directory cannot be a reparse point")
+    entries: list[dict[str, int | str]] = []
+    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+        relative = path.relative_to(root)
+        if relative.as_posix() in excluded_relative_paths:
+            continue
+        cursor = root
+        for segment in relative.parts:
+            cursor /= segment
+            if _is_reparse_point(cursor):
+                raise UnsafeArtifactPathError(cursor, "manifest cannot include a reparse point")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise UnsafeArtifactPathError(path, "manifest entry must be a regular file")
+        sha256, size_bytes = file_digest(path)
+        entries.append({"path": relative.as_posix(), "size_bytes": size_bytes, "sha256": sha256})
+    encoded = json.dumps(entries, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _fsync_file(path: Path) -> None:
     with path.open("r+b") as handle:
         os.fsync(handle.fileno())

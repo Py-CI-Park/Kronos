@@ -7,6 +7,7 @@ import pytest
 
 from webui import rl_dashboard_identity as identity
 from webui.rl_dashboard_runs import require_discovery_terminal_receipt
+from stom_rl.rl_discovery.storage import artifact_manifest_sha256
 
 
 def test_artifact_identity_reuses_content_hash_when_file_stat_is_unchanged(
@@ -112,3 +113,27 @@ def test_discovery_terminal_summary_rejects_jointly_unsafe_claims(tmp_path: Path
 
     assert downgraded["status"] == "RUNNING"
     assert downgraded["verdict"] == "RUNNING_NOT_EVALUATED"
+
+
+def test_d1_primary_terminal_summary_accepts_matching_safe_receipt(tmp_path: Path) -> None:
+    summary: dict[str, object] = {
+        "research_lane": "rl_discovery",
+        "experiment_id": "TYPE2-D1-REWARD-ACTION",
+        "profile": "PRIMARY",
+        "status": "PRIMARY_COMPLETE",
+        "verdict": "D1_ACTION_REWARD_CONFIRMED",
+        "promotion_allowed": False,
+        "profitability_claim_allowed": False,
+        "prereg_sha256": "a" * 64,
+        "fixture_sha256": "b" * 64,
+        "primary_round_trip_cost_bp": 23,
+        "fresh_oos": "NOT_RUN_NO_READ",
+    }
+    receipt = {key: value for key, value in summary.items() if key != "research_lane"}
+    receipt["artifact_manifest_sha256"] = artifact_manifest_sha256(
+        tmp_path,
+        excluded_relative_paths=frozenset({"terminal_receipt.json"}),
+    )
+    _ = (tmp_path / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
+
+    assert require_discovery_terminal_receipt(tmp_path, summary) == summary

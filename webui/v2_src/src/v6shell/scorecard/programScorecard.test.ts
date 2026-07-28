@@ -16,7 +16,7 @@ test('program score is the rounded weighted sum of every audited lane', () => {
 
   // Then
   assert.equal(totalWeight, 100);
-  assert.equal(score, 74);
+  assert.equal(score, 77);
 });
 
 test('page matrix describes every V6 user surface in navigation order', () => {
@@ -44,6 +44,7 @@ test('capability inventory separates available research from blocked claims', ()
 
   // Then
   assert.ok(available.some((capability) => capability.id === 'd0-smoke'));
+  assert.ok(available.some((capability) => capability.id === 'd1-primary'));
   assert.ok(blocked.some((capability) => capability.id === 'fresh-oos'));
   assert.ok(blocked.some((capability) => capability.id === 'live-trading'));
 });
