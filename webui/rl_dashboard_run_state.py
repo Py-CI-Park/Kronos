@@ -36,6 +36,8 @@ class _TerminalBoundary(BaseModel):
         "SMOKE_INCOMPLETE",
         "PPO_ONLY_OVERFIT_CONFIRMED",
         "PPO_ONLY_OVERFIT_NOT_CONFIRMED",
+        "D1_ACTION_REWARD_CONFIRMED",
+        "D1_ACTION_REWARD_NOT_CONFIRMED",
     ]
     promotion_allowed: Literal[False]
     profitability_claim_allowed: Literal[False]
@@ -46,6 +48,8 @@ class _TerminalBoundary(BaseModel):
     def has_valid_profile_pair(self) -> bool:
         if self.profile == "SMOKE":
             return self.status == "SMOKE_COMPLETE" and self.verdict == "SMOKE_INCOMPLETE"
+        if self.experiment_id == "TYPE2-D1-REWARD-ACTION":
+            return self.status == "PRIMARY_COMPLETE" and self.verdict.startswith("D1_ACTION_REWARD_")
         return self.status == "PRIMARY_COMPLETE" and self.verdict.startswith("PPO_ONLY_OVERFIT_")
 
 
