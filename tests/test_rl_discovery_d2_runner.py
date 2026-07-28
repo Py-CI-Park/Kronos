@@ -110,3 +110,18 @@ def test_d2_smoke_approval_requires_frozen_four_unit_matrix(tmp_path) -> None:
     (smoke / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
     with pytest.raises(PermissionError, match="four-unit"):
         _approved_smoke(smoke, run_root=run_root, prereg_sha=prereg_sha, data_sha=data_sha)
+
+    summary["models"] = [
+        {"episode_count": count, "arm": arm.value, "seed": 0}
+        for count in (1, 8)
+        for arm in D2ArmId
+    ]
+    summary["models"].append(dict(summary["models"][0]))
+    (smoke / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    receipt["artifact_manifest_sha256"] = artifact_manifest_sha256(
+        smoke,
+        excluded_relative_paths=frozenset({"terminal_receipt.json"}),
+    )
+    (smoke / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
+    with pytest.raises(PermissionError, match="four-unit"):
+        _approved_smoke(smoke, run_root=run_root, prereg_sha=prereg_sha, data_sha=data_sha)

@@ -112,6 +112,8 @@ def _approved_smoke(path: Path | None, *, run_root: Path, prereg_sha: str, data_
         or summary.get("prereg_sha256") != prereg_sha
         or summary.get("episode_snapshot_sha256") != data_sha
         or summary.get("fresh_oos") != "NOT_RUN_NO_READ"
+        or not isinstance(models, list)
+        or len(models) != len(expected_units)
         or observed_units != expected_units
     ):
         raise PermissionError("approved D2 Smoke does not match the frozen four-unit matrix")
