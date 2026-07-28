@@ -2,6 +2,7 @@
   "schema_version": "kronos.rl-discovery.d1.prereg.v1",
   "status": "APPROVED_EXECUTABLE",
   "experiment_id": "TYPE2-D1-REWARD-ACTION",
+  "primary_round_trip_cost_bp": 23,
   "hypothesis": "A two-action observed-candidate decoder reduces the 501-way policy-head collapse while preserving train-only native economic reward separation from a shuffled-reward control.",
   "claims_boundary": {
     "research_only": true,

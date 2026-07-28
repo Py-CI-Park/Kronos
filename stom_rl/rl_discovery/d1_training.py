@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import random
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -14,7 +14,7 @@ from stom_rl.rl_discovery.d1_contract import D1ArmId, D1RewardKind
 from stom_rl.rl_discovery.d1_env import BinaryAction, BinaryCandidateEnv
 from stom_rl.rl_discovery.d1_gates import D1Outcome
 from stom_rl.rl_discovery.torch_runtime import prepare_torch_runtime
-from stom_rl.rl_discovery.training_bundle import TrainedArm
+from stom_rl.rl_discovery.training_bundle import DiscoveryNormalizer, TrainedArm
 
 
 class D1TrainingInvariantError(RuntimeError):
@@ -77,7 +77,10 @@ def train_d1_arm(
         verbose=0,
     )
     _ = model.learn(total_timesteps=config.timesteps, progress_bar=False)
-    return TrainedArm(model=model, normalizer=normalizer)
+    return TrainedArm(
+        model=model,
+        normalizer=cast(DiscoveryNormalizer, cast(object, normalizer)),
+    )
 
 
 def evaluate_d1_arm(

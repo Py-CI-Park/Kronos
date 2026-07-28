@@ -74,7 +74,7 @@ class BinaryCandidateEnv(gym.Env[NDArray[np.float32], int]):
             native_reward=float(native_reward),
         )
         self._raw_observation = next_raw
-        info = dict(raw_info)
+        info: dict[str, Any] = dict(raw_info)
         info.update(
             {
                 "binary_action": int(binary),

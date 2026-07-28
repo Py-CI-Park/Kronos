@@ -7,7 +7,12 @@ from pathlib import Path
 from stom_rl.rl_discovery.d1_contract import D1Preregistration
 from stom_rl.rl_discovery.d1_gates import D1GateResult, D1Outcome
 from stom_rl.rl_discovery.gates import RunProfile
-from stom_rl.rl_discovery.storage import JsonValue, atomic_write_json, contained_path
+from stom_rl.rl_discovery.storage import (
+    JsonValue,
+    artifact_manifest_sha256,
+    atomic_write_json,
+    contained_path,
+)
 
 
 def write_d1_unit(
@@ -85,6 +90,7 @@ def write_d1_terminal(
         "d1_smoke_pass": gate.smoke_pass,
         "fresh_oos": gate.fresh_oos,
         "type1_outcome": "COMPLETE_NO_GO",
+        "primary_round_trip_cost_bp": prereg.primary_round_trip_cost_bp,
         "promotion_allowed": gate.promotion_allowed,
         "profitability_claim_allowed": gate.profitability_claim_allowed,
         "prereg_sha256": prereg_sha,
@@ -98,6 +104,10 @@ def write_d1_terminal(
         {"summary": summary, "models": models},
     )
     atomic_write_json(contained_path(run_dir, "outcomes.json"), models)
+    approval_digest = artifact_manifest_sha256(
+        run_dir,
+        excluded_relative_paths=frozenset({"terminal_receipt.json"}),
+    )
     atomic_write_json(
         contained_path(run_dir, "terminal_receipt.json"),
         {
@@ -111,5 +121,7 @@ def write_d1_terminal(
             "fresh_oos": gate.fresh_oos,
             "prereg_sha256": prereg_sha,
             "fixture_sha256": fixture_sha,
+            "primary_round_trip_cost_bp": prereg.primary_round_trip_cost_bp,
+            "artifact_manifest_sha256": approval_digest,
         },
     )

@@ -13,6 +13,7 @@ def _payload() -> dict[str, object]:
         "schema_version": "kronos.rl-discovery.d1.prereg.v1",
         "status": "APPROVED_EXECUTABLE",
         "experiment_id": "TYPE2-D1-REWARD-ACTION",
+        "primary_round_trip_cost_bp": 23,
         "hypothesis": "binary observed-candidate decoding reduces policy-head collapse",
         "claims_boundary": {
             "research_only": True,

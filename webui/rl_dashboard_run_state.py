@@ -11,6 +11,7 @@ from typing import ClassVar, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from stom_rl import rl_events as _ev
+from stom_rl.rl_discovery.storage import artifact_manifest_sha256
 
 if __package__:
     from . import artifact_cache as _cache
@@ -44,6 +45,7 @@ class _TerminalBoundary(BaseModel):
     prereg_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     fresh_oos: Literal["NOT_RUN_NO_READ"]
     fixture_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    primary_round_trip_cost_bp: int | None = Field(default=None, ge=0)
 
     def has_valid_profile_pair(self) -> bool:
         if self.profile == "SMOKE":
@@ -51,6 +53,12 @@ class _TerminalBoundary(BaseModel):
         if self.experiment_id == "TYPE2-D1-REWARD-ACTION":
             return self.status == "PRIMARY_COMPLETE" and self.verdict.startswith("D1_ACTION_REWARD_")
         return self.status == "PRIMARY_COMPLETE" and self.verdict.startswith("PPO_ONLY_OVERFIT_")
+
+
+class _TerminalReceipt(_TerminalBoundary):
+    """Receipt-only integrity fields that are not circularly stored in summary."""
+
+    artifact_manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 def require_discovery_terminal_receipt(
@@ -69,15 +77,30 @@ def require_discovery_terminal_receipt(
         return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
     try:
         summary_boundary = _TerminalBoundary.model_validate(summary)
-        receipt_boundary = _TerminalBoundary.model_validate(_read_run_json(run_dir, receipt_path))
+        receipt_boundary = _TerminalReceipt.model_validate(_read_run_json(run_dir, receipt_path))
     except (OSError, TypeError, ValueError, ValidationError):
         return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
     if (
         not summary_boundary.has_valid_profile_pair()
         or not receipt_boundary.has_valid_profile_pair()
-        or summary_boundary != receipt_boundary
+        or summary_boundary.model_dump() != receipt_boundary.model_dump(
+            exclude={"artifact_manifest_sha256"}
+        )
     ):
         return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
+    if summary_boundary.experiment_id == "TYPE2-D1-REWARD-ACTION":
+        expected_digest = receipt_boundary.artifact_manifest_sha256
+        if expected_digest is None or summary_boundary.primary_round_trip_cost_bp != 23:
+            return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
+        try:
+            observed_digest = artifact_manifest_sha256(
+                run_dir,
+                excluded_relative_paths=frozenset({"terminal_receipt.json"}),
+            )
+        except (OSError, ValueError):
+            return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
+        if observed_digest != expected_digest:
+            return {**summary, "status": "RUNNING", "verdict": "RUNNING_NOT_EVALUATED"}
     return summary
 
 

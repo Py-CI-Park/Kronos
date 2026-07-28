@@ -73,6 +73,7 @@ class D1Preregistration(BaseModel):
     schema_version: Literal["kronos.rl-discovery.d1.prereg.v1"]
     status: Literal["APPROVED_EXECUTABLE"]
     experiment_id: Literal["TYPE2-D1-REWARD-ACTION"]
+    primary_round_trip_cost_bp: Literal[23]
     hypothesis: str = Field(min_length=20)
     claims_boundary: D1ClaimsBoundary
     arms: tuple[D1ArmContract, ...]
