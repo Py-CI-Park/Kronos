@@ -43,6 +43,8 @@ read-only `/api/docs/*` endpoints.
 
 ## 최신 구현 결과
 
+- `docs/kronos_rl_discovery_type2_d2_result_2026-07-28.md` — 실제 일봉 MaskablePPO 24/24 완료. 최대 8 episode 과적합 확인, 판정 `D2_PARTIAL_CAPACITY_CONFIRMED`; Fresh OOS·수익성·라이브는 차단.
+
 - `docs/kronos_dashboard_v51_implementation_result_2026-07-18.md` — Kronos Dashboard V5.1 구현·릴리스 결과. `IMPLEMENTED_RESEARCH_FOUNDATION`; RL/live 결과는 `NOT_RUN / NO-GO` 유지; branch `feature/dashboard-v5-learning-evidence`; commits `9d8e2ad` through `c1e4b37`; 다음 연구 단계는 coverage/custody 확인 후 새 사전등록 기반 15:20 H1 smoke와 H3/H5 validation variant다.
 
 ## Quick start

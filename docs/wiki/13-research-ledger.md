@@ -154,3 +154,13 @@ preregistration.
 
 D2 is not implicitly approved by this result. It requires a new preregistration
 for 1/8/32/128 episode scaling, a Smoke receipt, and a separate Primary verdict.
+
+# 2026-07-28 Type2-D2 evidence update
+
+| Date | Document | Type | Status |
+|---|---|---|---|
+| 2026-07-28 | `docs/kronos_rl_discovery_type2_d2_result_2026-07-28.md` | RESULT | 실제 일봉 4 scale × 2 arms × 3 seeds = 24/24 완료. 최대 8 episodes 과적합 확인. `D2_PARTIAL_CAPACITY_CONFIRMED`. |
+| 2026-07-28 | `docs/evidence/type2-d2-primary-20260728-v1.custody.json` | EVIDENCE_INVENTORY | 76 local files / 8,273,920 bytes; 24 models/outcomes, dataset/prereg/episode/terminal digests bound. Fresh OOS `NOT_RUN_NO_READ`. |
+
+D2는 32/128 episode 과적합 gate를 통과하지 못했다. D3는 별도 preregistration에서
+representation, top-K action 후보, 학습예산을 분리해야 한다.
