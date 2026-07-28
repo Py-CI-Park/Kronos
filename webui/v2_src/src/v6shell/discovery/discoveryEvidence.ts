@@ -31,6 +31,7 @@ export interface DiscoveryEvidence {
   readonly profile: string;
   readonly freshOos: string;
   readonly type1Outcome: string;
+  readonly primaryRoundTripCostBp: number;
   readonly preregSha256: string;
   readonly promotionAllowed: boolean;
   readonly profitabilityClaimAllowed: boolean;
@@ -83,6 +84,7 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     profile: textValue(summary.profile),
     freshOos: textValue(summary.fresh_oos),
     type1Outcome: textValue(summary.type1_outcome),
+    primaryRoundTripCostBp: numberValue(summary.primary_round_trip_cost_bp),
     preregSha256: textValue(summary.prereg_sha256),
     promotionAllowed: booleanValue(summary.promotion_allowed),
     profitabilityClaimAllowed: booleanValue(summary.profitability_claim_allowed),

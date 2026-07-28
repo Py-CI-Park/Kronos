@@ -25,6 +25,10 @@ from stom_rl.daily_type1_contract import (
 from stom_rl.daily_type1_env import STABLE_SLOTS
 
 
+class D1FixtureError(ValueError):
+    """Raised when the frozen compact D1 fixture contract is violated."""
+
+
 class _CompactPair(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
@@ -44,18 +48,20 @@ class _CompactFixture(BaseModel):
     @model_validator(mode="after")
     def validate_frozen_shape(self) -> _CompactFixture:
         if self.schema_version != 1:
-            raise ValueError("D1 fixture schema version must be 1")
+            raise D1FixtureError("D1 fixture schema version must be 1")
         if self.label != "TRAIN_ONLY_SYNTHETIC_WIRING" or self.partition != "TRAIN_ONLY":
-            raise ValueError("D1 fixture must be explicitly train-only")
+            raise D1FixtureError("D1 fixture must be explicitly train-only")
         if self.pair_count != 64 or len(self.pairs) != 64:
-            raise ValueError("D1 fixture must contain exactly 64 pairs")
+            raise D1FixtureError("D1 fixture must contain exactly 64 pairs")
         if len(self.symbols) != 8 or len(set(self.symbols)) != 8:
-            raise ValueError("D1 fixture must contain eight unique symbols")
+            raise D1FixtureError("D1 fixture must contain eight unique symbols")
         if any(len(symbol) != 6 or not symbol.isdigit() for symbol in self.symbols):
-            raise ValueError("D1 symbols must preserve six-digit string identity")
+            raise D1FixtureError("D1 symbols must preserve six-digit string identity")
         for index, pair in enumerate(self.pairs):
             if (pair.signal_slot is None) != (index % 4 == 0):
-                raise ValueError("D1 fixture must preserve the ordinal-mod-4 no-trade layout")
+                raise D1FixtureError(
+                    "D1 fixture must preserve the ordinal-mod-4 no-trade layout"
+                )
         return self
 
 

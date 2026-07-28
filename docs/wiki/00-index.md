@@ -31,10 +31,15 @@ read-only `/api/docs/*` endpoints.
 - [13-research-ledger](13-research-ledger) - current research status and evidence index
 - [14-document-standard](14-document-standard) - document taxonomy and report templates
 - [15-type2-d0-primary](15-type2-d0-primary) - Type2-D0 Primary reviewed evidence summary
+- [16-type2-d1-action-reward](16-type2-d1-action-reward) - Type2-D1 action/reward reviewed evidence summary
 
 ### Latest Type2-D0 evidence
 
 - [Type2-D0 reviewed summary](15-type2-d0-primary) - 12/12 units, `PRIMARY_COMPLETE`, hypothesis `NO-GO`, custody limitations, and source paths
+
+### Latest Type2-D1 evidence
+
+- [Type2-D1 reviewed summary](16-type2-d1-action-reward) - 9/9 units, `D1_ACTION_REWARD_CONFIRMED` for synthetic train-only mechanics; Fresh OOS and live claims remain blocked
 
 ## 최신 구현 결과
 

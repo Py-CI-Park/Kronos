@@ -144,3 +144,13 @@ The observed run used the reduced executable D0 preregistration. Diagnostics
 that appeared only in richer planning drafts were not executed and are not
 retroactively claimed. A redesigned reward/action study requires a distinct D1
 preregistration.
+
+# 2026-07-28 Type2-D1 evidence update
+
+| Date | Document | Type | Status |
+|---|---|---|---|
+| 2026-07-28 | `docs/kronos_rl_discovery_type2_d1_result_2026-07-28.md` | RESULT | 3 arms × 3 seeds completed. Binary native/diagnostic learned; shuffled control failed as intended. `D1_ACTION_REWARD_CONFIRMED` is limited to synthetic train-only mechanics. |
+| 2026-07-28 | `docs/evidence/type2-d1-primary-v3-20260728.custody.json` | EVIDENCE_INVENTORY | 51 local files / 1,796,873 bytes; producer commit, prereg, fixture, lifecycle and terminal artifact digest are bound. Fresh OOS remains `NOT_RUN_NO_READ`. |
+
+D2 is not implicitly approved by this result. It requires a new preregistration
+for 1/8/32/128 episode scaling, a Smoke receipt, and a separate Primary verdict.
