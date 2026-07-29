@@ -53,11 +53,13 @@ def _detect_artifact_type(run_dir: Path) -> str:
     discovery_path = run_dir / "summary.json"
     if _is_run_file(run_dir, discovery_path):
         payload = _read_run_json(run_dir, discovery_path)
-        schema = payload.get("schema_version")
+        schema = payload.get("schema_version") if isinstance(payload, dict) else None
         if schema == "kronos.rl-discovery.d2.result.v1":
             return "rl_discovery_d2"
         if schema == "kronos.rl-discovery.d3.result.v1":
             return "rl_discovery_d3"
+        if schema == "kronos.rl-discovery.d4.result.v1":
+            return "rl_discovery_d4"
     for artifact_type, file_name in ARTIFACT_SIGNATURES:
         if _is_run_file(run_dir, run_dir / file_name):
             return artifact_type
@@ -145,7 +147,7 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
     artifact_type = _detect_artifact_type(run_dir)
     verified_detail: Dict[str, Any] | None = None
     verified_summary: Dict[str, Any] | None = None
-    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3"}:
+    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3", "rl_discovery_d4"}:
         verified_summary, verified_detail = _find_discovery_evidence(run_dir, artifact_type)
     payload: Dict[str, Any] = {
         **_run_record(run_dir, verified_summary=verified_summary),
@@ -197,7 +199,7 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
             "feature_columns": payload["summary"].get("feature_columns", []),
             "train_summary": selected_model,
         }
-    elif artifact_type in {"rl_discovery_d2", "rl_discovery_d3"}:
+    elif artifact_type in {"rl_discovery_d2", "rl_discovery_d3", "rl_discovery_d4"}:
         payload["detail"] = verified_detail or {}
     elif artifact_type == "contextual_bandit":
         payload["detail"] = _read_run_json(run_dir, run_dir / "eval_summary.json")

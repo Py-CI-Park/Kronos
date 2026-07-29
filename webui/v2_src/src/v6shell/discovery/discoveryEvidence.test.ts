@@ -71,15 +71,16 @@ test('discovery page keeps conclusions artifact-driven and handles API failure',
   assert.doesNotMatch(discoveryPage, /\/ NO-GO<\/b>/);
 });
 
-test('reviewed snapshot keeps D3 representation evidence bound to the committed custody', () => {
+test('reviewed snapshot keeps D4 algorithm evidence bound to the committed custody', () => {
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.authority, 'REVIEWED_SNAPSHOT');
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.runName, 'type2-d3-primary-20260729-v1');
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.verdict, 'D3_REPRESENTATION_ACTION_NOT_CONFIRMED');
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.runName, 'type2-d4-primary-20260729-v2');
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.verdict, 'D4_ALGORITHM_OBJECTIVE_CONFIRMED');
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.arms.length, 24);
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.confirmedPolicyArmCount, 0);
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.bestPolicyArm, 'D_TOP5_CONTEXT_4X');
-  assert.ok((REVIEWED_DISCOVERY_SNAPSHOT.budget4xNativeLift ?? 0) > .067);
-  assert.ok((REVIEWED_DISCOVERY_SNAPSHOT.nativeDeltaVsShuffled ?? 0) > .76);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.confirmedRlArmCount, 1);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.bestRlArm, 'C_DQN_DISCRETE');
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.supervisedCeilingConfirmed, true);
+  assert.ok((REVIEWED_DISCOVERY_SNAPSHOT.bestRlGapToSupervisedCeiling ?? 1) < .013);
+  assert.ok((REVIEWED_DISCOVERY_SNAPSHOT.nativeDeltaVsShuffled ?? 0) > 1.09);
   assert.match(REVIEWED_DISCOVERY_SNAPSHOT.evidenceManifest ?? '', /^[0-9a-f]{64}$/);
   assert.deepEqual(
     [...new Set(REVIEWED_DISCOVERY_SNAPSHOT.arms.map((row) => row.seed))],
@@ -106,17 +107,30 @@ test('D1 primary parser preserves all reduced-action arm seeds', () => {
   });
 
   assert.deepEqual(evidence?.arms.map((arm) => arm.seed), [0, 1, 2]);
-  assert.match(discoveryPage, /D1 action \/ reward/);
-  assert.match(discoveryPage, /D2 historical scale/);
+  assert.match(discoveryPage, /action \/ reward/);
+  assert.match(discoveryPage, /historical scale/);
 });
 
-test('D3 reviewed page exposes representation failure, cost diagnostic, and blocked claims', () => {
-  assert.match(discoveryPage, /D3 representation/);
+test('D4 reviewed page exposes train-only confirmation, cost diagnostic, and blocked claims', () => {
+  assert.match(discoveryPage, /D4 algorithm \/ objective/);
   assert.match(discoveryPage, /23bp diagnostic/i);
-  assert.match(discoveryPage, /confirmedPolicyArmCount/);
+  assert.match(discoveryPage, /confirmedRlArmCount/);
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.primaryRoundTripCostBp, 0);
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.diagnosticRoundTripCostBp, 23);
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.promotionAllowed, false);
+});
+
+test('live D4 nested summary preserves RL ceiling gap and all gate fields', () => {
+  const evidence = parseDiscoveryEvidence({
+    name: 'type2-d4-primary-20260729-v2',
+    summary: { research_lane: 'rl_discovery', status: 'COMPLETE', verdict: 'D4_ALGORITHM_OBJECTIVE_CONFIRMED', profile: 'PRIMARY', fresh_oos: 'NOT_RUN_NO_READ', prereg_sha256: 'abc123', primary_round_trip_cost_bp: 0, diagnostic_round_trip_cost_bp: 23, promotion_allowed: false, profitability_claim_allowed: false },
+    detail: { gate: { best_rl_arm: 'C_DQN_DISCRETE', best_rl_gap_to_supervised_ceiling: .0124, supervised_ceiling_confirmed: true, confirmed_rl_arms: ['C_DQN_DISCRETE'] }, models: ['A_SUPERVISED_CEILING', 'B_PPO_BASELINE', 'C_DQN_DISCRETE', 'D_AUXILIARY_PPO'].flatMap((algorithm_arm) => ['NATIVE', 'SHUFFLED'].flatMap((reward_arm) => [0, 1, 2].map((seed) => ({ algorithm_arm, reward_arm, seed, rl_timesteps: 65536, fit: { accuracy: .90625, reward_ratio: .984, dominant_action_rate: .21875, invalid_action_count: 0 }, native: { reward_ratio: .984 }, cost_23bp: { reward_ratio: .982 } })))) },
+  });
+  assert.ok(evidence?.arms.some((arm) => arm.id === 'D4-C_DQN_DISCRETE/NATIVE'));
+  assert.equal(evidence?.bestRlArm, 'C_DQN_DISCRETE');
+  assert.equal(evidence?.confirmedRlArmCount, 1);
+  assert.equal(evidence?.supervisedCeilingConfirmed, true);
+  assert.equal(evidence?.bestRlGapToSupervisedCeiling, .0124);
 });
 
 test('live D3 nested summary preserves best arm, budget lift, and all units', () => {
