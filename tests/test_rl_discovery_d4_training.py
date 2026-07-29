@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from stom_rl.rl_discovery.d3_contract import D3PolicyArmId
 from stom_rl.rl_discovery.d3_env import D3Episode, D3Representation
-from stom_rl.rl_discovery.d4_training import supervised_examples
+from stom_rl.rl_discovery.d4_contract import D4AlgorithmArmId
+from stom_rl.rl_discovery.d4_training import D4TrainingConfig, supervised_examples
 
 
 def _episode(gross: tuple[float, ...]) -> D3Episode:
@@ -28,3 +29,8 @@ def test_d4_supervised_examples_keep_future_returns_out_of_observations() -> Non
     assert observations.shape == (2, 85)
     assert actions.tolist() == [2, 0]
     assert 0.02 not in observations[0].tolist()
+
+
+def test_d4_training_config_accepts_registered_environment_cost() -> None:
+    config = D4TrainingConfig(D4AlgorithmArmId.DQN_DISCRETE, 0, 2048, 0, cost_bp=23)
+    assert config.cost_bp == 23
