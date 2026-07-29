@@ -172,8 +172,7 @@ def train_d4_model(
 
     random.seed(config.seed)
     np.random.seed(config.seed)
-    manual_seed = cast(Callable[[int], Tensor], torch.manual_seed)
-    _ = manual_seed(config.seed)
+    _ = torch.manual_seed(config.seed)
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
     vector = DummyVecEnv([
