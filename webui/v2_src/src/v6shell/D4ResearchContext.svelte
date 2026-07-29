@@ -1,7 +1,7 @@
-<aside class="research-context" aria-label="D4 강화학습 공통 연구 상태">
-  <div class="stamp"><span>CURRENT RESEARCH STAGE</span><strong>D4</strong><em>VERIFY API</em></div>
-  <dl><div><dt>표시 권한</dt><dd>HMAC OR COMMITTED CUSTODY</dd></div><div><dt>필수 구조</dt><dd>24 / 24 UNITS</dd></div><div><dt>Fresh OOS</dt><dd>NOT_RUN_NO_READ</dd></div><div><dt>Promotion</dt><dd>BLOCKED</dd></div></dl>
-  <p>확정 수치는 Discovery API가 HMAC 또는 커밋된 custody와 matrix를 검증한 뒤에만 표시합니다. 검증 실패는 EVIDENCE_UNAVAILABLE입니다.</p>
+<aside class="research-context" aria-label="D5 강화학습 공통 연구 상태">
+  <div class="stamp"><span>CURRENT RESEARCH STAGE</span><strong>D5</strong><em>NOT_CONFIRMED</em></div>
+  <dl><div><dt>표시 권한</dt><dd>HMAC OR COMMITTED CUSTODY</dd></div><div><dt>필수 구조</dt><dd>10 / 10 UNITS</dd></div><div><dt>Fresh OOS</dt><dd>NOT_RUN_NO_READ</dd></div><div><dt>Promotion</dt><dd>BLOCKED</dd></div></dl>
+  <p>D5 DQN 10개는 모두 학습됐지만 accuracy·reward 동시 gate는 통과하지 못했습니다. Discovery API가 custody와 exact matrix를 검증한 결과만 표시하며, D6 validation은 계속 봉인합니다.</p>
 </aside>
 <style>
   .research-context{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(260px,.6fr);gap:14px;align-items:center;border:1px solid var(--border-strong);border-left:4px solid var(--warn);padding:11px 14px;background:linear-gradient(105deg,color-mix(in srgb,var(--warn) 12%,transparent),var(--surface-raised) 42%);min-width:0}.stamp{display:grid;grid-template-columns:auto auto;align-items:end;gap:5px 8px}.stamp span{grid-column:1/-1;color:var(--warn);font:800 .58rem ui-monospace,monospace;letter-spacing:.11em}.stamp strong{font:900 1.85rem/.9 ui-monospace,monospace}.stamp em{border:1px solid var(--warn);padding:2px 5px;color:var(--warn);font:900 .6rem ui-monospace,monospace;font-style:normal}dl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0}dl div{border-left:1px solid var(--border);padding-left:8px}dt{color:var(--dim);font:800 .58rem ui-monospace,monospace}dd{margin:3px 0 0;font:700 .66rem ui-monospace,monospace;overflow-wrap:anywhere}.research-context p{margin:0;color:var(--muted);font-size:.68rem;line-height:1.45}@media(max-width:1000px){.research-context{grid-template-columns:1fr}.research-context p{grid-column:auto}dl{grid-template-columns:1fr 1fr}}

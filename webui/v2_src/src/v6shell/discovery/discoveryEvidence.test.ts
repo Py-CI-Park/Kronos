@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parseDiscoveryEvidence, summarizeDiscoveryArms } from './discoveryEvidence';
 import { REVIEWED_DISCOVERY_SNAPSHOT } from './reviewedDiscoverySnapshot';
+import { REVIEWED_D5_SNAPSHOT } from './reviewedD5Snapshot';
 
 const discoveryPage = readFileSync(new URL('../pages/DiscoveryPage.svelte', import.meta.url), 'utf8');
 const d5Panel = readFileSync(new URL('../pages/D5EvidencePanel.svelte', import.meta.url), 'utf8');
@@ -132,6 +133,20 @@ test('live D4 nested summary preserves RL ceiling gap and all gate fields', () =
   assert.equal(evidence?.confirmedRlArmCount, 1);
   assert.equal(evidence?.supervisedCeilingConfirmed, true);
   assert.equal(evidence?.bestRlGapToSupervisedCeiling, .0124);
+});
+
+test('reviewed D5 snapshot preserves the failed full-train gate without claim inflation', () => {
+  assert.equal(REVIEWED_D5_SNAPSHOT.runName, 'type2-d5-primary-20260729-001');
+  assert.equal(REVIEWED_D5_SNAPSHOT.verdict, 'D5_FULL_TRAIN_COST_NOT_CONFIRMED');
+  assert.equal(REVIEWED_D5_SNAPSHOT.arms.length, 10);
+  assert.equal(REVIEWED_D5_SNAPSHOT.nativePassingSeedFraction, 0);
+  assert.equal(REVIEWED_D5_SNAPSHOT.shuffledPassingSeedFraction, 0);
+  assert.ok((REVIEWED_D5_SNAPSHOT.nativeDeltaVsShuffled ?? 0) > .98);
+  assert.equal(REVIEWED_D5_SNAPSHOT.freshOos, 'NOT_RUN_NO_READ');
+  assert.equal(REVIEWED_D5_SNAPSHOT.reusedValidation, 'NOT_RUN_NO_READ');
+  assert.equal(REVIEWED_D5_SNAPSHOT.promotionAllowed, false);
+  assert.equal(REVIEWED_D5_SNAPSHOT.profitabilityClaimAllowed, false);
+  assert.match(REVIEWED_D5_SNAPSHOT.evidenceManifest ?? '', /^[0-9a-f]{64}$/);
 });
 
 test('live D5 evidence requires ten cost-trained DQN units and preserves its gate', () => {

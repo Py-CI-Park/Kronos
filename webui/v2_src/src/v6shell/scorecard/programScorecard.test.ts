@@ -44,8 +44,8 @@ test('page matrix describes every V6 user surface in navigation order', () => {
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.eta.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'D4_PRIMARY_COMPLETE');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D4_DQN_CONFIRMED_TRAIN_ONLY');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'D5_PRIMARY_10_OF_10');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D5_FULL_TRAIN_COST_NOT_CONFIRMED');
 });
 
 test('capability inventory separates available research from blocked claims', () => {
@@ -56,6 +56,7 @@ test('capability inventory separates available research from blocked claims', ()
   // Then
   assert.ok(available.some((capability) => capability.id === 'd0-d3-history'));
   assert.ok(available.some((capability) => capability.id === 'd4-primary'));
+  assert.ok(available.some((capability) => capability.id === 'd5-primary'));
   assert.ok(blocked.some((capability) => capability.id === 'fresh-oos'));
   assert.ok(blocked.some((capability) => capability.id === 'live-trading'));
 });
