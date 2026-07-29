@@ -22,6 +22,7 @@ if __package__:
         require_discovery_terminal_receipt as _require_discovery_terminal_receipt,
         run_lifecycle as _run_lifecycle,
     )
+    from .rl_dashboard_summary import find_discovery_evidence as _find_discovery_evidence
     from .rl_dashboard_summary import find_json_summary as _find_json_summary
 else:  # pragma: no cover - supports direct script-style imports
     from webui.rl_strategy_context import build_strategy_context
@@ -40,6 +41,7 @@ else:  # pragma: no cover - supports direct script-style imports
         require_discovery_terminal_receipt as _require_discovery_terminal_receipt,
         run_lifecycle as _run_lifecycle,
     )
+    from webui.rl_dashboard_summary import find_discovery_evidence as _find_discovery_evidence
     from webui.rl_dashboard_summary import find_json_summary as _find_json_summary
 
 RUN_IDENTITY_PROTOCOL = _IDENTITY_PROTOCOL
@@ -48,20 +50,23 @@ require_discovery_terminal_receipt = _require_discovery_terminal_receipt
 
 
 def _detect_artifact_type(run_dir: Path) -> str:
-    d2_path = run_dir / "summary.json"
-    if _is_run_file(run_dir, d2_path):
-        payload = _read_run_json(run_dir, d2_path)
-        if payload.get("schema_version") == "kronos.rl-discovery.d2.result.v1":
+    discovery_path = run_dir / "summary.json"
+    if _is_run_file(run_dir, discovery_path):
+        payload = _read_run_json(run_dir, discovery_path)
+        schema = payload.get("schema_version")
+        if schema == "kronos.rl-discovery.d2.result.v1":
             return "rl_discovery_d2"
+        if schema == "kronos.rl-discovery.d3.result.v1":
+            return "rl_discovery_d3"
     for artifact_type, file_name in ARTIFACT_SIGNATURES:
         if _is_run_file(run_dir, run_dir / file_name):
             return artifact_type
     return "unknown"
 
 
-def _run_record(run_dir: Path) -> Dict[str, Any]:
+def _run_record(run_dir: Path, *, verified_summary: Dict[str, Any] | None = None) -> Dict[str, Any]:
     artifact_type = _detect_artifact_type(run_dir)
-    summary = _find_json_summary(run_dir, artifact_type)
+    summary = verified_summary if verified_summary is not None else _find_json_summary(run_dir, artifact_type)
     identity = _run_identity_fields(run_dir)
     return {
         "name": run_dir.name,
@@ -138,8 +143,12 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
 
     run_dir = resolve_run_dir(run_name)
     artifact_type = _detect_artifact_type(run_dir)
+    verified_detail: Dict[str, Any] | None = None
+    verified_summary: Dict[str, Any] | None = None
+    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3"}:
+        verified_summary, verified_detail = _find_discovery_evidence(run_dir, artifact_type)
     payload: Dict[str, Any] = {
-        **_run_record(run_dir),
+        **_run_record(run_dir, verified_summary=verified_summary),
         "artifacts": _artifact_files(run_dir),
     }
     if artifact_type == "orderbook_rl_readiness":
@@ -188,12 +197,8 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
             "feature_columns": payload["summary"].get("feature_columns", []),
             "train_summary": selected_model,
         }
-    elif artifact_type == "rl_discovery_d2":
-        payload["detail"] = (
-            _read_run_json(run_dir, run_dir / "summary.json")
-            if payload["summary"].get("status") != "BLOCK"
-            else {}
-        )
+    elif artifact_type in {"rl_discovery_d2", "rl_discovery_d3"}:
+        payload["detail"] = verified_detail or {}
     elif artifact_type == "contextual_bandit":
         payload["detail"] = _read_run_json(run_dir, run_dir / "eval_summary.json")
         model_path = run_dir / "model.json"

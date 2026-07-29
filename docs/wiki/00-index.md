@@ -32,6 +32,8 @@ read-only `/api/docs/*` endpoints.
 - [14-document-standard](14-document-standard) - document taxonomy and report templates
 - [15-type2-d0-primary](15-type2-d0-primary) - Type2-D0 Primary reviewed evidence summary
 - [16-type2-d1-action-reward](16-type2-d1-action-reward) - Type2-D1 action/reward reviewed evidence summary
+- [17-type2-d2-historical-scale](17-type2-d2-historical-scale) - Type2-D2 historical capacity reviewed evidence
+- [18-type2-d3-representation-action](18-type2-d3-representation-action) - Type2-D3 representation/action reviewed evidence
 
 ### Latest Type2-D0 evidence
 
@@ -42,6 +44,8 @@ read-only `/api/docs/*` endpoints.
 - [Type2-D1 reviewed summary](16-type2-d1-action-reward) - 9/9 units, `D1_ACTION_REWARD_CONFIRMED` for synthetic train-only mechanics; Fresh OOS and live claims remain blocked
 
 ## 최신 구현 결과
+
+- `docs/kronos_rl_discovery_type2_d3_result_2026-07-29.md` — 실제 일봉 PPO 24/24 완료. top-5 context와 4× budget은 개선됐으나 0/4 arm만 0.90 gate를 통과해 `D3_REPRESENTATION_ACTION_NOT_CONFIRMED`; Fresh OOS·수익성·실거래는 차단.
 
 - `docs/kronos_rl_discovery_type2_d2_result_2026-07-28.md` — 실제 일봉 MaskablePPO 24/24 완료. 최대 8 episode 과적합 확인, 판정 `D2_PARTIAL_CAPACITY_CONFIRMED`; Fresh OOS·수익성·라이브는 차단.
 

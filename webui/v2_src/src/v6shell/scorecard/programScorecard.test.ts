@@ -4,7 +4,9 @@ import {
   PROGRAM_CAPABILITIES,
   PROGRAM_LANES,
   PROGRAM_PAGE_MATRIX,
+  PROGRAM_SCORE_RUBRIC,
   programOverallScore,
+  programRubricScore,
 } from './programScorecard';
 
 test('program score is the rounded weighted sum of every audited lane', () => {
@@ -16,7 +18,16 @@ test('program score is the rounded weighted sum of every audited lane', () => {
 
   // Then
   assert.equal(totalWeight, 100);
-  assert.equal(score, 80);
+  assert.equal(score, 81);
+});
+
+test('every lane score is derived from a frozen 100-point evidence rubric', () => {
+  for (const lane of PROGRAM_LANES) {
+    const maximum = PROGRAM_SCORE_RUBRIC[lane.id].reduce((total, criterion) => total + criterion.points, 0);
+    assert.equal(maximum, 100);
+    assert.equal(lane.score, programRubricScore(lane.id));
+    assert.ok(PROGRAM_SCORE_RUBRIC[lane.id].every((criterion) => criterion.evidence.length > 0));
+  }
 });
 
 test('page matrix describes every V6 user surface in navigation order', () => {
@@ -34,7 +45,7 @@ test('page matrix describes every V6 user surface in navigation order', () => {
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'PRIMARY_COMPLETE');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D2_PARTIAL_CAPACITY');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D3_NO_GO_EXPLAINED');
 });
 
 test('capability inventory separates available research from blocked claims', () => {

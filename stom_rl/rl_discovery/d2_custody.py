@@ -62,6 +62,15 @@ def held_bytes(path: Path, *, anchor: Path) -> bytes:
 
 
 @contextmanager
+def held_binary(path: Path, *, anchor: Path) -> Iterator[io.BufferedReader]:
+    """Keep one validated artifact open without write/delete sharing."""
+
+    checked = assert_plain_path(path, anchor=anchor, require_file=True)
+    with _open_held_binary(checked) as handle:
+        yield handle
+
+
+@contextmanager
 def verified_text_stream(
     path: Path,
     *,

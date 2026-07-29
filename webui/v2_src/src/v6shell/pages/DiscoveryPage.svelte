@@ -12,8 +12,8 @@
     ['D0', 'PPO attribution', 'NO-GO closed'],
     ['D1', 'action / reward', 'train-only confirmed'],
     ['D2', 'historical scale', 'partial capacity confirmed'],
-    ['D3', 'representation', 'preregister next'],
-    ['D4', 'cost sensitivity', 'waiting'],
+    ['D3', 'representation / action', '24 models · NO-GO'],
+    ['D4', 'algorithm / objective', 'decision next'],
     ['D5', 'full train + control', 'waiting'],
     ['D6', 'reused validation', 'locked'],
     ['D7', 'Fresh OOS', 'external approval'],
@@ -26,6 +26,14 @@
     A_BINARY_NATIVE: 'A · binary native',
     B_BINARY_DIAGNOSTIC: 'B · binary diagnostic',
     C_BINARY_SHUFFLED: 'C · binary shuffled',
+    'D3-A_TOP1_CONTEXT_1X/NATIVE': 'A · top-1 context · native',
+    'D3-A_TOP1_CONTEXT_1X/SHUFFLED': 'A · top-1 context · shuffled',
+    'D3-B_TOP5_PLAIN_1X/NATIVE': 'B · top-5 plain · native',
+    'D3-B_TOP5_PLAIN_1X/SHUFFLED': 'B · top-5 plain · shuffled',
+    'D3-C_TOP5_CONTEXT_1X/NATIVE': 'C · top-5 context · native',
+    'D3-C_TOP5_CONTEXT_1X/SHUFFLED': 'C · top-5 context · shuffled',
+    'D3-D_TOP5_CONTEXT_4X/NATIVE': 'D · top-5 context 4× · native',
+    'D3-D_TOP5_CONTEXT_4X/SHUFFLED': 'D · top-5 context 4× · shuffled',
   };
 
   let evidence = $state<DiscoveryEvidence | null>(REVIEWED_DISCOVERY_SNAPSHOT);
@@ -36,7 +44,9 @@
   const ratioWidth = (value: number) => `${Math.max(0, Math.min(100, value * 100))}%`;
   const outcomeClass = (value: number) => value >= .9 ? 'pass' : value > 0 ? 'warn' : 'fail';
   const armLabel = (id: string) => ARM_LABELS[id] ?? id;
-  const phaseLabel = (value: DiscoveryEvidence) => value.verdict.startsWith('D2_')
+  const phaseLabel = (value: DiscoveryEvidence) => value.verdict.startsWith('D3_')
+    ? 'D3 representation / action'
+    : value.verdict.startsWith('D2_')
     ? 'D2 historical scale'
     : value.arms.some((arm) => arm.id.startsWith('A_BINARY')) ? 'D1 action / reward' : 'D0 attribution';
 
@@ -87,7 +97,7 @@
 
   <section class="ladder" aria-labelledby="ladder-title">
     <div class="section-title"><p>PROGRAM MAP</p><h2 id="ladder-title">Discovery 연구 사다리</h2></div>
-    <ol>{#each LADDER as stage, index}<li class:active={index === 2} class:next={index === 3} class:locked={index >= 6}><span>{stage[0]}</span><strong>{stage[1]}</strong><small>{stage[2]}</small></li>{/each}</ol>
+    <ol>{#each LADDER as stage, index}<li class:active={index === 3} class:next={index === 4} class:locked={index >= 6}><span>{stage[0]}</span><strong>{stage[1]}</strong><small>{stage[2]}</small></li>{/each}</ol>
   </section>
 
   {#if loading}
@@ -96,10 +106,10 @@
     <section class="state"><strong>아직 Discovery 실행이 없습니다.</strong><p>실행 후 arm·seed 귀속성 결과가 표시됩니다.</p></section>
   {:else}
     {@const aggregates = summarizeDiscoveryArms(evidence.arms)}
-    {@const disposition = evidence.verdict === 'D2_PARTIAL_CAPACITY_CONFIRMED' ? 'PARTIAL CAPACITY / RESEARCH-ONLY' : evidence.verdict === 'D1_ACTION_REWARD_CONFIRMED' ? 'TRAIN_ONLY_CONFIRMED / RESEARCH-ONLY' : evidence.verdict === 'PPO_ONLY_OVERFIT_NOT_CONFIRMED' ? 'NO-GO' : 'RESEARCH-ONLY'}
+    {@const disposition = evidence.verdict === 'D3_REPRESENTATION_ACTION_NOT_CONFIRMED' ? 'NO-GO / RESEARCH-ONLY' : evidence.verdict === 'D2_PARTIAL_CAPACITY_CONFIRMED' ? 'PARTIAL CAPACITY / RESEARCH-ONLY' : evidence.verdict === 'D1_ACTION_REWARD_CONFIRMED' ? 'TRAIN_ONLY_CONFIRMED / RESEARCH-ONLY' : evidence.verdict === 'PPO_ONLY_OVERFIT_NOT_CONFIRMED' ? 'NO-GO' : 'RESEARCH-ONLY'}
     <section class="verdict-grid">
       <article class="verdict-card"><p>{evidence.authority} VERDICT</p><strong>{evidence.verdict}</strong><span>{evidence.status} · {evidence.profile} · {evidence.arms.length}/{evidence.arms.length} units</span></article>
-      <article class="receipt"><dl><div><dt>Authority</dt><dd>{evidence.authority}</dd></div><div><dt>Run</dt><dd>{evidence.runName}</dd></div><div><dt>Manifest</dt><dd>{evidence.evidenceManifest?.slice(0, 16) ?? 'LIVE SCAN'}…</dd></div><div><dt>Prereg SHA</dt><dd>{evidence.preregSha256.slice(0, 16)}…</dd></div><div><dt>Train / diagnostic cost</dt><dd>{evidence.primaryRoundTripCostBp} / {evidence.diagnosticRoundTripCostBp ?? 23} bp</dd></div><div><dt>Confirmed scale</dt><dd>{evidence.maximumConfirmedEpisodeCount ?? 'N/A'} episodes</dd></div><div><dt>Native − shuffle @128</dt><dd>{evidence.nativeDeltaVsShuffled?.toFixed(3) ?? 'N/A'}×</dd></div><div><dt>Fresh OOS</dt><dd>{evidence.freshOos}</dd></div></dl></article>
+      <article class="receipt"><dl><div><dt>Authority</dt><dd>{evidence.authority}</dd></div><div><dt>Run</dt><dd>{evidence.runName}</dd></div><div><dt>Manifest</dt><dd>{evidence.evidenceManifest?.slice(0, 16) ?? 'LIVE SCAN'}…</dd></div><div><dt>Prereg SHA</dt><dd>{evidence.preregSha256.slice(0, 16)}…</dd></div><div><dt>Train / diagnostic cost</dt><dd>{evidence.primaryRoundTripCostBp} / {evidence.diagnosticRoundTripCostBp ?? 23} bp</dd></div><div><dt>Best policy arm</dt><dd>{evidence.bestPolicyArm || 'N/A'}</dd></div><div><dt>4× budget lift</dt><dd>{evidence.budget4xNativeLift?.toFixed(3) ?? 'N/A'}×</dd></div><div><dt>Confirmed arms</dt><dd>{evidence.confirmedPolicyArmCount ?? 'N/A'} / 4</dd></div><div><dt>Best native − shuffle</dt><dd>{evidence.nativeDeltaVsShuffled?.toFixed(3) ?? 'N/A'}×</dd></div><div><dt>Fresh OOS</dt><dd>{evidence.freshOos}</dd></div></dl></article>
     </section>
 
     <section class="aggregates" aria-labelledby="aggregate-title">
@@ -114,7 +124,7 @@
 
     <section class="interpretation">
       <div><p>PRIMARY RECEIPT</p><h2>Artifact 기반 판정</h2></div>
-      <ul><li>화면의 평균과 seed 값은 선택된 artifact에서 계산되며 고정 결론을 덮어쓰지 않습니다.</li><li>Receipt 판정: <b>{evidence.verdict} / {disposition}</b>.</li><li>D2 historical scale은 최대 <b>{evidence.maximumConfirmedEpisodeCount ?? 0} episodes</b>까지만 과적합을 확인했습니다.</li><li>Promotion <b>{evidence.promotionAllowed ? 'ALLOWED' : 'BLOCKED'}</b>, profitability claim <b>{evidence.profitabilityClaimAllowed ? 'ALLOWED' : 'BLOCKED'}</b>.</li><li><b>D3 representation/action ablation</b>을 다음으로 사전등록하며 Fresh OOS는 열지 않습니다.</li></ul>
+      <ul><li>화면의 평균과 seed 값은 선택된 artifact에서 계산되며 고정 결론을 덮어쓰지 않습니다.</li><li>Receipt 판정: <b>{evidence.verdict} / {disposition}</b>.</li><li>D3는 top-5 문맥과 4× budget에서 개선을 확인했지만 <b>{evidence.confirmedPolicyArmCount ?? 0}/4 arms</b>만 0.90 게이트를 통과했습니다.</li><li>Promotion <b>{evidence.promotionAllowed ? 'ALLOWED' : 'BLOCKED'}</b>, profitability claim <b>{evidence.profitabilityClaimAllowed ? 'ALLOWED' : 'BLOCKED'}</b>.</li><li>다음 D4는 비용 민감도 확장이 아니라 <b>알고리즘·목적함수 변경 여부</b>를 별도 사전등록하며 Fresh OOS는 열지 않습니다.</li></ul>
     </section>
   {/if}
 </section>
