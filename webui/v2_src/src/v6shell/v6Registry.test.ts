@@ -31,6 +31,6 @@ test('V6 brand identifies the released shell', () => {
     name: 'AI Quant Reinforcement Learning',
     subtitle: 'V6 Workflow Research Platform',
     version: 'v6.0',
-    updateDate: '2026-07-28',
+    updateDate: '2026-07-29',
   });
 });

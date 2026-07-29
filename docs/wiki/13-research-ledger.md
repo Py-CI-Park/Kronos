@@ -164,3 +164,12 @@ for 1/8/32/128 episode scaling, a Smoke receipt, and a separate Primary verdict.
 
 D2는 32/128 episode 과적합 gate를 통과하지 못했다. D3는 별도 preregistration에서
 representation, top-K action 후보, 학습예산을 분리해야 한다.
+
+# 2026-07-29 Type2-D3 evidence update
+
+| Date | Document | Type | Status |
+|---|---|---|---|
+| 2026-07-29 | `docs/kronos_rl_discovery_type2_d3_result_2026-07-29.md` | RESULT | 4 policy × 2 reward × 3 seeds = 24/24 완료. 최선 4× arm 0.533, 통과 arm 0/4. `D3_REPRESENTATION_ACTION_NOT_CONFIRMED`. |
+| 2026-07-29 | `docs/evidence/type2-d3-primary-20260729-v1.custody.json` | EVIDENCE_INVENTORY | 76 files / 31,607,903 bytes; 24 models/outcomes, prereg/data/episode/terminal digest 결속. Fresh OOS `NOT_RUN_NO_READ`. |
+
+D3는 후보 확대만으로는 개선되지 않았고 시장문맥과 4배 예산은 부분 개선만 만들었다. D4는 알고리즘·목적함수 상한을 별도 사전등록으로 분리한다.

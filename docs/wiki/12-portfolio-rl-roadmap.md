@@ -49,6 +49,7 @@
 - 판정은 `D2_PARTIAL_CAPACITY_CONFIRMED`이며 수익성·승격·라이브 준비 판정은 아니다.
 - 128 episode 원래 수익률 보상비는 native 평균 0.440, shuffled 평균 -0.095였다.
 - 다음 단계는 D3 top-1/top-5 표현·행동 및 1×/4× 학습예산 ablation이다.
+- D3는 24/24 모델을 완료했지만 0/4 policy arm만 fit gate를 통과했다. D4는 동일 top-5 context에서 PPO, discrete Q, auxiliary objective와 supervised ceiling 진단을 분리한다.
 - Fresh OOS는 `NOT_RUN_NO_READ`를 유지한다.
 
 상세 결과: `docs/kronos_rl_discovery_type2_d2_result_2026-07-28.md`
