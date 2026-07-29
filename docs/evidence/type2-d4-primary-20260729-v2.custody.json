@@ -25,7 +25,7 @@
     "D_AUXILIARY_PPO": {"is_rl": true, "native_fit_reward_ratio": 0.524763541459923, "native_23bp_reward_ratio": 0.508477038553571, "shuffled_fit_reward_ratio": 0.46505319098179, "shuffled_native_reward_ratio": -0.109164273650317, "native_fit_accuracy": 0.4375}
   },
   "failed_attempts_preserved": [
-    {"run_name": "type2-d4-smoke-20260729-v1", "status": "FAILED", "reason": "PowerShell 5.1 RNG compatibility prevented approval-key creation before training"}
+    {"run_name": "type2-d4-smoke-20260729-v1", "status": "FAILED", "reason": "PermissionError: D4 execution requires KRONOS_D4_APPROVAL_KEY_HEX"}
   ],
   "claims_boundary": {
     "supervised_is_not_rl": true,

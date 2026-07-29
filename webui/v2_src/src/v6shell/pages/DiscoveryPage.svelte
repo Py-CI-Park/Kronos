@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { rlApi } from '$lib/rlApi';
   import { parseDiscoveryEvidence, summarizeDiscoveryArms, type DiscoveryEvidence } from '../discovery/discoveryEvidence';
-  import { REVIEWED_DISCOVERY_SNAPSHOT } from '../discovery/reviewedDiscoverySnapshot';
 
   const LADDER = [
     ['D0', 'PPO attribution', 'NO-GO closed'], ['D1', 'action / reward', 'train-only confirmed'],
@@ -20,7 +19,7 @@
     'D4-D_AUXILIARY_PPO/NATIVE': 'D · auxiliary PPO · native',
     'D4-D_AUXILIARY_PPO/SHUFFLED': 'D · auxiliary PPO · shuffled',
   };
-  let evidence = $state<DiscoveryEvidence | null>(REVIEWED_DISCOVERY_SNAPSHOT);
+  let evidence = $state<DiscoveryEvidence | null>(null);
   let loading = $state(true);
   let notice = $state<string | null>(null);
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -30,14 +29,14 @@
     loading = true; notice = null;
     try {
       const runs = await rlApi.rlRuns(100);
-      const record = runs?.runs.find((run) => run.name === REVIEWED_DISCOVERY_SNAPSHOT.runName);
-      if (!record) { evidence = REVIEWED_DISCOVERY_SNAPSHOT; notice = '검토된 D4 snapshot을 표시합니다.'; return; }
+      const record = runs?.runs.find((run) => run.summary?.verdict === 'D4_ALGORITHM_OBJECTIVE_CONFIRMED');
+      if (!record) { evidence = null; notice = '검증 가능한 D4 evidence가 없습니다. BLOCK 상태입니다.'; return; }
       const detail = await rlApi.rlRun(record.name);
-      evidence = detail ? parseDiscoveryEvidence(detail) : REVIEWED_DISCOVERY_SNAPSHOT;
-      if (!detail || !evidence) notice = '로컬 artifact를 읽지 못해 검토된 snapshot을 표시합니다.';
+      evidence = detail ? parseDiscoveryEvidence(detail) : null;
+      if (!detail || !evidence) notice = 'D4 evidence 검증에 실패했습니다. BLOCK 상태입니다.';
     } catch {
-      evidence = REVIEWED_DISCOVERY_SNAPSHOT;
-      notice = 'Discovery API 연결 없이 검토된 snapshot을 표시합니다.';
+      evidence = null;
+      notice = 'Discovery API 연결에 실패했습니다. EVIDENCE_UNAVAILABLE / BLOCK.';
     } finally { loading = false; }
   }
   onMount(() => { void load(); });
@@ -52,10 +51,13 @@
   {#if loading}<div class="notice">최신 D4 Primary 증거를 확인하는 중입니다.</div>
   {:else if evidence}
     {@const aggregates = summarizeDiscoveryArms(evidence.arms)}
+    {@const dqnNative = aggregates.find((row) => row.id === 'D4-C_DQN_DISCRETE/NATIVE')}
     <section class="verdict"><article><p>REVIEWED VERDICT</p><strong>{evidence.verdict}</strong><span>{evidence.arms.length}/24 units · Fresh OOS {evidence.freshOos}</span></article><dl><div><dt>Run</dt><dd>{evidence.runName}</dd></div><div><dt>Best RL arm</dt><dd>{evidence.bestRlArm}</dd></div><div><dt>RL → supervised gap</dt><dd>{evidence.bestRlGapToSupervisedCeiling?.toFixed(3)}</dd></div><div><dt>Confirmed RL arms</dt><dd>{evidence.confirmedRlArmCount} / 3</dd></div><div><dt>Custody</dt><dd>{evidence.evidenceManifest?.slice(0, 16)}…</dd></div><div><dt>Prereg</dt><dd>{evidence.preregSha256.slice(0, 16)}…</dd></div></dl></section>
     <section class="panel"><div class="title"><p>ARTIFACT AGGREGATES</p><h2>D4 algorithm / objective 평균</h2></div><div class="grid">{#each aggregates as row}<article><span>{LABELS[row.id] ?? row.id}</span><strong class={cls(row.meanOracleRewardRatio)}>{row.meanOracleRewardRatio.toFixed(3)}×</strong><small>{row.seedCount} seeds · fit accuracy {pct(row.meanExactBasketAccuracy)}</small></article>{/each}</div></section>
     <section class="panel"><div class="title"><p>CONTROL MATRIX</p><h2>D4 algorithm / objective · arm × seed 상세</h2></div><div class="arms">{#each evidence.arms as row}<article><header><span>{LABELS[row.id] ?? row.id}</span><b class={cls(row.oracleRewardRatio)}>{row.oracleRewardRatio.toFixed(3)}×</b></header><dl><div><dt>Seed</dt><dd>{row.seed}</dd></div><div><dt>Fit reward</dt><dd>{row.fitRewardRatio?.toFixed(3)}</dd></div><div><dt>Native reward</dt><dd>{row.oracleRewardRatio.toFixed(3)}</dd></div><div><dt>23bp diagnostic</dt><dd>{row.diagnosticCostRewardRatio?.toFixed(3)}</dd></div><div><dt>Fit accuracy</dt><dd>{pct(row.exactBasketAccuracy)}</dd></div><div><dt>Steps / epochs</dt><dd>{row.trainingTimesteps.toLocaleString()}</dd></div></dl>{#if row.shuffledReward}<em>NEGATIVE CONTROL</em>{/if}</article>{/each}</div></section>
-    <section class="interpretation"><div><p>PRIMARY RECEIPT</p><h2>무엇을 확인했나</h2></div><ul><li>DQN은 train-only 128 episode에서 평균 native reward ratio 0.988, accuracy 90.6%로 0.90 gate를 통과했습니다.</li><li>supervised ceiling은 1.000이지만 <b>강화학습이 아니며</b>, DQN과의 격차는 {evidence.bestRlGapToSupervisedCeiling?.toFixed(3)}입니다.</li><li>MaskablePPO와 auxiliary PPO는 실패했습니다. 표현 부족보다 on-policy 최적화 경로가 병목이라는 근거입니다.</li><li>Promotion <b>{evidence.promotionAllowed ? 'ALLOWED' : 'BLOCKED'}</b>, profitability claim <b>{evidence.profitabilityClaimAllowed ? 'ALLOWED' : 'BLOCKED'}</b>. 다음 D5도 사전등록 전에는 실행하지 않습니다.</li></ul></section>
+    <section class="interpretation"><div><p>PRIMARY RECEIPT</p><h2>검증된 evidence 해석</h2></div><ul><li>Best RL arm은 <b>{evidence.bestRlArm}</b>이며 native 평균 reward ratio는 <b>{dqnNative?.meanOracleRewardRatio.toFixed(3) ?? 'NOT_RECORDED'}</b>, fit accuracy는 <b>{dqnNative ? pct(dqnNative.meanExactBasketAccuracy) : 'NOT_RECORDED'}</b>입니다.</li><li>supervised ceiling은 <b>강화학습이 아니며</b>, 최선 RL과의 격차는 {evidence.bestRlGapToSupervisedCeiling?.toFixed(3) ?? 'NOT_RECORDED'}입니다.</li><li>확인된 RL arm은 {evidence.confirmedRlArmCount ?? 0}/3입니다. 원인 해석은 artifact 지표와 별도 연구 문서를 함께 확인해야 합니다.</li><li>Promotion <b>{evidence.promotionAllowed ? 'ALLOWED' : 'BLOCKED'}</b>, profitability claim <b>{evidence.profitabilityClaimAllowed ? 'ALLOWED' : 'BLOCKED'}</b>. 다음 D5도 사전등록 전에는 실행하지 않습니다.</li></ul></section>
+  {:else}
+    <section class="notice"><strong>EVIDENCE_UNAVAILABLE / BLOCK</strong><p>서명·24-unit matrix·custody 검증을 통과한 D4 Primary만 표시합니다.</p></section>
   {/if}
 </section>
 

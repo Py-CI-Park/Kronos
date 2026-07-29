@@ -50,7 +50,7 @@
 - 128 episode 원래 수익률 보상비는 native 평균 0.440, shuffled 평균 -0.095였다.
 - 다음 단계는 D3 top-1/top-5 표현·행동 및 1×/4× 학습예산 ablation이다.
 - D3는 24/24 모델을 완료했지만 0/4 policy arm만 fit gate를 통과했다.
-- D4는 동일 top-5 context에서 supervised ceiling, PPO, DQN, auxiliary PPO를 분리했고 DQN이 3/3 seed train-only gate를 통과했다. supervised ceiling은 비-RL 진단이며 성공으로 합산하지 않는다.
+- D4는 동일 top-5 context에서 supervised ceiling, PPO, DQN, auxiliary PPO를 분리했고 DQN이 native 2/3·shuffled 2/3 seed train-only gate를 통과했다. supervised ceiling은 비-RL 진단이며 성공으로 합산하지 않는다.
 - 다음 D5는 DQN 중심 full-train 비용·negative control 재현을 별도 사전등록한다. Fresh OOS는 D7 외부 승인 전까지 봉인한다.
 - Fresh OOS는 `NOT_RUN_NO_READ`를 유지한다.
 

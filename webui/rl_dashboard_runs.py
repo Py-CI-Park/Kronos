@@ -53,7 +53,7 @@ def _detect_artifact_type(run_dir: Path) -> str:
     discovery_path = run_dir / "summary.json"
     if _is_run_file(run_dir, discovery_path):
         payload = _read_run_json(run_dir, discovery_path)
-        schema = payload.get("schema_version")
+        schema = payload.get("schema_version") if isinstance(payload, dict) else None
         if schema == "kronos.rl-discovery.d2.result.v1":
             return "rl_discovery_d2"
         if schema == "kronos.rl-discovery.d3.result.v1":

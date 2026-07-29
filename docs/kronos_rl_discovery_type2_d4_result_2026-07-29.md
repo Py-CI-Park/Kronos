@@ -17,7 +17,7 @@ D4는 D3와 동일한 실제 일봉 train-only 128개 세션에서 supervised ce
 |---|---|---:|---:|---:|---:|---:|---|
 | A Supervised ceiling | 비-RL 진단 | 1.000 | 1.000 | 1.000 | -0.124 | 1.000 | 표현 상한 확인 |
 | B PPO baseline | 실제 RL | 0.533 | 0.512 | 0.527 | -0.227 | 0.430 | gate 실패 |
-| C DQN discrete | 실제 RL | **0.988** | **0.985** | **0.991** | **-0.111** | **0.906** | **3/3 seed gate 통과** |
+| C DQN discrete | 실제 RL | **0.988** | **0.985** | **0.991** | **-0.111** | **0.906** | **native 2/3·shuffled 2/3 seed 통과** |
 | D Auxiliary PPO | 실제 RL + 지도 사전학습 | 0.525 | 0.508 | 0.465 | -0.109 | 0.438 | gate 실패 |
 
 | 실행 항목 | 값 |
@@ -46,7 +46,7 @@ D4는 D3와 동일한 실제 일봉 train-only 128개 세션에서 supervised ce
 | 영역 | 점수 | 가중치 | 근거 | 남은 액션 |
 |---|---:|---:|---|---|
 | Platform | 98 | 30% | D4 API·전체 페이지·24-model snapshot | D5 증거 연결 |
-| RL Evidence | 92 | 30% | 실제 DQN 3/3 + shuffled 3/3 + PPO 비교 | 전체 train·5 seed |
+| RL Evidence | 92 | 30% | 실제 DQN native 2/3 + shuffled 2/3 + PPO 비교 | 전체 train·5 seed |
 | Engineering | 97 | 20% | HMAC·held snapshot·exact matrix·다중 알고리즘 | seed resume |
 | Governance | 92 | 10% | prereg amendment 선행·실패 run 보존·custody | D4 PR·tag |
 | Live Readiness | 0 | 10% | Fresh OOS·broker·운영 리스크 미검증 | D5/D6 전 금지 |
@@ -82,7 +82,7 @@ D4는 D3와 동일한 실제 일봉 train-only 128개 세션에서 supervised ce
 | Terminal receipt | `e9b9b519fcbd86ba5da425b50da4cad33d9dce612673cdfbaced68cccaaeb625` |
 | Custody | `docs/evidence/type2-d4-primary-20260729-v2.custody.json` |
 
-첫 `type2-d4-smoke-20260729-v1`은 PowerShell 5.1 RNG 호환 문제로 학습 전 실패했고 `FAILED/NO_GO` receipt로 보존했다. `v2`만 승인된 Primary의 부모다.
+첫 `type2-d4-smoke-20260729-v1`은 승인 키가 없어 학습 전 `PermissionError`로 실패했고 `FAILED/NO_GO` receipt로 보존했다. `v2`만 승인된 Primary의 부모다.
 
 ## 7. 다음 D5
 

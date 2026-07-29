@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import hashlib
-import json
 from pathlib import Path
+from pydantic import TypeAdapter
 
 from stom_rl.daily_type1_contract import canonical_json_bytes
 from stom_rl.rl_discovery.d2_custody import assert_plain_path, held_bytes, verified_bytes, verified_text_stream
@@ -13,6 +13,8 @@ from stom_rl.rl_discovery.d2_data import iter_json_array, load_scales_bytes
 from stom_rl.rl_discovery.d3_data import D3SourceRow, build_top_k_episodes
 from stom_rl.rl_discovery.d3_env import D3Episode
 from stom_rl.rl_discovery.d4_contract import D4Preregistration, load_d4_prereg_bytes
+
+_JSON_OBJECT = TypeAdapter(dict[str, object])
 
 
 class D4InputError(ValueError):
@@ -44,9 +46,10 @@ def load_d4_inputs(repo_root: Path) -> D4InputBundle:
     manifest = rows.parent / "dataset_manifest.json"
     receipt = rows.parent / "materializer_complete_receipt.json"
     for path in (rows, normalizer, manifest, receipt):
-        assert_plain_path(path, anchor=root, require_file=True)
+        _ = assert_plain_path(path, anchor=root, require_file=True)
     normalizer_bytes = verified_bytes(normalizer, expected_sha256=prereg.dataset.normalizer_file_sha256, anchor=root)
-    if json.loads(normalizer_bytes).get("digest") != prereg.dataset.normalizer_digest:
+    normalizer_value = _JSON_OBJECT.validate_json(normalizer_bytes)
+    if normalizer_value.get("digest") != prereg.dataset.normalizer_digest:
         raise D4InputError("D4 normalizer digest mismatch")
     input_hashes = {
         "rows": prereg.dataset.rows_sha256,
@@ -57,6 +60,8 @@ def load_d4_inputs(repo_root: Path) -> D4InputBundle:
     with verified_text_stream(rows, expected_sha256=prereg.dataset.rows_sha256, anchor=root) as stream:
         parsed_rows = (D3SourceRow.model_validate(row) for row in iter_json_array(stream))
         episodes = build_top_k_episodes(parsed_rows, scales=load_scales_bytes(normalizer_bytes), limit=128)
+    if len(episodes) != 128:
+        raise D4InputError("D4 requires exactly 128 registered train episodes")
     episode_bytes = canonical_json_bytes([asdict(episode) for episode in episodes])
     return D4InputBundle(
         prereg=prereg,

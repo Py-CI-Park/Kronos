@@ -22,12 +22,12 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<Record<ProgramLaneId, readonly Progr
     { id: 'algorithm-ablation', points: 15, achieved: true, evidence: 'PPO·DQN·auxiliary PPO 비교' },
     { id: 'supervised-ceiling', points: 12, achieved: true, evidence: '비-RL supervised 상한 분리' },
     { id: 'cost-diagnostic', points: 12, achieved: true, evidence: '0bp 학습과 23bp 진단' },
-    { id: 'confirmed-rl-arm', points: 15, achieved: true, evidence: 'DQN 3/3 seed train-only gate 통과' },
+    { id: 'confirmed-rl-arm', points: 15, achieved: true, evidence: 'DQN native 2/3·shuffled 2/3 seed train-only gate 통과' },
     { id: 'fresh-oos', points: 8, achieved: false, evidence: 'NOT_RUN_NO_READ' },
   ],
   engineering: [
     { id: 'held-inputs', points: 20, achieved: true, evidence: 'held input hash 검증' },
-    { id: 'atomic-artifacts', points: 20, achieved: true, evidence: '원자적 artifact 발행' },
+    { id: 'atomic-artifacts', points: 20, achieved: true, evidence: '원자적 summary·outcome·receipt 발행' },
     { id: 'terminalization', points: 15, achieved: true, evidence: '실패·완료 terminal receipt' },
     { id: 'matrix-identity', points: 15, achieved: true, evidence: '고유 24-unit matrix' },
     { id: 'tests-build', points: 15, achieved: true, evidence: 'Python·Svelte 검증' },
@@ -54,7 +54,7 @@ export function programRubricScore(laneId: ProgramLaneId): number { return PROGR
 
 export const PROGRAM_LANES = [
   { id: 'platform', label: 'Platform', labelKo: '플랫폼', score: programRubricScore('platform'), weight: 30, state: 'STRONG', evidence: '12개 페이지, D4 API, 24-unit reviewed snapshot', nextAction: 'D5 결과도 동일 custody 흐름으로 연결' },
-  { id: 'rl-evidence', label: 'RL Evidence', labelKo: '강화학습 증거', score: programRubricScore('rl-evidence'), weight: 30, state: 'STRONG', evidence: 'DQN 3/3 seed train-only gate 통과; PPO 계열 실패', nextAction: 'D5 full-train 비용·control 재검증' },
+  { id: 'rl-evidence', label: 'RL Evidence', labelKo: '강화학습 증거', score: programRubricScore('rl-evidence'), weight: 30, state: 'STRONG', evidence: 'DQN native 2/3·shuffled 2/3 seed train-only gate 통과; PPO 계열 실패', nextAction: 'D4 release 계보 완료 후 D5 사전등록' },
   { id: 'engineering', label: 'Engineering', labelKo: '엔지니어링', score: programRubricScore('engineering'), weight: 20, state: 'STRONG', evidence: '24/24 실행, HMAC 승인, 실패 receipt, 모델·outcome 보존', nextAction: 'cross-process resume 자동화' },
   { id: 'governance', label: 'Governance', labelKo: '개발 거버넌스', score: programRubricScore('governance'), weight: 10, state: 'STRONG', evidence: 'prereg 우선, immutable run, custody와 claim 분리', nextAction: 'D4 research→master PR과 tag 완료' },
   { id: 'live', label: 'Live Readiness', labelKo: '라이브 준비도', score: programRubricScore('live'), weight: 10, state: 'BLOCKED', evidence: 'train-only 연구; Fresh OOS 봉인; 브로커 권한 없음', nextAction: 'D5~D7 gate 전 진행 금지' },

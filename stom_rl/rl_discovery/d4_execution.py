@@ -7,11 +7,10 @@ from enum import StrEnum
 from pathlib import Path
 
 from stom_rl.daily_type1_contract import canonical_json_bytes
-from stom_rl.rl_discovery.d3_approval import smoke_approval_signature
 from stom_rl.rl_discovery.d3_contract import D3PolicyArmId
 from stom_rl.rl_discovery.d3_env import D3Representation
-from stom_rl.rl_discovery.d3_training import D3Metrics, evaluate_d3_model, shuffled_d3_episodes
-from stom_rl.rl_discovery.d4_approval import approve_d4_smoke
+from stom_rl.rl_discovery.d3_training import evaluate_d3_model, shuffled_d3_episodes
+from stom_rl.rl_discovery.d4_approval import approve_d4_smoke, primary_custody_signature
 from stom_rl.rl_discovery.d4_contract import D4AlgorithmArmId, D4RewardArmId
 from stom_rl.rl_discovery.d4_gates import D4Outcome, evaluate_d4_gate
 from stom_rl.rl_discovery.d4_inputs import D4InputBundle, load_d4_inputs
@@ -35,8 +34,8 @@ def execute_d4(
     """Execute the preregistered D4 matrix into an immutable run directory."""
 
     bundle = load_d4_inputs(repo_root)
-    if approval_key is None or len(approval_key) < 32:
-        raise PermissionError("D4 execution requires KRONOS_D4_APPROVAL_KEY_HEX")
+    if profile is D4RunProfile.PRIMARY and (approval_key is None or len(approval_key) < 32):
+        raise PermissionError("D4 Primary requires KRONOS_D4_APPROVAL_KEY_HEX")
     approved_name = approve_d4_smoke(
         approved_smoke,
         run_root=run_dir.parent,
@@ -123,7 +122,7 @@ def _finish_run(
     outcomes: tuple[D4Outcome, ...],
     model_rows: tuple[dict[str, str | int | bool | dict[str, float | int]], ...],
     approved_smoke: str | None,
-    approval_key: bytes,
+    approval_key: bytes | None,
 ) -> Path:
     gate = evaluate_d4_gate(outcomes, thresholds=bundle.prereg.gate) if profile is D4RunProfile.PRIMARY else None
     summary = {
@@ -156,13 +155,14 @@ def _finish_run(
         "artifact_manifest_sha256": digest,
         "fresh_oos": "NOT_RUN_NO_READ",
     }
-    if profile is D4RunProfile.SMOKE:
-        receipt["approval_hmac_sha256"] = smoke_approval_signature(
+    if profile is D4RunProfile.PRIMARY and approval_key is not None and approved_smoke is not None:
+        receipt["primary_custody_hmac_sha256"] = primary_custody_signature(
             approval_key,
             run_name=run_dir.name,
             prereg_sha=bundle.prereg_sha256,
             episode_sha=bundle.episode_sha256,
             manifest_sha=digest,
+            approved_smoke=approved_smoke,
         )
     atomic_write_bytes(contained_path(run_dir, "terminal_receipt.json"), canonical_json_bytes(receipt))
     return run_dir

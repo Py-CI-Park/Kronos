@@ -14,6 +14,13 @@ from stom_rl.rl_discovery.d4_execution import D4RunProfile, execute_d4
 from stom_rl.rl_discovery.storage import atomic_write_bytes, contained_path
 
 
+class D4CliArgs(argparse.Namespace):
+    profile: str = ""
+    repo_root: Path = Path()
+    run_id: str | None = None
+    approved_smoke: Path | None = None
+
+
 def run_d4(
     repo_root: Path,
     *,
@@ -26,7 +33,7 @@ def run_d4(
 
     root = repo_root.absolute()
     run_root = root / "webui" / "rl_runs" / "rl_discovery"
-    assert_plain_path(run_root, anchor=root, require_file=False)
+    _ = assert_plain_path(run_root, anchor=root, require_file=False)
     timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
     selected_id = run_id or f"type2-d4-{profile.value.lower()}-{timestamp}"
     run_dir = contained_path(run_root, selected_id)
@@ -41,7 +48,7 @@ def run_d4(
             approved_smoke=approved_smoke,
             approval_key=approval_key,
         )
-    except BaseException as exc:  # noqa: BROAD_EXCEPT_OK - terminal receipt must include operator interrupts.
+    except BaseException as exc:  # noqa: BLE001 - terminal receipt must include operator interrupts.
         receipt = contained_path(run_dir, "terminal_receipt.json")
         if not receipt.exists():
             atomic_write_bytes(receipt, canonical_json_bytes({
@@ -56,11 +63,11 @@ def run_d4(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=[item.value for item in D4RunProfile], required=True)
-    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
-    parser.add_argument("--run-id")
-    parser.add_argument("--approved-smoke", type=Path)
-    args = parser.parse_args()
+    _ = parser.add_argument("--profile", choices=[item.value for item in D4RunProfile], required=True)
+    _ = parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
+    _ = parser.add_argument("--run-id")
+    _ = parser.add_argument("--approved-smoke", type=Path)
+    args = parser.parse_args(namespace=D4CliArgs())
     raw_key = os.environ.get("KRONOS_D4_APPROVAL_KEY_HEX", "")
     try:
         approval_key = bytes.fromhex(raw_key) if raw_key else None
@@ -75,7 +82,7 @@ def main() -> int:
             approved_smoke=args.approved_smoke,
             approval_key=approval_key,
         )
-    except BaseException as exc:  # noqa: BROAD_EXCEPT_OK - CLI boundary reports every terminal failure.
+    except BaseException as exc:  # noqa: BLE001 - CLI boundary reports every terminal failure.
         print(f"D4 failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
     print(result)

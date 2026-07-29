@@ -124,9 +124,9 @@ test('live D4 nested summary preserves RL ceiling gap and all gate fields', () =
   const evidence = parseDiscoveryEvidence({
     name: 'type2-d4-primary-20260729-v2',
     summary: { research_lane: 'rl_discovery', status: 'COMPLETE', verdict: 'D4_ALGORITHM_OBJECTIVE_CONFIRMED', profile: 'PRIMARY', fresh_oos: 'NOT_RUN_NO_READ', prereg_sha256: 'abc123', primary_round_trip_cost_bp: 0, diagnostic_round_trip_cost_bp: 23, promotion_allowed: false, profitability_claim_allowed: false },
-    detail: { gate: { best_rl_arm: 'C_DQN_DISCRETE', best_rl_gap_to_supervised_ceiling: .0124, supervised_ceiling_confirmed: true, confirmed_rl_arms: ['C_DQN_DISCRETE'] }, models: [{ algorithm_arm: 'C_DQN_DISCRETE', reward_arm: 'NATIVE', seed: 2, rl_timesteps: 65536, fit: { accuracy: .90625, reward_ratio: .984, dominant_action_rate: .21875, invalid_action_count: 0 }, native: { reward_ratio: .984 }, cost_23bp: { reward_ratio: .982 } }] },
+    detail: { gate: { best_rl_arm: 'C_DQN_DISCRETE', best_rl_gap_to_supervised_ceiling: .0124, supervised_ceiling_confirmed: true, confirmed_rl_arms: ['C_DQN_DISCRETE'] }, models: ['A_SUPERVISED_CEILING', 'B_PPO_BASELINE', 'C_DQN_DISCRETE', 'D_AUXILIARY_PPO'].flatMap((algorithm_arm) => ['NATIVE', 'SHUFFLED'].flatMap((reward_arm) => [0, 1, 2].map((seed) => ({ algorithm_arm, reward_arm, seed, rl_timesteps: 65536, fit: { accuracy: .90625, reward_ratio: .984, dominant_action_rate: .21875, invalid_action_count: 0 }, native: { reward_ratio: .984 }, cost_23bp: { reward_ratio: .982 } })))) },
   });
-  assert.equal(evidence?.arms[0]?.id, 'D4-C_DQN_DISCRETE/NATIVE');
+  assert.ok(evidence?.arms.some((arm) => arm.id === 'D4-C_DQN_DISCRETE/NATIVE'));
   assert.equal(evidence?.bestRlArm, 'C_DQN_DISCRETE');
   assert.equal(evidence?.confirmedRlArmCount, 1);
   assert.equal(evidence?.supervisedCeilingConfirmed, true);

@@ -72,7 +72,7 @@ def evaluate_d4_gate(outcomes: tuple[D4Outcome, ...], *, thresholds: D4GateContr
     confirmed: list[D4AlgorithmArmId] = []
     for arm in rl_arms:
         gap = native_means[ceiling] - native_means[arm]
-        gap_ok = not ceiling_confirmed or gap <= thresholds.maximum_rl_gap_to_supervised_ceiling
+        gap_ok = ceiling_confirmed and gap <= thresholds.maximum_rl_gap_to_supervised_ceiling
         if (
             pass_fractions[(arm, D4RewardArmId.NATIVE)] >= thresholds.minimum_passing_seed_fraction
             and pass_fractions[(arm, D4RewardArmId.SHUFFLED)] >= thresholds.minimum_passing_seed_fraction
@@ -84,7 +84,7 @@ def evaluate_d4_gate(outcomes: tuple[D4Outcome, ...], *, thresholds: D4GateContr
     best_gap = native_means[ceiling] - native_means[best]
     verdict = (
         "D4_ALGORITHM_OBJECTIVE_CONFIRMED"
-        if confirmed
+        if ceiling_confirmed and confirmed
         else "D4_RL_OPTIMIZATION_NOT_CONFIRMED"
         if ceiling_confirmed
         else "D4_REPRESENTATION_CEILING_NOT_CONFIRMED"

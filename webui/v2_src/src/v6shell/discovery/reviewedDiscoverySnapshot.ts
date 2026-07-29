@@ -26,7 +26,7 @@ const arm = (
 
 export const REVIEWED_DISCOVERY_SNAPSHOT: DiscoveryEvidence = {
   authority: 'REVIEWED_SNAPSHOT',
-  evidenceManifest: '016f42101a46ef49210f6e0050c9fea37fe90b8ebf56979290a559fe5af6485e',
+  evidenceManifest: '8515ebb3cc93234b4694889f5240abe00e7095274864a555bf30e9e77a033504',
   runName: 'type2-d4-primary-20260729-v2',
   status: 'COMPLETE',
   verdict: 'D4_ALGORITHM_OBJECTIVE_CONFIRMED',

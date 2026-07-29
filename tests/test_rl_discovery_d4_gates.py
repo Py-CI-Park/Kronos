@@ -48,6 +48,21 @@ def test_d4_gate_reports_optimizer_failure_when_only_the_supervised_ceiling_pass
     assert result.promotion_allowed is False
 
 
+def test_d4_gate_cannot_confirm_rl_without_the_supervised_ceiling() -> None:
+    outcomes = tuple(
+        D4Outcome(
+            arm, reward, seed,
+            _metrics(.95 if arm is D4AlgorithmArmId.DQN_DISCRETE else .1),
+            _metrics(.95 if arm is D4AlgorithmArmId.DQN_DISCRETE and reward is D4RewardArmId.NATIVE else .1),
+            _metrics(.9),
+        )
+        for arm in D4AlgorithmArmId for reward in D4RewardArmId for seed in (0, 1, 2)
+    )
+    result = evaluate_d4_gate(outcomes, thresholds=_thresholds())
+    assert result.verdict == "D4_REPRESENTATION_CEILING_NOT_CONFIRMED"
+    assert result.confirmed_rl_arms == ()
+
+
 @pytest.mark.parametrize("mutation", ["missing", "duplicate"])
 def test_d4_gate_rejects_an_incomplete_or_duplicate_24_unit_matrix(mutation: str) -> None:
     # Given: an otherwise valid matrix with one identity removed or repeated.

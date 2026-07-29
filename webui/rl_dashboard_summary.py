@@ -6,10 +6,15 @@
 from __future__ import annotations
 
 import json
+import hmac
+import hashlib
+import os
 from pathlib import Path
 from typing import Any
 
 from stom_rl.rl_discovery.evidence_snapshot import read_evidence_snapshot
+from stom_rl.rl_discovery.d4_approval import primary_custody_signature
+from stom_rl.rl_discovery.d4_contract import D4AlgorithmArmId, D4RewardArmId
 
 if __package__:
     from .rl_dashboard_files import LIVE_SUMMARY_FILE_NAMES, _int_or_zero, _is_run_file, _read_run_json
@@ -77,10 +82,14 @@ def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str
             capture_paths=frozenset({"summary.json", "terminal_receipt.json"}),
             excluded_manifest_paths=frozenset({"terminal_receipt.json"}),
         )
-        payload = json.loads(snapshot.captured["summary.json"])
-        receipt = json.loads(snapshot.captured["terminal_receipt.json"])
+        payload_value: object = json.loads(snapshot.captured["summary.json"])
+        receipt_value: object = json.loads(snapshot.captured["terminal_receipt.json"])
     except (OSError, ValueError):
         return blocked, {}
+    if not isinstance(payload_value, dict) or not isinstance(receipt_value, dict):
+        return blocked, {}
+    payload = payload_value
+    receipt = receipt_value
     expected_schema = {
         "rl_discovery_d2": "kronos.rl-discovery.d2.result.v1",
         "rl_discovery_d3": "kronos.rl-discovery.d3.result.v1",
@@ -100,13 +109,15 @@ def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str
         or receipt.get("artifact_manifest_sha256") != digest
     ):
         return blocked, {}
+    if artifact_type == "rl_discovery_d4" and not _valid_d4_primary(run_dir, payload, receipt, digest):
+        return blocked, {}
     compact = {
         "research_lane": "rl_discovery",
         "status": payload.get("status"),
         "verdict": payload.get("verdict"),
         "profile": payload.get("profile"),
         "fresh_oos": payload.get("fresh_oos"),
-        "type1_outcome": "COMPLETE_NO_GO",
+        "type1_outcome": "COMPLETE_NO_GO" if artifact_type != "rl_discovery_d4" else "D4_TRAIN_ONLY_CONFIRMED",
         "primary_round_trip_cost_bp": 0,
         "diagnostic_round_trip_cost_bp": 23,
         "prereg_sha256": payload.get("prereg_sha256"),
@@ -115,6 +126,69 @@ def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str
         "artifact_manifest_sha256": digest,
     }
     return compact, payload
+
+
+def _valid_d4_primary(run_dir: Path, payload: dict[object, object], receipt: dict[object, object], digest: str) -> bool:
+    expected = {
+        (algorithm.value, reward.value, seed)
+        for algorithm in D4AlgorithmArmId for reward in D4RewardArmId for seed in (0, 1, 2)
+    }
+    models = payload.get("models")
+    if not isinstance(models, list) or len(models) != 24:
+        return False
+    observed: set[tuple[object, object, object]] = set()
+    for row in models:
+        if not isinstance(row, dict):
+            return False
+        if not all(isinstance(row.get(metric), dict) for metric in ("fit", "native", "cost_23bp")):
+            return False
+        observed.add((row.get("algorithm_arm"), row.get("reward_arm"), row.get("seed")))
+    gate = payload.get("gate")
+    approved_smoke = payload.get("approved_smoke")
+    raw_key = os.environ.get("KRONOS_D4_APPROVAL_KEY_HEX", "")
+    try:
+        key = bytes.fromhex(raw_key)
+    except ValueError:
+        return False
+    if (
+        observed != expected or not isinstance(gate, dict)
+        or gate.get("best_rl_arm") != "C_DQN_DISCRETE"
+        or gate.get("confirmed_rl_arms") != ["C_DQN_DISCRETE"]
+        or gate.get("supervised_ceiling_confirmed") is not True
+        or payload.get("promotion_allowed") is not False
+        or payload.get("profitability_claim_allowed") is not False
+        or not isinstance(approved_smoke, str)
+    ):
+        return False
+    if len(key) >= 32:
+        expected_signature = primary_custody_signature(
+            key, run_name=run_dir.name, prereg_sha=str(payload.get("prereg_sha256", "")),
+            episode_sha=str(payload.get("episode_snapshot_sha256", "")), manifest_sha=digest,
+            approved_smoke=approved_smoke,
+        )
+        if hmac.compare_digest(str(receipt.get("primary_custody_hmac_sha256", "")), expected_signature):
+            return True
+    return _matches_committed_d4_custody(run_dir, digest)
+
+
+def _matches_committed_d4_custody(run_dir: Path, digest: str) -> bool:
+    custody_path = Path(__file__).resolve().parents[1] / "docs" / "evidence" / f"{run_dir.name}.custody.json"
+    try:
+        value: object = json.loads(custody_path.read_bytes())
+        summary_sha = hashlib.sha256((run_dir / "summary.json").read_bytes()).hexdigest()
+        receipt_sha = hashlib.sha256((run_dir / "terminal_receipt.json").read_bytes()).hexdigest()
+    except (OSError, ValueError):
+        return False
+    return (
+        isinstance(value, dict)
+        and value.get("schema_version") == "kronos.rl-discovery.d4.custody.v1"
+        and value.get("run_name") == run_dir.name
+        and value.get("artifact_manifest_sha256") == digest
+        and value.get("summary_sha256") == summary_sha
+        and value.get("terminal_receipt_sha256") == receipt_sha
+        and value.get("model_count") == 24
+        and value.get("outcome_count") == 24
+    )
 
 
 def _sb3_summary(run_dir: Path) -> dict[str, Any]:
