@@ -48,7 +48,47 @@ export interface DiscoveryEvidence {
   readonly bestRlGapToSupervisedCeiling?: number;
   readonly supervisedCeilingConfirmed?: boolean;
   readonly confirmedRlArmCount?: number;
+  readonly nativePassingSeedFraction?: number;
+  readonly shuffledPassingSeedFraction?: number;
+  readonly reusedValidation?: string;
   readonly arms: readonly DiscoveryArmEvidence[];
+}
+
+function d5Arm(row: JsonObject): DiscoveryArmEvidence | null {
+  const fit = objectValue(row.fit_23bp);
+  const nativeCost = objectValue(row.native_23bp);
+  const nativeZero = objectValue(row.native_0bp);
+  const algorithm = textValue(row.algorithm_arm, '');
+  const reward = textValue(row.reward_arm, '');
+  const seed = strictNumber(row.seed);
+  const fitAccuracy = strictNumber(fit?.accuracy);
+  const fitReward = strictNumber(fit?.reward_ratio);
+  const nativeReward = strictNumber(nativeCost?.reward_ratio);
+  const zeroCostReward = strictNumber(nativeZero?.reward_ratio);
+  const dominant = strictNumber(fit?.dominant_action_rate);
+  const invalid = strictNumber(fit?.invalid_action_count);
+  if (!fit || !nativeCost || !nativeZero || algorithm !== 'C_DQN_DISCRETE'
+    || !['NATIVE', 'SHUFFLED'].includes(reward) || seed === null || !Number.isInteger(seed)
+    || seed < 0 || seed > 4 || numberValue(row.rl_timesteps) !== 200000
+    || numberValue(row.training_round_trip_cost_bp) !== 23 || fitAccuracy === null
+    || fitReward === null || nativeReward === null || zeroCostReward === null
+    || dominant === null || invalid === null) return null;
+  return {
+    id: `D5-${algorithm}/${reward}`,
+    model: `${algorithm}__${reward}/seed-${seed}`,
+    seed,
+    trainingTimesteps: 200000,
+    oracleRewardRatio: nativeReward,
+    exactBasketAccuracy: fitAccuracy,
+    dominantActionRate: dominant,
+    invalidActionCount: invalid,
+    blockCount: 0,
+    noFillCount: 0,
+    shuffledReward: reward === 'SHUFFLED',
+    episodeCount: 573,
+    fitRewardRatio: fitReward,
+    diagnosticCostRewardRatio: zeroCostReward,
+  };
 }
 
 function d4Arm(row: JsonObject): DiscoveryArmEvidence | null {
@@ -170,12 +210,16 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
   const summary = run.summary;
   if (!summary || summary.research_lane !== 'rl_discovery') return null;
   const rows = modelRows(run.detail);
+  const d5Rows = rows.map(d5Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d4Rows = rows.map(d4Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d3Rows = rows.map(d3Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d2Rows = rows.map(d2Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const gate = objectValue(run.detail?.gate);
+  const d5Units = new Set(d5Rows.map((row) => `${row.id}/${row.seed}`));
+  if (summary.verdict?.toString().startsWith('D5_')
+    && (d5Rows.length !== 10 || d5Rows.length !== rows.length || d5Units.size !== 10)) return null;
   if (summary.verdict === 'D4_ALGORITHM_OBJECTIVE_CONFIRMED' && (d4Rows.length !== 24 || d4Rows.length !== rows.length)) return null;
-  const arms = d4Rows.length ? d4Rows : d3Rows.length ? d3Rows : d2Rows.length ? d2Rows : rows.map((row) => ({
+  const arms = d5Rows.length ? d5Rows : d4Rows.length ? d4Rows : d3Rows.length ? d3Rows : d2Rows.length ? d2Rows : rows.map((row) => ({
     id: textValue(row.algorithm),
     model: textValue(row.model),
     seed: numberValue(row.seed),
@@ -203,7 +247,7 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     profitabilityClaimAllowed: booleanValue(summary.profitability_claim_allowed),
     diagnosticRoundTripCostBp: numberValue(summary.diagnostic_round_trip_cost_bp),
     maximumConfirmedEpisodeCount: numberValue(gate?.maximum_confirmed_episode_count),
-    nativeDeltaVsShuffled: d3Rows.length ? d3BestDelta(gate) : numberValue(gate?.native_delta_vs_shuffled_at_128),
+    nativeDeltaVsShuffled: d5Rows.length ? numberValue(gate?.native_delta_vs_shuffled) : d3Rows.length ? d3BestDelta(gate) : numberValue(gate?.native_delta_vs_shuffled_at_128),
     bestPolicyArm: textValue(gate?.best_policy_arm, ''),
     budget4xNativeLift: numberValue(gate?.budget_4x_native_lift),
     confirmedPolicyArmCount: Array.isArray(gate?.confirmed_policy_arms) ? gate.confirmed_policy_arms.length : undefined,
@@ -211,6 +255,9 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     bestRlGapToSupervisedCeiling: numberValue(gate?.best_rl_gap_to_supervised_ceiling),
     supervisedCeilingConfirmed: booleanValue(gate?.supervised_ceiling_confirmed),
     confirmedRlArmCount: Array.isArray(gate?.confirmed_rl_arms) ? gate.confirmed_rl_arms.length : undefined,
+    nativePassingSeedFraction: d5Rows.length ? numberValue(gate?.native_passing_seed_fraction) : undefined,
+    shuffledPassingSeedFraction: d5Rows.length ? numberValue(gate?.shuffled_passing_seed_fraction) : undefined,
+    reusedValidation: d5Rows.length ? textValue(gate?.reused_validation) : undefined,
     arms,
   };
 }
