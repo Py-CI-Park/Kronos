@@ -48,7 +48,7 @@ def find_json_summary(run_dir: Path, artifact_type: str) -> dict[str, Any]:
         return dict(payload.get("summary", {}))
     if artifact_type == "sb3_smoke":
         return _sb3_summary(run_dir)
-    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3"}:
+    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3", "rl_discovery_d4"}:
         return find_discovery_evidence(run_dir, artifact_type)[0]
     if artifact_type == "contextual_bandit":
         payload = _read_run_json(run_dir, run_dir / "eval_summary.json")
@@ -81,11 +81,11 @@ def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str
         receipt = json.loads(snapshot.captured["terminal_receipt.json"])
     except (OSError, ValueError):
         return blocked, {}
-    expected_schema = (
-        "kronos.rl-discovery.d3.result.v1"
-        if artifact_type == "rl_discovery_d3"
-        else "kronos.rl-discovery.d2.result.v1"
-    )
+    expected_schema = {
+        "rl_discovery_d2": "kronos.rl-discovery.d2.result.v1",
+        "rl_discovery_d3": "kronos.rl-discovery.d3.result.v1",
+        "rl_discovery_d4": "kronos.rl-discovery.d4.result.v1",
+    }.get(artifact_type)
     digest = snapshot.manifest_sha256
     if (
         payload.get("schema_version") != expected_schema
