@@ -1,0 +1,57 @@
+{
+  "schema_version": "kronos.rl-discovery.d4.prereg.v1",
+  "status": "APPROVED_EXECUTABLE",
+  "experiment_id": "TYPE2-D4-ALGORITHM-OBJECTIVE",
+  "parent_release": "fork-v1.13.0-kronos-rl-d3-representation-action",
+  "hypothesis": "On the exact 128 real train-only daily-close sessions used by D3, a supervised ceiling can distinguish representation capacity from reinforcement-learning optimization failure, while PPO, discrete DQN, and supervised-auxiliary PPO under identical native and shuffled controls can identify whether the remaining bottleneck is algorithmic or objective-related without opening Fresh OOS.",
+  "dataset": {
+    "dataset_id": "type1-close-20260803-005",
+    "rows_relative_path": "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/public_rows.json",
+    "rows_sha256": "a0fbeb1b54e59e3c1e83c66c8ca5aa85caa7063b7cbb382efeb716e86ae915cf",
+    "manifest_sha256": "25cb145689933946d0f5600ddbc007690b4e433e537e4f9dd3f7b6f7dcc4d172",
+    "materializer_receipt_sha256": "913b2fe9a4986109f04d776071f6ac3bbb50d5d430117e1d42c8eeca009ad75c",
+    "normalizer_relative_path": "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/train_type1-public-005/primary/seed_0/normalizer.json",
+    "normalizer_file_sha256": "4d0ad81bf989bd279b37af2b7223cb448aa8617fa162061bc865fed92416debb",
+    "normalizer_digest": "a783484f56b39ae77a2b236e1e06ce5967621071a2ebd049ec0b45d720113b50",
+    "partition": "TRAIN_ONLY",
+    "selection": "FIRST_128_CHRONOLOGICAL_ELIGIBLE_TRAIN_SESSIONS"
+  },
+  "representation": {
+    "candidate_count": 5,
+    "market_context": true,
+    "source_arm": "D_TOP5_CONTEXT_4X"
+  },
+  "algorithm_arms": [
+    {"id": "A_SUPERVISED_CEILING", "family": "SUPERVISED_DIAGNOSTIC", "training_steps": 256, "rl_claim_allowed": false},
+    {"id": "B_PPO_BASELINE", "family": "MASKABLE_PPO", "training_steps": 65536, "rl_claim_allowed": true},
+    {"id": "C_DQN_DISCRETE", "family": "DQN", "training_steps": 65536, "rl_claim_allowed": true},
+    {"id": "D_AUXILIARY_PPO", "family": "AUXILIARY_PPO", "training_steps": 65536, "rl_claim_allowed": true}
+  ],
+  "reward_arms": ["NATIVE", "SHUFFLED"],
+  "episode_count": 128,
+  "seeds": [0, 1, 2],
+  "smoke": {
+    "algorithm_arms": ["A_SUPERVISED_CEILING", "B_PPO_BASELINE", "C_DQN_DISCRETE", "D_AUXILIARY_PPO"],
+    "reward_arms": ["NATIVE", "SHUFFLED"],
+    "seeds": [0],
+    "supervised_epochs": 8,
+    "rl_timesteps": 1024
+  },
+  "costs": {"training_round_trip_bp": 0, "diagnostic_round_trip_bp": 23},
+  "gate": {
+    "minimum_fit_accuracy": 0.9,
+    "minimum_fit_reward_ratio": 0.9,
+    "minimum_passing_seed_fraction": 0.6666666666666666,
+    "minimum_native_delta_vs_shuffled": 0.2,
+    "maximum_rl_gap_to_supervised_ceiling": 0.1,
+    "zero_invalid_actions": true
+  },
+  "claims_boundary": {
+    "research_only": true,
+    "supervised_is_not_rl": true,
+    "profitability_claim_allowed": false,
+    "promotion_allowed": false,
+    "live_broker_order_allowed": false,
+    "fresh_oos": "NOT_RUN_NO_READ"
+  }
+}
