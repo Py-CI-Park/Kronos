@@ -26,6 +26,11 @@ class _D5Custody(BaseModel):
     terminal_receipt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     model_count: int
     outcome_count: int
+    research_branch: str
+    base_release: Literal["fork-v1.14.0-kronos-rl-d4-algorithm-objective"]
+    producer_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    producer_tree: str = Field(pattern=r"^[0-9a-f]{40}$")
+    release_status: Literal["PR_PENDING"]
 
 
 class _D5Metric(BaseModel):
