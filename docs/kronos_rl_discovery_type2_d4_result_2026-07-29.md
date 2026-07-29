@@ -48,7 +48,7 @@ D4는 D3와 동일한 실제 일봉 train-only 128개 세션에서 supervised ce
 | Platform | 98 | 30% | D4 API·전체 페이지·24-model snapshot | D5 증거 연결 |
 | RL Evidence | 92 | 30% | 실제 DQN native 2/3 + shuffled 2/3 + PPO 비교 | 전체 train·5 seed |
 | Engineering | 97 | 20% | HMAC·held snapshot·exact matrix·다중 알고리즘 | seed resume |
-| Governance | 92 | 10% | prereg amendment 선행·실패 run 보존·custody | D4 PR·tag |
+| Governance | 100 | 10% | prereg amendment 선행·실패 run 보존·custody·research→master→tag | D5 동일 계보 유지 |
 | Live Readiness | 0 | 10% | Fresh OOS·broker·운영 리스크 미검증 | D5/D6 전 금지 |
 | **전체** | **86/100** | **100%** | 85.6 반올림 | 수익성 점수가 아님 |
 

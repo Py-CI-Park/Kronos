@@ -40,7 +40,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<Record<ProgramLaneId, readonly Progr
     { id: 'failure-honesty', points: 15, achieved: true, evidence: '실패 run 및 한계 공개' },
     { id: 'controls', points: 15, achieved: true, evidence: 'shuffle control·3 seeds' },
     { id: 'claim-separation', points: 17, achieved: true, evidence: 'RULE·supervised·RL 라벨 분리' },
-    { id: 'd4-release-lineage', points: 8, achieved: false, evidence: 'D4 master PR·tag 완료 전' },
+    { id: 'd4-release-lineage', points: 8, achieved: true, evidence: 'D4 research PR #15·master integration·v1.14 tag' },
   ],
   live: [
     { id: 'fresh-oos-pass', points: 30, achieved: false, evidence: 'Fresh OOS 미실행' },
@@ -54,9 +54,9 @@ export function programRubricScore(laneId: ProgramLaneId): number { return PROGR
 
 export const PROGRAM_LANES = [
   { id: 'platform', label: 'Platform', labelKo: '플랫폼', score: programRubricScore('platform'), weight: 30, state: 'STRONG', evidence: '12개 페이지, D4 API, 24-unit reviewed snapshot', nextAction: 'D5 결과도 동일 custody 흐름으로 연결' },
-  { id: 'rl-evidence', label: 'RL Evidence', labelKo: '강화학습 증거', score: programRubricScore('rl-evidence'), weight: 30, state: 'STRONG', evidence: 'DQN native 2/3·shuffled 2/3 seed train-only gate 통과; PPO 계열 실패', nextAction: 'D4 release 계보 완료 후 D5 사전등록' },
+  { id: 'rl-evidence', label: 'RL Evidence', labelKo: '강화학습 증거', score: programRubricScore('rl-evidence'), weight: 30, state: 'STRONG', evidence: 'DQN native 2/3·shuffled 2/3 seed train-only gate 통과; PPO 계열 실패', nextAction: 'D5 full-train 비용·control 사전등록' },
   { id: 'engineering', label: 'Engineering', labelKo: '엔지니어링', score: programRubricScore('engineering'), weight: 20, state: 'STRONG', evidence: '24/24 실행, HMAC 승인, 실패 receipt, 모델·outcome 보존', nextAction: 'cross-process resume 자동화' },
-  { id: 'governance', label: 'Governance', labelKo: '개발 거버넌스', score: programRubricScore('governance'), weight: 10, state: 'STRONG', evidence: 'prereg 우선, immutable run, custody와 claim 분리', nextAction: 'D4 research→master PR과 tag 완료' },
+  { id: 'governance', label: 'Governance', labelKo: '개발 거버넌스', score: programRubricScore('governance'), weight: 10, state: 'STRONG', evidence: 'prereg 우선, immutable run, custody, research→master→tag 계보', nextAction: 'D5도 동일 계보 유지' },
   { id: 'live', label: 'Live Readiness', labelKo: '라이브 준비도', score: programRubricScore('live'), weight: 10, state: 'BLOCKED', evidence: 'train-only 연구; Fresh OOS 봉인; 브로커 권한 없음', nextAction: 'D5~D7 gate 전 진행 금지' },
 ] as const satisfies readonly ProgramLane[];
 
