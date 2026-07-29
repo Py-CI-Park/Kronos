@@ -22,10 +22,10 @@
     "source_arm": "D_TOP5_CONTEXT_4X"
   },
   "algorithm_arms": [
-    {"id": "A_SUPERVISED_CEILING", "family": "SUPERVISED_DIAGNOSTIC", "training_steps": 256, "rl_claim_allowed": false},
-    {"id": "B_PPO_BASELINE", "family": "MASKABLE_PPO", "training_steps": 65536, "rl_claim_allowed": true},
-    {"id": "C_DQN_DISCRETE", "family": "DQN", "training_steps": 65536, "rl_claim_allowed": true},
-    {"id": "D_AUXILIARY_PPO", "family": "AUXILIARY_PPO", "training_steps": 65536, "rl_claim_allowed": true}
+    {"id": "A_SUPERVISED_CEILING", "family": "SUPERVISED_DIAGNOSTIC", "training_steps": 256, "pretraining_epochs": 256, "rl_claim_allowed": false},
+    {"id": "B_PPO_BASELINE", "family": "MASKABLE_PPO", "training_steps": 65536, "pretraining_epochs": 0, "rl_claim_allowed": true},
+    {"id": "C_DQN_DISCRETE", "family": "DQN", "training_steps": 65536, "pretraining_epochs": 0, "rl_claim_allowed": true},
+    {"id": "D_AUXILIARY_PPO", "family": "AUXILIARY_PPO", "training_steps": 65536, "pretraining_epochs": 256, "rl_claim_allowed": true}
   ],
   "reward_arms": ["NATIVE", "SHUFFLED"],
   "episode_count": 128,

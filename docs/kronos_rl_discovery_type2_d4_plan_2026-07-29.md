@@ -17,3 +17,7 @@ D3에서 top-5·시장문맥·4배 학습량이 모두 개선을 만들었지만
 | D | Auxiliary PPO | 지도 사전학습 표현이 PPO 최적화를 해제하는가 | 예, 단 train-only 과적합 진단 |
 
 모든 arm은 native/shuffled와 seed 0·1·2를 사용한다. Supervised 결과는 RL 성공으로 합산하지 않는다. RL arm 중 2/3 seed가 0.90 fit·control separation을 통과하지 못하면 D4는 `NO-GO`이며 Fresh OOS를 열지 않는다.
+
+## 실행 전 Amendment 1 — 사전학습 budget 명시
+
+구현 검토 중 Aux-PPO의 지도 사전학습 횟수가 원 prereg에 누락된 것을 실제 실행 전에 발견했다. 결과 확인 전 A supervised와 D auxiliary의 사전학습을 각각 256 epochs로, B PPO와 C DQN은 0 epochs로 고정했다. Smoke에서는 A와 D만 8 epochs를 사용한다. 다른 데이터·seed·gate·Fresh OOS 조건은 변경하지 않는다.
