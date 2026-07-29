@@ -25,6 +25,7 @@
   let evidence = $state<DiscoveryEvidence | null>(null);
   let loading = $state(true);
   let notice = $state<string | null>(null);
+  const isD5 = $derived(evidence?.verdict.startsWith('D5_FULL_TRAIN_COST_') === true);
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
   const cls = (value: number) => value >= .9 ? 'pass' : value > 0 ? 'warn' : 'fail';
 
@@ -34,10 +35,10 @@
       const runs = await rlApi.rlRuns(100);
       const record = runs?.runs.find((run) => String(run.summary?.verdict ?? '').startsWith('D5_FULL_TRAIN_COST_'))
         ?? runs?.runs.find((run) => run.summary?.verdict === 'D4_ALGORITHM_OBJECTIVE_CONFIRMED');
-      if (!record) { evidence = null; notice = '검증 가능한 D4 evidence가 없습니다. BLOCK 상태입니다.'; return; }
+      if (!record) { evidence = null; notice = '검증 가능한 D5/D4 evidence가 없습니다. BLOCK 상태입니다.'; return; }
       const detail = await rlApi.rlRun(record.name);
       evidence = detail ? parseDiscoveryEvidence(detail) : null;
-      if (!detail || !evidence) notice = 'D4 evidence 검증에 실패했습니다. BLOCK 상태입니다.';
+      if (!detail || !evidence) notice = 'D5/D4 evidence 검증에 실패했습니다. BLOCK 상태입니다.';
     } catch {
       evidence = null;
       notice = 'Discovery API 연결에 실패했습니다. EVIDENCE_UNAVAILABLE / BLOCK.';
@@ -47,12 +48,12 @@
 </script>
 
 <section class="page" aria-labelledby="discovery-title">
-  <header class="hero"><div><p>RL DISCOVERY LAB // D4 EVIDENCE</p><h1 id="discovery-title">강화학습 발견 실험실</h1><span>알고리즘과 목적함수의 학습 가능성을 실제 모델·seed·negative control로 분리합니다.</span></div><button type="button" onclick={load} disabled={loading}>증거 새로고침</button></header>
-  <section class="safety" aria-label="연구 안전 상태"><article><span>TRAIN</span><strong>128 EPISODES</strong></article><article><span>FRESH OOS</span><strong>NOT_RUN_NO_READ</strong></article><article><span>PROMOTION</span><strong>BLOCKED</strong></article><article><span>CLAIMS</span><strong>RESEARCH ONLY</strong></article><article><span>COST</span><strong>0BP TRAIN / 23BP DIAG</strong></article></section>
+  <header class="hero"><div><p>RL DISCOVERY LAB // D5 + D4 EVIDENCE</p><h1 id="discovery-title">강화학습 발견 실험실</h1><span>알고리즘과 목적함수의 학습 가능성을 실제 모델·seed·negative control로 분리합니다.</span></div><button type="button" onclick={load} disabled={loading}>증거 새로고침</button></header>
+  <section class="safety" aria-label="연구 안전 상태"><article><span>TRAIN</span><strong>{isD5 ? '573 EPISODES' : '128 EPISODES'}</strong></article><article><span>FRESH OOS</span><strong>NOT_RUN_NO_READ</strong></article><article><span>PROMOTION</span><strong>BLOCKED</strong></article><article><span>CLAIMS</span><strong>RESEARCH ONLY</strong></article><article><span>COST</span><strong>{isD5 ? '23BP TRAIN / 0BP DIAG' : '0BP TRAIN / 23BP DIAG'}</strong></article></section>
   {#if notice}<div class="notice">{notice}</div>{/if}
-  <section class="panel"><div class="title"><p>PROGRAM MAP</p><h2>D0–D7 연구 사다리</h2></div><ol class="ladder">{#each LADDER as stage, index}<li class:active={index === 4} class:next={index === 5} class:locked={index >= 6}><b>{stage[0]}</b><strong>{stage[1]}</strong><small>{stage[2]}</small></li>{/each}</ol></section>
+  <section class="panel"><div class="title"><p>PROGRAM MAP</p><h2>D0–D7 연구 사다리</h2></div><ol class="ladder">{#each LADDER as stage, index}<li class:active={index === (isD5 ? 5 : 4)} class:next={!isD5 && index === 5} class:locked={index >= 6}><b>{stage[0]}</b><strong>{stage[1]}</strong><small>{index === 5 && isD5 ? 'NOT_CONFIRMED' : stage[2]}</small></li>{/each}</ol></section>
 
-  {#if loading}<div class="notice">최신 D4 Primary 증거를 확인하는 중입니다.</div>
+  {#if loading}<div class="notice">최신 D5/D4 Primary 증거를 확인하는 중입니다.</div>
   {:else if evidence?.verdict.startsWith('D5_FULL_TRAIN_COST_')}
     <D5EvidencePanel {evidence} />
   {:else if evidence}

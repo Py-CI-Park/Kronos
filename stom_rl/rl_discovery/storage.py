@@ -23,16 +23,49 @@ class Saveable(Protocol):
     def save(self, path: str) -> None: ...
 
 
-@dataclass(slots=True)  # Exception owns mutable traceback state.
 class UnsafeArtifactPathError(ValueError):
     """Raised when an artifact path escapes or redirects its configured root."""
 
-    path: Path
-    reason: str
+    __slots__ = ("path", "reason")
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(path, reason)
+        self.path = path
+        self.reason = reason
 
     @override
     def __str__(self) -> str:
         return f"unsafe artifact path {self.path}: {self.reason}"
+
+
+@dataclass(frozen=True, slots=True)
+class RunDirectoryGuard:
+    """Stable direct-child identity for a research run directory."""
+
+    run_root: Path
+    run_dir: Path
+    device: int
+    inode: int
+
+    @classmethod
+    def capture(cls, run_root: Path, run_dir: Path) -> RunDirectoryGuard:
+        root = run_root.absolute()
+        if not root.is_dir() or _is_reparse_point(root):
+            raise UnsafeArtifactPathError(root, "run root must be a plain directory")
+        candidate = validate_run_directory(root, run_dir)
+        identity = os.stat(candidate, follow_symlinks=False)
+        return cls(root.resolve(), candidate.absolute(), identity.st_dev, identity.st_ino)
+
+    def verify(self) -> Path:
+        """Return the original run directory only while its identity is stable."""
+
+        if _is_reparse_point(self.run_root):
+            raise UnsafeArtifactPathError(self.run_root, "run root became a reparse point")
+        candidate = validate_run_directory(self.run_root, self.run_dir)
+        identity = os.stat(candidate, follow_symlinks=False)
+        if (identity.st_dev, identity.st_ino) != (self.device, self.inode):
+            raise UnsafeArtifactPathError(candidate, "run directory identity changed")
+        return candidate
 
 
 def _is_reparse_point(path: Path) -> bool:
@@ -79,7 +112,11 @@ def validate_run_directory(run_root: Path, candidate: Path) -> Path:
 def contained_path(run_dir: Path, *segments: str) -> Path:
     """Resolve a path whose every segment remains inside a trusted run directory."""
 
-    root = run_dir.resolve()
+    supplied = run_dir.absolute()
+    if not supplied.is_dir() or _is_reparse_point(supplied):
+        raise UnsafeArtifactPathError(supplied, "run directory cannot be a reparse point")
+    before = os.stat(supplied, follow_symlinks=False)
+    root = supplied.resolve(strict=True)
     candidate = root.joinpath(*(_safe_segment(segment) for segment in segments))
     cursor = root
     for segment in segments[:-1]:
@@ -91,6 +128,9 @@ def contained_path(run_dir: Path, *segments: str) -> Path:
         raise UnsafeArtifactPathError(candidate, "resolved artifact escapes run directory")
     if candidate.exists() and _is_reparse_point(candidate):
         raise UnsafeArtifactPathError(candidate, "artifact cannot be a reparse point")
+    after = os.stat(supplied, follow_symlinks=False)
+    if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino) or _is_reparse_point(supplied):
+        raise UnsafeArtifactPathError(supplied, "run directory identity changed")
     return candidate
 
 

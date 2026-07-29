@@ -78,10 +78,17 @@ def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str
     """Return compact and detailed discovery data from one verified snapshot."""
 
     blocked = {"research_lane": "rl_discovery", "status": "BLOCK", "verdict": "NO_GO"}
+    capture_paths = frozenset({"summary.json", "terminal_receipt.json"})
+    if artifact_type == "rl_discovery_d5":
+        capture_paths |= frozenset({"inputs/prereg.json"}) | frozenset(
+            f"outcomes/{reward.value}/seed-{seed}.json"
+            for reward in D4RewardArmId
+            for seed in range(5)
+        )
     try:
         snapshot = read_evidence_snapshot(
             run_dir,
-            capture_paths=frozenset({"summary.json", "terminal_receipt.json"}),
+            capture_paths=capture_paths,
             excluded_manifest_paths=frozenset({"terminal_receipt.json"}),
         )
         payload_value: object = json.loads(snapshot.captured["summary.json"])
@@ -114,7 +121,9 @@ def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str
         return blocked, {}
     if artifact_type == "rl_discovery_d4" and not _valid_d4_primary(run_dir, payload, receipt, digest):
         return blocked, {}
-    if artifact_type == "rl_discovery_d5" and not valid_d5_primary(run_dir, payload, receipt, digest):
+    if artifact_type == "rl_discovery_d5" and not valid_d5_primary(
+        run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
+    ):
         return blocked, {}
     is_d5 = artifact_type == "rl_discovery_d5"
     compact = {
@@ -129,8 +138,11 @@ def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str
         "prereg_sha256": payload.get("prereg_sha256"),
         "promotion_allowed": False,
         "profitability_claim_allowed": False,
+        "live_broker_order_allowed": False,
         "artifact_manifest_sha256": digest,
     }
+    if is_d5:
+        payload = {**payload, "live_broker_order_allowed": False}
     return compact, payload
 
 

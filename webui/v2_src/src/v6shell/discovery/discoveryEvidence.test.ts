@@ -204,6 +204,15 @@ test('discovery UX promotes D5 cost evidence without opening validation', () => 
   assert.match(d5Panel, /reusedValidation/);
   assert.match(d5Panel, /NOT_RUN_NO_READ/);
   assert.match(d5Panel, /10 \/ 10/);
+  assert.match(d5Panel, /NO-GO/);
+  assert.match(d5Panel, /NO-TRADE/);
+  assert.match(d5Panel, /ts_imb RULE/);
+  assert.match(d5Panel, /D4 DQN REFERENCE/);
+  assert.match(d5Panel, /NOT COMPARABLE/);
+  assert.match(discoveryPage, /const isD5/);
+  assert.match(discoveryPage, /isD5 \? '573 EPISODES' : '128 EPISODES'/);
+  assert.match(discoveryPage, /isD5 \? '23BP TRAIN \/ 0BP DIAG'/);
+  assert.match(discoveryPage, /index === \(isD5 \? 5 : 4\)/);
 });
 
 test('live D3 nested summary preserves best arm, budget lift, and all units', () => {

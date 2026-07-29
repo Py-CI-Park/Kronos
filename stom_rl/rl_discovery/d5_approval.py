@@ -14,7 +14,7 @@ from stom_rl.rl_discovery.d2_custody import assert_plain_path
 from stom_rl.rl_discovery.d3_approval import smoke_approval_signature
 from stom_rl.rl_discovery.d4_contract import D4RewardArmId
 from stom_rl.rl_discovery.evidence_snapshot import EvidenceSnapshot, read_evidence_snapshot
-from stom_rl.rl_discovery.storage import atomic_write_bytes, contained_path
+from stom_rl.rl_discovery.storage import RunDirectoryGuard, atomic_write_bytes, contained_path
 
 
 class _EvidenceModel(BaseModel):
@@ -61,7 +61,8 @@ def create_d5_smoke_approval(path: Path, *, run_root: Path, approval_key: bytes)
 
     if len(approval_key) < 32:
         raise PermissionError("D5 Smoke approval requires a 32-byte operator key")
-    root = _direct_run_child(path, run_root)
+    guard = _direct_run_guard(path, run_root)
+    root = guard.verify()
     snapshot = _smoke_snapshot(root)
     summary = _SmokeSummary.model_validate_json(snapshot.captured["summary.json"])
     receipt = _TerminalReceipt.model_validate_json(snapshot.captured["terminal_receipt.json"])
@@ -80,7 +81,7 @@ def create_d5_smoke_approval(path: Path, *, run_root: Path, approval_key: bytes)
             manifest_sha=snapshot.manifest_sha256,
         ),
     }
-    target = contained_path(root, "operator_approval.json")
+    target = contained_path(guard.verify(), "operator_approval.json")
     atomic_write_bytes(target, canonical_json_bytes(approval))
     return target
 
@@ -99,7 +100,8 @@ def approve_d5_smoke(
         raise PermissionError("D5 Primary requires an approved Smoke")
     if approval_key is None or len(approval_key) < 32:
         raise PermissionError("D5 Primary requires a 32-byte operator approval key")
-    root = _direct_run_child(path, run_root)
+    guard = _direct_run_guard(path, run_root)
+    root = guard.verify()
     try:
         snapshot = _smoke_snapshot(root)
         summary = _SmokeSummary.model_validate_json(snapshot.captured["summary.json"])
@@ -110,6 +112,7 @@ def approve_d5_smoke(
     except (FileNotFoundError, OSError, ValueError) as exc:
         raise PermissionError("approved D5 Smoke lacks detached operator approval") from exc
     _verify_summary_and_receipt(summary, receipt, snapshot.manifest_sha256)
+    _ = guard.verify()
     if summary.prereg_sha256 != prereg_sha or summary.episode_snapshot_sha256 != episode_sha:
         raise PermissionError("approved D5 Smoke input identity is mismatched")
     expected_signature = smoke_approval_signature(
@@ -146,13 +149,13 @@ def primary_custody_signature(
     return hmac.new(key, payload.encode(), "sha256").hexdigest()
 
 
-def _direct_run_child(path: Path, run_root: Path) -> Path:
+def _direct_run_guard(path: Path, run_root: Path) -> RunDirectoryGuard:
     root = path.absolute()
     configured = run_root.absolute()
     if root.parent != configured:
         raise PermissionError("D5 Smoke must be a direct run-root child")
     _ = assert_plain_path(root, anchor=configured, require_file=False)
-    return root
+    return RunDirectoryGuard.capture(configured, root)
 
 
 def _smoke_snapshot(root: Path) -> EvidenceSnapshot:

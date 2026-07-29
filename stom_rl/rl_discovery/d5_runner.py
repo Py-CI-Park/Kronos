@@ -11,7 +11,12 @@ import sys
 from stom_rl.daily_type1_contract import canonical_json_bytes
 from stom_rl.rl_discovery.d2_custody import assert_plain_path
 from stom_rl.rl_discovery.d5_execution import D5RunProfile, execute_d5
-from stom_rl.rl_discovery.storage import atomic_write_bytes, contained_path
+from stom_rl.rl_discovery.storage import (
+    RunDirectoryGuard,
+    atomic_write_bytes,
+    contained_path,
+    create_run_directory,
+)
 
 
 class D5CliArgs(argparse.Namespace):
@@ -36,21 +41,20 @@ def run_d5(
     _ = assert_plain_path(run_root, anchor=root, require_file=False)
     timestamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
     selected_id = run_id or f"type2-d5-{profile.value.lower()}-{timestamp}"
-    run_dir = contained_path(run_root, selected_id)
-    if run_dir.exists():
-        raise FileExistsError("D5 run ID already exists")
-    run_dir.mkdir(parents=True)
+    run_dir = create_run_directory(run_root, selected_id)
+    run_guard = RunDirectoryGuard.capture(run_root, run_dir)
     try:
         return execute_d5(
             root,
             run_dir,
+            run_guard=run_guard,
             profile=profile,
             approved_smoke=approved_smoke,
             approval_key=approval_key,
         )
     # Terminal evidence must also cover operator interrupts such as KeyboardInterrupt.
     except (BaseException,) as exc:
-        receipt = contained_path(run_dir, "terminal_receipt.json")
+        receipt = contained_path(run_guard.verify(), "terminal_receipt.json")
         if not receipt.exists():
             atomic_write_bytes(
                 receipt,

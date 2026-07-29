@@ -18,8 +18,12 @@ def _models() -> list[dict[str, JsonValue]]:
     return [
         {
             "algorithm_arm": "C_DQN_DISCRETE",
+            "algorithm_family": "DQN",
+            "rl_claim_allowed": True,
             "reward_arm": reward.value,
             "seed": seed,
+            "rl_timesteps": 200_000,
+            "training_round_trip_cost_bp": 23,
             "fit_23bp": metric,
             "native_23bp": metric,
             "native_0bp": metric,
@@ -35,6 +39,20 @@ def test_d5_primary_is_discoverable_only_with_authenticated_exact_matrix(
 ) -> None:
     run = tmp_path / "type2-d5-primary"
     run.mkdir()
+    prereg = {
+        "schema_version": "kronos.rl-discovery.d5.prereg.v1",
+        "claims_boundary": {
+            "research_only": True,
+            "profitability_claim_allowed": False,
+            "promotion_allowed": False,
+            "live_broker_order_allowed": False,
+            "reused_validation": "NOT_RUN_NO_READ",
+            "fresh_oos": "NOT_RUN_NO_READ",
+        },
+    }
+    prereg_path = run / "inputs/prereg.json"
+    prereg_path.parent.mkdir()
+    prereg_path.write_text(json.dumps(prereg), encoding="utf-8")
     key = bytes(range(32))
     monkeypatch.setenv("KRONOS_D5_APPROVAL_KEY_HEX", key.hex())
     summary = {
@@ -65,6 +83,16 @@ def test_d5_primary_is_discoverable_only_with_authenticated_exact_matrix(
         },
         "models": _models(),
     }
+    for model in summary["models"]:
+        assert isinstance(model, dict)
+        reward = str(model["reward_arm"])
+        seed = int(model["seed"])
+        model_path = run / "models" / f"C_DQN_DISCRETE__{reward}" / f"seed-{seed}" / "model.zip"
+        outcome_path = run / "outcomes" / reward / f"seed-{seed}.json"
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        outcome_path.parent.mkdir(parents=True, exist_ok=True)
+        model_path.write_bytes(b"model")
+        outcome_path.write_text(json.dumps(model), encoding="utf-8")
     (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
     digest = artifact_manifest_sha256(run)
     receipt = {
@@ -93,6 +121,15 @@ def test_d5_primary_is_discoverable_only_with_authenticated_exact_matrix(
     assert record["artifact_type"] == "rl_discovery_d5"
     assert record["summary"]["verdict"] == "D5_FULL_TRAIN_COST_NOT_CONFIRMED"
     assert detail["detail"]["gate"]["native_passing_seed_fraction"] == 0.4
+    assert detail["summary"]["live_broker_order_allowed"] is False
+    assert detail["detail"]["live_broker_order_allowed"] is False
+
+    missing_model = run / "models/C_DQN_DISCRETE__NATIVE/seed-0/model.zip"
+    missing_model.unlink()
+    missing_artifact = rl_dashboard.load_rl_run(run.name)
+    assert missing_artifact["summary"]["status"] == "BLOCK"
+    assert missing_artifact["detail"] == {}
+    missing_model.write_bytes(b"model")
 
     summary["models"] = summary["models"][:-1]
     (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")

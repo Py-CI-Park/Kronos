@@ -6,7 +6,8 @@ import hashlib
 import hmac
 import os
 from pathlib import Path
-from typing import ClassVar
+from collections.abc import Mapping
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,11 +28,55 @@ class _D5Custody(BaseModel):
     outcome_count: int
 
 
+class _D5Metric(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore", strict=True)
+
+    accuracy: float
+    reward_ratio: float
+    dominant_action_rate: float
+    invalid_action_count: Literal[0]
+
+
+class _D5Model(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore", strict=True)
+
+    algorithm_arm: Literal["C_DQN_DISCRETE"]
+    algorithm_family: Literal["DQN"]
+    rl_claim_allowed: Literal[True]
+    reward_arm: Literal["NATIVE", "SHUFFLED"]
+    seed: int = Field(ge=0, le=4)
+    rl_timesteps: Literal[200000]
+    training_round_trip_cost_bp: Literal[23]
+    fit_23bp: _D5Metric
+    native_23bp: _D5Metric
+    native_0bp: _D5Metric
+
+
+class _D5Claims(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore", strict=True)
+
+    research_only: Literal[True]
+    profitability_claim_allowed: Literal[False]
+    promotion_allowed: Literal[False]
+    live_broker_order_allowed: Literal[False]
+    reused_validation: Literal["NOT_RUN_NO_READ"]
+    fresh_oos: Literal["NOT_RUN_NO_READ"]
+
+
+class _D5PreregBoundary(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore", strict=True)
+
+    schema_version: Literal["kronos.rl-discovery.d5.prereg.v1"]
+    claims_boundary: _D5Claims
+
+
 def valid_d5_primary(
     run_dir: Path,
     payload: dict[str, JsonValue],
     receipt: dict[str, JsonValue],
     digest: str,
+    relative_paths: frozenset[str],
+    captured: Mapping[str, bytes],
 ) -> bool:
     """Accept only the exact authenticated D5 Primary evidence contract."""
 
@@ -40,14 +85,16 @@ def valid_d5_primary(
     gate = payload.get("gate")
     if not isinstance(models, list) or len(models) != 10 or not isinstance(gate, dict):
         return False
-    observed: set[tuple[str, int]] = set()
+    parsed_models: dict[tuple[str, int], _D5Model] = {}
     for value in models:
-        if not isinstance(value, dict) or not _valid_model(value):
+        if not isinstance(value, dict):
             return False
-        reward, seed = value.get("reward_arm"), value.get("seed")
-        if not isinstance(reward, str) or not isinstance(seed, int):
+        try:
+            model = _D5Model.model_validate(value)
+        except ValueError:
             return False
-        observed.add((reward, seed))
+        parsed_models[(model.reward_arm, model.seed)] = model
+    observed = set(parsed_models)
     verdict = payload.get("verdict")
     approved_smoke = payload.get("approved_smoke")
     if (
@@ -66,6 +113,7 @@ def valid_d5_primary(
         or payload.get("promotion_allowed") is not False
         or payload.get("profitability_claim_allowed") is not False
         or not isinstance(approved_smoke, str)
+        or not _valid_artifacts(relative_paths, captured, parsed_models)
     ):
         return False
     if _matches_operator_hmac(run_dir, payload, receipt, digest, approved_smoke):
@@ -73,15 +121,45 @@ def valid_d5_primary(
     return _matches_committed_custody(run_dir, digest)
 
 
-def _valid_model(row: dict[str, JsonValue]) -> bool:
-    return (
-        row.get("algorithm_arm") == "C_DQN_DISCRETE"
-        and row.get("algorithm_family") in {None, "DQN"}
-        and row.get("seed") in range(5)
-        and row.get("rl_timesteps") in {None, 200000}
-        and row.get("training_round_trip_cost_bp") in {None, 23}
-        and all(isinstance(row.get(metric), dict) for metric in ("fit_23bp", "native_23bp", "native_0bp"))
+def _valid_artifacts(
+    relative_paths: frozenset[str],
+    captured: Mapping[str, bytes],
+    models: Mapping[tuple[str, int], _D5Model],
+) -> bool:
+    try:
+        prereg = _D5PreregBoundary.model_validate_json(captured["inputs/prereg.json"])
+    except (KeyError, ValueError):
+        return False
+    if prereg.claims_boundary.live_broker_order_allowed is not False:
+        return False
+    model_paths = frozenset(
+        f"models/C_DQN_DISCRETE__{reward.value}/seed-{seed}/model.zip"
+        for reward in D4RewardArmId
+        for seed in range(5)
     )
+    outcome_paths = frozenset(
+        f"outcomes/{reward.value}/seed-{seed}.json"
+        for reward in D4RewardArmId
+        for seed in range(5)
+    )
+    observed_models = frozenset(
+        path for path in relative_paths if path.startswith("models/") and path.endswith("/model.zip")
+    )
+    observed_outcomes = frozenset(
+        path for path in relative_paths if path.startswith("outcomes/") and path.endswith(".json")
+    )
+    if observed_models != model_paths or observed_outcomes != outcome_paths:
+        return False
+    for reward in D4RewardArmId:
+        for seed in range(5):
+            path = f"outcomes/{reward.value}/seed-{seed}.json"
+            try:
+                outcome = _D5Model.model_validate_json(captured[path])
+            except (KeyError, ValueError):
+                return False
+            if outcome != models.get((reward.value, seed)):
+                return False
+    return True
 
 
 def _valid_fraction(value: JsonValue) -> bool:

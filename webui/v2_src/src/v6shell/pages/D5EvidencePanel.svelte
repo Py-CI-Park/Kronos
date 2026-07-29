@@ -12,7 +12,7 @@
 <section class="d5-verdict" class:confirmed={evidence.verdict === 'D5_FULL_TRAIN_COST_CONFIRMED'}>
   <div>
     <p>D5 // FULL TRAIN + COST</p>
-    <h2>{evidence.verdict}</h2>
+    <h2>NO-GO / {evidence.verdict}</h2>
     <span>실제 DQN · 573 TRAIN EPISODES · 10 / 10 model units</span>
   </div>
   <dl>
@@ -43,6 +43,16 @@
       <strong class={ratioTone(shuffled?.meanOracleRewardRatio)}>{shuffled?.meanOracleRewardRatio.toFixed(3)}</strong>
       <small>native replay · {shuffled?.seedCount ?? 0} seeds</small>
     </article>
+  </div>
+</section>
+
+<section class="panel">
+  <header><div><p>BASELINE CONTEXT</p><h2>No-trade · RULE · prior RL 기준</h2></div><span>비교 가능성 분리</span></header>
+  <div class="baseline-grid">
+    <article><span>NO-TRADE</span><strong>0.000</strong><small>동일 573 TRAIN 세션 · 거래/비용 0 · reward 합계 기준</small></article>
+    <article><span>ORACLE CEILING</span><strong>1.000×</strong><small>reward ratio의 분모 · 강화학습 모델이 아님</small></article>
+    <article><span>D4 DQN REFERENCE</span><strong>128 / 0BP</strong><small>이전 train-only 확인 · D5와 규모/비용이 달라 직접 승격 비교 금지</small></article>
+    <article class="negative"><span>ts_imb RULE</span><strong>NOT COMPARABLE</strong><small>장초반 갭상승 RULE · 다른 universe/horizon · RL로 합산 금지</small></article>
   </div>
 </section>
 
@@ -81,9 +91,9 @@
   dl{display:grid;gap:7px;margin:0}.d5-verdict dl{grid-template-columns:repeat(2,1fr)}dl div{display:flex;justify-content:space-between;gap:8px}dt{color:var(--dim)}dd{margin:0;text-align:right}dd small{display:block;color:var(--muted)}
   .boundary{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border-strong);background:var(--surface-sunken)}.boundary article{display:flex;flex-direction:column;gap:5px;border-right:1px solid var(--border);padding:12px}.boundary article:last-child{border:0}.boundary span{color:var(--dim);font:800 .58rem ui-monospace,monospace}.boundary strong{color:var(--warn);font:800 .7rem ui-monospace,monospace}.boundary small{color:var(--muted)}
   .panel{padding:17px}.panel header{display:flex;justify-content:space-between;align-items:end;margin-bottom:12px}.aggregate-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.aggregate-grid article{display:flex;flex-direction:column;gap:7px;border:1px solid var(--border-strong);border-left:4px solid var(--success);padding:14px;background:var(--surface-sunken)}.aggregate-grid article.negative{border-left-color:var(--info)}.aggregate-grid strong{font:900 1.8rem ui-monospace,monospace}.aggregate-grid small{color:var(--muted)}
-  .matrix{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.matrix article{border:1px solid var(--border-strong);border-top:3px solid var(--success);padding:11px;background:var(--surface-sunken)}.matrix article.negative{border-top-color:var(--info)}.identity{display:flex;justify-content:space-between;color:var(--dim);font:800 .62rem ui-monospace,monospace}.matrix>article>strong{display:block;margin:9px 0;font:900 1.3rem ui-monospace,monospace}.matrix dl{font-size:.68rem}
+  .matrix{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.matrix article{border:1px solid var(--border-strong);border-top:3px solid var(--success);padding:11px;background:var(--surface-sunken)}.matrix article.negative{border-top-color:var(--info)}.identity{display:flex;justify-content:space-between;color:var(--dim);font:800 .62rem ui-monospace,monospace}.matrix>article>strong{display:block;margin:9px 0;font:900 1.3rem ui-monospace,monospace}.matrix dl{font-size:.68rem}.baseline-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.baseline-grid article{display:flex;flex-direction:column;gap:7px;border:1px solid var(--border);border-left:3px solid var(--accent);padding:12px;background:var(--surface-sunken)}.baseline-grid article.negative{border-left-color:var(--info)}.baseline-grid span{color:var(--dim);font:800 .6rem ui-monospace,monospace}.baseline-grid strong{font:900 1rem ui-monospace,monospace}.baseline-grid small{color:var(--muted);line-height:1.4}
   .custody{display:grid;gap:7px;padding:14px}.custody div{display:grid;grid-template-columns:150px 1fr;gap:10px}.custody span{color:var(--dim);font:800 .6rem ui-monospace,monospace}.custody strong{overflow-wrap:anywhere;font:700 .65rem ui-monospace,monospace}.custody p{margin-top:5px;color:var(--muted);font:inherit;line-height:1.5;letter-spacing:0}
   .pass{color:var(--success)}.warn{color:var(--warn)}.fail{color:var(--danger)}
-  @media(max-width:1050px){.matrix{grid-template-columns:repeat(2,1fr)}.boundary{grid-template-columns:repeat(2,1fr)}}
-  @media(max-width:650px){.d5-verdict,.aggregate-grid{grid-template-columns:1fr}.d5-verdict dl{grid-template-columns:1fr}.matrix,.boundary{grid-template-columns:1fr}.custody div{grid-template-columns:1fr}}
+  @media(max-width:1050px){.matrix,.baseline-grid{grid-template-columns:repeat(2,1fr)}.boundary{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:650px){.d5-verdict,.aggregate-grid{grid-template-columns:1fr}.d5-verdict dl{grid-template-columns:1fr}.matrix,.baseline-grid,.boundary{grid-template-columns:1fr}.custody div{grid-template-columns:1fr}}
 </style>

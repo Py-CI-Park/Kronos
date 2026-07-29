@@ -40,7 +40,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<Record<ProgramLaneId, readonly Progr
     { id: 'failure-honesty', points: 15, achieved: true, evidence: '실패 run 및 한계 공개' },
     { id: 'controls', points: 15, achieved: true, evidence: 'D5 shuffle control·5 seeds' },
     { id: 'claim-separation', points: 17, achieved: true, evidence: 'RULE·supervised·RL 라벨 분리' },
-    { id: 'd4-release-lineage', points: 8, achieved: true, evidence: 'D4 v1.14 기반 D5 prereg·Primary lineage' },
+    { id: 'd5-release-lineage', points: 8, achieved: false, evidence: 'D5 PR·master merge·v1.15 tag 완료 전 보류' },
   ],
   live: [
     { id: 'fresh-oos-pass', points: 30, achieved: false, evidence: 'Fresh OOS 미실행' },
@@ -56,7 +56,7 @@ export const PROGRAM_LANES = [
   { id: 'platform', label: 'Platform', labelKo: '플랫폼', score: programRubricScore('platform'), weight: 30, state: 'STRONG', evidence: '12개 페이지, D5 API, exact 10-unit custody', nextAction: 'D5R evidence contract 확장' },
   { id: 'rl-evidence', label: 'RL Evidence', labelKo: '강화학습 증거', score: programRubricScore('rl-evidence'), weight: 30, state: 'STRONG', evidence: 'D5 DQN 10/10 학습 완료; full-train cost gate NOT_CONFIRMED', nextAction: 'D5R 용량·목적 분해' },
   { id: 'engineering', label: 'Engineering', labelKo: '엔지니어링', score: programRubricScore('engineering'), weight: 20, state: 'STRONG', evidence: 'D5 10/10 실행, HMAC 승인, terminal receipt, 모델·outcome 보존', nextAction: 'cross-process resume 자동화' },
-  { id: 'governance', label: 'Governance', labelKo: '개발 거버넌스', score: programRubricScore('governance'), weight: 10, state: 'STRONG', evidence: 'D5 prereg 우선, immutable run, custody, Fresh OOS 봉인', nextAction: 'research→master→tag 계보 완료' },
+  { id: 'governance', label: 'Governance', labelKo: '개발 거버넌스', score: programRubricScore('governance'), weight: 10, state: 'PARTIAL', evidence: 'D5 prereg·custody 완료; PR·master·tag 8점 보류', nextAction: 'research→master→tag 계보 완료' },
   { id: 'live', label: 'Live Readiness', labelKo: '라이브 준비도', score: programRubricScore('live'), weight: 10, state: 'BLOCKED', evidence: 'train-only 연구; Fresh OOS 봉인; 브로커 권한 없음', nextAction: 'D5~D7 gate 전 진행 금지' },
 ] as const satisfies readonly ProgramLane[];
 
@@ -71,7 +71,7 @@ export const PROGRAM_PAGE_MATRIX = [
   { id: 'rl-compare', group: 'RL', page: 'Compare', purpose: '알고리즘·control 비교', delivery: 'BUILT', evidenceState: 'D5_NATIVE_DELTA_0_985', progress: 100, priority: 'P1', nextAction: '용량·step ablation', eta: '4~8시간', mergeGate: 'control 분리 유지' },
   { id: 'rl-report', group: 'RL', page: 'Report', purpose: '판정·artifact·거버넌스', delivery: 'BUILT', evidenceState: 'D5_PRIMARY_RECEIPT_CUSTODY', progress: 100, priority: 'P1', nextAction: 'PR·tag 계보 연결', eta: '완료', mergeGate: 'SHA·10 outcomes·한계' },
   { id: 'insights', group: 'RESEARCH', page: 'Insights', purpose: '종목·수급·시장 국면 관찰', delivery: 'BUILT', evidenceState: 'OBSERVATION_ONLY', progress: 76, priority: 'P2', nextAction: '정책 입력 경계 강화', eta: '30~60분', mergeGate: 'alpha 주장 없음' },
-  { id: 'lanes', group: 'PLATFORM', page: 'Other Lanes', purpose: '인트라데이·Kronos 보조 연구', delivery: 'BUILT', evidenceState: 'INELIGIBLE_FOR_RL_RANK', progress: 73, priority: 'P2', nextAction: 'D4 점수 제외 유지', eta: '30분', mergeGate: 'RL 성과 합산 금지' },
+  { id: 'lanes', group: 'PLATFORM', page: 'Other Lanes', purpose: '인트라데이·Kronos 보조 연구', delivery: 'BUILT', evidenceState: 'INELIGIBLE_FOR_RL_RANK', progress: 73, priority: 'P2', nextAction: 'D5 점수 제외 유지', eta: '30분', mergeGate: 'RL 성과 합산 금지' },
   { id: 'settings', group: 'ADVANCED', page: 'Settings', purpose: '테마·화면·로컬 연구 환경', delivery: 'BUILT', evidenceState: 'LOCAL_ONLY', progress: 84, priority: 'HOLD', nextAction: '실행 권한 추가 보류', eta: '15분', mergeGate: '읽기 전용 경계' },
 ] as const satisfies readonly ProgramPageRow[];
 

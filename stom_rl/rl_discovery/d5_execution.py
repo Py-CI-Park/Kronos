@@ -15,7 +15,12 @@ from stom_rl.rl_discovery.d4_training import D4TrainingConfig, train_d4_model
 from stom_rl.rl_discovery.d5_approval import approve_d5_smoke, primary_custody_signature
 from stom_rl.rl_discovery.d5_gates import D5Outcome, evaluate_d5_gate
 from stom_rl.rl_discovery.d5_inputs import D5InputBundle, load_d5_inputs
-from stom_rl.rl_discovery.storage import artifact_manifest_sha256, atomic_write_bytes, contained_path
+from stom_rl.rl_discovery.storage import (
+    RunDirectoryGuard,
+    artifact_manifest_sha256,
+    atomic_write_bytes,
+    contained_path,
+)
 
 
 class D5RunProfile(StrEnum):
@@ -41,6 +46,7 @@ def execute_d5(
     repo_root: Path,
     run_dir: Path,
     *,
+    run_guard: RunDirectoryGuard,
     profile: D5RunProfile,
     approved_smoke: Path | None,
     approval_key: bytes | None,
@@ -48,6 +54,7 @@ def execute_d5(
     """Execute preregistered D5 units into one immutable run directory."""
 
     bundle = load_d5_inputs(repo_root)
+    run_dir = run_guard.verify()
     if profile is D5RunProfile.PRIMARY and (approval_key is None or len(approval_key) < 32):
         raise PermissionError("D5 Primary requires KRONOS_D5_APPROVAL_KEY_HEX")
     approved_name = (
@@ -61,8 +68,8 @@ def execute_d5(
         if profile is D5RunProfile.PRIMARY
         else None
     )
-    atomic_write_bytes(contained_path(run_dir, "inputs", "prereg.json"), bundle.prereg_bytes)
-    atomic_write_bytes(contained_path(run_dir, "inputs", "episodes.json"), bundle.episode_bytes)
+    atomic_write_bytes(contained_path(run_guard.verify(), "inputs", "prereg.json"), bundle.prereg_bytes)
+    atomic_write_bytes(contained_path(run_guard.verify(), "inputs", "episodes.json"), bundle.episode_bytes)
     representation = D3Representation.for_arm(D3PolicyArmId.TOP5_CONTEXT_4X)
     seeds = bundle.prereg.seeds if profile is D5RunProfile.PRIMARY else bundle.prereg.smoke.seeds
     timesteps = (
@@ -91,7 +98,7 @@ def execute_d5(
                 ),
             )
             model_arm = f"C_DQN_DISCRETE__{reward.value}"
-            trained.save(run_dir, arm=model_arm, seed=seed)
+            trained.save(run_guard.verify(), arm=model_arm, seed=seed)
             fit, fit_events = evaluate_d3_model(
                 trained.policy,
                 fit_episodes,
@@ -129,7 +136,7 @@ def execute_d5(
             outcomes.append(outcome)
             rows.append(row)
             atomic_write_bytes(
-                contained_path(run_dir, "outcomes", reward.value, f"seed-{seed}.json"),
+                contained_path(run_guard.verify(), "outcomes", reward.value, f"seed-{seed}.json"),
                 canonical_json_bytes(
                     {
                         **asdict(row),
@@ -146,11 +153,11 @@ def execute_d5(
                 f"fit23={fit.reward_ratio:.3f} native23={native_cost.reward_ratio:.3f}",
                 flush=True,
             )
-    return _finish_run(run_dir, profile, bundle, tuple(outcomes), tuple(rows), approved_name, approval_key)
+    return _finish_run(run_guard, profile, bundle, tuple(outcomes), tuple(rows), approved_name, approval_key)
 
 
 def _finish_run(
-    run_dir: Path,
+    run_guard: RunDirectoryGuard,
     profile: D5RunProfile,
     bundle: D5InputBundle,
     outcomes: tuple[D5Outcome, ...],
@@ -158,6 +165,7 @@ def _finish_run(
     approved_smoke: str | None,
     approval_key: bytes | None,
 ) -> Path:
+    run_dir = run_guard.verify()
     gate = evaluate_d5_gate(outcomes, thresholds=bundle.prereg.gate) if profile is D5RunProfile.PRIMARY else None
     summary = {
         "schema_version": "kronos.rl-discovery.d5.result.v1",
@@ -176,11 +184,12 @@ def _finish_run(
         "fresh_oos": "NOT_RUN_NO_READ",
         "promotion_allowed": False,
         "profitability_claim_allowed": False,
+        "live_broker_order_allowed": False,
         "primary_round_trip_cost_bp": 23,
         "diagnostic_round_trip_cost_bp": 0,
     }
-    atomic_write_bytes(contained_path(run_dir, "summary.json"), canonical_json_bytes(summary))
-    digest = artifact_manifest_sha256(run_dir, excluded_relative_paths=frozenset({"terminal_receipt.json"}))
+    atomic_write_bytes(contained_path(run_guard.verify(), "summary.json"), canonical_json_bytes(summary))
+    digest = artifact_manifest_sha256(run_guard.verify(), excluded_relative_paths=frozenset({"terminal_receipt.json"}))
     receipt = {
         "profile": profile.value,
         "status": "COMPLETE",
@@ -189,6 +198,7 @@ def _finish_run(
         "episode_snapshot_sha256": bundle.episode_sha256,
         "artifact_manifest_sha256": digest,
         "fresh_oos": "NOT_RUN_NO_READ",
+        "live_broker_order_allowed": False,
     }
     if profile is D5RunProfile.PRIMARY and approval_key is not None and approved_smoke is not None:
         receipt["primary_custody_hmac_sha256"] = primary_custody_signature(
@@ -199,5 +209,5 @@ def _finish_run(
             manifest_sha=digest,
             approved_smoke=approved_smoke,
         )
-    atomic_write_bytes(contained_path(run_dir, "terminal_receipt.json"), canonical_json_bytes(receipt))
-    return run_dir
+    atomic_write_bytes(contained_path(run_guard.verify(), "terminal_receipt.json"), canonical_json_bytes(receipt))
+    return run_guard.verify()

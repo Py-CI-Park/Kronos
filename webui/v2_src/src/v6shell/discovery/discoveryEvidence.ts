@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue, RlRunDetail } from '$lib/rlApi';
+import { d5Arm } from './d5Evidence';
 
 export interface DiscoveryArmEvidence {
   readonly id: string;
@@ -52,43 +53,6 @@ export interface DiscoveryEvidence {
   readonly shuffledPassingSeedFraction?: number;
   readonly reusedValidation?: string;
   readonly arms: readonly DiscoveryArmEvidence[];
-}
-
-function d5Arm(row: JsonObject): DiscoveryArmEvidence | null {
-  const fit = objectValue(row.fit_23bp);
-  const nativeCost = objectValue(row.native_23bp);
-  const nativeZero = objectValue(row.native_0bp);
-  const algorithm = textValue(row.algorithm_arm, '');
-  const reward = textValue(row.reward_arm, '');
-  const seed = strictNumber(row.seed);
-  const fitAccuracy = strictNumber(fit?.accuracy);
-  const fitReward = strictNumber(fit?.reward_ratio);
-  const nativeReward = strictNumber(nativeCost?.reward_ratio);
-  const zeroCostReward = strictNumber(nativeZero?.reward_ratio);
-  const dominant = strictNumber(fit?.dominant_action_rate);
-  const invalid = strictNumber(fit?.invalid_action_count);
-  if (!fit || !nativeCost || !nativeZero || algorithm !== 'C_DQN_DISCRETE'
-    || !['NATIVE', 'SHUFFLED'].includes(reward) || seed === null || !Number.isInteger(seed)
-    || seed < 0 || seed > 4 || numberValue(row.rl_timesteps) !== 200000
-    || numberValue(row.training_round_trip_cost_bp) !== 23 || fitAccuracy === null
-    || fitReward === null || nativeReward === null || zeroCostReward === null
-    || dominant === null || invalid === null) return null;
-  return {
-    id: `D5-${algorithm}/${reward}`,
-    model: `${algorithm}__${reward}/seed-${seed}`,
-    seed,
-    trainingTimesteps: 200000,
-    oracleRewardRatio: nativeReward,
-    exactBasketAccuracy: fitAccuracy,
-    dominantActionRate: dominant,
-    invalidActionCount: invalid,
-    blockCount: 0,
-    noFillCount: 0,
-    shuffledReward: reward === 'SHUFFLED',
-    episodeCount: 573,
-    fitRewardRatio: fitReward,
-    diagnosticCostRewardRatio: zeroCostReward,
-  };
 }
 
 function d4Arm(row: JsonObject): DiscoveryArmEvidence | null {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from statistics import fmean
 from typing import Literal
 
@@ -48,7 +49,11 @@ def evaluate_d5_gate(outcomes: tuple[D5Outcome, ...], *, thresholds: D5GateContr
     native_mean = fmean(item.native_23bp.reward_ratio for item in outcomes if item.reward_arm is D4RewardArmId.NATIVE)
     shuffled_native = fmean(item.native_23bp.reward_ratio for item in outcomes if item.reward_arm is D4RewardArmId.SHUFFLED)
     delta = native_mean - shuffled_native
-    confirmed = native_fraction >= thresholds.minimum_passing_seed_fraction and shuffled_fraction >= thresholds.minimum_passing_seed_fraction and delta >= thresholds.minimum_native_delta_vs_shuffled
+    confirmed = (
+        _meets(native_fraction, thresholds.minimum_passing_seed_fraction)
+        and _meets(shuffled_fraction, thresholds.minimum_passing_seed_fraction)
+        and _meets(delta, thresholds.minimum_native_delta_vs_shuffled)
+    )
     return D5GateResult("D5_FULL_TRAIN_COST_CONFIRMED" if confirmed else "D5_FULL_TRAIN_COST_NOT_CONFIRMED", native_fraction, shuffled_fraction, delta, False, False, "NOT_RUN_NO_READ", "NOT_RUN_NO_READ")
 
 
@@ -56,3 +61,7 @@ def _passing_fraction(outcomes: tuple[D5Outcome, ...], reward: D4RewardArmId, th
     selected = tuple(item for item in outcomes if item.reward_arm is reward)
     passing = sum(item.fit_23bp.accuracy >= thresholds.minimum_fit_accuracy and item.fit_23bp.reward_ratio >= thresholds.minimum_fit_reward_ratio and item.fit_23bp.invalid_action_count == 0 for item in selected)
     return passing / len(selected)
+
+
+def _meets(value: float, threshold: float) -> bool:
+    return value >= threshold or math.isclose(value, threshold, rel_tol=0, abs_tol=1e-12)

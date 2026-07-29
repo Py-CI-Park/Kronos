@@ -1,5 +1,5 @@
 <aside class="research-context" aria-label="D5 강화학습 공통 연구 상태">
-  <div class="stamp"><span>CURRENT RESEARCH STAGE</span><strong>D5</strong><em>NOT_CONFIRMED</em></div>
+  <div class="stamp"><span>CURRENT RESEARCH STAGE</span><strong>D5</strong><em>NO-GO · NOT_CONFIRMED</em></div>
   <dl><div><dt>표시 권한</dt><dd>HMAC OR COMMITTED CUSTODY</dd></div><div><dt>필수 구조</dt><dd>10 / 10 UNITS</dd></div><div><dt>Fresh OOS</dt><dd>NOT_RUN_NO_READ</dd></div><div><dt>Promotion</dt><dd>BLOCKED</dd></div></dl>
   <p>D5 DQN 10개는 모두 학습됐지만 accuracy·reward 동시 gate는 통과하지 못했습니다. Discovery API가 custody와 exact matrix를 검증한 결과만 표시하며, D6 validation은 계속 봉인합니다.</p>
 </aside>
