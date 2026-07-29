@@ -1,0 +1,38 @@
+{
+  "schema_version": "kronos.rl-discovery.d4.custody.v1",
+  "run_name": "type2-d4-primary-20260729-v2",
+  "producer_commit": "e5e6d7536506692382a3253e07df37cd8ed34894",
+  "producer_tree": "8d1223f23c344c3afaafc28e085735c0ae93ebd1",
+  "parent_release": "fork-v1.13.0-kronos-rl-d3-representation-action",
+  "prereg_sha256": "fc8d095c065f2eb91847a114499baaa06986fbd7392b469b827046467eca95ac",
+  "episode_snapshot_sha256": "50170682d245f4c85ca9a93dc0704d8417d6d852ee66a98e063ee9979dccda52",
+  "artifact_manifest_sha256": "8515ebb3cc93234b4694889f5240abe00e7095274864a555bf30e9e77a033504",
+  "summary_sha256": "26a15747c2498637dcce64898b4159381fec7bf4744c78e2d94002aa72fc78bb",
+  "terminal_receipt_sha256": "e9b9b519fcbd86ba5da425b50da4cad33d9dce612673cdfbaced68cccaaeb625",
+  "artifact_count": 52,
+  "artifact_bytes": 26195383,
+  "model_count": 24,
+  "outcome_count": 24,
+  "verdict": "D4_ALGORITHM_OBJECTIVE_CONFIRMED",
+  "supervised_ceiling_confirmed": true,
+  "confirmed_rl_arms": ["C_DQN_DISCRETE"],
+  "best_rl_arm": "C_DQN_DISCRETE",
+  "best_rl_gap_to_supervised_ceiling": 0.012429218921833907,
+  "arm_aggregates": {
+    "A_SUPERVISED_CEILING": {"is_rl": false, "native_fit_reward_ratio": 1.0, "native_23bp_reward_ratio": 0.99984026916545, "shuffled_fit_reward_ratio": 1.0, "shuffled_native_reward_ratio": -0.123766987460348, "native_fit_accuracy": 1.0},
+    "B_PPO_BASELINE": {"is_rl": true, "native_fit_reward_ratio": 0.532879070233565, "native_23bp_reward_ratio": 0.512354665127966, "shuffled_fit_reward_ratio": 0.52679826033179, "shuffled_native_reward_ratio": -0.227389344340758, "native_fit_accuracy": 0.4296875},
+    "C_DQN_DISCRETE": {"is_rl": true, "native_fit_reward_ratio": 0.987570781078166, "native_23bp_reward_ratio": 0.985015260825355, "shuffled_fit_reward_ratio": 0.991431090600138, "shuffled_native_reward_ratio": -0.110704000225913, "native_fit_accuracy": 0.90625},
+    "D_AUXILIARY_PPO": {"is_rl": true, "native_fit_reward_ratio": 0.524763541459923, "native_23bp_reward_ratio": 0.508477038553571, "shuffled_fit_reward_ratio": 0.46505319098179, "shuffled_native_reward_ratio": -0.109164273650317, "native_fit_accuracy": 0.4375}
+  },
+  "failed_attempts_preserved": [
+    {"run_name": "type2-d4-smoke-20260729-v1", "status": "FAILED", "reason": "PowerShell 5.1 RNG compatibility prevented approval-key creation before training"}
+  ],
+  "claims_boundary": {
+    "supervised_is_not_rl": true,
+    "train_only_confirmation": true,
+    "fresh_oos": "NOT_RUN_NO_READ",
+    "profitability_claim_allowed": false,
+    "promotion_allowed": false,
+    "live_broker_order_allowed": false
+  }
+}

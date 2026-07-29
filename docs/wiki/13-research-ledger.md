@@ -173,3 +173,13 @@ representation, top-K action 후보, 학습예산을 분리해야 한다.
 | 2026-07-29 | `docs/evidence/type2-d3-primary-20260729-v1.custody.json` | EVIDENCE_INVENTORY | 76 files / 31,607,903 bytes; 24 models/outcomes, prereg/data/episode/terminal digest 결속. Fresh OOS `NOT_RUN_NO_READ`. |
 
 D3는 후보 확대만으로는 개선되지 않았고 시장문맥과 4배 예산은 부분 개선만 만들었다. D4는 알고리즘·목적함수 상한을 별도 사전등록으로 분리한다.
+
+# 2026-07-29 Type2-D4 evidence update
+
+| 날짜 | 문서/증거 | 종류 | 결과 |
+|---|---|---|---|
+| 2026-07-29 | `docs/kronos_rl_discovery_type2_d4_prereg_2026-07-29.json` | PREREG | supervised ceiling, PPO, DQN, auxiliary PPO × native/shuffled × 3 seeds와 0.90 gate를 실행 전에 고정. |
+| 2026-07-29 | `docs/kronos_rl_discovery_type2_d4_result_2026-07-29.md` | RESULT | 24/24 완료. DQN native 평균 0.988, accuracy 90.6%, 3/3 seed 통과. `D4_ALGORITHM_OBJECTIVE_CONFIRMED`. |
+| 2026-07-29 | `docs/evidence/type2-d4-primary-20260729-v2.custody.json` | EVIDENCE_INVENTORY | 52 files / 26,195,383 bytes; 24 models/outcomes와 prereg/data/episode/terminal digest 결속. Fresh OOS `NOT_RUN_NO_READ`. |
+
+D4는 일봉 train-only 문제에서 실제 RL 모델을 만들고 학습시키는 데 성공했다. 다만 DQN의 높은 적합도는 일반화나 수익성 증거가 아니므로 다음 단계는 D5 비용 포함 full-train 재현이며 Fresh OOS는 계속 봉인한다.
