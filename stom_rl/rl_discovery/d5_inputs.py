@@ -38,6 +38,8 @@ def load_d5_inputs(repo_root: Path) -> D5InputBundle:
 
     root = repo_root.absolute()
     prereg_path = root / "docs/kronos_rl_discovery_type2_d5_prereg_2026-07-29.json"
+    if not prereg_path.is_file():
+        raise FileNotFoundError(prereg_path)
     prereg_bytes = held_bytes(prereg_path, anchor=root)
     prereg = load_d5_prereg_bytes(prereg_bytes)
     rows = (root / prereg.dataset.rows_relative_path).absolute()
