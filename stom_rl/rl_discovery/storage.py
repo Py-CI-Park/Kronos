@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 import stat
 import tempfile
-from typing import Protocol, TypeAlias
+from typing import Protocol, TypeAlias, final
 
 from typing_extensions import override
 
@@ -23,10 +23,13 @@ class Saveable(Protocol):
     def save(self, path: str) -> None: ...
 
 
+@final
 class UnsafeArtifactPathError(ValueError):
     """Raised when an artifact path escapes or redirects its configured root."""
 
-    __slots__ = ("path", "reason")
+    __slots__: tuple[str, str] = ("path", "reason")
+    path: Path
+    reason: str
 
     def __init__(self, path: Path, reason: str) -> None:
         super().__init__(path, reason)
@@ -181,17 +184,18 @@ def file_digest(path: Path) -> tuple[str, int]:
 def artifact_manifest_sha256(
     run_dir: Path,
     *,
-    excluded_relative_paths: frozenset[str] = frozenset(),
+    excluded_relative_paths: frozenset[str] | None = None,
 ) -> str:
     """Hash every regular, non-reparse artifact in a run with path and size."""
 
+    exclusions = excluded_relative_paths or frozenset()
     root = run_dir.resolve(strict=True)
     if _is_reparse_point(run_dir):
         raise UnsafeArtifactPathError(run_dir, "run directory cannot be a reparse point")
     entries: list[dict[str, int | str]] = []
     for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
         relative = path.relative_to(root)
-        if relative.as_posix() in excluded_relative_paths:
+        if relative.as_posix() in exclusions:
             continue
         cursor = root
         for segment in relative.parts:

@@ -111,15 +111,15 @@ No-trade보다 높은 TRAIN_ONLY reward는 수익성 주장이 아니다. 재사
 
 | 검증 | 명령/범위 | 결과 |
 |---|---|---|
-| Python 핵심 회귀 | D5·dashboard·orderbook·RULE/gate 17개 test module | `124 passed, 2 skipped` |
-| D5 hardening 회귀 | storage guard·gate·runner·dashboard | `12 passed, 1 skipped` |
+| Python 릴리스 회귀 | D5·dashboard·orderbook·RULE/gate·official route 17개 test module | `126 passed, 3 skipped` |
 | Frontend 전체 | `npm test` | `392 passed, 0 failed` |
 | Svelte 정적 검사 | `npm run check` | `0 errors, 0 warnings` |
-| Production build | `npm run build` | 960 modules transformed; served dist 갱신 |
+| Production build | `npm run build` | 961 modules transformed; served dist 갱신 |
+| Official route/dist | `test_v2_route.py`, `test_v2_dist_marker.py` | `10 passed` |
 | Python lint/no-excuse | Ruff + programming audit | PASS / 0 violations |
 | TypeScript no-excuse | programming audit | 0 violations |
 
-Browser 실사용 QA와 최종 5-lane 재검토는 PR 생성 전 release gate로 다시 수행한다. 빌드 산출물은 `webui/static/v2/dist/`에 source와 함께 갱신한다.
+브라우저 자동화 라이브러리는 저장소에 없고 로컬 computer-use 런타임도 비활성 상태여서 실브라우저 조작은 수행하지 못했다. 이를 PASS로 가장하지 않으며 source→official dist 일치, official route, 392개 UI 계약, Svelte 검사와 production build를 대체 증거로 남긴다. 빌드 산출물은 `webui/static/v2/dist/`에 source와 함께 갱신했다.
 
 ### 감사 한계
 

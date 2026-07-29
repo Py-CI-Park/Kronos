@@ -149,8 +149,10 @@ def execute_d5(
                 ),
             )
             print(
-                f"[{profile.value}] C_DQN_DISCRETE/{reward.value}/seed-{seed} "
-                f"fit23={fit.reward_ratio:.3f} native23={native_cost.reward_ratio:.3f}",
+                (
+                    f"[{profile.value}] C_DQN_DISCRETE/{reward.value}/seed-{seed} "
+                    + f"fit23={fit.reward_ratio:.3f} native23={native_cost.reward_ratio:.3f}"
+                ),
                 flush=True,
             )
     return _finish_run(run_guard, profile, bundle, tuple(outcomes), tuple(rows), approved_name, approval_key)
