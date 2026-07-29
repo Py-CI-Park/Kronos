@@ -18,7 +18,7 @@ test('program score is the rounded weighted sum of every audited lane', () => {
 
   // Then
   assert.equal(totalWeight, 100);
-  assert.equal(score, 81);
+  assert.equal(score, 86);
 });
 
 test('every lane score is derived from a frozen 100-point evidence rubric', () => {
@@ -44,8 +44,8 @@ test('page matrix describes every V6 user surface in navigation order', () => {
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.eta.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'PRIMARY_COMPLETE');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D3_NO_GO_EXPLAINED');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'D4_PRIMARY_COMPLETE');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D4_DQN_CONFIRMED_TRAIN_ONLY');
 });
 
 test('capability inventory separates available research from blocked claims', () => {
@@ -54,9 +54,8 @@ test('capability inventory separates available research from blocked claims', ()
   const blocked = PROGRAM_CAPABILITIES.filter((capability) => capability.state === 'BLOCKED');
 
   // Then
-  assert.ok(available.some((capability) => capability.id === 'd0-smoke'));
-  assert.ok(available.some((capability) => capability.id === 'd1-primary'));
-  assert.ok(available.some((capability) => capability.id === 'd2-primary'));
+  assert.ok(available.some((capability) => capability.id === 'd0-d3-history'));
+  assert.ok(available.some((capability) => capability.id === 'd4-primary'));
   assert.ok(blocked.some((capability) => capability.id === 'fresh-oos'));
   assert.ok(blocked.some((capability) => capability.id === 'live-trading'));
 });

@@ -150,3 +150,7 @@
 ## 2026-07-29 D3 표현·행동 연구 상태
 
 D3는 동일한 실제 일봉 128 train episode에서 top-1, top-5, 시장문맥, 4배 학습예산을 단계적으로 분리했다. PPO 모델 24개는 모두 생성됐고 최선 native reward ratio는 0.533이었지만 사전등록 0.90 gate를 통과한 arm은 없었다. 판정은 `D3_REPRESENTATION_ACTION_NOT_CONFIRMED`이다. 다음 D4는 비용 연구보다 알고리즘·목적함수 상한을 먼저 분리하며 Fresh OOS는 열지 않는다.
+
+## 2026-07-29 D4 알고리즘·목적함수 연구 상태
+
+D4는 같은 128 train episode에서 supervised ceiling(비-RL), MaskablePPO, DQN, auxiliary PPO를 native/shuffled 3-seed로 비교했다. 24/24 단위가 완료됐고 실제 RL arm 중 DQN만 native 평균 reward ratio 0.988, accuracy 90.6%로 사전등록 gate를 통과했다. supervised ceiling과의 격차는 0.012였다. 판정은 `D4_ALGORITHM_OBJECTIVE_CONFIRMED`지만 이는 train-only 과적합 가능성 확인이며 Fresh OOS, 수익성, 실거래 준비를 뜻하지 않는다. PPO 계열 실패와 DQN 성공의 분리는 on-policy 최적화 경로가 핵심 병목일 가능성을 지지한다.

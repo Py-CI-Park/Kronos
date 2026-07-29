@@ -44,7 +44,44 @@ export interface DiscoveryEvidence {
   readonly bestPolicyArm?: string;
   readonly budget4xNativeLift?: number;
   readonly confirmedPolicyArmCount?: number;
+  readonly bestRlArm?: string;
+  readonly bestRlGapToSupervisedCeiling?: number;
+  readonly supervisedCeilingConfirmed?: boolean;
+  readonly confirmedRlArmCount?: number;
   readonly arms: readonly DiscoveryArmEvidence[];
+}
+
+function d4Arm(row: JsonObject): DiscoveryArmEvidence | null {
+  const fit = objectValue(row.fit);
+  const native = objectValue(row.native);
+  const cost = objectValue(row.cost_23bp);
+  const algorithm = textValue(row.algorithm_arm, '');
+  const reward = textValue(row.reward_arm, '');
+  const seed = strictNumber(row.seed);
+  const fitAccuracy = strictNumber(fit?.accuracy);
+  const fitReward = strictNumber(fit?.reward_ratio);
+  const nativeReward = strictNumber(native?.reward_ratio);
+  const costReward = strictNumber(cost?.reward_ratio);
+  const dominant = strictNumber(fit?.dominant_action_rate);
+  const invalid = strictNumber(fit?.invalid_action_count);
+  if (!fit || !native || !cost || !algorithm || !reward || seed === null || fitAccuracy === null
+    || fitReward === null || nativeReward === null || costReward === null || dominant === null || invalid === null) return null;
+  return {
+    id: `D4-${algorithm}/${reward}`,
+    model: `${algorithm}__${reward}/seed-${numberValue(row.seed)}`,
+    seed,
+    trainingTimesteps: numberValue(row.rl_timesteps) || numberValue(row.pretraining_epochs),
+    oracleRewardRatio: nativeReward,
+    exactBasketAccuracy: fitAccuracy,
+    dominantActionRate: dominant,
+    invalidActionCount: invalid,
+    blockCount: 0,
+    noFillCount: 0,
+    shuffledReward: reward === 'SHUFFLED',
+    episodeCount: 128,
+    fitRewardRatio: fitReward,
+    diagnosticCostRewardRatio: costReward,
+  };
 }
 
 function isObjectValue(value: JsonValue | undefined): value is JsonObject {
@@ -58,6 +95,9 @@ function textValue(value: JsonValue | undefined, fallback = 'MISSING'): string {
 }
 function numberValue(value: JsonValue | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+function strictNumber(value: JsonValue | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 function booleanValue(value: JsonValue | undefined): boolean {
   return value === true;
@@ -130,10 +170,12 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
   const summary = run.summary;
   if (!summary || summary.research_lane !== 'rl_discovery') return null;
   const rows = modelRows(run.detail);
+  const d4Rows = rows.map(d4Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d3Rows = rows.map(d3Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d2Rows = rows.map(d2Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const gate = objectValue(run.detail?.gate);
-  const arms = d3Rows.length ? d3Rows : d2Rows.length ? d2Rows : rows.map((row) => ({
+  if (summary.verdict === 'D4_ALGORITHM_OBJECTIVE_CONFIRMED' && (d4Rows.length !== 24 || d4Rows.length !== rows.length)) return null;
+  const arms = d4Rows.length ? d4Rows : d3Rows.length ? d3Rows : d2Rows.length ? d2Rows : rows.map((row) => ({
     id: textValue(row.algorithm),
     model: textValue(row.model),
     seed: numberValue(row.seed),
@@ -148,7 +190,7 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
   }));
   return {
     authority: 'LIVE_ARTIFACT',
-    evidenceManifest: null,
+    evidenceManifest: textValue(summary.artifact_manifest_sha256, '') || null,
     runName: run.name,
     status: textValue(summary.status),
     verdict: textValue(summary.verdict),
@@ -165,6 +207,10 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     bestPolicyArm: textValue(gate?.best_policy_arm, ''),
     budget4xNativeLift: numberValue(gate?.budget_4x_native_lift),
     confirmedPolicyArmCount: Array.isArray(gate?.confirmed_policy_arms) ? gate.confirmed_policy_arms.length : undefined,
+    bestRlArm: textValue(gate?.best_rl_arm, ''),
+    bestRlGapToSupervisedCeiling: numberValue(gate?.best_rl_gap_to_supervised_ceiling),
+    supervisedCeilingConfirmed: booleanValue(gate?.supervised_ceiling_confirmed),
+    confirmedRlArmCount: Array.isArray(gate?.confirmed_rl_arms) ? gate.confirmed_rl_arms.length : undefined,
     arms,
   };
 }
