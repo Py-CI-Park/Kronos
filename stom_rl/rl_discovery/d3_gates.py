@@ -10,6 +10,10 @@ from stom_rl.rl_discovery.d3_contract import D3GateContract, D3PolicyArmId, D3Re
 from stom_rl.rl_discovery.d3_training import D3Metrics
 
 
+class D3GateEvidenceError(ValueError):
+    """The Primary evidence does not match the preregistered D3 matrix."""
+
+
 @dataclass(frozen=True, slots=True)
 class D3Outcome:
     policy_arm: D3PolicyArmId
@@ -35,6 +39,15 @@ class D3GateResult:
 def evaluate_d3_gate(outcomes: tuple[D3Outcome, ...], *, thresholds: D3GateContract) -> D3GateResult:
     """Confirm arms only when native and shuffled fit plus separation all pass."""
 
+    expected_units = {
+        (policy_arm, reward_arm, seed)
+        for policy_arm in D3PolicyArmId
+        for reward_arm in D3RewardArmId
+        for seed in (0, 1, 2)
+    }
+    observed_units = {(item.policy_arm, item.reward_arm, item.seed) for item in outcomes}
+    if len(outcomes) != len(expected_units) or observed_units != expected_units:
+        raise D3GateEvidenceError("D3 Primary gate requires the exact unique 24-unit matrix")
     confirmed: list[D3PolicyArmId] = []
     deltas: list[tuple[D3PolicyArmId, float]] = []
     native_means: dict[D3PolicyArmId, float] = {}
@@ -73,4 +86,4 @@ def _passing_seed_fraction(members: tuple[D3Outcome, ...], reward_arm: D3RewardA
         and item.fit.invalid_action_count == 0
         for item in selected
     )
-    return passing / 3
+    return passing / len(selected)

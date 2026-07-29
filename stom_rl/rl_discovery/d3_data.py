@@ -2,18 +2,56 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Any
+from collections.abc import Iterable, Sequence
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict
 
 from stom_rl.daily_type1_contract import FEATURES
 from stom_rl.rl_discovery.d2_data import D2DataError
 from stom_rl.rl_discovery.d3_env import Candidate, D3Episode
 
 
+class D3FeatureRow(BaseModel):
+    """Typed observable feature payload at the public-row boundary."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    ret_1d_prev: float | None = None
+    ret_5d_prev: float | None = None
+    ret_20d_prev: float | None = None
+    vol_z_20: float | None = None
+    foreign_ratio_prev: float | None = None
+    foreign_ratio_delta_5: float | None = None
+    inst_netbuy_norm_5: float | None = None
+
+    def ordered(self) -> tuple[float | None, ...]:
+        return (
+            self.ret_1d_prev,
+            self.ret_5d_prev,
+            self.ret_20d_prev,
+            self.vol_z_20,
+            self.foreign_ratio_prev,
+            self.foreign_ratio_delta_5,
+            self.inst_netbuy_norm_5,
+        )
+
+
+class D3SourceRow(BaseModel):
+    """Parsed train-row contract consumed by D3 episode construction."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    decision_date: str
+    symbol: str | None = None
+    split: str | None = None
+    features: D3FeatureRow | None = None
+    gross_return: float | None = None
+    entry_available: bool | None = None
+
+
 def build_top_k_episodes(
-    rows: Iterable[Mapping[str, Any]],
+    rows: Iterable[D3SourceRow],
     *,
     scales: Sequence[tuple[float, float]],
     limit: int,
@@ -24,11 +62,9 @@ def build_top_k_episodes(
         raise D2DataError("D3 scale or normalizer width is invalid")
     episodes: list[D3Episode] = []
     current_date: str | None = None
-    group: list[Mapping[str, Any]] = []
+    group: list[D3SourceRow] = []
     for row in rows:
-        decision_date = row.get("decision_date")
-        if not isinstance(decision_date, str):
-            raise D2DataError("D3 decision_date must be a string")
+        decision_date = row.decision_date
         if current_date is not None and decision_date != current_date:
             episode = _episode_from_group(current_date, group, scales, len(episodes), limit)
             if episode is not None:
@@ -52,7 +88,7 @@ def build_top_k_episodes(
 
 def _episode_from_group(
     decision_date: str,
-    rows: Sequence[Mapping[str, Any]],
+    rows: Sequence[D3SourceRow],
     scales: Sequence[tuple[float, float]],
     index: int,
     limit: int,
@@ -60,13 +96,14 @@ def _episode_from_group(
     eligible: list[Candidate] = []
     normalized_rows: list[tuple[float, ...]] = []
     for row in rows:
-        if row.get("split") != "train" or row.get("entry_available") is not True:
+        if row.split != "train" or row.entry_available is not True:
             continue
-        symbol, gross, features = row.get("symbol"), row.get("gross_return"), row.get("features")
-        if not isinstance(symbol, str) or gross is None or not isinstance(features, Mapping):
+        symbol, gross, features = row.symbol, row.gross_return, row.features
+        if symbol is None or gross is None or features is None:
             continue
-        raw = tuple(float(features[name]) if features.get(name) is not None else 0.0 for name in FEATURES)
-        missing = tuple(float(features.get(name) is None) for name in FEATURES)
+        values = features.ordered()
+        raw = tuple(float(value) if value is not None else 0.0 for value in values)
+        missing = tuple(float(value is None) for value in values)
         normalized = tuple(float(np.clip((value - center) / scale, -10, 10)) for value, (center, scale) in zip(raw, scales, strict=True))
         normalized_rows.append(normalized)
         eligible.append((symbol, normalized + missing, float(gross)))

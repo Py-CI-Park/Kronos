@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from stom_rl.rl_discovery.d3_data import build_top_k_episodes
+from stom_rl.rl_discovery.d3_data import D3SourceRow, build_top_k_episodes
 
 
-def _row(day: int, symbol: str, score: float, gross: float) -> dict[str, object]:
-    return {
+def _row(day: int, symbol: str, score: float, gross: float) -> D3SourceRow:
+    return D3SourceRow.model_validate({
         "decision_date": f"2020-01-{day:02d}",
         "symbol": symbol,
         "split": "train",
@@ -19,7 +19,7 @@ def _row(day: int, symbol: str, score: float, gross: float) -> dict[str, object]
         },
         "gross_return": gross,
         "entry_available": True,
-    }
+    })
 
 
 def test_d3_data_builds_observable_top_five_without_losing_stock_codes() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import os
 from pathlib import Path
 import sys
 
@@ -13,7 +14,14 @@ from stom_rl.rl_discovery.d3_execution import D3RunProfile, approve_d3_smoke, ex
 from stom_rl.rl_discovery.storage import atomic_write_bytes, contained_path
 
 
-def run_d3(repo_root: Path, *, profile: D3RunProfile, run_id: str | None = None, approved_smoke: Path | None = None) -> Path:
+def run_d3(
+    repo_root: Path,
+    *,
+    profile: D3RunProfile,
+    run_id: str | None = None,
+    approved_smoke: Path | None = None,
+    approval_key: bytes | None = None,
+) -> Path:
     """Create one immutable run and terminalize every failure or interrupt."""
 
     root = repo_root.absolute()
@@ -26,7 +34,13 @@ def run_d3(repo_root: Path, *, profile: D3RunProfile, run_id: str | None = None,
         raise FileExistsError("D3 run ID already exists")
     run_dir.mkdir(parents=True)
     try:
-        return execute_d3(root, run_dir, profile=profile, approved_smoke=approved_smoke)
+        return execute_d3(
+            root,
+            run_dir,
+            profile=profile,
+            approved_smoke=approved_smoke,
+            approval_key=approval_key,
+        )
     except BaseException as exc:  # noqa: BROAD_EXCEPT_OK - terminal receipt must include KeyboardInterrupt.
         receipt = contained_path(run_dir, "terminal_receipt.json")
         if not receipt.exists():
@@ -47,12 +61,19 @@ def main() -> int:
     parser.add_argument("--run-id")
     parser.add_argument("--approved-smoke", type=Path)
     args = parser.parse_args()
+    raw_approval_key = os.environ.get("KRONOS_D3_APPROVAL_KEY_HEX", "")
+    try:
+        approval_key = bytes.fromhex(raw_approval_key) if raw_approval_key else None
+    except ValueError:
+        print("D3 failed: KRONOS_D3_APPROVAL_KEY_HEX must be hexadecimal", file=sys.stderr)
+        return 1
     try:
         result = run_d3(
             args.repo_root.resolve(),
             profile=D3RunProfile(args.profile),
             run_id=args.run_id,
             approved_smoke=args.approved_smoke,
+            approval_key=approval_key,
         )
     except BaseException as exc:  # noqa: BROAD_EXCEPT_OK - CLI boundary reports every terminal failure.
         print(f"D3 failed: {type(exc).__name__}: {exc}", file=sys.stderr)

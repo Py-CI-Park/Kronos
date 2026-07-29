@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 
 import pytest
 
+from stom_rl.daily_type1_contract import canonical_json_bytes
 from stom_rl.rl_discovery import d3_runner
 from stom_rl.rl_discovery.d3_contract import D3PolicyArmId, D3RewardArmId
 from stom_rl.rl_discovery.d3_runner import D3RunProfile, approve_d3_smoke, run_d3
@@ -39,8 +42,8 @@ def test_d3_interrupt_terminalizes_the_run(tmp_path, monkeypatch) -> None:
     assert receipt["fresh_oos"] == "NOT_RUN_NO_READ"
 
 
-def test_d3_smoke_approval_requires_the_exact_four_unit_matrix(tmp_path) -> None:
-    # Given: a complete, custody-consistent D3 Smoke directory.
+def test_d3_smoke_approval_rejects_label_only_evidence(tmp_path) -> None:
+    # Given: a forgeable label-only directory with no model or outcome artifacts.
     root = tmp_path / "runs"
     smoke = root / "smoke"
     smoke.mkdir(parents=True)
@@ -70,13 +73,25 @@ def test_d3_smoke_approval_requires_the_exact_four_unit_matrix(tmp_path) -> None
         "fresh_oos": "NOT_RUN_NO_READ",
         "artifact_manifest_sha256": artifact_manifest_sha256(smoke),
     }
+    approval_key = b"k" * 32
+    receipt["approval_hmac_sha256"] = hmac.new(
+        approval_key,
+        canonical_json_bytes({
+            "episode_snapshot_sha256": episode_sha,
+            "artifact_manifest_sha256": receipt["artifact_manifest_sha256"],
+            "prereg_sha256": prereg_sha,
+            "run_name": smoke.name,
+        }),
+        hashlib.sha256,
+    ).hexdigest()
     (smoke / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
 
-    # When/Then: exact Smoke is approved, but a fifth duplicate is rejected even with a recomputed manifest.
-    assert approve_d3_smoke(smoke, run_root=root, prereg_sha=prereg_sha, episode_sha=episode_sha) == "smoke"
-    summary["models"].append(dict(models[0]))
-    (smoke / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
-    receipt["artifact_manifest_sha256"] = artifact_manifest_sha256(smoke, excluded_relative_paths=frozenset({"terminal_receipt.json"}))
-    (smoke / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
-    with pytest.raises(PermissionError, match="four-unit"):
-        approve_d3_smoke(smoke, run_root=root, prereg_sha=prereg_sha, episode_sha=episode_sha)
+    # When/Then: public hashes and the four expected labels do not authorize Primary.
+    with pytest.raises(PermissionError, match="artifact"):
+        approve_d3_smoke(
+            smoke,
+            run_root=root,
+            prereg_sha=prereg_sha,
+            episode_sha=episode_sha,
+            approval_key=approval_key,
+        )

@@ -8,10 +8,10 @@ import json
 from pathlib import Path
 
 from stom_rl.daily_type1_contract import canonical_json_bytes
-from stom_rl.rl_discovery.d2_custody import assert_plain_path, verified_bytes, verified_text_stream
+from stom_rl.rl_discovery.d2_custody import assert_plain_path, held_bytes, verified_bytes, verified_text_stream
 from stom_rl.rl_discovery.d2_data import iter_json_array, load_scales_bytes
 from stom_rl.rl_discovery.d3_contract import D3Preregistration, load_d3_prereg_bytes
-from stom_rl.rl_discovery.d3_data import build_top_k_episodes
+from stom_rl.rl_discovery.d3_data import D3SourceRow, build_top_k_episodes
 from stom_rl.rl_discovery.d3_env import D3Episode
 
 
@@ -40,7 +40,7 @@ def load_d3_inputs(repo_root: Path) -> D3InputBundle:
     if not prereg_path.exists():
         raise FileNotFoundError(prereg_path)
     assert_plain_path(prereg_path, anchor=root, require_file=True)
-    prereg_bytes = prereg_path.read_bytes()
+    prereg_bytes = held_bytes(prereg_path, anchor=root)
     prereg = load_d3_prereg_bytes(prereg_bytes)
     rows = (root / prereg.dataset.rows_relative_path).absolute()
     normalizer = (root / prereg.dataset.normalizer_relative_path).absolute()
@@ -59,7 +59,8 @@ def load_d3_inputs(repo_root: Path) -> D3InputBundle:
         "normalizer": hashlib.sha256(normalizer_bytes).hexdigest(),
     }
     with verified_text_stream(rows, expected_sha256=prereg.dataset.rows_sha256, anchor=root) as stream:
-        episodes = build_top_k_episodes(iter_json_array(stream), scales=load_scales_bytes(normalizer_bytes), limit=128)
+        parsed_rows = (D3SourceRow.model_validate(row) for row in iter_json_array(stream))
+        episodes = build_top_k_episodes(parsed_rows, scales=load_scales_bytes(normalizer_bytes), limit=128)
     episode_bytes = canonical_json_bytes([asdict(episode) for episode in episodes])
     return D3InputBundle(
         prereg=prereg,
