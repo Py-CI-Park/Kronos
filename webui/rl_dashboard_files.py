@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from stom_rl.rl_discovery.d2_custody import held_bytes
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEBUI_ROOT = Path(__file__).resolve().parent
 RL_RUN_ROOTS = [WEBUI_ROOT / "rl_runs"]
@@ -185,7 +187,8 @@ def _is_run_file(run_dir: Path, path: Path) -> bool:
 
 
 def _read_run_json(run_dir: Path, path: Path) -> Dict[str, Any]:
-    return _read_json(_ensure_run_path(run_dir, path, label="RL JSON artifact"))
+    checked = _ensure_run_path(run_dir, path, label="RL JSON artifact")
+    return json.loads(held_bytes(checked, anchor=run_dir).decode("utf-8-sig"))
 
 
 def _read_run_csv_rows(run_dir: Path, path: Path, *, limit: int) -> Tuple[List[Dict[str, Any]], bool]:

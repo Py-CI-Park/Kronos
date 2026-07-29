@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
-from stom_rl.rl_discovery.storage import artifact_manifest_sha256
+from stom_rl.rl_discovery.evidence_snapshot import read_evidence_snapshot
 
 if __package__:
     from .rl_dashboard_files import LIVE_SUMMARY_FILE_NAMES, _int_or_zero, _is_run_file, _read_run_json
@@ -47,43 +48,8 @@ def find_json_summary(run_dir: Path, artifact_type: str) -> dict[str, Any]:
         return dict(payload.get("summary", {}))
     if artifact_type == "sb3_smoke":
         return _sb3_summary(run_dir)
-    if artifact_type == "rl_discovery_d2":
-        payload = _read_run_json(run_dir, run_dir / "summary.json")
-        receipt = _read_run_json(run_dir, run_dir / "terminal_receipt.json")
-        try:
-            digest = artifact_manifest_sha256(
-                run_dir,
-                excluded_relative_paths=frozenset({"terminal_receipt.json"}),
-            )
-        except (OSError, ValueError):
-            return {"research_lane": "rl_discovery", "status": "BLOCK", "verdict": "NO_GO"}
-        if (
-            payload.get("schema_version") != "kronos.rl-discovery.d2.result.v1"
-            or payload.get("status") != "COMPLETE"
-            or payload.get("profile") != "PRIMARY"
-            or receipt.get("status") != "COMPLETE"
-            or receipt.get("profile") != "PRIMARY"
-            or receipt.get("verdict") != payload.get("verdict")
-            or receipt.get("prereg_sha256") != payload.get("prereg_sha256")
-            or receipt.get("episode_snapshot_sha256") != payload.get("episode_snapshot_sha256")
-            or receipt.get("fresh_oos") != "NOT_RUN_NO_READ"
-            or receipt.get("artifact_manifest_sha256") != digest
-        ):
-            return {"research_lane": "rl_discovery", "status": "BLOCK", "verdict": "NO_GO"}
-        return {
-            "research_lane": "rl_discovery",
-            "status": payload.get("status"),
-            "verdict": payload.get("verdict"),
-            "profile": payload.get("profile"),
-            "fresh_oos": payload.get("fresh_oos"),
-            "type1_outcome": "COMPLETE_NO_GO",
-            "primary_round_trip_cost_bp": 0,
-            "diagnostic_round_trip_cost_bp": 23,
-            "prereg_sha256": payload.get("prereg_sha256"),
-            "promotion_allowed": False,
-            "profitability_claim_allowed": False,
-            "artifact_manifest_sha256": digest,
-        }
+    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3"}:
+        return find_discovery_evidence(run_dir, artifact_type)[0]
     if artifact_type == "contextual_bandit":
         payload = _read_run_json(run_dir, run_dir / "eval_summary.json")
         return dict(payload.get("eval_summary", payload.get("summary", {})))
@@ -99,6 +65,56 @@ def find_json_summary(run_dir: Path, artifact_type: str) -> dict[str, Any]:
         payload = _read_run_json(run_dir, source)
         return dict(payload.get("summary", payload))
     return {}
+
+
+def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return compact and detailed discovery data from one verified snapshot."""
+
+    blocked = {"research_lane": "rl_discovery", "status": "BLOCK", "verdict": "NO_GO"}
+    try:
+        snapshot = read_evidence_snapshot(
+            run_dir,
+            capture_paths=frozenset({"summary.json", "terminal_receipt.json"}),
+            excluded_manifest_paths=frozenset({"terminal_receipt.json"}),
+        )
+        payload = json.loads(snapshot.captured["summary.json"])
+        receipt = json.loads(snapshot.captured["terminal_receipt.json"])
+    except (OSError, ValueError):
+        return blocked, {}
+    expected_schema = (
+        "kronos.rl-discovery.d3.result.v1"
+        if artifact_type == "rl_discovery_d3"
+        else "kronos.rl-discovery.d2.result.v1"
+    )
+    digest = snapshot.manifest_sha256
+    if (
+        payload.get("schema_version") != expected_schema
+        or payload.get("status") != "COMPLETE"
+        or payload.get("profile") != "PRIMARY"
+        or receipt.get("status") != "COMPLETE"
+        or receipt.get("profile") != "PRIMARY"
+        or receipt.get("verdict") != payload.get("verdict")
+        or receipt.get("prereg_sha256") != payload.get("prereg_sha256")
+        or receipt.get("episode_snapshot_sha256") != payload.get("episode_snapshot_sha256")
+        or receipt.get("fresh_oos") != "NOT_RUN_NO_READ"
+        or receipt.get("artifact_manifest_sha256") != digest
+    ):
+        return blocked, {}
+    compact = {
+        "research_lane": "rl_discovery",
+        "status": payload.get("status"),
+        "verdict": payload.get("verdict"),
+        "profile": payload.get("profile"),
+        "fresh_oos": payload.get("fresh_oos"),
+        "type1_outcome": "COMPLETE_NO_GO",
+        "primary_round_trip_cost_bp": 0,
+        "diagnostic_round_trip_cost_bp": 23,
+        "prereg_sha256": payload.get("prereg_sha256"),
+        "promotion_allowed": False,
+        "profitability_claim_allowed": False,
+        "artifact_manifest_sha256": digest,
+    }
+    return compact, payload
 
 
 def _sb3_summary(run_dir: Path) -> dict[str, Any]:

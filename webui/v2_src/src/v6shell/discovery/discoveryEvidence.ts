@@ -41,6 +41,9 @@ export interface DiscoveryEvidence {
   readonly diagnosticRoundTripCostBp?: number;
   readonly maximumConfirmedEpisodeCount?: number;
   readonly nativeDeltaVsShuffled?: number;
+  readonly bestPolicyArm?: string;
+  readonly budget4xNativeLift?: number;
+  readonly confirmedPolicyArmCount?: number;
   readonly arms: readonly DiscoveryArmEvidence[];
 }
 
@@ -90,13 +93,47 @@ function d2Arm(row: JsonObject): DiscoveryArmEvidence | null {
   };
 }
 
+function d3Arm(row: JsonObject): DiscoveryArmEvidence | null {
+  const fit = objectValue(row.fit);
+  const native = objectValue(row.native);
+  const cost = objectValue(row.cost_23bp);
+  const policy = textValue(row.policy_arm, '');
+  const reward = textValue(row.reward_arm, '');
+  if (!fit || !native || !cost || !policy || !reward) return null;
+  return {
+    id: `D3-${policy}/${reward}`,
+    model: `${policy}__${reward}/seed-${numberValue(row.seed)}`,
+    seed: numberValue(row.seed),
+    trainingTimesteps: numberValue(row.training_timesteps),
+    oracleRewardRatio: numberValue(native.reward_ratio),
+    exactBasketAccuracy: numberValue(fit.accuracy),
+    dominantActionRate: numberValue(fit.dominant_action_rate),
+    invalidActionCount: numberValue(fit.invalid_action_count),
+    blockCount: 0,
+    noFillCount: 0,
+    shuffledReward: reward === 'SHUFFLED',
+    episodeCount: 128,
+    fitRewardRatio: numberValue(fit.reward_ratio),
+    diagnosticCostRewardRatio: numberValue(cost.reward_ratio),
+  };
+}
+
+function d3BestDelta(gate: JsonObject | null): number {
+  const best = textValue(gate?.best_policy_arm, '');
+  const rows = gate?.native_delta_vs_shuffled;
+  if (!best || !Array.isArray(rows)) return 0;
+  const match = rows.find((row) => Array.isArray(row) && row[0] === best);
+  return Array.isArray(match) ? numberValue(match[1]) : 0;
+}
+
 export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary' | 'detail'>): DiscoveryEvidence | null {
   const summary = run.summary;
   if (!summary || summary.research_lane !== 'rl_discovery') return null;
   const rows = modelRows(run.detail);
+  const d3Rows = rows.map(d3Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d2Rows = rows.map(d2Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const gate = objectValue(run.detail?.gate);
-  const arms = d2Rows.length ? d2Rows : rows.map((row) => ({
+  const arms = d3Rows.length ? d3Rows : d2Rows.length ? d2Rows : rows.map((row) => ({
     id: textValue(row.algorithm),
     model: textValue(row.model),
     seed: numberValue(row.seed),
@@ -124,7 +161,10 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     profitabilityClaimAllowed: booleanValue(summary.profitability_claim_allowed),
     diagnosticRoundTripCostBp: numberValue(summary.diagnostic_round_trip_cost_bp),
     maximumConfirmedEpisodeCount: numberValue(gate?.maximum_confirmed_episode_count),
-    nativeDeltaVsShuffled: numberValue(gate?.native_delta_vs_shuffled_at_128),
+    nativeDeltaVsShuffled: d3Rows.length ? d3BestDelta(gate) : numberValue(gate?.native_delta_vs_shuffled_at_128),
+    bestPolicyArm: textValue(gate?.best_policy_arm, ''),
+    budget4xNativeLift: numberValue(gate?.budget_4x_native_lift),
+    confirmedPolicyArmCount: Array.isArray(gate?.confirmed_policy_arms) ? gate.confirmed_policy_arms.length : undefined,
     arms,
   };
 }

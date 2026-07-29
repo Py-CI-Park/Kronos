@@ -146,3 +146,7 @@
 
 다음 연구는 128 episode에서 표현(top-1/top-5/regime)과 학습예산을 분리하는 D3이다.
 상세 수치와 전체 페이지 상태는 `docs/kronos_rl_discovery_type2_d2_result_2026-07-28.md`를 본다.
+
+## 2026-07-29 D3 표현·행동 연구 상태
+
+D3는 동일한 실제 일봉 128 train episode에서 top-1, top-5, 시장문맥, 4배 학습예산을 단계적으로 분리했다. PPO 모델 24개는 모두 생성됐고 최선 native reward ratio는 0.533이었지만 사전등록 0.90 gate를 통과한 arm은 없었다. 판정은 `D3_REPRESENTATION_ACTION_NOT_CONFIRMED`이다. 다음 D4는 비용 연구보다 알고리즘·목적함수 상한을 먼저 분리하며 Fresh OOS는 열지 않는다.

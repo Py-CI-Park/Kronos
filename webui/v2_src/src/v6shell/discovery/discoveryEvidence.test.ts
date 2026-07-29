@@ -71,13 +71,15 @@ test('discovery page keeps conclusions artifact-driven and handles API failure',
   assert.doesNotMatch(discoveryPage, /\/ NO-GO<\/b>/);
 });
 
-test('reviewed snapshot keeps D2 historical-scale evidence bound to the committed manifest', () => {
+test('reviewed snapshot keeps D3 representation evidence bound to the committed custody', () => {
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.authority, 'REVIEWED_SNAPSHOT');
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.runName, 'type2-d2-primary-20260728-v1');
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.verdict, 'D2_PARTIAL_CAPACITY_CONFIRMED');
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.runName, 'type2-d3-primary-20260729-v1');
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.verdict, 'D3_REPRESENTATION_ACTION_NOT_CONFIRMED');
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.arms.length, 24);
-  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.maximumConfirmedEpisodeCount, 8);
-  assert.ok((REVIEWED_DISCOVERY_SNAPSHOT.nativeDeltaVsShuffled ?? 0) > .53);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.confirmedPolicyArmCount, 0);
+  assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.bestPolicyArm, 'D_TOP5_CONTEXT_4X');
+  assert.ok((REVIEWED_DISCOVERY_SNAPSHOT.budget4xNativeLift ?? 0) > .067);
+  assert.ok((REVIEWED_DISCOVERY_SNAPSHOT.nativeDeltaVsShuffled ?? 0) > .76);
   assert.match(REVIEWED_DISCOVERY_SNAPSHOT.evidenceManifest ?? '', /^[0-9a-f]{64}$/);
   assert.deepEqual(
     [...new Set(REVIEWED_DISCOVERY_SNAPSHOT.arms.map((row) => row.seed))],
@@ -108,13 +110,42 @@ test('D1 primary parser preserves all reduced-action arm seeds', () => {
   assert.match(discoveryPage, /D2 historical scale/);
 });
 
-test('D2 reviewed page exposes capacity, cost diagnostic, and blocked claims', () => {
-  assert.match(discoveryPage, /D2 historical scale/);
+test('D3 reviewed page exposes representation failure, cost diagnostic, and blocked claims', () => {
+  assert.match(discoveryPage, /D3 representation/);
   assert.match(discoveryPage, /23bp diagnostic/i);
-  assert.match(discoveryPage, /maximumConfirmedEpisodeCount/);
+  assert.match(discoveryPage, /confirmedPolicyArmCount/);
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.primaryRoundTripCostBp, 0);
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.diagnosticRoundTripCostBp, 23);
   assert.equal(REVIEWED_DISCOVERY_SNAPSHOT.promotionAllowed, false);
+});
+
+test('live D3 nested summary preserves best arm, budget lift, and all units', () => {
+  const evidence = parseDiscoveryEvidence({
+    name: 'type2-d3-primary-20260729-v1',
+    summary: {
+      research_lane: 'rl_discovery', status: 'COMPLETE', verdict: 'D3_REPRESENTATION_ACTION_NOT_CONFIRMED',
+      profile: 'PRIMARY', fresh_oos: 'NOT_RUN_NO_READ', type1_outcome: 'COMPLETE_NO_GO',
+      prereg_sha256: 'abc123', primary_round_trip_cost_bp: 0,
+      diagnostic_round_trip_cost_bp: 23, promotion_allowed: false,
+      profitability_claim_allowed: false,
+    },
+    detail: { gate: {
+      best_policy_arm: 'D_TOP5_CONTEXT_4X', confirmed_policy_arms: [],
+      budget_4x_native_lift: .067865,
+      native_delta_vs_shuffled: [['D_TOP5_CONTEXT_4X', .760268]],
+    }, models: [{
+      policy_arm: 'D_TOP5_CONTEXT_4X', reward_arm: 'NATIVE', seed: 2,
+      training_timesteps: 65536,
+      fit: { accuracy: .43, reward_ratio: .572, dominant_action_rate: .28, invalid_action_count: 0 },
+      native: { reward_ratio: .572 }, cost_23bp: { reward_ratio: .552 },
+    }] },
+  });
+
+  assert.equal(evidence?.arms[0]?.id, 'D3-D_TOP5_CONTEXT_4X/NATIVE');
+  assert.equal(evidence?.bestPolicyArm, 'D_TOP5_CONTEXT_4X');
+  assert.equal(evidence?.confirmedPolicyArmCount, 0);
+  assert.equal(evidence?.budget4xNativeLift, .067865);
+  assert.equal(evidence?.nativeDeltaVsShuffled, .760268);
 });
 
 test('live D2 nested summary parses without falling back to the reviewed snapshot', () => {
