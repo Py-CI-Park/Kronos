@@ -111,13 +111,15 @@ No-trade보다 높은 TRAIN_ONLY reward는 수익성 주장이 아니다. 재사
 
 | 검증 | 명령/범위 | 결과 |
 |---|---|---|
-| Python 릴리스 회귀 | D5·dashboard·orderbook·RULE/gate·official route 17개 test module | `126 passed, 3 skipped` |
+| Python 릴리스 회귀 | D5·dashboard·orderbook·RULE/gate·official route 17개 test module | `127 passed, 4 skipped` |
 | Frontend 전체 | `npm test` | `392 passed, 0 failed` |
 | Svelte 정적 검사 | `npm run check` | `0 errors, 0 warnings` |
 | Production build | `npm run build` | 961 modules transformed; served dist 갱신 |
 | Official route/dist | `test_v2_route.py`, `test_v2_dist_marker.py` | `10 passed` |
 | Python lint/no-excuse | Ruff + programming audit | PASS / 0 violations |
 | TypeScript no-excuse | programming audit | 0 violations |
+
+보안 재검토에서 발견된 run-directory junction 교체 경쟁은 publication 동안 원본 디렉터리 핸들을 유지하는 guard-aware writer로 차단했다. Windows rename 차단 회귀와 인증된 non-finite(`NaN`) gate 차단 회귀를 추가했고, 변경 파일 basedpyright 결과는 `0 errors, 0 warnings`다.
 
 브라우저 자동화 라이브러리는 저장소에 없고 로컬 computer-use 런타임도 비활성 상태여서 실브라우저 조작은 수행하지 못했다. 이를 PASS로 가장하지 않으며 source→official dist 일치, official route, 392개 UI 계약, Svelte 검사와 production build를 대체 증거로 남긴다. 빌드 산출물은 `webui/static/v2/dist/`에 source와 함께 갱신했다.
 

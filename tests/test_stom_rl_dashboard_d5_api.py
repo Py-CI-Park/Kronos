@@ -87,7 +87,9 @@ def test_d5_primary_is_discoverable_only_with_authenticated_exact_matrix(
         assert isinstance(model, dict)
         reward = str(model["reward_arm"])
         seed = int(model["seed"])
-        model_path = run / "models" / f"C_DQN_DISCRETE__{reward}" / f"seed-{seed}" / "model.zip"
+        model_path = (
+            run / "models" / f"C_DQN_DISCRETE__{reward}" / f"seed-{seed}" / "model.zip"
+        )
         outcome_path = run / "outcomes" / reward / f"seed-{seed}.json"
         model_path.parent.mkdir(parents=True, exist_ok=True)
         outcome_path.parent.mkdir(parents=True, exist_ok=True)
@@ -115,7 +117,9 @@ def test_d5_primary_is_discoverable_only_with_authenticated_exact_matrix(
     (run / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
     monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
 
-    record = next(item for item in rl_dashboard.list_rl_runs() if item["name"] == run.name)
+    record = next(
+        item for item in rl_dashboard.list_rl_runs() if item["name"] == run.name
+    )
     detail = rl_dashboard.load_rl_run(run.name)
 
     assert record["artifact_type"] == "rl_discovery_d5"
@@ -123,6 +127,48 @@ def test_d5_primary_is_discoverable_only_with_authenticated_exact_matrix(
     assert detail["detail"]["gate"]["native_passing_seed_fraction"] == 0.4
     assert detail["summary"]["live_broker_order_allowed"] is False
     assert detail["detail"]["live_broker_order_allowed"] is False
+
+    gate_payload = summary["gate"]
+    assert isinstance(gate_payload, dict)
+    gate_payload["native_delta_vs_shuffled"] = float("nan")
+    summary_path = run / "summary.json"
+    receipt_path = run / "terminal_receipt.json"
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    nan_digest = artifact_manifest_sha256(
+        run,
+        excluded_relative_paths=frozenset({"terminal_receipt.json"}),
+    )
+    receipt["artifact_manifest_sha256"] = nan_digest
+    receipt["primary_custody_hmac_sha256"] = primary_custody_signature(
+        key,
+        run_name=run.name,
+        prereg_sha="e" * 64,
+        episode_sha="f" * 64,
+        manifest_sha=nan_digest,
+        approved_smoke="approved-smoke",
+    )
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    nan_blocked = rl_dashboard.load_rl_run(run.name)
+    assert nan_blocked["summary"]["status"] == "BLOCK"
+
+    gate_payload["native_delta_vs_shuffled"] = 0.8
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    restored_digest = artifact_manifest_sha256(
+        run,
+        excluded_relative_paths=frozenset({"terminal_receipt.json"}),
+    )
+    receipt["artifact_manifest_sha256"] = restored_digest
+    receipt["primary_custody_hmac_sha256"] = primary_custody_signature(
+        key,
+        run_name=run.name,
+        prereg_sha="e" * 64,
+        episode_sha="f" * 64,
+        manifest_sha=restored_digest,
+        approved_smoke="approved-smoke",
+    )
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    restored = rl_dashboard.load_rl_run(run.name)
+    assert restored["summary"]["status"] == "COMPLETE"
 
     missing_model = run / "models/C_DQN_DISCRETE__NATIVE/seed-0/model.zip"
     missing_model.unlink()

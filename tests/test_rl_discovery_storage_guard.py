@@ -1,28 +1,32 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
 from stom_rl.rl_discovery.storage import (
     RunDirectoryGuard,
     UnsafeArtifactPathError,
+    atomic_write_bytes,
     contained_path,
 )
 
 
-def test_run_directory_guard_rejects_same_name_replacement(tmp_path) -> None:
+def test_run_directory_guard_rejects_same_name_replacement(tmp_path: Path) -> None:
     run_root = tmp_path / "runs"
     run_dir = run_root / "primary"
     run_dir.mkdir(parents=True)
     guard = RunDirectoryGuard.capture(run_root, run_dir)
 
-    run_dir.rename(run_root / "original-primary")
+    _ = run_dir.rename(run_root / "original-primary")
     run_dir.mkdir()
 
     with pytest.raises(UnsafeArtifactPathError, match="identity changed"):
-        guard.verify()
+        _ = guard.verify()
 
 
-def test_contained_path_rejects_redirected_run_root(tmp_path) -> None:
+def test_contained_path_rejects_redirected_run_root(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
     redirected = tmp_path / "redirected"
@@ -32,4 +36,39 @@ def test_contained_path_rejects_redirected_run_root(tmp_path) -> None:
         pytest.skip("directory symlink creation is unavailable")
 
     with pytest.raises(UnsafeArtifactPathError, match="reparse"):
-        contained_path(redirected, "summary.json")
+        _ = contained_path(redirected, "summary.json")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows directory-sharing contract")
+def test_locked_guard_blocks_run_directory_replacement_during_publication(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "runs"
+    run_dir = run_root / "primary"
+    run_dir.mkdir(parents=True)
+    guard = RunDirectoryGuard.capture(run_root, run_dir)
+
+    with guard.locked() as locked_dir:
+        with pytest.raises(PermissionError):
+            _ = run_dir.rename(run_root / "moved-primary")
+        atomic_write_bytes(contained_path(locked_dir, "summary.json"), b"safe")
+
+    assert (run_dir / "summary.json").read_bytes() == b"safe"
+
+
+def test_guarded_publication_rejects_a_same_name_redirect(tmp_path: Path) -> None:
+    run_root = tmp_path / "runs"
+    run_dir = run_root / "primary"
+    outside = tmp_path / "outside"
+    run_dir.mkdir(parents=True)
+    outside.mkdir()
+    guard = RunDirectoryGuard.capture(run_root, run_dir)
+    _ = run_dir.rename(run_root / "original-primary")
+    try:
+        run_dir.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory redirect creation is unavailable")
+
+    with pytest.raises(UnsafeArtifactPathError):
+        _ = guard.publish_bytes(b"blocked", "summary.json")
+    assert not (outside / "summary.json").exists()

@@ -13,8 +13,11 @@ from stom_rl.daily_type1_contract import canonical_json_bytes
 from stom_rl.rl_discovery.d2_custody import assert_plain_path
 from stom_rl.rl_discovery.d3_approval import smoke_approval_signature
 from stom_rl.rl_discovery.d4_contract import D4RewardArmId
-from stom_rl.rl_discovery.evidence_snapshot import EvidenceSnapshot, read_evidence_snapshot
-from stom_rl.rl_discovery.storage import RunDirectoryGuard, atomic_write_bytes, contained_path
+from stom_rl.rl_discovery.evidence_snapshot import (
+    EvidenceSnapshot,
+    read_evidence_snapshot,
+)
+from stom_rl.rl_discovery.storage import RunDirectoryGuard, contained_path
 
 
 class _EvidenceModel(BaseModel):
@@ -56,7 +59,9 @@ class _OperatorApproval(_EvidenceModel):
     approval_hmac_sha256: str
 
 
-def create_d5_smoke_approval(path: Path, *, run_root: Path, approval_key: bytes) -> Path:
+def create_d5_smoke_approval(
+    path: Path, *, run_root: Path, approval_key: bytes
+) -> Path:
     """Sign a complete exact D5 Smoke in a separate operator action."""
 
     if len(approval_key) < 32:
@@ -65,7 +70,9 @@ def create_d5_smoke_approval(path: Path, *, run_root: Path, approval_key: bytes)
     root = guard.verify()
     snapshot = _smoke_snapshot(root)
     summary = _SmokeSummary.model_validate_json(snapshot.captured["summary.json"])
-    receipt = _TerminalReceipt.model_validate_json(snapshot.captured["terminal_receipt.json"])
+    receipt = _TerminalReceipt.model_validate_json(
+        snapshot.captured["terminal_receipt.json"]
+    )
     _verify_summary_and_receipt(summary, receipt, snapshot.manifest_sha256)
     approval = {
         "kind": "D5_SMOKE_OPERATOR_APPROVAL_V1",
@@ -81,9 +88,7 @@ def create_d5_smoke_approval(path: Path, *, run_root: Path, approval_key: bytes)
             manifest_sha=snapshot.manifest_sha256,
         ),
     }
-    target = contained_path(guard.verify(), "operator_approval.json")
-    atomic_write_bytes(target, canonical_json_bytes(approval))
-    return target
+    return guard.publish_bytes(canonical_json_bytes(approval), "operator_approval.json")
 
 
 def approve_d5_smoke(
@@ -105,15 +110,22 @@ def approve_d5_smoke(
     try:
         snapshot = _smoke_snapshot(root)
         summary = _SmokeSummary.model_validate_json(snapshot.captured["summary.json"])
-        receipt = _TerminalReceipt.model_validate_json(snapshot.captured["terminal_receipt.json"])
+        receipt = _TerminalReceipt.model_validate_json(
+            snapshot.captured["terminal_receipt.json"]
+        )
         approval = _OperatorApproval.model_validate_json(
             contained_path(root, "operator_approval.json").read_bytes()
         )
     except (FileNotFoundError, OSError, ValueError) as exc:
-        raise PermissionError("approved D5 Smoke lacks detached operator approval") from exc
+        raise PermissionError(
+            "approved D5 Smoke lacks detached operator approval"
+        ) from exc
     _verify_summary_and_receipt(summary, receipt, snapshot.manifest_sha256)
     _ = guard.verify()
-    if summary.prereg_sha256 != prereg_sha or summary.episode_snapshot_sha256 != episode_sha:
+    if (
+        summary.prereg_sha256 != prereg_sha
+        or summary.episode_snapshot_sha256 != episode_sha
+    ):
         raise PermissionError("approved D5 Smoke input identity is mismatched")
     expected_signature = smoke_approval_signature(
         approval_key,
@@ -145,7 +157,16 @@ def primary_custody_signature(
 ) -> str:
     """Return a domain-separated D5 Primary custody signature."""
 
-    payload = "\0".join(("D5_PRIMARY_CUSTODY_V1", run_name, prereg_sha, episode_sha, manifest_sha, approved_smoke))
+    payload = "\0".join(
+        (
+            "D5_PRIMARY_CUSTODY_V1",
+            run_name,
+            prereg_sha,
+            episode_sha,
+            manifest_sha,
+            approved_smoke,
+        )
+    )
     return hmac.new(key, payload.encode(), "sha256").hexdigest()
 
 
@@ -159,11 +180,15 @@ def _direct_run_guard(path: Path, run_root: Path) -> RunDirectoryGuard:
 
 
 def _smoke_snapshot(root: Path) -> EvidenceSnapshot:
-    outcomes = frozenset(f"outcomes/{reward.value}/seed-0.json" for reward in D4RewardArmId)
+    outcomes = frozenset(
+        f"outcomes/{reward.value}/seed-0.json" for reward in D4RewardArmId
+    )
     return read_evidence_snapshot(
         root,
         capture_paths=frozenset({"summary.json", "terminal_receipt.json"}) | outcomes,
-        excluded_manifest_paths=frozenset({"terminal_receipt.json", "operator_approval.json"}),
+        excluded_manifest_paths=frozenset(
+            {"terminal_receipt.json", "operator_approval.json"}
+        ),
     )
 
 
@@ -175,7 +200,9 @@ def _verify_summary_and_receipt(
     expected = {(reward, 0) for reward in D4RewardArmId}
     observed = {(model.reward_arm, model.seed) for model in summary.models}
     if len(summary.models) != 2 or observed != expected:
-        raise PermissionError("approved D5 Smoke does not match the exact two-unit matrix")
+        raise PermissionError(
+            "approved D5 Smoke does not match the exact two-unit matrix"
+        )
     if (
         receipt.prereg_sha256 != summary.prereg_sha256
         or receipt.episode_snapshot_sha256 != summary.episode_snapshot_sha256
@@ -190,7 +217,8 @@ def _verify_artifacts(
     captured: Mapping[str, bytes],
 ) -> None:
     required = frozenset(
-        f"models/C_DQN_DISCRETE__{reward.value}/seed-0/model.zip" for reward in D4RewardArmId
+        f"models/C_DQN_DISCRETE__{reward.value}/seed-0/model.zip"
+        for reward in D4RewardArmId
     )
     if not required <= relative_paths:
         raise PermissionError("approved D5 Smoke is missing model artifacts")

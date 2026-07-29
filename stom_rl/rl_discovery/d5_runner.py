@@ -13,8 +13,6 @@ from stom_rl.rl_discovery.d2_custody import assert_plain_path
 from stom_rl.rl_discovery.d5_execution import D5RunProfile, execute_d5
 from stom_rl.rl_discovery.storage import (
     RunDirectoryGuard,
-    atomic_write_bytes,
-    contained_path,
     create_run_directory,
 )
 
@@ -54,10 +52,9 @@ def run_d5(
         )
     # Terminal evidence must also cover operator interrupts such as KeyboardInterrupt.
     except (BaseException,) as exc:
-        receipt = contained_path(run_guard.verify(), "terminal_receipt.json")
+        receipt = run_guard.verify() / "terminal_receipt.json"
         if not receipt.exists():
-            atomic_write_bytes(
-                receipt,
+            _ = run_guard.publish_bytes(
                 canonical_json_bytes(
                     {
                         "profile": profile.value,
@@ -67,14 +64,19 @@ def run_d5(
                         "fresh_oos": "NOT_RUN_NO_READ",
                     }
                 ),
+                "terminal_receipt.json",
             )
         raise
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    _ = parser.add_argument("--profile", choices=[item.value for item in D5RunProfile], required=True)
-    _ = parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
+    _ = parser.add_argument(
+        "--profile", choices=[item.value for item in D5RunProfile], required=True
+    )
+    _ = parser.add_argument(
+        "--repo-root", type=Path, default=Path(__file__).resolve().parents[2]
+    )
     _ = parser.add_argument("--run-id")
     _ = parser.add_argument("--approved-smoke", type=Path)
     args = parser.parse_args(namespace=D5CliArgs())
@@ -82,7 +84,9 @@ def main() -> int:
     try:
         approval_key = bytes.fromhex(raw_key) if raw_key else None
     except ValueError:
-        print("D5 failed: KRONOS_D5_APPROVAL_KEY_HEX must be hexadecimal", file=sys.stderr)
+        print(
+            "D5 failed: KRONOS_D5_APPROVAL_KEY_HEX must be hexadecimal", file=sys.stderr
+        )
         return 1
     try:
         result = run_d5(

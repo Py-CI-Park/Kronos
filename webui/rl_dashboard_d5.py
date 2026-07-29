@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 from pathlib import Path
 from collections.abc import Mapping
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
 
 from stom_rl.rl_discovery.d4_contract import D4RewardArmId
 from stom_rl.rl_discovery.d5_approval import primary_custody_signature
@@ -34,16 +35,20 @@ class _D5Custody(BaseModel):
 
 
 class _D5Metric(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore", strict=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True, extra="ignore", strict=True
+    )
 
-    accuracy: float
-    reward_ratio: float
-    dominant_action_rate: float
+    accuracy: FiniteFloat
+    reward_ratio: FiniteFloat
+    dominant_action_rate: FiniteFloat
     invalid_action_count: Literal[0]
 
 
 class _D5Model(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore", strict=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True, extra="ignore", strict=True
+    )
 
     algorithm_arm: Literal["C_DQN_DISCRETE"]
     algorithm_family: Literal["DQN"]
@@ -58,7 +63,9 @@ class _D5Model(BaseModel):
 
 
 class _D5Claims(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore", strict=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True, extra="ignore", strict=True
+    )
 
     research_only: Literal[True]
     profitability_claim_allowed: Literal[False]
@@ -69,7 +76,9 @@ class _D5Claims(BaseModel):
 
 
 class _D5PreregBoundary(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore", strict=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True, extra="ignore", strict=True
+    )
 
     schema_version: Literal["kronos.rl-discovery.d5.prereg.v1"]
     claims_boundary: _D5Claims
@@ -104,11 +113,12 @@ def valid_d5_primary(
     approved_smoke = payload.get("approved_smoke")
     if (
         observed != expected
-        or verdict not in {"D5_FULL_TRAIN_COST_CONFIRMED", "D5_FULL_TRAIN_COST_NOT_CONFIRMED"}
+        or verdict
+        not in {"D5_FULL_TRAIN_COST_CONFIRMED", "D5_FULL_TRAIN_COST_NOT_CONFIRMED"}
         or gate.get("verdict") != verdict
         or not _valid_fraction(gate.get("native_passing_seed_fraction"))
         or not _valid_fraction(gate.get("shuffled_passing_seed_fraction"))
-        or not isinstance(gate.get("native_delta_vs_shuffled"), (int, float))
+        or not _valid_finite_number(gate.get("native_delta_vs_shuffled"))
         or gate.get("reused_validation") != "NOT_RUN_NO_READ"
         or gate.get("fresh_oos") != "NOT_RUN_NO_READ"
         or payload.get("reused_validation") != "NOT_RUN_NO_READ"
@@ -148,10 +158,14 @@ def _valid_artifacts(
         for seed in range(5)
     )
     observed_models = frozenset(
-        path for path in relative_paths if path.startswith("models/") and path.endswith("/model.zip")
+        path
+        for path in relative_paths
+        if path.startswith("models/") and path.endswith("/model.zip")
     )
     observed_outcomes = frozenset(
-        path for path in relative_paths if path.startswith("outcomes/") and path.endswith(".json")
+        path
+        for path in relative_paths
+        if path.startswith("outcomes/") and path.endswith(".json")
     )
     if observed_models != model_paths or observed_outcomes != outcome_paths:
         return False
@@ -168,7 +182,15 @@ def _valid_artifacts(
 
 
 def _valid_fraction(value: JsonValue) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 1
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    return math.isfinite(value) and 0 <= value <= 1
+
+
+def _valid_finite_number(value: JsonValue) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    return math.isfinite(value)
 
 
 def _matches_operator_hmac(
@@ -193,15 +215,26 @@ def _matches_operator_hmac(
         manifest_sha=digest,
         approved_smoke=approved_smoke,
     )
-    return hmac.compare_digest(str(receipt.get("primary_custody_hmac_sha256", "")), expected)
+    return hmac.compare_digest(
+        str(receipt.get("primary_custody_hmac_sha256", "")), expected
+    )
 
 
 def _matches_committed_custody(run_dir: Path, digest: str) -> bool:
-    custody_path = Path(__file__).resolve().parents[1] / "docs" / "evidence" / f"{run_dir.name}.custody.json"
+    custody_path = (
+        Path(__file__).resolve().parents[1]
+        / "docs"
+        / "evidence"
+        / f"{run_dir.name}.custody.json"
+    )
     try:
         custody = _D5Custody.model_validate_json(custody_path.read_bytes())
-        summary_sha = hashlib.sha256((run_dir / "summary.json").read_bytes()).hexdigest()
-        receipt_sha = hashlib.sha256((run_dir / "terminal_receipt.json").read_bytes()).hexdigest()
+        summary_sha = hashlib.sha256(
+            (run_dir / "summary.json").read_bytes()
+        ).hexdigest()
+        receipt_sha = hashlib.sha256(
+            (run_dir / "terminal_receipt.json").read_bytes()
+        ).hexdigest()
     except (OSError, ValueError):
         return False
     return (
