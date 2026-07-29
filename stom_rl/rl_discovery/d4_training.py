@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 import random
-from typing import TYPE_CHECKING, Protocol, assert_never
+from typing import TYPE_CHECKING, Callable, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,6 +18,7 @@ from stom_rl.rl_discovery.torch_runtime import prepare_torch_runtime
 if TYPE_CHECKING:
     from sb3_contrib import MaskablePPO
     from stable_baselines3.common.vec_env import DummyVecEnv
+    from torch import Tensor, device as TorchDevice
 
 
 class D4ExternalPolicy(Protocol):
@@ -33,7 +34,7 @@ class D4MaskedExternalPolicy(D4ExternalPolicy, Protocol):
         *,
         deterministic: bool,
         action_masks: NDArray[np.bool_],
-    ) -> tuple[NDArray[np.int64], None]: ...
+    ) -> tuple[NDArray[np.generic], object | None]: ...
 
 
 class D4PlainExternalPolicy(D4ExternalPolicy, Protocol):
@@ -42,7 +43,33 @@ class D4PlainExternalPolicy(D4ExternalPolicy, Protocol):
         observation: NDArray[np.float32],
         *,
         deterministic: bool,
-    ) -> tuple[NDArray[np.int64], None]: ...
+    ) -> tuple[NDArray[np.generic], object | None]: ...
+
+
+class _MaskableTrainable(D4MaskedExternalPolicy, Protocol):
+    def learn(self, *, total_timesteps: int, progress_bar: bool) -> object: ...
+
+
+class _PlainTrainable(D4PlainExternalPolicy, Protocol):
+    def learn(self, *, total_timesteps: int, progress_bar: bool) -> object: ...
+
+
+class _CategoricalSurface(Protocol):
+    logits: Tensor
+
+
+class _DistributionSurface(Protocol):
+    distribution: _CategoricalSurface
+
+
+class _AuxiliaryPolicySurface(Protocol):
+    def parameters(self) -> Iterator[Tensor]: ...
+    def get_distribution(self, observation: Tensor, *, action_masks: object | None) -> _DistributionSurface: ...
+
+
+class _AuxiliaryModelSurface(Protocol):
+    device: TorchDevice
+    policy: _AuxiliaryPolicySurface
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +83,8 @@ class D4MaskedPolicy:
         deterministic: bool,
         action_masks: NDArray[np.bool_],
     ) -> tuple[NDArray[np.int64], None]:
-        return self.model.predict(observation, deterministic=deterministic, action_masks=action_masks)
+        actions, _state = self.model.predict(observation, deterministic=deterministic, action_masks=action_masks)
+        return np.asarray(actions, dtype=np.int64), None
 
     def save(self, path: Path) -> None:
         self.model.save(path)
@@ -74,7 +102,8 @@ class D4PlainPolicy:
         action_masks: NDArray[np.bool_],
     ) -> tuple[NDArray[np.int64], None]:
         _ = action_masks
-        return self.model.predict(observation, deterministic=deterministic)
+        actions, _state = self.model.predict(observation, deterministic=deterministic)
+        return np.asarray(actions, dtype=np.int64), None
 
     def save(self, path: Path) -> None:
         self.model.save(path)
@@ -137,7 +166,8 @@ def train_d4_model(
 
     random.seed(config.seed)
     np.random.seed(config.seed)
-    torch.manual_seed(config.seed)
+    manual_seed = cast(Callable[[int], object], torch.manual_seed)
+    _ = manual_seed(config.seed)
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
     vector = DummyVecEnv([
@@ -145,15 +175,15 @@ def train_d4_model(
     ])
     match config.arm:
         case D4AlgorithmArmId.SUPERVISED_CEILING:
-            model = _new_maskable_ppo(vector, config.seed)
-            _pretrain_policy(model, episodes, representation, config.supervised_epochs)
-            return D4TrainedArm(D4MaskedPolicy(model))
+            supervised = cast(_MaskableTrainable, cast(object, _new_maskable_ppo(vector, config.seed)))
+            _pretrain_policy(supervised, episodes, representation, config.supervised_epochs)
+            return D4TrainedArm(D4MaskedPolicy(supervised))
         case D4AlgorithmArmId.PPO_BASELINE:
-            model = _new_maskable_ppo(vector, config.seed)
-            model.learn(total_timesteps=config.rl_timesteps, progress_bar=False)
-            return D4TrainedArm(D4MaskedPolicy(model))
+            ppo = cast(_MaskableTrainable, cast(object, _new_maskable_ppo(vector, config.seed)))
+            _ = ppo.learn(total_timesteps=config.rl_timesteps, progress_bar=False)
+            return D4TrainedArm(D4MaskedPolicy(ppo))
         case D4AlgorithmArmId.DQN_DISCRETE:
-            model = DQN(
+            dqn = cast(_PlainTrainable, cast(object, DQN(
                 "MlpPolicy",
                 vector,
                 seed=config.seed,
@@ -167,16 +197,14 @@ def train_d4_model(
                 gradient_steps=1,
                 policy_kwargs={"net_arch": [256, 128]},
                 verbose=0,
-            )
-            model.learn(total_timesteps=config.rl_timesteps, progress_bar=False)
-            return D4TrainedArm(D4PlainPolicy(model))
+            )))
+            _ = dqn.learn(total_timesteps=config.rl_timesteps, progress_bar=False)
+            return D4TrainedArm(D4PlainPolicy(dqn))
         case D4AlgorithmArmId.AUXILIARY_PPO:
-            model = _new_maskable_ppo(vector, config.seed)
-            _pretrain_policy(model, episodes, representation, config.supervised_epochs)
-            model.learn(total_timesteps=config.rl_timesteps, progress_bar=False)
-            return D4TrainedArm(D4MaskedPolicy(model))
-        case unreachable:
-            assert_never(unreachable)
+            auxiliary = cast(_MaskableTrainable, cast(object, _new_maskable_ppo(vector, config.seed)))
+            _pretrain_policy(auxiliary, episodes, representation, config.supervised_epochs)
+            _ = auxiliary.learn(total_timesteps=config.rl_timesteps, progress_bar=False)
+            return D4TrainedArm(D4MaskedPolicy(auxiliary))
 
 
 def _new_environment(episodes: tuple[D3Episode, ...], representation: D3Representation) -> HistoricalTopKEnv:
@@ -202,7 +230,7 @@ def _new_maskable_ppo(vector: DummyVecEnv, seed: int) -> MaskablePPO:
 
 
 def _pretrain_policy(
-    model: MaskablePPO,
+    model: _MaskableTrainable,
     episodes: tuple[D3Episode, ...],
     representation: D3Representation,
     epochs: int,
@@ -211,13 +239,16 @@ def _pretrain_policy(
     from torch.nn import functional
 
     observations, actions = supervised_examples(episodes, representation=representation)
-    tensor = torch.as_tensor(observations, dtype=torch.float32, device=model.device)
-    labels = torch.as_tensor(actions, dtype=torch.long, device=model.device)
-    masks = torch.ones((len(episodes), representation.action_count), dtype=torch.bool, device=model.device)
-    optimizer = torch.optim.Adam(model.policy.parameters(), lr=1e-3)
+    surface = cast(_AuxiliaryModelSurface, cast(object, model))
+    tensor = torch.as_tensor(observations, dtype=torch.float32, device=surface.device)
+    labels = torch.as_tensor(actions, dtype=torch.long, device=surface.device)
+    masks = torch.ones((len(episodes), representation.action_count), dtype=torch.bool, device=surface.device)
+    optimizer = torch.optim.Adam(surface.policy.parameters(), lr=1e-3)
     for _ in range(epochs):
-        distribution = model.policy.get_distribution(tensor, action_masks=masks)
+        distribution = surface.policy.get_distribution(tensor, action_masks=masks)
         loss = functional.cross_entropy(distribution.distribution.logits, labels)
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        backward = cast(Callable[[], object], loss.backward)
+        step = cast(Callable[[], object], optimizer.step)
+        _ = backward()
+        _ = step()
