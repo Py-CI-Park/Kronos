@@ -279,3 +279,21 @@ def test_d5r_primary_blocks_authenticated_inconsistent_gate(tmp_path: Path, monk
 
     assert blocked["summary"]["status"] == "BLOCK"
     assert blocked["detail"] == {}
+
+
+def test_d5r_primary_blocks_unsigned_receipt_safety_tamper(tmp_path: Path, monkeypatch) -> None:
+    run = tmp_path / "type2-d5r-primary-receipt-tamper"
+    run.mkdir()
+    key = bytes(range(32))
+    _write_primary(run, key)
+    receipt_path = run / "terminal_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["live_broker_order_allowed"] = True
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    monkeypatch.setenv("KRONOS_D5R_APPROVAL_KEY_HEX", key.hex())
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    blocked = rl_dashboard.load_rl_run(run.name)
+
+    assert blocked["summary"]["status"] == "BLOCK"
+    assert blocked["detail"] == {}

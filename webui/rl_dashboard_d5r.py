@@ -56,6 +56,19 @@ class _Gate(_Frozen):
     invalid_action_count: Literal[0]
 
 
+class _Receipt(_Frozen):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    schema_version: Literal["kronos.rl-discovery.d5r.receipt.v1"]
+    profile: Literal["PRIMARY"]
+    status: Literal["COMPLETE"]
+    verdict: Literal["D5R_CAPACITY_CONFIRMED", "D5R_CAPACITY_NOT_CONFIRMED"]
+    artifact_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fresh_oos: Literal["NOT_RUN_NO_READ"]
+    live_broker_order_allowed: Literal[False]
+    primary_custody_hmac_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class _Custody(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
@@ -91,6 +104,7 @@ def valid_d5r_primary(
         _ = load_d5r_amendment_bytes(captured["inputs/amendment.json"])
         rows = tuple(_Checkpoint.model_validate(row) for row in models)
         gate = _Gate.model_validate(payload.get("gate"))
+        _ = _Receipt.model_validate(receipt)
     except (KeyError, TypeError, ValueError):
         return False
     expected = {
