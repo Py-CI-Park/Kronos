@@ -154,7 +154,11 @@ def _write_primary(run: Path, key: bytes) -> None:
                 model.parent.mkdir(parents=True, exist_ok=True)
                 outcome.parent.mkdir(parents=True, exist_ok=True)
                 model.write_bytes(b"model")
-                outcome.write_text(json.dumps(row), encoding="utf-8")
+                outcome_row = {
+                    **row,
+                    "events": {"fit_23bp": [], "native_23bp": [], "native_0bp": []},
+                }
+                outcome.write_text(json.dumps(outcome_row), encoding="utf-8")
     summary = {
         "schema_version": "kronos.rl-discovery.d5r.capacity.v1",
         "profile": "PRIMARY",

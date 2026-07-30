@@ -45,6 +45,30 @@ class _Checkpoint(_Frozen):
     native_0bp: _Metric
 
 
+class _TradeEvent(_Frozen):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    action: int = Field(ge=0, le=5)
+    cost_bp: Literal[0, 23]
+    decision_date: str = Field(min_length=1)
+    expected_action: int = Field(ge=0, le=5)
+    gross_return: FiniteFloat
+    reward: FiniteFloat
+    symbol: str | None
+
+
+class _OutcomeEvents(_Frozen):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    fit_23bp: tuple[_TradeEvent, ...]
+    native_23bp: tuple[_TradeEvent, ...]
+    native_0bp: tuple[_TradeEvent, ...]
+
+
+class _Outcome(_Checkpoint):
+    events: _OutcomeEvents
+
+
 class _Gate(_Frozen):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", strict=True)
 
@@ -207,10 +231,11 @@ def _valid_artifacts(
     for reward, seed, steps in by_key:
         path = f"outcomes/{reward}/seed-{seed}/steps-{steps}.json"
         try:
-            outcome = _Checkpoint.model_validate_json(captured[path])
+            outcome = _Outcome.model_validate_json(captured[path])
         except (KeyError, ValueError):
             return False
-        if outcome != by_key[(reward, seed, steps)]:
+        checkpoint = _Checkpoint.model_validate(outcome.model_dump(exclude={"events"}))
+        if checkpoint != by_key[(reward, seed, steps)]:
             return False
     return True
 
