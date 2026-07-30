@@ -1,0 +1,47 @@
+{
+  "schema_version": "kronos.rl-discovery.d5r.amendment.v1",
+  "status": "APPROVED_BEFORE_D5R2_CODE",
+  "experiment_id": "TYPE2-D5R-CAPACITY-OBJECTIVE",
+  "parent_prereg_commit": "bb0d97a",
+  "reason": "The D5 model.zip artifacts contain policy and optimizer state but not the DQN replay buffer. Loading them as 200k continuations would create a weight-only resume with an empty buffer and would not be scientifically equivalent to uninterrupted training.",
+  "supersedes": {
+    "continuation_source_steps": 200000,
+    "additional_steps_per_lineage": [200000, 600000]
+  },
+  "replacement_execution": {
+    "method": "DETERMINISTIC_REPLAY_FROM_ZERO_WITH_IN_PROCESS_CHECKPOINTS",
+    "reward_arms": ["NATIVE", "SHUFFLED"],
+    "seeds": [0, 1, 2],
+    "checkpoint_total_steps": [400000, 800000],
+    "training_steps_per_lineage": 800000,
+    "lineage_count": 6,
+    "total_new_rl_steps": 4800000,
+    "replay_buffer_continuity": "PRESERVED_WITHIN_EACH_0_TO_800K_LINEAGE",
+    "d5_200k_role": "CUSTODY_BOUND_COMPARISON_BASELINE_ONLY",
+    "fixed_execution_parameters": {
+      "buffer_size": 200000,
+      "learning_starts": 128,
+      "batch_size": 64,
+      "train_freq": 4,
+      "gradient_steps": 1,
+      "gamma": 1.0,
+      "learning_rate": 0.001,
+      "net_arch": [256, 128],
+      "device": "cpu",
+      "deterministic_algorithms": true,
+      "reset_num_timesteps_between_checkpoints": false
+    }
+  },
+  "unchanged": {
+    "training_round_trip_bp": 23,
+    "primary_evaluation_round_trip_bp": 23,
+    "diagnostic_zero_cost_bp": 0,
+    "native_and_shuffled_controls": true,
+    "gate": "UNCHANGED",
+    "reused_validation": "NOT_RUN_NO_READ",
+    "fresh_oos": "NOT_RUN_NO_READ",
+    "promotion_allowed": false,
+    "profitability_claim_allowed": false,
+    "live_broker_order_allowed": false
+  }
+}
