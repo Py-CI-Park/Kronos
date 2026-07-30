@@ -34,3 +34,6 @@ D5는 실제 DQN 10개와 2,000,000 RL step을 완료했지만 exact-action gate
 | D5R-2 Smoke/Primary | `webui/rl_runs/rl_discovery/type2-d5r-*/` |
 | 최종 결과 | `docs/kronos_rl_discovery_type2_d5r_result_2026-07-30.md` |
 
+## D5R-2 실행 보정
+
+D5 `model.zip`에는 replay buffer가 포함되지 않으므로 weight-only load를 uninterrupted continuation으로 부르지 않는다. D5R-2는 동일 seed/config를 0부터 결정적으로 재현하고, 한 학습 프로세스 안에서 400k checkpoint를 저장한 뒤 replay buffer를 유지한 채 800k까지 학습한다. 보정 계약은 `docs/kronos_rl_discovery_type2_d5r_amendment_2026-07-30.json`에 고정한다.
