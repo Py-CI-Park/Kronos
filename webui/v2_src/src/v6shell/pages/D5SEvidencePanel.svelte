@@ -1,6 +1,6 @@
 <script lang="ts">
   import { summarizeDiscoveryArms } from '../discovery/discoveryEvidence';
-  import type { D5SEvidence } from '../discovery/d5sEvidence';
+  import { D5S_PRESENTATION, formatD5SCheckpointSteps, type D5SEvidence } from '../discovery/d5sEvidence';
 
   let { evidence }: { evidence: D5SEvidence } = $props();
   const aggregates = $derived(summarizeDiscoveryArms(evidence.arms));
@@ -11,18 +11,18 @@
   const armLabel = (id: string) => id.includes('/SHUFFLED/') ? 'SHUFFLED CONTROL' : 'NATIVE';
   const checkpointLabel = (id: string) => {
     const steps = Number(id.split('/').at(-1));
-    return Number.isFinite(steps) ? `${steps / 1000}K` : 'MISSING';
+    return formatD5SCheckpointSteps(steps);
   };
 </script>
 
 <section class="verdict" class:confirmed={evidence.verdict === 'D5S_STABILITY_CONFIRMED'}>
   <div>
     <p>D5S // GLOBAL EARLY-STOP STABILITY</p>
-    <h2>RESEARCH ONLY / {evidence.verdict}</h2>
+    <h2>{D5S_PRESENTATION.claimBoundary} / {evidence.verdict}</h2>
     <span>실제 DQN · 573 TRAIN_ONLY · 36 / 36 checkpoint units</span>
   </div>
   <div class="headline">
-    <article><span>GLOBAL SELECTED</span><strong>{evidence.selectedSteps / 1000}K</strong><small>모든 seed·arm에 동일 적용</small></article>
+    <article><span>GLOBAL SELECTED</span><strong>{formatD5SCheckpointSteps(evidence.selectedSteps)}</strong><small>모든 seed·arm에 동일 적용</small></article>
     <article><span>NATIVE REWARD</span><strong>{evidence.selectedNativeMedianRewardRatio.toFixed(3)}</strong><small>23bp median</small></article>
     <article><span>NATIVE ACCURACY</span><strong>{pct(evidence.selectedNativeMedianAccuracy)}</strong><small>selected checkpoint</small></article>
     <article><span>NATIVE − SHUFFLE</span><strong>{evidence.nativeDeltaVsShuffled.toFixed(3)}</strong><small>negative control</small></article>
@@ -33,8 +33,8 @@
   <article><span>LINEAGE</span><strong>0 → 50K … 400K</strong><small>6 checkpoints · replay continuity</small></article>
   <article><span>COST</span><strong>23BP PRIMARY</strong><small>0bp is diagnostic only</small></article>
   <article><span>SELECTION</span><strong>ONE GLOBAL STEP</strong><small>seed별 선택·재학습 금지</small></article>
-  <article><span>REUSED VALIDATION</span><strong>{evidence.reusedValidation}</strong><small>D6 remains sealed</small></article>
-  <article><span>FRESH OOS</span><strong>{evidence.freshOos}</strong><small>D7 remains sealed</small></article>
+  <article><span>REUSED VALIDATION</span><strong>{evidence.reusedValidation}</strong><small>{D5S_PRESENTATION.d6Seal}</small></article>
+  <article><span>FRESH OOS</span><strong>{evidence.freshOos}</strong><small>{D5S_PRESENTATION.d7Seal}</small></article>
 </section>
 
 <section class="panel gate-panel">
@@ -74,7 +74,7 @@
   <div class="matrix">
     {#each evidence.arms as row}
       <article class:control={row.shuffledReward} class:selected={row.trainingTimesteps === evidence.selectedSteps}>
-        <div class="identity"><span>{row.shuffledReward ? 'SHUFFLED' : 'NATIVE'}</span><b>SEED {row.seed} · {row.trainingTimesteps / 1000}K</b></div>
+        <div class="identity"><span>{row.shuffledReward ? 'SHUFFLED' : 'NATIVE'}</span><b>SEED {row.seed} · {formatD5SCheckpointSteps(row.trainingTimesteps)}</b></div>
         <strong>{row.oracleRewardRatio.toFixed(3)}</strong>
         <dl>
           <div><dt>Fit 23bp</dt><dd>{row.fitRewardRatio?.toFixed(3)}</dd></div>

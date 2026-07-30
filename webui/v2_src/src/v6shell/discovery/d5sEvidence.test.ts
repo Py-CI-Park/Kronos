@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { JsonObject, RlRunDetail } from '$lib/rlApi';
-import { parseD5SEvidence } from './d5sEvidence';
+import { D5S_PRESENTATION, formatD5SCheckpointSteps, parseD5SEvidence } from './d5sEvidence';
 
 const metric = {
   accuracy: 0.74,
@@ -78,4 +78,15 @@ test('parseD5SEvidence rejects incomplete or nonzero-invalid matrices', () => {
     ? { ...row, native_23bp: { ...metric, invalid_action_count: 1 } }
     : row);
   assert.equal(parseD5SEvidence(runWithModels(invalid)), null);
+});
+
+test('D5S presentation uses readable checkpoints and keeps validation sealed', () => {
+  assert.equal(formatD5SCheckpointSteps(50_000), '50K');
+  assert.equal(formatD5SCheckpointSteps(100_000), '100K');
+  assert.equal(formatD5SCheckpointSteps(123), 'MISSING');
+  assert.deepEqual(D5S_PRESENTATION, {
+    d6Seal: 'D6 remains sealed',
+    d7Seal: 'D7 remains sealed',
+    claimBoundary: 'RESEARCH ONLY',
+  });
 });

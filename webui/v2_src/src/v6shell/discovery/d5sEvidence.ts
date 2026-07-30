@@ -3,6 +3,18 @@ import type { DiscoveryArmEvidence } from './discoveryEvidence';
 
 const CHECKPOINTS = [50_000, 100_000, 150_000, 200_000, 300_000, 400_000] as const;
 
+export const D5S_PRESENTATION = Object.freeze({
+  d6Seal: 'D6 remains sealed',
+  d7Seal: 'D7 remains sealed',
+  claimBoundary: 'RESEARCH ONLY',
+});
+
+export function formatD5SCheckpointSteps(steps: number): string {
+  return Number.isInteger(steps) && CHECKPOINTS.includes(steps as (typeof CHECKPOINTS)[number])
+    ? `${steps / 1000}K`
+    : 'MISSING';
+}
+
 export interface D5SEvidence {
   readonly runName: string;
   readonly status: string;
