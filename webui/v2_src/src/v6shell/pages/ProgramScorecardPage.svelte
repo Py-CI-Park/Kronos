@@ -9,7 +9,7 @@
 <section class="scorecard" aria-labelledby="program-score-title">
   <aside class="snapshot-note" aria-label="scorecard evidence authority"><strong>REVIEWED SNAPSHOT</strong><span>{PROGRAM_EXECUTION.reviewedRun} · manifest {PROGRAM_EXECUTION.reviewedEvidenceManifest.slice(0, 16)}… · live artifact state가 아님</span></aside>
   <header class="masthead">
-    <div><p class="eyebrow">PROGRAM CONTROL // AUDITED 2026-07-27</p><h1 id="program-score-title">Kronos 프로그램 점수표</h1><p>구현 완성도와 연구 증거를 분리해, 가능한 작업과 금지된 작업을 함께 측정합니다.</p></div>
+    <div><p class="eyebrow">PROGRAM CONTROL // AUDITED 2026-07-29</p><h1 id="program-score-title">Kronos 프로그램 점수표</h1><p>구현 완성도와 연구 증거를 분리해, 가능한 작업과 금지된 작업을 함께 측정합니다.</p></div>
     <div class="overall" aria-label={`종합 프로그램 점수 ${overall}점`}><span>OVERALL</span><strong>{overall}</strong><small>/ 100</small></div>
   </header>
 

@@ -58,7 +58,7 @@ def build_top_k_episodes(
 ) -> tuple[D3Episode, ...]:
     """Build the chronological train prefix using observable top-five ranking."""
 
-    if len(scales) != len(FEATURES) or not 1 <= limit <= 128:
+    if len(scales) != len(FEATURES) or not 1 <= limit <= 2000:
         raise D2DataError("D3 scale or normalizer width is invalid")
     episodes: list[D3Episode] = []
     current_date: str | None = None
