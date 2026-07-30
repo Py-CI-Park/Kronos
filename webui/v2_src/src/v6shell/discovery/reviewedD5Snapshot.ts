@@ -1,0 +1,60 @@
+import type { DiscoveryArmEvidence, DiscoveryEvidence } from './discoveryEvidence';
+
+type Reward = 'NATIVE' | 'SHUFFLED';
+
+const arm = (
+  reward: Reward,
+  seed: number,
+  accuracy: number,
+  fitReward: number,
+  nativeReward: number,
+  zeroCostReward: number,
+  dominantActionRate: number,
+): DiscoveryArmEvidence => ({
+  id: `D5-C_DQN_DISCRETE/${reward}`,
+  model: `C_DQN_DISCRETE__${reward}/seed-${seed}`,
+  seed,
+  trainingTimesteps: 200000,
+  oracleRewardRatio: nativeReward,
+  exactBasketAccuracy: accuracy,
+  dominantActionRate,
+  invalidActionCount: 0,
+  blockCount: 0,
+  noFillCount: 0,
+  shuffledReward: reward === 'SHUFFLED',
+  episodeCount: 573,
+  fitRewardRatio: fitReward,
+  diagnosticCostRewardRatio: zeroCostReward,
+});
+
+export const REVIEWED_D5_SNAPSHOT: DiscoveryEvidence = {
+  authority: 'REVIEWED_SNAPSHOT',
+  evidenceManifest: '369e6f1ee4068012c31dffb30d9a32b3eaadeb2b0f582262f75076dd1d9964af',
+  runName: 'type2-d5-primary-20260729-001',
+  status: 'COMPLETE',
+  verdict: 'D5_FULL_TRAIN_COST_NOT_CONFIRMED',
+  profile: 'PRIMARY',
+  freshOos: 'NOT_RUN_NO_READ',
+  reusedValidation: 'NOT_RUN_NO_READ',
+  type1Outcome: 'D5_TRAIN_ONLY_EVALUATED',
+  primaryRoundTripCostBp: 23,
+  diagnosticRoundTripCostBp: 0,
+  preregSha256: '861360b06dc1107c053bbfe887a58bbd7c7e3b225fbc40d1e8d01eeb3a07319a',
+  promotionAllowed: false,
+  profitabilityClaimAllowed: false,
+  nativePassingSeedFraction: 0,
+  shuffledPassingSeedFraction: 0,
+  nativeDeltaVsShuffled: .9854715329546139,
+  arms: [
+    arm('NATIVE', 0, .7120418848167539, .8727793884825973, .8727793884825973, .8757311029800641, .23734729493891799),
+    arm('NATIVE', 1, .6614310645724258, .8503857573981751, .8503857573981751, .8555185227963911, .35776614310645727),
+    arm('NATIVE', 2, .7277486910994765, .9037528526603933, .9037528526603933, .9041802978182468, .2774869109947644),
+    arm('NATIVE', 3, .7347294938917975, .9024242640835638, .9024242640835638, .9066140406814152, .19720767888307156),
+    arm('NATIVE', 4, .7399650959860384, .9072328847424711, .9072328847424711, .9115177614938155, .225130890052356),
+    arm('SHUFFLED', 0, .6684118673647469, .8692097232021782, -.10482679373347413, -.06648327989545134, .3089005235602094),
+    arm('SHUFFLED', 1, .6893542757417103, .8453586992099833, -.09072157419354741, -.05277565147012394, .30017452006980805),
+    arm('SHUFFLED', 2, .6788830715532286, .8678585001091161, -.10730959845792493, -.0752513344553673, .2094240837696335),
+    arm('SHUFFLED', 3, .7102966841186736, .8671533100490845, -.1220510728180185, -.08402753945378101, .2600349040139616),
+    arm('SHUFFLED', 4, .7382198952879581, .8980835585798702, -.06587347820290407, -.03126032041603809, .19720767888307156),
+  ],
+};

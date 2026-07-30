@@ -1,0 +1,28 @@
+{
+  "schema_version": "kronos.rl-discovery.d5.prereg.v1",
+  "status": "APPROVED_EXECUTABLE",
+  "experiment_id": "TYPE2-D5-FULL-TRAIN-COST",
+  "parent_release": "fork-v1.14.0-kronos-rl-d4-algorithm-objective",
+  "hypothesis": "The D4-confirmed discrete DQN can retain train-only action and reward attribution when expanded from the first 128 eligible daily-close sessions to all 573 eligible train sessions, trained directly with the registered 23bp round-trip cost, while five native seeds remain separated from five shuffled-reward controls without reading reused validation or Fresh OOS.",
+  "dataset": {
+    "dataset_id": "type1-close-20260803-005",
+    "rows_relative_path": "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/public_rows.json",
+    "rows_sha256": "a0fbeb1b54e59e3c1e83c66c8ca5aa85caa7063b7cbb382efeb716e86ae915cf",
+    "manifest_sha256": "25cb145689933946d0f5600ddbc007690b4e433e537e4f9dd3f7b6f7dcc4d172",
+    "materializer_receipt_sha256": "913b2fe9a4986109f04d776071f6ac3bbb50d5d430117e1d42c8eeca009ad75c",
+    "normalizer_relative_path": "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/train_type1-public-005/primary/seed_0/normalizer.json",
+    "normalizer_file_sha256": "4d0ad81bf989bd279b37af2b7223cb448aa8617fa162061bc865fed92416debb",
+    "normalizer_digest": "a783484f56b39ae77a2b236e1e06ce5967621071a2ebd049ec0b45d720113b50",
+    "partition": "TRAIN_ONLY",
+    "selection": "ALL_573_CHRONOLOGICAL_ELIGIBLE_TRAIN_SESSIONS"
+  },
+  "representation": {"candidate_count": 5, "market_context": true, "source_arm": "D_TOP5_CONTEXT_4X"},
+  "algorithm": {"id": "C_DQN_DISCRETE", "family": "DQN", "training_steps": 200000, "net_arch": [256, 128], "gamma": 1.0, "learning_rate": 0.001, "train_freq": 4, "gradient_steps": 1},
+  "reward_arms": ["NATIVE", "SHUFFLED"],
+  "episode_count": 573,
+  "seeds": [0, 1, 2, 3, 4],
+  "smoke": {"reward_arms": ["NATIVE", "SHUFFLED"], "seeds": [0], "rl_timesteps": 2048},
+  "costs": {"training_round_trip_bp": 23, "primary_evaluation_round_trip_bp": 23, "diagnostic_zero_cost_bp": 0},
+  "gate": {"minimum_fit_accuracy": 0.9, "minimum_fit_reward_ratio": 0.9, "minimum_passing_seed_fraction": 0.6, "minimum_native_delta_vs_shuffled": 0.2, "zero_invalid_actions": true},
+  "claims_boundary": {"research_only": true, "train_only_confirmation": true, "profitability_claim_allowed": false, "promotion_allowed": false, "live_broker_order_allowed": false, "reused_validation": "NOT_RUN_NO_READ", "fresh_oos": "NOT_RUN_NO_READ"}
+}

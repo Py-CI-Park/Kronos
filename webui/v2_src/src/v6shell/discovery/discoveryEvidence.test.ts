@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parseDiscoveryEvidence, summarizeDiscoveryArms } from './discoveryEvidence';
 import { REVIEWED_DISCOVERY_SNAPSHOT } from './reviewedDiscoverySnapshot';
+import { REVIEWED_D5_SNAPSHOT } from './reviewedD5Snapshot';
 
 const discoveryPage = readFileSync(new URL('../pages/DiscoveryPage.svelte', import.meta.url), 'utf8');
+const d5Panel = readFileSync(new URL('../pages/D5EvidencePanel.svelte', import.meta.url), 'utf8');
 
 test('discovery evidence parser accepts the dashboard run detail contract', () => {
   const evidence = parseDiscoveryEvidence({
@@ -131,6 +133,86 @@ test('live D4 nested summary preserves RL ceiling gap and all gate fields', () =
   assert.equal(evidence?.confirmedRlArmCount, 1);
   assert.equal(evidence?.supervisedCeilingConfirmed, true);
   assert.equal(evidence?.bestRlGapToSupervisedCeiling, .0124);
+});
+
+test('reviewed D5 snapshot preserves the failed full-train gate without claim inflation', () => {
+  assert.equal(REVIEWED_D5_SNAPSHOT.runName, 'type2-d5-primary-20260729-001');
+  assert.equal(REVIEWED_D5_SNAPSHOT.verdict, 'D5_FULL_TRAIN_COST_NOT_CONFIRMED');
+  assert.equal(REVIEWED_D5_SNAPSHOT.arms.length, 10);
+  assert.equal(REVIEWED_D5_SNAPSHOT.nativePassingSeedFraction, 0);
+  assert.equal(REVIEWED_D5_SNAPSHOT.shuffledPassingSeedFraction, 0);
+  assert.ok((REVIEWED_D5_SNAPSHOT.nativeDeltaVsShuffled ?? 0) > .98);
+  assert.equal(REVIEWED_D5_SNAPSHOT.freshOos, 'NOT_RUN_NO_READ');
+  assert.equal(REVIEWED_D5_SNAPSHOT.reusedValidation, 'NOT_RUN_NO_READ');
+  assert.equal(REVIEWED_D5_SNAPSHOT.promotionAllowed, false);
+  assert.equal(REVIEWED_D5_SNAPSHOT.profitabilityClaimAllowed, false);
+  assert.match(REVIEWED_D5_SNAPSHOT.evidenceManifest ?? '', /^[0-9a-f]{64}$/);
+});
+
+test('live D5 evidence requires ten cost-trained DQN units and preserves its gate', () => {
+  const models = ['NATIVE', 'SHUFFLED'].flatMap((reward_arm) =>
+    [0, 1, 2, 3, 4].map((seed) => ({
+      algorithm_arm: 'C_DQN_DISCRETE', algorithm_family: 'DQN', reward_arm, seed,
+      rl_timesteps: 200000, training_round_trip_cost_bp: 23,
+      fit_23bp: { accuracy: .91, reward_ratio: .92, dominant_action_rate: .2, invalid_action_count: 0 },
+      native_23bp: { reward_ratio: reward_arm === 'NATIVE' ? .92 : -.1 },
+      native_0bp: { reward_ratio: reward_arm === 'NATIVE' ? .93 : -.08 },
+    })),
+  );
+  const evidence = parseDiscoveryEvidence({
+    name: 'type2-d5-primary-20260729-001',
+    summary: {
+      research_lane: 'rl_discovery', status: 'COMPLETE',
+      verdict: 'D5_FULL_TRAIN_COST_NOT_CONFIRMED', profile: 'PRIMARY',
+      fresh_oos: 'NOT_RUN_NO_READ', type1_outcome: 'D5_TRAIN_ONLY_EVALUATED',
+      prereg_sha256: 'abc123', primary_round_trip_cost_bp: 23,
+      diagnostic_round_trip_cost_bp: 0, promotion_allowed: false,
+      profitability_claim_allowed: false,
+    },
+    detail: { gate: {
+      native_passing_seed_fraction: .4, shuffled_passing_seed_fraction: .6,
+      native_delta_vs_shuffled: 1.02, reused_validation: 'NOT_RUN_NO_READ',
+      fresh_oos: 'NOT_RUN_NO_READ',
+    }, models },
+  });
+
+  assert.equal(evidence?.arms.length, 10);
+  assert.equal(evidence?.arms[0]?.id, 'D5-C_DQN_DISCRETE/NATIVE');
+  assert.equal(evidence?.arms[0]?.episodeCount, 573);
+  assert.equal(evidence?.arms[0]?.diagnosticCostRewardRatio, .93);
+  assert.equal(evidence?.nativePassingSeedFraction, .4);
+  assert.equal(evidence?.shuffledPassingSeedFraction, .6);
+  assert.equal(evidence?.nativeDeltaVsShuffled, 1.02);
+  assert.equal(evidence?.reusedValidation, 'NOT_RUN_NO_READ');
+  assert.equal(evidence?.primaryRoundTripCostBp, 23);
+  assert.equal(evidence?.diagnosticRoundTripCostBp, 0);
+
+  assert.equal(parseDiscoveryEvidence({
+    name: 'broken-d5',
+    summary: { research_lane: 'rl_discovery', verdict: 'D5_FULL_TRAIN_COST_NOT_CONFIRMED' },
+    detail: { models: models.slice(0, 9) },
+  }), null);
+});
+
+test('discovery UX promotes D5 cost evidence without opening validation', () => {
+  assert.match(discoveryPage, /D5_FULL_TRAIN_COST_/);
+  assert.match(discoveryPage, /D5EvidencePanel/);
+  assert.match(d5Panel, /573 TRAIN EPISODES/);
+  assert.match(d5Panel, /23BP TRAIN \/ PRIMARY/);
+  assert.match(d5Panel, /nativePassingSeedFraction/);
+  assert.match(d5Panel, /shuffledPassingSeedFraction/);
+  assert.match(d5Panel, /reusedValidation/);
+  assert.match(d5Panel, /NOT_RUN_NO_READ/);
+  assert.match(d5Panel, /10 \/ 10/);
+  assert.match(d5Panel, /NO-GO/);
+  assert.match(d5Panel, /NO-TRADE/);
+  assert.match(d5Panel, /ts_imb RULE/);
+  assert.match(d5Panel, /D4 DQN REFERENCE/);
+  assert.match(d5Panel, /NOT COMPARABLE/);
+  assert.match(discoveryPage, /const isD5/);
+  assert.match(discoveryPage, /isD5 \? '573 EPISODES' : '128 EPISODES'/);
+  assert.match(discoveryPage, /isD5 \? '23BP TRAIN \/ 0BP DIAG'/);
+  assert.match(discoveryPage, /index === \(isD5 \? 5 : 4\)/);
 });
 
 test('live D3 nested summary preserves best arm, budget lift, and all units', () => {
