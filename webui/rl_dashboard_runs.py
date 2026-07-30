@@ -33,6 +33,7 @@ DEFAULT_POLL_INTERVAL_SECONDS = _state.DEFAULT_POLL_INTERVAL_SECONDS
 require_discovery_terminal_receipt = _state.require_discovery_terminal_receipt
 _baseline_policies = _state.baseline_policies
 _find_discovery_evidence = _summary.find_discovery_evidence
+_run_lifecycle = _state.run_lifecycle
 
 
 def _detect_artifact_type(run_dir: Path) -> str:
@@ -67,7 +68,7 @@ def _run_record(
     summary = (
         verified_summary
         if verified_summary is not None
-        else cast(dict[str, JsonValue], _summary.find_json_summary(run_dir, artifact_type))
+        else _summary.find_json_summary(run_dir, artifact_type)
     )
     identity = _identity.run_identity_fields(run_dir)
     return {
