@@ -17,7 +17,20 @@
     "lineage_count": 6,
     "total_new_rl_steps": 4800000,
     "replay_buffer_continuity": "PRESERVED_WITHIN_EACH_0_TO_800K_LINEAGE",
-    "d5_200k_role": "CUSTODY_BOUND_COMPARISON_BASELINE_ONLY"
+    "d5_200k_role": "CUSTODY_BOUND_COMPARISON_BASELINE_ONLY",
+    "fixed_execution_parameters": {
+      "buffer_size": 200000,
+      "learning_starts": 128,
+      "batch_size": 64,
+      "train_freq": 4,
+      "gradient_steps": 1,
+      "gamma": 1.0,
+      "learning_rate": 0.001,
+      "net_arch": [256, 128],
+      "device": "cpu",
+      "deterministic_algorithms": true,
+      "reset_num_timesteps_between_checkpoints": false
+    }
   },
   "unchanged": {
     "training_round_trip_bp": 23,
