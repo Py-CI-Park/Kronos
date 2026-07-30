@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue, RlRunDetail } from '$lib/rlApi';
 import { d5Arm } from './d5Evidence';
+import { d5rArm } from './d5rEvidence';
 
 export interface DiscoveryArmEvidence {
   readonly id: string;
@@ -52,6 +53,9 @@ export interface DiscoveryEvidence {
   readonly nativePassingSeedFraction?: number;
   readonly shuffledPassingSeedFraction?: number;
   readonly reusedValidation?: string;
+  readonly nativeAccuracyLift?: number;
+  readonly nativeRewardRatioLift?: number;
+  readonly improvingSeedFraction?: number;
   readonly arms: readonly DiscoveryArmEvidence[];
 }
 
@@ -174,16 +178,20 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
   const summary = run.summary;
   if (!summary || summary.research_lane !== 'rl_discovery') return null;
   const rows = modelRows(run.detail);
+  const d5rRows = rows.map(d5rArm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d5Rows = rows.map(d5Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d4Rows = rows.map(d4Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d3Rows = rows.map(d3Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const d2Rows = rows.map(d2Arm).filter((row): row is DiscoveryArmEvidence => row !== null);
   const gate = objectValue(run.detail?.gate);
+  const d5rUnits = new Set(d5rRows.map((row) => `${row.id}/${row.seed}`));
+  if (summary.verdict?.toString().startsWith('D5R_CAPACITY_')
+    && (d5rRows.length !== 12 || d5rRows.length !== rows.length || d5rUnits.size !== 12)) return null;
   const d5Units = new Set(d5Rows.map((row) => `${row.id}/${row.seed}`));
   if (summary.verdict?.toString().startsWith('D5_')
     && (d5Rows.length !== 10 || d5Rows.length !== rows.length || d5Units.size !== 10)) return null;
   if (summary.verdict === 'D4_ALGORITHM_OBJECTIVE_CONFIRMED' && (d4Rows.length !== 24 || d4Rows.length !== rows.length)) return null;
-  const arms = d5Rows.length ? d5Rows : d4Rows.length ? d4Rows : d3Rows.length ? d3Rows : d2Rows.length ? d2Rows : rows.map((row) => ({
+  const arms = d5rRows.length ? d5rRows : d5Rows.length ? d5Rows : d4Rows.length ? d4Rows : d3Rows.length ? d3Rows : d2Rows.length ? d2Rows : rows.map((row) => ({
     id: textValue(row.algorithm),
     model: textValue(row.model),
     seed: numberValue(row.seed),
@@ -211,7 +219,7 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     profitabilityClaimAllowed: booleanValue(summary.profitability_claim_allowed),
     diagnosticRoundTripCostBp: numberValue(summary.diagnostic_round_trip_cost_bp),
     maximumConfirmedEpisodeCount: numberValue(gate?.maximum_confirmed_episode_count),
-    nativeDeltaVsShuffled: d5Rows.length ? numberValue(gate?.native_delta_vs_shuffled) : d3Rows.length ? d3BestDelta(gate) : numberValue(gate?.native_delta_vs_shuffled_at_128),
+    nativeDeltaVsShuffled: d5rRows.length ? numberValue(gate?.native_reward_delta_vs_shuffled) : d5Rows.length ? numberValue(gate?.native_delta_vs_shuffled) : d3Rows.length ? d3BestDelta(gate) : numberValue(gate?.native_delta_vs_shuffled_at_128),
     bestPolicyArm: textValue(gate?.best_policy_arm, ''),
     budget4xNativeLift: numberValue(gate?.budget_4x_native_lift),
     confirmedPolicyArmCount: Array.isArray(gate?.confirmed_policy_arms) ? gate.confirmed_policy_arms.length : undefined,
@@ -221,7 +229,10 @@ export function parseDiscoveryEvidence(run: Pick<RlRunDetail, 'name' | 'summary'
     confirmedRlArmCount: Array.isArray(gate?.confirmed_rl_arms) ? gate.confirmed_rl_arms.length : undefined,
     nativePassingSeedFraction: d5Rows.length ? numberValue(gate?.native_passing_seed_fraction) : undefined,
     shuffledPassingSeedFraction: d5Rows.length ? numberValue(gate?.shuffled_passing_seed_fraction) : undefined,
-    reusedValidation: d5Rows.length ? textValue(gate?.reused_validation) : undefined,
+    reusedValidation: d5rRows.length ? textValue(run.detail?.reused_validation) : d5Rows.length ? textValue(gate?.reused_validation) : undefined,
+    nativeAccuracyLift: d5rRows.length ? numberValue(gate?.native_accuracy_lift) : undefined,
+    nativeRewardRatioLift: d5rRows.length ? numberValue(gate?.native_reward_ratio_lift) : undefined,
+    improvingSeedFraction: d5rRows.length ? numberValue(gate?.improving_seed_fraction) : undefined,
     arms,
   };
 }
