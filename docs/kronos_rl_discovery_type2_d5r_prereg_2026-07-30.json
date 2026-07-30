@@ -1,0 +1,76 @@
+{
+  "schema_version": "kronos.rl-discovery.d5r.prereg.v1",
+  "status": "APPROVED_EXECUTABLE",
+  "experiment_id": "TYPE2-D5R-CAPACITY-OBJECTIVE",
+  "parent_release": "fork-v1.15.0-kronos-rl-d5-full-train-cost",
+  "source_run": {
+    "run_name": "type2-d5-primary-20260729-001",
+    "artifact_manifest_sha256": "369e6f1ee4068012c31dffb30d9a32b3eaadeb2b0f582262f75076dd1d9964af",
+    "summary_sha256": "487ff3cbf01ddffd4d3c5bae378caaf9d14093441f5fa7bd17c965cc99c44e7c",
+    "episode_snapshot_sha256": "8a1b8c5f83087ddddf14ec606c5a744ee124f2fca2ef791483f477807956ce40",
+    "episode_count": 573,
+    "partition": "TRAIN_ONLY"
+  },
+  "hypotheses": {
+    "d5r_1": "D5 exact-action accuracy understates reward reconstruction because many non-oracle actions lie within 5, 10, or 25bp of the cost-aware oracle reward.",
+    "d5r_2": "If D5R-1 shows material regret, continuing the authenticated D5 DQN lineages from 200k to 400k and 800k steps improves both exact action accuracy and 23bp reward ratio without weakening shuffled-control separation."
+  },
+  "d5r_1_diagnostic": {
+    "source_arms": ["NATIVE", "SHUFFLED"],
+    "seeds": [0, 1, 2, 3, 4],
+    "cost_bp": 23,
+    "near_optimal_tolerance_bp": [5, 10, 25],
+    "regret_definition": "max(0, cost-aware oracle reward minus realized model reward) per TRAIN_ONLY episode",
+    "capacity_required_when": {
+      "median_native_near_optimal_25bp_below": 0.85,
+      "or_median_native_regret_bp_above": 25.0
+    }
+  },
+  "d5r_2_capacity": {
+    "execution_condition": "D5R-1 capacity_required_when is true",
+    "continuation_source_steps": 200000,
+    "checkpoint_total_steps": [400000, 800000],
+    "additional_steps_per_lineage": [200000, 600000],
+    "reward_arms": ["NATIVE", "SHUFFLED"],
+    "seeds": [0, 1, 2],
+    "algorithm": {
+      "id": "C_DQN_DISCRETE",
+      "family": "DQN",
+      "net_arch": [256, 128],
+      "gamma": 1.0,
+      "learning_rate": 0.001,
+      "train_freq": 4,
+      "gradient_steps": 1
+    },
+    "smoke": {
+      "reward_arms": ["NATIVE", "SHUFFLED"],
+      "seeds": [0],
+      "additional_steps": 2048
+    },
+    "costs": {
+      "training_round_trip_bp": 23,
+      "primary_evaluation_round_trip_bp": 23,
+      "diagnostic_zero_cost_bp": 0
+    },
+    "gate": {
+      "minimum_800k_native_median_accuracy_lift_vs_200k": 0.03,
+      "minimum_800k_native_median_reward_ratio_lift_vs_200k": 0.02,
+      "minimum_800k_native_reward_delta_vs_shuffled": 0.2,
+      "minimum_native_improving_seed_fraction": 0.6666666666666666,
+      "zero_invalid_actions": true
+    }
+  },
+  "controls": {
+    "no_trade_reward": 0.0,
+    "oracle_reward_ratio": 1.0,
+    "ts_imb_classification": "RULE_BASELINE_NOT_DIRECTLY_COMPARABLE"
+  },
+  "claims_boundary": {
+    "research_only": true,
+    "profitability_claim_allowed": false,
+    "promotion_allowed": false,
+    "live_broker_order_allowed": false,
+    "reused_validation": "NOT_RUN_NO_READ",
+    "fresh_oos": "NOT_RUN_NO_READ"
+  }
+}
