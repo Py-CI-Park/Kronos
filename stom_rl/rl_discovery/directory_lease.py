@@ -40,21 +40,37 @@ def locked_directory(
 
 @contextmanager
 def locked_artifact_parent(
-    run_dir: Path,
+    run_root: Path,
+    run_name: str,
     parent_segments: tuple[str, ...],
     *,
-    expected_device: int,
-    expected_inode: int,
+    expected_root_device: int,
+    expected_root_inode: int,
+    expected_run_device: int,
+    expected_run_inode: int,
     exclusive_leaf: bool = False,
 ) -> Iterator[Path]:
-    """Hold the run directory and every artifact parent until publication ends."""
+    """Hold the root, run directory, and every artifact parent until publication ends."""
 
     with ExitStack() as stack:
+        locked_root = stack.enter_context(
+            locked_directory(
+                run_root,
+                expected_device=expected_root_device,
+                expected_inode=expected_root_inode,
+            )
+        )
+        run_dir = locked_root / _safe_segment(run_name)
+        if _plain_directory_identity(run_dir) != (
+            expected_run_device,
+            expected_run_inode,
+        ):
+            raise DirectoryLeaseError("run directory identity changed")
         current = stack.enter_context(
             locked_directory(
                 run_dir,
-                expected_device=expected_device,
-                expected_inode=expected_inode,
+                expected_device=expected_run_device,
+                expected_inode=expected_run_inode,
             )
         )
         for index, raw_segment in enumerate(parent_segments):

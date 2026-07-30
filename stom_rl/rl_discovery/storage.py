@@ -8,10 +8,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
-import tempfile
-from typing import Protocol, TypeAlias, final
+from typing import TypeAlias, final
 
 from typing_extensions import override
 
@@ -19,7 +17,6 @@ from stom_rl.rl_discovery.atomic_storage import atomic_write_bytes
 from stom_rl.rl_discovery.atomic_storage import atomic_write_json as _atomic_write_json
 from stom_rl.rl_discovery.directory_lease import (
     locked_artifact_parent,
-    locked_directory,
 )
 
 atomic_write_json = _atomic_write_json
@@ -27,12 +24,6 @@ atomic_write_json = _atomic_write_json
 JsonValue: TypeAlias = (
     None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 )
-
-
-class Saveable(Protocol):
-    """Artifact that can persist itself to one explicit file path."""
-
-    def save(self, path: str) -> None: ...
 
 
 @final
@@ -59,6 +50,8 @@ class RunDirectoryGuard:
 
     run_root: Path
     run_dir: Path
+    root_device: int
+    root_inode: int
     device: int
     inode: int
 
@@ -67,10 +60,16 @@ class RunDirectoryGuard:
         root = run_root.absolute()
         if not root.is_dir() or _is_reparse_point(root):
             raise UnsafeArtifactPathError(root, "run root must be a plain directory")
+        root_identity = os.stat(root, follow_symlinks=False)
         candidate = validate_run_directory(root, run_dir)
         identity = os.stat(candidate, follow_symlinks=False)
         return cls(
-            root.resolve(), candidate.absolute(), identity.st_dev, identity.st_ino
+            root.resolve(),
+            candidate.absolute(),
+            root_identity.st_dev,
+            root_identity.st_ino,
+            identity.st_dev,
+            identity.st_ino,
         )
 
     def verify(self) -> Path:
@@ -80,6 +79,12 @@ class RunDirectoryGuard:
             raise UnsafeArtifactPathError(
                 self.run_root, "run root became a reparse point"
             )
+        root_identity = os.stat(self.run_root, follow_symlinks=False)
+        if (root_identity.st_dev, root_identity.st_ino) != (
+            self.root_device,
+            self.root_inode,
+        ):
+            raise UnsafeArtifactPathError(self.run_root, "run root identity changed")
         candidate = validate_run_directory(self.run_root, self.run_dir)
         identity = os.stat(candidate, follow_symlinks=False)
         if (identity.st_dev, identity.st_ino) != (self.device, self.inode):
@@ -87,10 +92,14 @@ class RunDirectoryGuard:
         return candidate
 
     def locked(self) -> AbstractContextManager[Path]:
-        return locked_directory(
-            self.run_dir,
-            expected_device=self.device,
-            expected_inode=self.inode,
+        return locked_artifact_parent(
+            self.run_root,
+            self.run_dir.name,
+            (),
+            expected_root_device=self.root_device,
+            expected_root_inode=self.root_inode,
+            expected_run_device=self.device,
+            expected_run_inode=self.inode,
         )
 
     def publish_bytes(self, payload: bytes, *segments: str) -> Path:
@@ -107,10 +116,13 @@ class RunDirectoryGuard:
         exclusive_leaf: bool = False,
     ) -> AbstractContextManager[Path]:
         return locked_artifact_parent(
-            self.run_dir,
+            self.run_root,
+            self.run_dir.name,
             segments,
-            expected_device=self.device,
-            expected_inode=self.inode,
+            expected_root_device=self.root_device,
+            expected_root_inode=self.root_inode,
+            expected_run_device=self.device,
+            expected_run_inode=self.inode,
             exclusive_leaf=exclusive_leaf,
         )
 
@@ -248,50 +260,3 @@ def artifact_manifest_sha256(
         )
     encoded = json.dumps(entries, separators=(",", ":"), sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _fsync_file(path: Path) -> None:
-    with path.open("r+b") as handle:
-        os.fsync(handle.fileno())
-
-
-def write_model_bundle(
-    run_dir: Path,
-    *,
-    arm: str,
-    seed: int,
-    model: Saveable,
-    normalizer: Saveable,
-) -> None:
-    """Publish a complete model directory only after both files are durable."""
-
-    arm_dir = contained_path(run_dir, "models", arm)
-    arm_dir.mkdir(parents=True, exist_ok=True)
-    final_dir = contained_path(run_dir, "models", arm, f"seed-{seed}")
-    temporary = Path(tempfile.mkdtemp(prefix=f".seed-{seed}.", dir=arm_dir))
-    backup = Path(tempfile.mkdtemp(prefix=f".seed-{seed}.backup.", dir=arm_dir))
-    backup.rmdir()
-    try:
-        model_path = temporary / "model.zip"
-        normalizer_path = temporary / "normalizer.pkl"
-        model.save(str(model_path))
-        normalizer.save(str(normalizer_path))
-        if not model_path.is_file() or not normalizer_path.is_file():
-            raise UnsafeArtifactPathError(temporary, "model bundle is incomplete")
-        _fsync_file(model_path)
-        _fsync_file(normalizer_path)
-        if final_dir.exists():
-            os.replace(final_dir, backup)
-        try:
-            os.replace(temporary, final_dir)
-        except OSError:
-            if backup.exists() and not final_dir.exists():
-                os.replace(backup, final_dir)
-            raise
-        if backup.exists():
-            shutil.rmtree(backup)
-    finally:
-        if temporary.exists():
-            shutil.rmtree(temporary)
-        if backup.exists() and final_dir.exists():
-            shutil.rmtree(backup)

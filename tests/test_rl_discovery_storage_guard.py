@@ -26,6 +26,24 @@ def test_run_directory_guard_rejects_same_name_replacement(tmp_path: Path) -> No
         _ = guard.verify()
 
 
+def test_run_directory_guard_rejects_same_name_root_replacement(tmp_path: Path) -> None:
+    run_root = tmp_path / "runs"
+    run_dir = run_root / "primary"
+    run_dir.mkdir(parents=True)
+    guard = RunDirectoryGuard.capture(run_root, run_dir)
+
+    moved_root = tmp_path / "moved-runs"
+    _ = run_root.rename(moved_root)
+    run_root.mkdir()
+    _ = (moved_root / "primary").rename(run_dir)
+
+    with pytest.raises(
+        ValueError, match="root.*identity changed|locked directory identity changed"
+    ):
+        _ = guard.publish_bytes(b"blocked", "summary.json")
+    assert not (run_dir / "summary.json").exists()
+
+
 def test_contained_path_rejects_redirected_run_root(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
