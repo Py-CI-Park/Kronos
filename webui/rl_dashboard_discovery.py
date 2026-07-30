@@ -1,7 +1,7 @@
 """Fail-closed discovery evidence verification for the RL dashboard."""
 
 # Discovery artifacts intentionally expose legacy dynamic payloads.
-# pyright: reportPrivateUsage=false, reportExplicitAny=false, reportAny=false
+# pyright: reportPrivateUsage=false, reportExplicitAny=false, reportAny=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedCallResult=false
 
 from __future__ import annotations
 
@@ -19,9 +19,11 @@ from stom_rl.rl_discovery.evidence_snapshot import read_evidence_snapshot
 if __package__:
     from .rl_dashboard_d5 import valid_d5_primary
     from .rl_dashboard_d5r import valid_d5r_primary
+    from .rl_dashboard_d5s import valid_d5s_primary
 else:  # pragma: no cover - supports direct script-style imports
     from webui.rl_dashboard_d5 import valid_d5_primary
     from webui.rl_dashboard_d5r import valid_d5r_primary
+    from webui.rl_dashboard_d5s import valid_d5s_primary
 
 
 def find_discovery_evidence(
@@ -45,6 +47,13 @@ def find_discovery_evidence(
             for seed in range(3)
             for steps in (400_000, 800_000)
         )
+    if artifact_type == "rl_discovery_d5s":
+        capture_paths |= frozenset({"inputs/prereg.json"}) | frozenset(
+            f"outcomes/{reward}/seed-{seed}/steps-{steps}.json"
+            for reward in ("NATIVE", "SHUFFLED")
+            for seed in range(3)
+            for steps in (50_000, 100_000, 150_000, 200_000, 300_000, 400_000)
+        )
     try:
         snapshot = read_evidence_snapshot(
             run_dir,
@@ -65,8 +74,10 @@ def find_discovery_evidence(
         "rl_discovery_d4": "kronos.rl-discovery.d4.result.v1",
         "rl_discovery_d5": "kronos.rl-discovery.d5.result.v1",
         "rl_discovery_d5r": "kronos.rl-discovery.d5r.capacity.v1",
+        "rl_discovery_d5s": "kronos.rl-discovery.d5s.stability.v1",
     }.get(artifact_type)
     digest = snapshot.manifest_sha256
+    source_identity_in_receipt = artifact_type not in {"rl_discovery_d5r", "rl_discovery_d5s"}
     if (
         payload.get("schema_version") != expected_schema
         or payload.get("status") != "COMPLETE"
@@ -74,8 +85,8 @@ def find_discovery_evidence(
         or receipt.get("status") != "COMPLETE"
         or receipt.get("profile") != "PRIMARY"
         or receipt.get("verdict") != payload.get("verdict")
-        or (artifact_type != "rl_discovery_d5r" and receipt.get("prereg_sha256") != payload.get("prereg_sha256"))
-        or (artifact_type != "rl_discovery_d5r" and receipt.get("episode_snapshot_sha256") != payload.get("episode_snapshot_sha256"))
+        or (source_identity_in_receipt and receipt.get("prereg_sha256") != payload.get("prereg_sha256"))
+        or (source_identity_in_receipt and receipt.get("episode_snapshot_sha256") != payload.get("episode_snapshot_sha256"))
         or receipt.get("fresh_oos") != "NOT_RUN_NO_READ"
         or receipt.get("artifact_manifest_sha256") != digest
     ):
@@ -90,25 +101,41 @@ def find_discovery_evidence(
         run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
     ):
         return blocked, {}
+    if artifact_type == "rl_discovery_d5s" and not valid_d5s_primary(
+        run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
+    ):
+        return blocked, {}
     is_d5 = artifact_type == "rl_discovery_d5"
     is_d5r = artifact_type == "rl_discovery_d5r"
-    prereg_sha = hashlib.sha256(snapshot.captured["inputs/prereg.json"]).hexdigest() if is_d5r else payload.get("prereg_sha256")
+    is_d5s = artifact_type == "rl_discovery_d5s"
+    is_train_cost = is_d5 or is_d5r or is_d5s
+    prereg_sha = (
+        hashlib.sha256(snapshot.captured["inputs/prereg.json"]).hexdigest()
+        if is_d5r or is_d5s
+        else payload.get("prereg_sha256")
+    )
+    type1_outcome = {
+        "rl_discovery_d4": "D4_TRAIN_ONLY_CONFIRMED",
+        "rl_discovery_d5": "D5_TRAIN_ONLY_EVALUATED",
+        "rl_discovery_d5r": "D5R_CAPACITY_EVALUATED",
+        "rl_discovery_d5s": "D5S_STABILITY_EVALUATED",
+    }.get(artifact_type, "COMPLETE_NO_GO")
     compact = {
         "research_lane": "rl_discovery",
         "status": payload.get("status"),
         "verdict": payload.get("verdict"),
         "profile": payload.get("profile"),
         "fresh_oos": payload.get("fresh_oos"),
-        "type1_outcome": "D5R_CAPACITY_EVALUATED" if is_d5r else ("D5_TRAIN_ONLY_EVALUATED" if is_d5 else ("COMPLETE_NO_GO" if artifact_type != "rl_discovery_d4" else "D4_TRAIN_ONLY_CONFIRMED")),
-        "primary_round_trip_cost_bp": 23 if is_d5 or is_d5r else 0,
-        "diagnostic_round_trip_cost_bp": 0 if is_d5 or is_d5r else 23,
+        "type1_outcome": type1_outcome,
+        "primary_round_trip_cost_bp": 23 if is_train_cost else 0,
+        "diagnostic_round_trip_cost_bp": 0 if is_train_cost else 23,
         "prereg_sha256": prereg_sha,
         "promotion_allowed": False,
         "profitability_claim_allowed": False,
         "live_broker_order_allowed": False,
         "artifact_manifest_sha256": digest,
     }
-    if is_d5 or is_d5r:
+    if is_train_cost:
         payload = {**payload, "live_broker_order_allowed": False}
     return compact, payload
 
