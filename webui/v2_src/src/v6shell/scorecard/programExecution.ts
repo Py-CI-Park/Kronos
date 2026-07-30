@@ -1,4 +1,3 @@
-import { REVIEWED_D5R_SNAPSHOT } from '../discovery/reviewedD5RSnapshot';
 import { PROGRAM_LANES, PROGRAM_PAGE_MATRIX, programOverallScore } from './programScorecard';
 
 export type ProgramExecution = {
@@ -20,15 +19,15 @@ export type ProgramExecution = {
 export const PROGRAM_EXECUTION: ProgramExecution = {
   overallScore: programOverallScore(PROGRAM_LANES),
   pageCount: PROGRAM_PAGE_MATRIX.length,
-  deliveryLane: 'codex/D5R research → research integration → master PR → annotated D5R tag',
-  baseRelease: 'fork-v1.15.0-kronos-rl-d5-full-train-cost',
-  releaseCandidate: 'fork-v1.16.0-kronos-rl-d5r-capacity-objective',
-  stage: 'D5R_CAPACITY_NOT_CONFIRMED',
-  nextAction: 'Preregister D5S early-stop / regret objective; keep D6 validation sealed',
-  eta: 'D5S prereg 2–4h / train-only stability study 6–12h',
+  deliveryLane: 'codex/D5S research → research integration → master PR → annotated D5S tag',
+  baseRelease: 'fork-v1.16.0-kronos-rl-d5r-capacity-objective',
+  releaseCandidate: 'fork-v1.17.0-kronos-rl-d5s-stability-earlystop',
+  stage: 'D5S_STABILITY_CONFIRMED',
+  nextAction: 'Preregister the fixed 100k D5S policy for D6; keep validation sealed until commit',
+  eta: 'D6 prereg 1–2h / reused-validation study 1–3h',
   freshOos: 'NOT_RUN_NO_READ',
   liveTrading: 'BLOCKED',
   authority: 'REVIEWED_SNAPSHOT',
-  reviewedRun: REVIEWED_D5R_SNAPSHOT.runName,
-  reviewedEvidenceManifest: REVIEWED_D5R_SNAPSHOT.evidenceManifest ?? '',
+  reviewedRun: 'type2-d5s-primary-20260730-001',
+  reviewedEvidenceManifest: 'c9f7f0a35c16491b02a78fe2932f9b006891d62e5318b731d696893e788387f9',
 };
