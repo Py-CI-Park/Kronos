@@ -28,7 +28,8 @@ else:  # pragma: no cover - supports direct script-style imports
 
 
 def read_run_json(run_dir: Path, path: Path) -> dict[str, JsonValue]:
-    return cast(dict[str, JsonValue], _legacy_read_run_json(run_dir, path))
+    value = cast(object, _legacy_read_run_json(run_dir, path))
+    return cast(dict[str, JsonValue], value) if isinstance(value, dict) else {}
 
 
 def json_object(value: object) -> dict[str, JsonValue]:
