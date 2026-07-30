@@ -14,7 +14,9 @@ from stom_rl.rl_discovery.d5s_gate import (
     evaluate_d5s_stability_gate,
 )
 from stom_rl.rl_discovery.storage import artifact_manifest_sha256
+from webui import rl_dashboard
 from webui.rl_dashboard_d5s import valid_d5s_primary
+from webui.rl_dashboard_discovery import find_discovery_evidence
 
 CHECKPOINTS = (50_000, 100_000, 150_000, 200_000, 300_000, 400_000)
 PREREG_PATH = (
@@ -153,3 +155,28 @@ def test_d5s_primary_blocks_unsigned_receipt_safety_tamper(tmp_path: Path, monke
     paths = frozenset(path.relative_to(run).as_posix() for path in run.rglob("*") if path.is_file())
 
     assert not valid_d5s_primary(run, summary, receipt, digest, paths, captured)
+
+
+def test_d5s_primary_is_discoverable_as_dashboard_run(tmp_path: Path, monkeypatch) -> None:
+    run = tmp_path / "type2-d5s-primary-dashboard"
+    run.mkdir()
+    key = bytes(range(32))
+    _write_primary(run, key)
+    monkeypatch.setenv("KRONOS_D5S_APPROVAL_KEY_HEX", key.hex())
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    record = next(item for item in rl_dashboard.list_rl_runs() if item["name"] == run.name)
+    detail = rl_dashboard.load_rl_run(run.name)
+    compact, evidence = find_discovery_evidence(run, "rl_discovery_d5s")
+
+    assert record["artifact_type"] == "rl_discovery_d5s"
+    assert detail["detail"]["gate"]["selected_steps"] == 200_000
+    assert compact["type1_outcome"] == "D5S_STABILITY_EVALUATED"
+    assert compact["primary_round_trip_cost_bp"] == 23
+    assert evidence["live_broker_order_allowed"] is False
+
+    (run / "outcomes/SHUFFLED/seed-2/steps-400000.json").unlink()
+    blocked = rl_dashboard.load_rl_run(run.name)
+    assert blocked["summary"]["status"] == "BLOCK"
+    assert blocked["summary"]["verdict"] == "NO_GO"
+    assert blocked["detail"] == {}

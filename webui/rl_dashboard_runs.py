@@ -1,5 +1,8 @@
 """Run listing and detail loading for STOM RL dashboard artifacts."""
 
+# JSON artifact readers intentionally expose legacy dynamic payloads.
+# pyright: reportPrivateUsage=false, reportPrivateLocalImportUsage=false, reportExplicitAny=false, reportAny=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnnecessaryIsInstance=false, reportDeprecated=false
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -64,6 +67,8 @@ def _detect_artifact_type(run_dir: Path) -> str:
             return "rl_discovery_d5"
         if schema == "kronos.rl-discovery.d5r.capacity.v1":
             return "rl_discovery_d5r"
+        if schema == "kronos.rl-discovery.d5s.stability.v1":
+            return "rl_discovery_d5s"
     for artifact_type, file_name in ARTIFACT_SIGNATURES:
         if _is_run_file(run_dir, run_dir / file_name):
             return artifact_type
@@ -151,7 +156,14 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
     artifact_type = _detect_artifact_type(run_dir)
     verified_detail: Dict[str, Any] | None = None
     verified_summary: Dict[str, Any] | None = None
-    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3", "rl_discovery_d4", "rl_discovery_d5", "rl_discovery_d5r"}:
+    if artifact_type in {
+        "rl_discovery_d2",
+        "rl_discovery_d3",
+        "rl_discovery_d4",
+        "rl_discovery_d5",
+        "rl_discovery_d5r",
+        "rl_discovery_d5s",
+    }:
         verified_summary, verified_detail = _find_discovery_evidence(run_dir, artifact_type)
     payload: Dict[str, Any] = {
         **_run_record(run_dir, verified_summary=verified_summary),
@@ -203,7 +215,14 @@ def load_rl_run(run_name: str) -> Dict[str, Any]:
             "feature_columns": payload["summary"].get("feature_columns", []),
             "train_summary": selected_model,
         }
-    elif artifact_type in {"rl_discovery_d2", "rl_discovery_d3", "rl_discovery_d4", "rl_discovery_d5", "rl_discovery_d5r"}:
+    elif artifact_type in {
+        "rl_discovery_d2",
+        "rl_discovery_d3",
+        "rl_discovery_d4",
+        "rl_discovery_d5",
+        "rl_discovery_d5r",
+        "rl_discovery_d5s",
+    }:
         payload["detail"] = verified_detail or {}
     elif artifact_type == "contextual_bandit":
         payload["detail"] = _read_run_json(run_dir, run_dir / "eval_summary.json")

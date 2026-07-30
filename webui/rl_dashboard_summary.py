@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from .rl_dashboard_discovery import find_discovery_evidence
+    from .rl_dashboard_discovery import find_discovery_evidence as find_discovery_evidence
     from .rl_dashboard_files import LIVE_SUMMARY_FILE_NAMES, _int_or_zero, _is_run_file, _read_run_json
     from .rl_dashboard_opening import opening_workflow_summary
     from .rl_dashboard_run_state import require_discovery_terminal_receipt
 else:  # pragma: no cover - supports direct script-style imports
-    from webui.rl_dashboard_discovery import find_discovery_evidence
+    from webui.rl_dashboard_discovery import find_discovery_evidence as find_discovery_evidence
     from webui.rl_dashboard_files import LIVE_SUMMARY_FILE_NAMES, _int_or_zero, _is_run_file, _read_run_json
     from webui.rl_dashboard_opening import opening_workflow_summary
     from webui.rl_dashboard_run_state import require_discovery_terminal_receipt
@@ -47,7 +47,14 @@ def find_json_summary(run_dir: Path, artifact_type: str) -> dict[str, Any]:
         return dict(payload.get("summary", {}))
     if artifact_type == "sb3_smoke":
         return _sb3_summary(run_dir)
-    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3", "rl_discovery_d4", "rl_discovery_d5", "rl_discovery_d5r"}:
+    if artifact_type in {
+        "rl_discovery_d2",
+        "rl_discovery_d3",
+        "rl_discovery_d4",
+        "rl_discovery_d5",
+        "rl_discovery_d5r",
+        "rl_discovery_d5s",
+    }:
         return find_discovery_evidence(run_dir, artifact_type)[0]
     if artifact_type == "contextual_bandit":
         payload = _read_run_json(run_dir, run_dir / "eval_summary.json")
