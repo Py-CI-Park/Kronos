@@ -9,6 +9,10 @@
   const passMin = (value: number, threshold: number) => value >= threshold;
   const passMax = (value: number, threshold: number) => value <= threshold;
   const armLabel = (id: string) => id.includes('/SHUFFLED/') ? 'SHUFFLED CONTROL' : 'NATIVE';
+  const checkpointLabel = (id: string) => {
+    const steps = Number(id.split('/').at(-1));
+    return Number.isFinite(steps) ? `${steps / 1000}K` : 'MISSING';
+  };
 </script>
 
 <section class="verdict" class:confirmed={evidence.verdict === 'D5S_STABILITY_CONFIRMED'}>
@@ -56,7 +60,7 @@
   <div class="curve-grid">
     {#each aggregates as row}
       <article class:control={row.id.includes('/SHUFFLED/')} class:selected={selected(row.id)}>
-        <div><span>{armLabel(row.id)}</span><b>{row.id.split('/').at(-1)?.replace('000', 'K')}</b></div>
+        <div><span>{armLabel(row.id)}</span><b>{checkpointLabel(row.id)}</b></div>
         <strong>{row.meanOracleRewardRatio.toFixed(3)}</strong>
         <small>accuracy {pct(row.meanExactBasketAccuracy)} · {row.seedCount} seeds</small>
         {#if selected(row.id)}<em>GLOBAL SELECTED</em>{/if}

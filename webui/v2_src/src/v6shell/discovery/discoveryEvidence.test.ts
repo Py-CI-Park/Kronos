@@ -217,6 +217,8 @@ test('discovery UX promotes D5S stability evidence without opening validation', 
   assert.match(d5sPanel, /D6 remains sealed/);
   assert.match(d5sPanel, /D7 remains sealed/);
   assert.match(d5sPanel, /RESEARCH ONLY/);
+  assert.match(d5sPanel, /steps \/ 1000/);
+  assert.doesNotMatch(d5sPanel, /replace\('000', 'K'\)/);
   assert.match(discoveryPage, /const isD5/);
   assert.match(discoveryPage, /isD5S \|\| isD5 \|\| isD5R \? '573 EPISODES' : '128 EPISODES'/);
   assert.match(discoveryPage, /D5REvidencePanel/);
