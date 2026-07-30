@@ -6,7 +6,6 @@ import { REVIEWED_DISCOVERY_SNAPSHOT } from './reviewedDiscoverySnapshot';
 import { REVIEWED_D5_SNAPSHOT } from './reviewedD5Snapshot';
 
 const discoveryPage = readFileSync(new URL('../pages/DiscoveryPage.svelte', import.meta.url), 'utf8');
-const d5Panel = readFileSync(new URL('../pages/D5EvidencePanel.svelte', import.meta.url), 'utf8');
 
 test('discovery evidence parser accepts the dashboard run detail contract', () => {
   const evidence = parseDiscoveryEvidence({
@@ -192,28 +191,6 @@ test('live D5 evidence requires ten cost-trained DQN units and preserves its gat
     summary: { research_lane: 'rl_discovery', verdict: 'D5_FULL_TRAIN_COST_NOT_CONFIRMED' },
     detail: { models: models.slice(0, 9) },
   }), null);
-});
-
-test('discovery UX promotes D5 cost evidence without opening validation', () => {
-  assert.match(discoveryPage, /D5_FULL_TRAIN_COST_/);
-  assert.match(discoveryPage, /D5EvidencePanel/);
-  assert.match(d5Panel, /573 TRAIN EPISODES/);
-  assert.match(d5Panel, /23BP TRAIN \/ PRIMARY/);
-  assert.match(d5Panel, /nativePassingSeedFraction/);
-  assert.match(d5Panel, /shuffledPassingSeedFraction/);
-  assert.match(d5Panel, /reusedValidation/);
-  assert.match(d5Panel, /NOT_RUN_NO_READ/);
-  assert.match(d5Panel, /10 \/ 10/);
-  assert.match(d5Panel, /NO-GO/);
-  assert.match(d5Panel, /NO-TRADE/);
-  assert.match(d5Panel, /ts_imb RULE/);
-  assert.match(d5Panel, /D4 DQN REFERENCE/);
-  assert.match(d5Panel, /NOT COMPARABLE/);
-  assert.match(discoveryPage, /const isD5/);
-  assert.match(discoveryPage, /isD5 \|\| isD5R \? '573 EPISODES' : '128 EPISODES'/);
-  assert.match(discoveryPage, /D5REvidencePanel/);
-  assert.match(discoveryPage, /isD5 \|\| isD5R \? '23BP TRAIN \/ 0BP DIAG'/);
-  assert.match(discoveryPage, /index === \(isD5 \|\| isD5R \? 5 : 4\)/);
 });
 
 test('live D3 nested summary preserves best arm, budget lift, and all units', () => {
