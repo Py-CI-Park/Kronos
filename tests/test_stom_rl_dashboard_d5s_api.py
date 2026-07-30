@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
+
+import pytest
 
 from stom_rl.rl_discovery.d3_training import D3Metrics
 from stom_rl.rl_discovery.d5_approval import primary_custody_signature
@@ -13,7 +14,7 @@ from stom_rl.rl_discovery.d5s_gate import (
     D5SCheckpointOutcome,
     evaluate_d5s_stability_gate,
 )
-from stom_rl.rl_discovery.storage import artifact_manifest_sha256
+from stom_rl.rl_discovery.storage import JsonValue, artifact_manifest_sha256
 from webui import rl_dashboard
 from webui.rl_dashboard_d5s import valid_d5s_primary
 from webui.rl_dashboard_discovery import find_discovery_evidence
@@ -26,7 +27,7 @@ PREREG_PATH = (
 )
 
 
-def _metric(accuracy: float, reward_ratio: float) -> dict[str, float | int]:
+def _metric(accuracy: float, reward_ratio: float) -> dict[str, JsonValue]:
     return {
         "accuracy": accuracy,
         "reward_ratio": reward_ratio,
@@ -38,13 +39,16 @@ def _metric(accuracy: float, reward_ratio: float) -> dict[str, float | int]:
     }
 
 
-def _write_primary(run: Path, key: bytes) -> tuple[dict[str, object], dict[str, object], str]:
+def _write_primary(
+    run: Path,
+    key: bytes,
+) -> tuple[dict[str, JsonValue], dict[str, JsonValue], str]:
     prereg_bytes = PREREG_PATH.read_bytes()
     prereg = load_d5s_prereg_bytes(prereg_bytes)
     inputs = run / "inputs"
     inputs.mkdir(parents=True)
-    (inputs / "prereg.json").write_bytes(prereg_bytes)
-    rows: list[dict[str, object]] = []
+    _ = (inputs / "prereg.json").write_bytes(prereg_bytes)
+    rows: list[JsonValue] = []
     outcomes: list[D5SCheckpointOutcome] = []
     rewards = {50_000: 0.82, 100_000: 0.86, 150_000: 0.89, 200_000: 0.91, 300_000: 0.90, 400_000: 0.88}
     for arm in ("NATIVE", "SHUFFLED"):
@@ -53,7 +57,7 @@ def _write_primary(run: Path, key: bytes) -> tuple[dict[str, object], dict[str, 
                 reward = rewards[steps] + seed * 0.01 if arm == "NATIVE" else 0.10 + seed * 0.01
                 accuracy = 0.73 + seed * 0.01 if arm == "NATIVE" else 0.20
                 metric = _metric(accuracy, reward)
-                row = {
+                row: dict[str, JsonValue] = {
                     "reward_arm": arm,
                     "seed": seed,
                     "total_steps": steps,
@@ -63,14 +67,19 @@ def _write_primary(run: Path, key: bytes) -> tuple[dict[str, object], dict[str, 
                 }
                 rows.append(row)
                 outcomes.append(
-                    D5SCheckpointOutcome(arm, seed, steps, D3Metrics(**metric))  # type: ignore[arg-type]
+                    D5SCheckpointOutcome(
+                        arm,
+                        seed,
+                        steps,
+                        D3Metrics(accuracy, reward, reward, 1.0, 0.8, 0.4, 0),
+                    )
                 )
                 model = run / "models" / arm / f"seed-{seed}" / f"steps-{steps}" / "model.zip"
                 outcome = run / "outcomes" / arm / f"seed-{seed}" / f"steps-{steps}.json"
                 model.parent.mkdir(parents=True, exist_ok=True)
                 outcome.parent.mkdir(parents=True, exist_ok=True)
-                model.write_bytes(b"model")
-                outcome.write_text(
+                _ = model.write_bytes(b"model")
+                _ = outcome.write_text(
                     json.dumps({**row, "events": {"fit_23bp": [], "native_23bp": [], "native_0bp": []}}),
                     encoding="utf-8",
                 )
@@ -80,12 +89,23 @@ def _write_primary(run: Path, key: bytes) -> tuple[dict[str, object], dict[str, 
         D5SBaseline(2, 0.7277486910994765, 0.9037528526603933),
     )
     gate = evaluate_d5s_stability_gate(tuple(outcomes), baselines)
-    summary: dict[str, object] = {
+    gate_payload: dict[str, JsonValue] = {
+        "verdict": gate.verdict,
+        "selected_steps": gate.selected_steps,
+        "selected_native_median_accuracy": gate.selected_native_median_accuracy,
+        "selected_native_median_reward_ratio": gate.selected_native_median_reward_ratio,
+        "selected_native_reward_delta_vs_shuffled": gate.selected_native_reward_delta_vs_shuffled,
+        "accuracy_degradation_at_400k": gate.accuracy_degradation_at_400k,
+        "reward_ratio_degradation_at_400k": gate.reward_ratio_degradation_at_400k,
+        "preserved_native_seed_fraction": gate.preserved_native_seed_fraction,
+        "invalid_action_count": gate.invalid_action_count,
+    }
+    summary: dict[str, JsonValue] = {
         "schema_version": "kronos.rl-discovery.d5s.stability.v1",
         "profile": "PRIMARY",
         "status": "COMPLETE",
         "verdict": gate.verdict,
-        "gate": asdict(gate),
+        "gate": gate_payload,
         "models": rows,
         "source_run": prereg.source_run.run_name,
         "approved_smoke": "type2-d5s-smoke",
@@ -97,9 +117,9 @@ def _write_primary(run: Path, key: bytes) -> tuple[dict[str, object], dict[str, 
         "profitability_claim_allowed": False,
         "live_broker_order_allowed": False,
     }
-    (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    _ = (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
     digest = artifact_manifest_sha256(run)
-    receipt: dict[str, object] = {
+    receipt: dict[str, JsonValue] = {
         "schema_version": "kronos.rl-discovery.d5s.receipt.v1",
         "profile": "PRIMARY",
         "status": "COMPLETE",
@@ -116,11 +136,17 @@ def _write_primary(run: Path, key: bytes) -> tuple[dict[str, object], dict[str, 
             approved_smoke="type2-d5s-smoke",
         ),
     }
-    (run / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
+    _ = (run / "terminal_receipt.json").write_text(
+        json.dumps(receipt),
+        encoding="utf-8",
+    )
     return summary, receipt, digest
 
 
-def test_d5s_primary_requires_authenticated_exact_stability_matrix(tmp_path: Path, monkeypatch) -> None:
+def test_d5s_primary_requires_authenticated_exact_stability_matrix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     run = tmp_path / "type2-d5s-primary"
     run.mkdir()
     key = bytes(range(32))
@@ -140,7 +166,10 @@ def test_d5s_primary_requires_authenticated_exact_stability_matrix(tmp_path: Pat
     assert not valid_d5s_primary(run, summary, receipt, digest, paths, captured)
 
 
-def test_d5s_primary_blocks_unsigned_receipt_safety_tamper(tmp_path: Path, monkeypatch) -> None:
+def test_d5s_primary_blocks_unsigned_receipt_safety_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     run = tmp_path / "type2-d5s-primary-tamper"
     run.mkdir()
     key = bytes(range(32))
@@ -157,11 +186,14 @@ def test_d5s_primary_blocks_unsigned_receipt_safety_tamper(tmp_path: Path, monke
     assert not valid_d5s_primary(run, summary, receipt, digest, paths, captured)
 
 
-def test_d5s_primary_is_discoverable_as_dashboard_run(tmp_path: Path, monkeypatch) -> None:
+def test_d5s_primary_is_discoverable_as_dashboard_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     run = tmp_path / "type2-d5s-primary-dashboard"
     run.mkdir()
     key = bytes(range(32))
-    _write_primary(run, key)
+    _ = _write_primary(run, key)
     monkeypatch.setenv("KRONOS_D5S_APPROVAL_KEY_HEX", key.hex())
     monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
 
@@ -170,6 +202,9 @@ def test_d5s_primary_is_discoverable_as_dashboard_run(tmp_path: Path, monkeypatc
     compact, evidence = find_discovery_evidence(run, "rl_discovery_d5s")
 
     assert record["artifact_type"] == "rl_discovery_d5s"
+    assert record["strategy_context"]["line"] == "rl_experiment"
+    assert record["strategy_context"]["is_reinforcement_learning"] is True
+    assert record["strategy_context"]["is_live_ready"] is False
     assert detail["detail"]["gate"]["selected_steps"] == 200_000
     assert compact["type1_outcome"] == "D5S_STABILITY_EVALUATED"
     assert compact["primary_round_trip_cost_bp"] == 23

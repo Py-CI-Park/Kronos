@@ -7,17 +7,30 @@ profitability or live readiness from artifact names.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
 
 from stom_rl.gap_up_risk_sizing import PRIMARY_FILTER, RiskConfig, risk_unit_account_pct
+from stom_rl.rl_discovery.storage import JsonValue
 
 
-RL_ARTIFACT_TYPES = frozenset({"contextual_bandit", "opening_30m_rl_workflow", "sb3_smoke"})
+RL_ARTIFACT_TYPES = frozenset(
+    {
+        "contextual_bandit",
+        "opening_30m_rl_workflow",
+        "sb3_smoke",
+        "rl_discovery_d2",
+        "rl_discovery_d3",
+        "rl_discovery_d4",
+        "rl_discovery_d5",
+        "rl_discovery_d5r",
+        "rl_discovery_d5s",
+    }
+)
 EVALUATION_ARTIFACT_TYPES = frozenset({"cost_gate", "performance_leaderboard", "episode_manifest", "portfolio_paper"})
 GUARDRAIL = "research evidence only; not live-ready and not a profit model"
 
 
-def risk_policy_summary(config: RiskConfig | None = None) -> dict[str, float | int | str]:
+def risk_policy_summary(config: RiskConfig | None = None) -> dict[str, JsonValue]:
     """Return the locked ts_imb RULE sizing policy used as the main baseline."""
 
     policy = config or RiskConfig()
@@ -35,10 +48,13 @@ def risk_policy_summary(config: RiskConfig | None = None) -> dict[str, float | i
     }
 
 
-def build_strategy_context(artifact_type: str, summary: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def build_strategy_context(
+    artifact_type: str,
+    summary: Mapping[str, JsonValue] | None = None,
+) -> dict[str, JsonValue]:
     """Classify an RL-dashboard artifact without implying live readiness."""
 
-    summary_map = dict(summary or {})
+    summary_map = dict(summary) if summary is not None else {}
     if artifact_type == "baseline":
         return {
             "line": "rule_mainline",
