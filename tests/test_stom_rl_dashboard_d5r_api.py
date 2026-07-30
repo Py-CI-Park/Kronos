@@ -45,6 +45,36 @@ def _write_primary(run: Path, key: bytes) -> None:
                 "or_median_native_regret_bp_above": 25.0,
             },
         },
+        "d5r_2_capacity": {
+            "reward_arms": ["NATIVE", "SHUFFLED"],
+            "seeds": [0, 1, 2],
+            "continuation_source_steps": 200000,
+            "checkpoint_total_steps": [400000, 800000],
+            "additional_steps_per_lineage": [200000, 600000],
+            "algorithm": {
+                "id": "C_DQN_DISCRETE",
+                "family": "DQN",
+                "net_arch": [256, 128],
+                "gamma": 1.0,
+                "learning_rate": 0.001,
+                "train_freq": 4,
+                "gradient_steps": 1,
+            },
+            "costs": {
+                "training_round_trip_bp": 23,
+                "primary_evaluation_round_trip_bp": 23,
+                "diagnostic_zero_cost_bp": 0,
+            },
+            "smoke": {"reward_arms": ["NATIVE", "SHUFFLED"], "seeds": [0], "additional_steps": 2048},
+            "execution_condition": "D5R-1 capacity_required_when is true",
+            "gate": {
+                "minimum_800k_native_median_accuracy_lift_vs_200k": 0.03,
+                "minimum_800k_native_median_reward_ratio_lift_vs_200k": 0.02,
+                "minimum_800k_native_reward_delta_vs_shuffled": 0.2,
+                "minimum_native_improving_seed_fraction": 0.6666666666666666,
+                "zero_invalid_actions": True,
+            },
+        },
         "claims_boundary": {
             "research_only": True,
             "profitability_claim_allowed": False,
@@ -58,7 +88,54 @@ def _write_primary(run: Path, key: bytes) -> None:
     inputs.mkdir(parents=True)
     prereg_bytes = json.dumps(prereg, sort_keys=True).encode()
     (inputs / "prereg.json").write_bytes(prereg_bytes)
-    (inputs / "amendment.json").write_text("{}", encoding="utf-8")
+    amendment = {
+        "schema_version": "kronos.rl-discovery.d5r.amendment.v1",
+        "status": "APPROVED_BEFORE_D5R2_CODE",
+        "experiment_id": "TYPE2-D5R-CAPACITY-OBJECTIVE",
+        "parent_prereg_commit": "bb0d97a",
+        "reason": "D5 archives omit replay buffers, so the study uses deterministic replay from zero.",
+        "supersedes": {
+            "continuation_source_steps": 200000,
+            "additional_steps_per_lineage": [200000, 600000],
+        },
+        "replacement_execution": {
+            "method": "DETERMINISTIC_REPLAY_FROM_ZERO_WITH_IN_PROCESS_CHECKPOINTS",
+            "d5_200k_role": "CUSTODY_BOUND_COMPARISON_BASELINE_ONLY",
+            "reward_arms": ["NATIVE", "SHUFFLED"],
+            "seeds": [0, 1, 2],
+            "checkpoint_total_steps": [400000, 800000],
+            "training_steps_per_lineage": 800000,
+            "lineage_count": 6,
+            "total_new_rl_steps": 4800000,
+            "replay_buffer_continuity": "PRESERVED_WITHIN_EACH_0_TO_800K_LINEAGE",
+            "fixed_execution_parameters": {
+                "batch_size": 64,
+                "buffer_size": 200000,
+                "learning_starts": 128,
+                "gamma": 1.0,
+                "learning_rate": 0.001,
+                "train_freq": 4,
+                "gradient_steps": 1,
+                "net_arch": [256, 128],
+                "device": "cpu",
+                "deterministic_algorithms": True,
+                "reset_num_timesteps_between_checkpoints": False,
+            },
+        },
+        "unchanged": {
+            "gate": "UNCHANGED",
+            "training_round_trip_bp": 23,
+            "primary_evaluation_round_trip_bp": 23,
+            "diagnostic_zero_cost_bp": 0,
+            "native_and_shuffled_controls": True,
+            "reused_validation": "NOT_RUN_NO_READ",
+            "fresh_oos": "NOT_RUN_NO_READ",
+            "profitability_claim_allowed": False,
+            "promotion_allowed": False,
+            "live_broker_order_allowed": False,
+        },
+    }
+    (inputs / "amendment.json").write_text(json.dumps(amendment), encoding="utf-8")
     rows: list[dict[str, object]] = []
     for reward in ("NATIVE", "SHUFFLED"):
         for seed in range(3):
@@ -85,10 +162,10 @@ def _write_primary(run: Path, key: bytes) -> None:
         "verdict": "D5R_CAPACITY_NOT_CONFIRMED",
         "gate": {
             "verdict": "D5R_CAPACITY_NOT_CONFIRMED",
-            "native_accuracy_lift": 0.01,
-            "native_reward_ratio_lift": 0.01,
+            "native_accuracy_lift": -0.2120418848167539,
+            "native_reward_ratio_lift": -0.3727793884825973,
             "native_reward_delta_vs_shuffled": 0.4,
-            "improving_seed_fraction": 1 / 3,
+            "improving_seed_fraction": 0.0,
             "invalid_action_count": 0,
         },
         "models": rows,
@@ -126,6 +203,23 @@ def _write_primary(run: Path, key: bytes) -> None:
     (run / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
 
 
+def _resign_primary(run: Path, key: bytes) -> None:
+    import hashlib
+
+    receipt = json.loads((run / "terminal_receipt.json").read_text(encoding="utf-8"))
+    digest = artifact_manifest_sha256(run)
+    receipt["artifact_manifest_sha256"] = digest
+    receipt["primary_custody_hmac_sha256"] = primary_custody_signature(
+        key,
+        run_name=run.name,
+        prereg_sha=hashlib.sha256((run / "inputs/prereg.json").read_bytes()).hexdigest(),
+        episode_sha="c" * 64,
+        manifest_sha=digest,
+        approved_smoke=receipt["approved_smoke"] if "approved_smoke" in receipt else "type2-d5r-smoke",
+    )
+    (run / "terminal_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
+
+
 def test_d5r_primary_requires_authenticated_exact_capacity_matrix(tmp_path: Path, monkeypatch) -> None:
     run = tmp_path / "type2-d5r-primary"
     run.mkdir()
@@ -145,5 +239,43 @@ def test_d5r_primary_requires_authenticated_exact_capacity_matrix(tmp_path: Path
 
     (run / "models/NATIVE/seed-0/steps-400000/model.zip").unlink()
     blocked = rl_dashboard.load_rl_run(run.name)
+    assert blocked["summary"]["status"] == "BLOCK"
+    assert blocked["detail"] == {}
+
+
+def test_d5r_primary_blocks_authenticated_malformed_amendment(tmp_path: Path, monkeypatch) -> None:
+    run = tmp_path / "type2-d5r-primary-malformed-amendment"
+    run.mkdir()
+    key = bytes(range(32))
+    _write_primary(run, key)
+    amendment_path = run / "inputs/amendment.json"
+    amendment = json.loads(amendment_path.read_text(encoding="utf-8"))
+    amendment["replacement_execution"]["fixed_execution_parameters"]["device"] = "cuda"
+    amendment_path.write_text(json.dumps(amendment), encoding="utf-8")
+    _resign_primary(run, key)
+    monkeypatch.setenv("KRONOS_D5R_APPROVAL_KEY_HEX", key.hex())
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    blocked = rl_dashboard.load_rl_run(run.name)
+
+    assert blocked["summary"]["status"] == "BLOCK"
+    assert blocked["detail"] == {}
+
+
+def test_d5r_primary_blocks_authenticated_inconsistent_gate(tmp_path: Path, monkeypatch) -> None:
+    run = tmp_path / "type2-d5r-primary-inconsistent-gate"
+    run.mkdir()
+    key = bytes(range(32))
+    _write_primary(run, key)
+    summary_path = run / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["gate"]["native_reward_delta_vs_shuffled"] = 0.5
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    _resign_primary(run, key)
+    monkeypatch.setenv("KRONOS_D5R_APPROVAL_KEY_HEX", key.hex())
+    monkeypatch.setattr(rl_dashboard, "RL_RUN_ROOTS", [tmp_path])
+
+    blocked = rl_dashboard.load_rl_run(run.name)
+
     assert blocked["summary"]["status"] == "BLOCK"
     assert blocked["detail"] == {}

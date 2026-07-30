@@ -1,8 +1,12 @@
 import type { JsonObject, JsonValue } from '$lib/rlApi';
 import type { DiscoveryArmEvidence } from './discoveryEvidence';
 
+function isObjectValue(value: JsonValue | undefined): value is JsonObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function objectValue(value: JsonValue | undefined): JsonObject | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  return isObjectValue(value) ? value : null;
 }
 
 function strictNumber(value: JsonValue | undefined): number | null {
@@ -16,7 +20,7 @@ export function d5rArm(row: JsonObject): DiscoveryArmEvidence | null {
   const reward = typeof row.reward_arm === 'string' ? row.reward_arm : '';
   const seed = strictNumber(row.seed);
   const steps = strictNumber(row.total_steps);
-  const fitAccuracy = strictNumber(fit?.accuracy);
+  const nativeAccuracy = strictNumber(nativeCost?.accuracy);
   const fitReward = strictNumber(fit?.reward_ratio);
   const nativeReward = strictNumber(nativeCost?.reward_ratio);
   const zeroReward = strictNumber(nativeZero?.reward_ratio);
@@ -25,7 +29,7 @@ export function d5rArm(row: JsonObject): DiscoveryArmEvidence | null {
   if (!fit || !nativeCost || !nativeZero || !['NATIVE', 'SHUFFLED'].includes(reward)
     || seed === null || !Number.isInteger(seed) || seed < 0 || seed > 2
     || steps === null || ![400_000, 800_000].includes(steps)
-    || fitAccuracy === null || fitReward === null || nativeReward === null
+    || nativeAccuracy === null || fitReward === null || nativeReward === null
     || zeroReward === null || dominant === null || invalid !== 0) return null;
   return {
     id: `D5R-C_DQN_DISCRETE/${reward}/${steps}`,
@@ -33,7 +37,7 @@ export function d5rArm(row: JsonObject): DiscoveryArmEvidence | null {
     seed,
     trainingTimesteps: steps,
     oracleRewardRatio: nativeReward,
-    exactBasketAccuracy: fitAccuracy,
+    exactBasketAccuracy: nativeAccuracy,
     dominantActionRate: dominant,
     invalidActionCount: invalid,
     blockCount: 0,

@@ -49,7 +49,12 @@ def evaluate_d5r_capacity_gate(
     }
     observed = {(row.reward_arm, row.seed, row.total_steps): row for row in outcomes}
     baseline_by_seed = {row.seed: row for row in baselines}
-    if set(observed) != expected or len(observed) != len(outcomes) or set(baseline_by_seed) != set(range(3)):
+    if (
+        set(observed) != expected
+        or len(observed) != len(outcomes)
+        or set(baseline_by_seed) != set(range(3))
+        or len(baselines) != 3
+    ):
         raise D5RGateError("D5R capacity gate requires the exact 12-unit matrix and three baselines")
     native_800k = tuple(observed[("NATIVE", seed, 800_000)] for seed in range(3))
     shuffled_800k = tuple(observed[("SHUFFLED", seed, 800_000)] for seed in range(3))

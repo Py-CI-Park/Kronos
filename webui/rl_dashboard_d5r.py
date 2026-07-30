@@ -8,12 +8,13 @@ import math
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from statistics import median
 from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
 
 from stom_rl.rl_discovery.d5_approval import primary_custody_signature
-from stom_rl.rl_discovery.d5r_contract import D5RPreregistration
+from stom_rl.rl_discovery.d5r_contract import D5RPreregistration, load_d5r_amendment_bytes
 from stom_rl.rl_discovery.storage import JsonValue
 
 
@@ -22,13 +23,20 @@ class _Frozen(BaseModel):
 
 
 class _Metric(_Frozen):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", strict=True)
+
     accuracy: FiniteFloat
     reward_ratio: FiniteFloat
     dominant_action_rate: FiniteFloat
     invalid_action_count: Literal[0]
+    oracle_reward: FiniteFloat
+    total_reward: FiniteFloat
+    trade_rate: FiniteFloat
 
 
 class _Checkpoint(_Frozen):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", strict=True)
+
     reward_arm: Literal["NATIVE", "SHUFFLED"]
     seed: int = Field(ge=0, le=2)
     total_steps: Literal[400000, 800000]
@@ -38,6 +46,8 @@ class _Checkpoint(_Frozen):
 
 
 class _Gate(_Frozen):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", strict=True)
+
     verdict: Literal["D5R_CAPACITY_CONFIRMED", "D5R_CAPACITY_NOT_CONFIRMED"]
     native_accuracy_lift: FiniteFloat
     native_reward_ratio_lift: FiniteFloat
@@ -73,9 +83,13 @@ def valid_d5r_primary(
 ) -> bool:
     """Accept only the registered, authenticated 12-checkpoint Primary matrix."""
 
+    models = payload.get("models")
+    if not isinstance(models, list):
+        return False
     try:
         prereg = D5RPreregistration.model_validate_json(captured["inputs/prereg.json"])
-        rows = tuple(_Checkpoint.model_validate(row) for row in payload.get("models", []))
+        _ = load_d5r_amendment_bytes(captured["inputs/amendment.json"])
+        rows = tuple(_Checkpoint.model_validate(row) for row in models)
         gate = _Gate.model_validate(payload.get("gate"))
     except (KeyError, TypeError, ValueError):
         return False
@@ -101,10 +115,12 @@ def valid_d5r_primary(
         or payload.get("profitability_claim_allowed") is not False
         or payload.get("live_broker_order_allowed") is not False
         or payload.get("d5_verdict_unchanged") != "D5_FULL_TRAIN_COST_NOT_CONFIRMED"
+        or payload.get("source_run") != prereg.source_run.run_name
         or not isinstance(approved_smoke, str)
         or not math.isfinite(gate.improving_seed_fraction)
         or not 0 <= gate.improving_seed_fraction <= 1
         or not _valid_artifacts(relative_paths, captured, rows)
+        or not _gate_matches_rows(gate, rows)
     ):
         return False
     prereg_sha = hashlib.sha256(captured["inputs/prereg.json"]).hexdigest()
@@ -118,6 +134,38 @@ def valid_d5r_primary(
     ):
         return True
     return _matches_custody(run_dir, digest)
+
+
+def _gate_matches_rows(gate: _Gate, rows: tuple[_Checkpoint, ...]) -> bool:
+    baseline = {
+        0: (0.7120418848167539, 0.8727793884825973),
+        1: (0.6614310645724258, 0.8503857573981751),
+        2: (0.7277486910994765, 0.9037528526603933),
+    }
+    indexed = {(row.reward_arm, row.seed, row.total_steps): row for row in rows}
+    native = tuple(indexed[("NATIVE", seed, 800_000)] for seed in range(3))
+    shuffled = tuple(indexed[("SHUFFLED", seed, 800_000)] for seed in range(3))
+    accuracy_lifts = tuple(row.native_23bp.accuracy - baseline[row.seed][0] for row in native)
+    reward_lifts = tuple(row.native_23bp.reward_ratio - baseline[row.seed][1] for row in native)
+    expected = (
+        median(accuracy_lifts),
+        median(reward_lifts),
+        median(row.native_23bp.reward_ratio for row in native)
+        - median(row.native_23bp.reward_ratio for row in shuffled),
+        sum(a > 0 and r > 0 for a, r in zip(accuracy_lifts, reward_lifts, strict=True)) / 3,
+    )
+    observed = (
+        gate.native_accuracy_lift,
+        gate.native_reward_ratio_lift,
+        gate.native_reward_delta_vs_shuffled,
+        gate.improving_seed_fraction,
+    )
+    confirmed = expected[0] >= 0.03 and expected[1] >= 0.02 and expected[2] >= 0.2 and expected[3] >= 2 / 3
+    expected_verdict = "D5R_CAPACITY_CONFIRMED" if confirmed else "D5R_CAPACITY_NOT_CONFIRMED"
+    return gate.verdict == expected_verdict and all(
+        math.isclose(actual, target, rel_tol=0, abs_tol=1e-12)
+        for actual, target in zip(observed, expected, strict=True)
+    )
 
 
 def _valid_artifacts(

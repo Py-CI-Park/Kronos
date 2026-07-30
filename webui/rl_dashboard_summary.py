@@ -88,7 +88,7 @@ def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str
             for seed in range(5)
         )
     if artifact_type == "rl_discovery_d5r":
-        capture_paths |= frozenset({"inputs/prereg.json"}) | frozenset(
+        capture_paths |= frozenset({"inputs/prereg.json", "inputs/amendment.json"}) | frozenset(
             f"outcomes/{reward}/seed-{seed}/steps-{steps}.json"
             for reward in ("NATIVE", "SHUFFLED")
             for seed in range(3)

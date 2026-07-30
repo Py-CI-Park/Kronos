@@ -15,6 +15,7 @@ from stom_rl.rl_discovery.d3_training import D3Metrics, evaluate_d3_model, shuff
 from stom_rl.rl_discovery.d4_training import D4PlainPolicy
 from stom_rl.rl_discovery.d5_approval import primary_custody_signature
 from stom_rl.rl_discovery.d5r_approval import approve_d5r_smoke
+from stom_rl.rl_discovery.d5r_contract import load_d5r_amendment_bytes
 from stom_rl.rl_discovery.d5r_diagnostic import diagnose_d5r_unit
 from stom_rl.rl_discovery.d5r_gate import (
     D5RBaseline,
@@ -67,6 +68,7 @@ def execute_d5r_capacity(
         repo_root / "docs/kronos_rl_discovery_type2_d5r_amendment_2026-07-30.json",
         anchor=repo_root,
     )
+    _ = load_d5r_amendment_bytes(amendment)
     _ = guard.publish_bytes(source.prereg_bytes, "inputs", "prereg.json")
     _ = guard.publish_bytes(amendment, "inputs", "amendment.json")
     arms, seeds, checkpoints = registered_schedule(profile)
