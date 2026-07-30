@@ -111,7 +111,7 @@ No-trade보다 높은 TRAIN_ONLY reward는 수익성 주장이 아니다. 재사
 
 | 검증 | 명령/범위 | 결과 |
 |---|---|---|
-| Python 릴리스 회귀 | D5·dashboard·orderbook·RULE/gate·official route 17개 test module | `128 passed, 4 skipped` |
+| Python 릴리스 회귀 | D5·dashboard·orderbook·RULE/gate·official route 17개 test module | `129 passed, 4 skipped` |
 | Frontend 전체 | `npm test` | `392 passed, 0 failed` |
 | Svelte 정적 검사 | `npm run check` | `0 errors, 0 warnings` |
 | Production build | `npm run build` | 961 modules transformed; served dist 갱신 |
