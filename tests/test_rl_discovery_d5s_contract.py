@@ -63,10 +63,10 @@ def test_d5s_source_binds_d5r_primary_and_d5_baselines(
         ),
     )
     if not isinstance(prereg_payload, dict):
-        raise AssertionError("D5S prereg fixture must be an object")
+        raise TypeError("D5S prereg fixture must be an object")
     source_run = prereg_payload.get("source_run")
     if not isinstance(source_run, dict):
-        raise AssertionError("D5S source-run fixture must be an object")
+        raise TypeError("D5S source-run fixture must be an object")
     source_run["summary_sha256"] = hashlib.sha256(summary.read_bytes()).hexdigest()
     source_run["terminal_receipt_sha256"] = hashlib.sha256(receipt.read_bytes()).hexdigest()
     source_run["artifact_manifest_sha256"] = artifact_manifest_sha256(
