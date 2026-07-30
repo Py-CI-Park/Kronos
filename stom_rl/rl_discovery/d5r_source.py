@@ -36,6 +36,11 @@ class _SourceEvents(_FrozenBoundary):
     native_23bp: tuple[_SourceEvent, ...]
 
 
+class _SourceMetric(_FrozenBoundary):
+    accuracy: float
+    reward_ratio: float
+
+
 class _SourceOutcome(_FrozenBoundary):
     algorithm_arm: Literal["C_DQN_DISCRETE"]
     algorithm_family: Literal["DQN"]
@@ -43,6 +48,7 @@ class _SourceOutcome(_FrozenBoundary):
     seed: int
     rl_timesteps: Literal[200000]
     training_round_trip_cost_bp: Literal[23]
+    native_23bp: _SourceMetric
     events: _SourceEvents
 
 
@@ -50,6 +56,8 @@ class _SourceOutcome(_FrozenBoundary):
 class D5RSourceUnit:
     reward_arm: str
     seed: int
+    baseline_accuracy: float
+    baseline_reward_ratio: float
     events: tuple[D5REvent, ...]
 
 
@@ -107,4 +115,10 @@ def _load_unit(run_dir: Path, root: Path, reward_arm: str, seed: int) -> D5RSour
         D5REvent(event.decision_date, event.action, event.expected_action, event.reward)
         for event in outcome.events.native_23bp
     )
-    return D5RSourceUnit(reward_arm, seed, events)
+    return D5RSourceUnit(
+        reward_arm,
+        seed,
+        outcome.native_23bp.accuracy,
+        outcome.native_23bp.reward_ratio,
+        events,
+    )

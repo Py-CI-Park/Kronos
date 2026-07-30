@@ -29,3 +29,4 @@ def test_d5r_source_loads_exact_authenticated_ten_unit_matrix() -> None:
         for seed in range(5)
     }
     assert all(len(unit.events) == 573 for unit in source.units)
+    assert all(0 <= unit.baseline_accuracy <= 1 for unit in source.units)
