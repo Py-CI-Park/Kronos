@@ -56,6 +56,22 @@ def test_locked_guard_blocks_run_directory_replacement_during_publication(
     assert (run_dir / "summary.json").read_bytes() == b"safe"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows directory-sharing contract")
+def test_locked_parent_blocks_nested_directory_replacement(tmp_path: Path) -> None:
+    run_root = tmp_path / "runs"
+    run_dir = run_root / "primary"
+    inputs = run_dir / "inputs"
+    inputs.mkdir(parents=True)
+    guard = RunDirectoryGuard.capture(run_root, run_dir)
+
+    with guard.locked_parent("inputs") as locked_inputs:
+        with pytest.raises(PermissionError):
+            _ = inputs.rename(run_dir / "moved-inputs")
+        atomic_write_bytes(contained_path(locked_inputs, "prereg.json"), b"safe")
+
+    assert (inputs / "prereg.json").read_bytes() == b"safe"
+
+
 def test_guarded_publication_rejects_a_same_name_redirect(tmp_path: Path) -> None:
     run_root = tmp_path / "runs"
     run_dir = run_root / "primary"

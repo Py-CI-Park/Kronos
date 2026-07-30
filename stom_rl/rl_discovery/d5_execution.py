@@ -106,8 +106,13 @@ def execute_d5(
                 ),
             )
             model_arm = f"C_DQN_DISCRETE__{reward.value}"
-            with run_guard.locked() as locked_dir:
-                trained.save(locked_dir, arm=model_arm, seed=seed)
+            with run_guard.locked_parent(
+                "models",
+                model_arm,
+                f"seed-{seed}",
+                exclusive_leaf=True,
+            ) as model_dir:
+                trained.policy.save(model_dir / "model")
             fit, fit_events = evaluate_d3_model(
                 trained.policy,
                 fit_episodes,

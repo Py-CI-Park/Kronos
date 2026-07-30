@@ -17,7 +17,10 @@ from typing_extensions import override
 
 from stom_rl.rl_discovery.atomic_storage import atomic_write_bytes
 from stom_rl.rl_discovery.atomic_storage import atomic_write_json as _atomic_write_json
-from stom_rl.rl_discovery.directory_lease import locked_directory
+from stom_rl.rl_discovery.directory_lease import (
+    locked_artifact_parent,
+    locked_directory,
+)
 
 atomic_write_json = _atomic_write_json
 
@@ -84,8 +87,6 @@ class RunDirectoryGuard:
         return candidate
 
     def locked(self) -> AbstractContextManager[Path]:
-        """Hold publication on the captured directory without path re-resolution races."""
-
         return locked_directory(
             self.run_dir,
             expected_device=self.device,
@@ -93,12 +94,25 @@ class RunDirectoryGuard:
         )
 
     def publish_bytes(self, payload: bytes, *segments: str) -> Path:
-        """Atomically publish bytes while the captured run directory remains locked."""
-
-        with self.locked() as locked_dir:
-            target = contained_path(locked_dir, *segments)
+        if not segments:
+            raise UnsafeArtifactPathError(self.run_dir, "artifact path is required")
+        with self.locked_parent(*segments[:-1]) as locked_parent:
+            target = contained_path(locked_parent, segments[-1])
             atomic_write_bytes(target, payload)
             return self.run_dir.joinpath(*segments)
+
+    def locked_parent(
+        self,
+        *segments: str,
+        exclusive_leaf: bool = False,
+    ) -> AbstractContextManager[Path]:
+        return locked_artifact_parent(
+            self.run_dir,
+            segments,
+            expected_device=self.device,
+            expected_inode=self.inode,
+            exclusive_leaf=exclusive_leaf,
+        )
 
 
 def _is_reparse_point(path: Path) -> bool:
