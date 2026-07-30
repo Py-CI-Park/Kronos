@@ -12,7 +12,6 @@ from collections.abc import Mapping
 from stom_rl.gap_up_risk_sizing import PRIMARY_FILTER, RiskConfig, risk_unit_account_pct
 from stom_rl.rl_discovery.storage import JsonValue
 
-
 RL_ARTIFACT_TYPES = frozenset(
     {
         "contextual_bandit",

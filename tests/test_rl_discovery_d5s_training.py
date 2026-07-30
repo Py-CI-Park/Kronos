@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from numpy.typing import NDArray
 import numpy as np
+from numpy.typing import NDArray
 
 from stom_rl.rl_discovery.d5s_training import D5SLineage, advance_d5s_lineage
 

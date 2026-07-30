@@ -233,13 +233,13 @@ def _valid_artifacts(
     if observed_models != model_paths or observed_outcomes != outcome_paths:
         return False
     by_key = {(row.reward_arm, row.seed, row.total_steps): row for row in rows}
-    for reward, seed, steps in by_key:
+    for (reward, seed, steps), checkpoint in by_key.items():
         path = f"outcomes/{reward}/seed-{seed}/steps-{steps}.json"
         try:
             outcome = _Outcome.model_validate_json(captured[path])
         except (KeyError, ValueError):
             return False
-        if _Checkpoint.model_validate(outcome.model_dump(exclude={"events"})) != by_key[(reward, seed, steps)]:
+        if _Checkpoint.model_validate(outcome.model_dump(exclude={"events"})) != checkpoint:
             return False
     return True
 

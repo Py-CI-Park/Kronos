@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 
-from stom_rl.rl_discovery.d2_custody import assert_plain_path, held_bytes, verified_bytes
+from stom_rl.rl_discovery.d2_custody import (
+    assert_plain_path,
+    held_bytes,
+    verified_bytes,
+)
 from stom_rl.rl_discovery.d3_env import D3Episode
 from stom_rl.rl_discovery.d5r_source import load_d5r_source
 from stom_rl.rl_discovery.d5s_contract import D5SPreregistration, load_d5s_prereg_bytes

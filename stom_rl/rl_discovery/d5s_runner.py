@@ -28,7 +28,7 @@ def run_d5s(
             approved_smoke=approved_smoke,
             approval_key=approval_key,
         )
-    except BaseException as exc:  # noqa: BLE001  # BROAD_EXCEPT_OK terminal boundary
+    except BaseException as exc:  # BROAD_EXCEPT_OK terminal boundary
         receipt = guard.run_dir / "terminal_receipt.json"
         if not receipt.exists():
             _ = guard.publish_bytes(

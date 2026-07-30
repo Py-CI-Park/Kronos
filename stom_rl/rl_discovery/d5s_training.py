@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from pathlib import Path
-import random
 from typing import Protocol, Self
 
-from numpy.typing import NDArray
 import numpy as np
+from numpy.typing import NDArray
 
 from stom_rl.rl_discovery.d3_env import D3Episode, D3Representation, HistoricalTopKEnv
 from stom_rl.rl_discovery.torch_runtime import prepare_torch_runtime

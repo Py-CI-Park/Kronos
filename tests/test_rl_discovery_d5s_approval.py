@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 import shutil
+from pathlib import Path
 
-from stom_rl.rl_discovery.d5s_approval import approve_d5s_smoke, create_d5s_smoke_approval
+from stom_rl.rl_discovery.d5s_approval import (
+    approve_d5s_smoke,
+    create_d5s_smoke_approval,
+)
 from stom_rl.rl_discovery.d5s_contract import load_d5s_prereg_bytes
 from stom_rl.rl_discovery.storage import artifact_manifest_sha256
 

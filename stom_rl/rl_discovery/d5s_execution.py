@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -11,11 +10,19 @@ from typing import Literal
 from stom_rl.daily_type1_contract import canonical_json_bytes
 from stom_rl.rl_discovery.d3_contract import D3PolicyArmId
 from stom_rl.rl_discovery.d3_env import D3Representation
-from stom_rl.rl_discovery.d3_training import D3Metrics, evaluate_d3_model, shuffled_d3_episodes
+from stom_rl.rl_discovery.d3_training import (
+    D3Metrics,
+    evaluate_d3_model,
+    shuffled_d3_episodes,
+)
 from stom_rl.rl_discovery.d4_training import D4PlainPolicy
 from stom_rl.rl_discovery.d5_approval import primary_custody_signature
 from stom_rl.rl_discovery.d5s_approval import approve_d5s_smoke
-from stom_rl.rl_discovery.d5s_gate import D5SCheckpointOutcome, D5SStabilityGate, evaluate_d5s_stability_gate
+from stom_rl.rl_discovery.d5s_gate import (
+    D5SCheckpointOutcome,
+    D5SStabilityGate,
+    evaluate_d5s_stability_gate,
+)
 from stom_rl.rl_discovery.d5s_source import D5SSourceBundle, load_d5s_source
 from stom_rl.rl_discovery.d5s_training import advance_d5s_lineage, start_d5s_lineage
 from stom_rl.rl_discovery.storage import RunDirectoryGuard, artifact_manifest_sha256
