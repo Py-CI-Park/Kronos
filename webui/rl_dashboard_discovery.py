@@ -1,8 +1,5 @@
 """Fail-closed discovery evidence verification for the RL dashboard."""
 
-# Discovery artifacts intentionally expose legacy dynamic payloads.
-# pyright: reportPrivateUsage=false, reportExplicitAny=false, reportAny=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedCallResult=false
-
 from __future__ import annotations
 
 import hashlib
@@ -10,11 +7,12 @@ import hmac
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from stom_rl.rl_discovery.d4_approval import primary_custody_signature
 from stom_rl.rl_discovery.d4_contract import D4AlgorithmArmId, D4RewardArmId
 from stom_rl.rl_discovery.evidence_snapshot import read_evidence_snapshot
+from stom_rl.rl_discovery.storage import JsonValue
 
 if __package__:
     from .rl_dashboard_d5 import valid_d5_primary
@@ -29,10 +27,14 @@ else:  # pragma: no cover - supports direct script-style imports
 def find_discovery_evidence(
     run_dir: Path,
     artifact_type: str,
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     """Return compact and detailed discovery data from one verified snapshot."""
 
-    blocked = {"research_lane": "rl_discovery", "status": "BLOCK", "verdict": "NO_GO"}
+    blocked: dict[str, JsonValue] = {
+        "research_lane": "rl_discovery",
+        "status": "BLOCK",
+        "verdict": "NO_GO",
+    }
     capture_paths = frozenset({"summary.json", "terminal_receipt.json"})
     if artifact_type == "rl_discovery_d5":
         capture_paths |= frozenset({"inputs/prereg.json"}) | frozenset(
@@ -60,8 +62,14 @@ def find_discovery_evidence(
             capture_paths=capture_paths,
             excluded_manifest_paths=frozenset({"terminal_receipt.json"}),
         )
-        payload_value: object = json.loads(snapshot.captured["summary.json"])
-        receipt_value: object = json.loads(snapshot.captured["terminal_receipt.json"])
+        payload_value = cast(
+            JsonValue,
+            json.loads(snapshot.captured["summary.json"]),
+        )
+        receipt_value = cast(
+            JsonValue,
+            json.loads(snapshot.captured["terminal_receipt.json"]),
+        )
     except (OSError, ValueError):
         return blocked, {}
     if not isinstance(payload_value, dict) or not isinstance(receipt_value, dict):
@@ -109,18 +117,20 @@ def find_discovery_evidence(
     is_d5r = artifact_type == "rl_discovery_d5r"
     is_d5s = artifact_type == "rl_discovery_d5s"
     is_train_cost = is_d5 or is_d5r or is_d5s
-    prereg_sha = (
-        hashlib.sha256(snapshot.captured["inputs/prereg.json"]).hexdigest()
-        if is_d5r or is_d5s
-        else payload.get("prereg_sha256")
-    )
+    prereg_value = payload.get("prereg_sha256")
+    if is_d5r or is_d5s:
+        prereg_sha: JsonValue = hashlib.sha256(
+            snapshot.captured["inputs/prereg.json"]
+        ).hexdigest()
+    else:
+        prereg_sha = prereg_value if isinstance(prereg_value, str) else None
     type1_outcome = {
         "rl_discovery_d4": "D4_TRAIN_ONLY_CONFIRMED",
         "rl_discovery_d5": "D5_TRAIN_ONLY_EVALUATED",
         "rl_discovery_d5r": "D5R_CAPACITY_EVALUATED",
         "rl_discovery_d5s": "D5S_STABILITY_EVALUATED",
     }.get(artifact_type, "COMPLETE_NO_GO")
-    compact = {
+    compact: dict[str, JsonValue] = {
         "research_lane": "rl_discovery",
         "status": payload.get("status"),
         "verdict": payload.get("verdict"),
@@ -142,8 +152,8 @@ def find_discovery_evidence(
 
 def _valid_d4_primary(
     run_dir: Path,
-    payload: dict[object, object],
-    receipt: dict[object, object],
+    payload: dict[str, JsonValue],
+    receipt: dict[str, JsonValue],
     digest: str,
 ) -> bool:
     expected = {
@@ -155,13 +165,18 @@ def _valid_d4_primary(
     models = payload.get("models")
     if not isinstance(models, list) or len(models) != 24:
         return False
-    observed: set[tuple[object, object, object]] = set()
+    observed: set[tuple[str, str, int]] = set()
     for row in models:
         if not isinstance(row, dict):
             return False
         if not all(isinstance(row.get(metric), dict) for metric in ("fit", "native", "cost_23bp")):
             return False
-        observed.add((row.get("algorithm_arm"), row.get("reward_arm"), row.get("seed")))
+        algorithm = row.get("algorithm_arm")
+        reward = row.get("reward_arm")
+        seed = row.get("seed")
+        if not isinstance(algorithm, str) or not isinstance(reward, str) or not isinstance(seed, int):
+            return False
+        observed.add((algorithm, reward, seed))
     gate = payload.get("gate")
     approved_smoke = payload.get("approved_smoke")
     try:
@@ -196,7 +211,7 @@ def _valid_d4_primary(
 def _matches_committed_d4_custody(run_dir: Path, digest: str) -> bool:
     custody_path = Path(__file__).resolve().parents[1] / "docs" / "evidence" / f"{run_dir.name}.custody.json"
     try:
-        value: object = json.loads(custody_path.read_bytes())
+        value = cast(JsonValue, json.loads(custody_path.read_bytes()))
         summary_sha = hashlib.sha256((run_dir / "summary.json").read_bytes()).hexdigest()
         receipt_sha = hashlib.sha256((run_dir / "terminal_receipt.json").read_bytes()).hexdigest()
     except (OSError, ValueError):
