@@ -13,6 +13,8 @@ from stom_rl.rl_discovery.d3_contract import D3PolicyArmId
 from stom_rl.rl_discovery.d3_env import D3Representation
 from stom_rl.rl_discovery.d3_training import D3Metrics, evaluate_d3_model, shuffled_d3_episodes
 from stom_rl.rl_discovery.d4_training import D4PlainPolicy
+from stom_rl.rl_discovery.d5_approval import primary_custody_signature
+from stom_rl.rl_discovery.d5r_approval import approve_d5r_smoke
 from stom_rl.rl_discovery.d5r_diagnostic import diagnose_d5r_unit
 from stom_rl.rl_discovery.d5r_gate import (
     D5RBaseline,
@@ -50,9 +52,22 @@ def run_d5r_capacity(
     run_root: Path,
     run_id: str,
     profile: D5RCapacityProfile,
+    approved_smoke: Path | None = None,
+    approval_key: bytes | None = None,
 ) -> Path:
     source = load_d5r_source(repo_root)
     _require_capacity_study(source)
+    approved_name = (
+        approve_d5r_smoke(
+            approved_smoke,
+            run_root=run_root,
+            approval_key=approval_key,
+            prereg_sha=source.prereg_sha256,
+            episode_sha=source.prereg.source_run.episode_snapshot_sha256,
+        )
+        if profile is D5RCapacityProfile.PRIMARY
+        else None
+    )
     run_dir = create_run_directory(run_root, run_id)
     guard = RunDirectoryGuard.capture(run_root, run_dir)
     amendment = held_bytes(
@@ -137,7 +152,15 @@ def run_d5r_capacity(
                     f"steps-{checkpoint}.json",
                 )
     gate = _capacity_gate(source, tuple(outcomes)) if profile is D5RCapacityProfile.PRIMARY else None
-    return _finish_capacity_run(guard, source, profile, tuple(rows), gate)
+    return _finish_capacity_run(
+        guard,
+        source,
+        profile,
+        tuple(rows),
+        gate,
+        approved_name,
+        approval_key,
+    )
 
 
 def _registered_schedule(
@@ -180,6 +203,8 @@ def _finish_capacity_run(
     profile: D5RCapacityProfile,
     rows: tuple[D5RCheckpointRow, ...],
     gate: D5RCapacityGate | None,
+    approved_smoke: str | None,
+    approval_key: bytes | None,
 ) -> Path:
     verdict = "D5R_SMOKE_COMPLETE" if gate is None else gate.verdict
     summary = {
@@ -190,6 +215,7 @@ def _finish_capacity_run(
         "gate": None if gate is None else asdict(gate),
         "models": [asdict(row) for row in rows],
         "source_run": source.prereg.source_run.run_name,
+        "approved_smoke": approved_smoke,
         "d5_verdict_unchanged": "D5_FULL_TRAIN_COST_NOT_CONFIRMED",
         "reused_validation": "NOT_RUN_NO_READ",
         "fresh_oos": "NOT_RUN_NO_READ",
@@ -212,5 +238,14 @@ def _finish_capacity_run(
         "fresh_oos": "NOT_RUN_NO_READ",
         "live_broker_order_allowed": False,
     }
+    if profile is D5RCapacityProfile.PRIMARY and approved_smoke is not None and approval_key is not None:
+        receipt["primary_custody_hmac_sha256"] = primary_custody_signature(
+            approval_key,
+            run_name=guard.run_dir.name,
+            prereg_sha=source.prereg_sha256,
+            episode_sha=source.prereg.source_run.episode_snapshot_sha256,
+            manifest_sha=digest,
+            approved_smoke=approved_smoke,
+        )
     _ = guard.publish_bytes(canonical_json_bytes(receipt), "terminal_receipt.json")
     return guard.verify()
