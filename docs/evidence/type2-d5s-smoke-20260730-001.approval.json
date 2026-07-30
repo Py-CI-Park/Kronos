@@ -1,0 +1,17 @@
+{
+  "schema_version": "kronos.rl-discovery.d5s.smoke-approval-evidence.v1",
+  "status": "APPROVED_FOR_REGISTERED_PRIMARY",
+  "run_name": "type2-d5s-smoke-20260730-001",
+  "verdict": "D5S_SMOKE_COMPLETE",
+  "model_count": 2,
+  "outcome_count": 2,
+  "prereg_sha256": "cecaf4b70fb437db1b7b4aacecb3113e6f80e14b9d0d204faa68afed62c77a6a",
+  "artifact_manifest_sha256": "9add8e58fb83f195fa0240555eb7d48c0731a23079266fd64403af5e4a2b161e",
+  "summary_sha256": "fef66bcb093fda1081419b0bfc0a6b9c61f5f90977b6465b6c2f6a8a41ad31c8",
+  "terminal_receipt_sha256": "804b432ec09f4d375dddbabf0b8b075c8cfa41cd6ad3d9dbbde06b832cb340b6",
+  "operator_approval_sha256": "730d50e3e49c0d2ccbf3eebf8f74fae5cc4944c333780af7b653e0433689fddd",
+  "approval_key_policy": "EPHEMERAL_32_BYTE_KEY_NOT_COMMITTED",
+  "reused_validation": "NOT_RUN_NO_READ",
+  "fresh_oos": "NOT_RUN_NO_READ",
+  "live_broker_order_allowed": false
+}

@@ -1,253 +1,119 @@
 """Typed summary readers for RL dashboard run artifacts."""
 
-# JSON artifact readers intentionally expose legacy dynamic payloads.
-# pyright: reportPrivateUsage=false, reportExplicitAny=false, reportAny=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedCallResult=false
+# This summary facade intentionally uses the path helper's private containment check.
+# pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
-import json
-import hmac
-import hashlib
-import os
 from pathlib import Path
-from typing import Any
+from typing import cast
 
-from stom_rl.rl_discovery.evidence_snapshot import read_evidence_snapshot
-from stom_rl.rl_discovery.d4_approval import primary_custody_signature
-from stom_rl.rl_discovery.d4_contract import D4AlgorithmArmId, D4RewardArmId
+from stom_rl.rl_discovery.storage import JsonValue
 
 if __package__:
-    from .rl_dashboard_files import LIVE_SUMMARY_FILE_NAMES, _int_or_zero, _is_run_file, _read_run_json
-    from .rl_dashboard_opening import opening_workflow_summary
-    from .rl_dashboard_run_state import require_discovery_terminal_receipt
-    from .rl_dashboard_d5 import valid_d5_primary
-    from .rl_dashboard_d5r import valid_d5r_primary
+    from . import rl_dashboard_discovery as _discovery
+    from . import rl_dashboard_files as _files
+    from . import rl_dashboard_json as _json
+    from . import rl_dashboard_opening as _opening
+    from . import rl_dashboard_run_state as _state
 else:  # pragma: no cover - supports direct script-style imports
-    from webui.rl_dashboard_files import LIVE_SUMMARY_FILE_NAMES, _int_or_zero, _is_run_file, _read_run_json
-    from webui.rl_dashboard_opening import opening_workflow_summary
-    from webui.rl_dashboard_run_state import require_discovery_terminal_receipt
-    from webui.rl_dashboard_d5 import valid_d5_primary
-    from webui.rl_dashboard_d5r import valid_d5r_primary
+    from webui import rl_dashboard_discovery as _discovery
+    from webui import rl_dashboard_files as _files
+    from webui import rl_dashboard_json as _json
+    from webui import rl_dashboard_opening as _opening
+    from webui import rl_dashboard_run_state as _state
+
+find_discovery_evidence = _discovery.find_discovery_evidence
 
 
-def find_json_summary(run_dir: Path, artifact_type: str) -> dict[str, Any]:
+def find_json_summary(run_dir: Path, artifact_type: str) -> dict[str, JsonValue]:
     """Read the compact summary associated with one recognized artifact type."""
 
     if artifact_type == "opening_30m_rule_filter":
-        payload = _read_run_json(run_dir, run_dir / "opening_rule_filter_summary.json")
+        payload = _json.read_run_json(run_dir, run_dir / "opening_rule_filter_summary.json")
         summary = dict(payload)
-        summary.pop("rule_filter_lifecycle", None)
+        _ = summary.pop("rule_filter_lifecycle", None)
         return summary
     if artifact_type == "opening_30m_rl_workflow":
-        return opening_workflow_summary(run_dir)
+        return cast(dict[str, JsonValue], _opening.opening_workflow_summary(run_dir))
     if artifact_type == "orderbook_rl_readiness":
-        payload = _read_run_json(run_dir, run_dir / "orderbook_rl_readiness_summary.json")
-        return dict(payload.get("summary", {}))
+        payload = _json.read_run_json(run_dir, run_dir / "orderbook_rl_readiness_summary.json")
+        return _json.json_object(payload.get("summary"))
     if artifact_type == "portfolio_paper":
-        payload = _read_run_json(run_dir, run_dir / "portfolio_paper_summary.json")
-        summary = dict(payload.get("summary", {}))
-        config = payload.get("config", {})
-        if isinstance(config, dict):
-            summary.setdefault("cost_bps", config.get("cost_bps"))
-            summary.setdefault("max_positions", config.get("max_positions"))
-            summary.setdefault("top_k_candidates", config.get("top_k_candidates"))
+        payload = _json.read_run_json(run_dir, run_dir / "portfolio_paper_summary.json")
+        summary = _json.json_object(payload.get("summary"))
+        config = _json.json_object(payload.get("config"))
+        if config:
+            _ = summary.setdefault("cost_bps", config.get("cost_bps"))
+            _ = summary.setdefault("max_positions", config.get("max_positions"))
+            _ = summary.setdefault("top_k_candidates", config.get("top_k_candidates"))
         return summary
     if artifact_type == "performance_leaderboard":
-        payload = _read_run_json(run_dir, run_dir / "performance_leaderboard.json")
-        return dict(payload.get("summary", {}))
+        payload = _json.read_run_json(run_dir, run_dir / "performance_leaderboard.json")
+        return _json.json_object(payload.get("summary"))
     if artifact_type == "sb3_smoke":
         return _sb3_summary(run_dir)
-    if artifact_type in {"rl_discovery_d2", "rl_discovery_d3", "rl_discovery_d4", "rl_discovery_d5", "rl_discovery_d5r"}:
+    if artifact_type in _json.DISCOVERY_ARTIFACT_TYPES:
         return find_discovery_evidence(run_dir, artifact_type)[0]
     if artifact_type == "contextual_bandit":
-        payload = _read_run_json(run_dir, run_dir / "eval_summary.json")
-        return dict(payload.get("eval_summary", payload.get("summary", {})))
+        payload = _json.read_run_json(run_dir, run_dir / "eval_summary.json")
+        summary = _json.json_object(payload.get("eval_summary"))
+        return summary or _json.json_object(payload.get("summary"))
     if artifact_type == "cost_gate":
-        payload = _read_run_json(run_dir, run_dir / "cost_gate_report.json")
-        return dict(payload.get("summary", {}))
+        payload = _json.read_run_json(run_dir, run_dir / "cost_gate_report.json")
+        return _json.json_object(payload.get("summary"))
     if artifact_type == "baseline":
-        payload = _read_run_json(run_dir, run_dir / "baseline_summary.json")
-        return dict(payload.get("summary", {}))
+        payload = _json.read_run_json(run_dir, run_dir / "baseline_summary.json")
+        return _json.json_object(payload.get("summary"))
     if artifact_type == "episode_manifest":
         summary_path = run_dir / "episode_summary.json"
-        source = summary_path if _is_run_file(run_dir, summary_path) else run_dir / "episode_manifest.json"
-        payload = _read_run_json(run_dir, source)
-        return dict(payload.get("summary", payload))
+        source = (
+            summary_path
+            if _files._is_run_file(run_dir, summary_path)
+            else run_dir / "episode_manifest.json"
+        )
+        payload = _json.read_run_json(run_dir, source)
+        return _json.json_object(payload.get("summary")) or payload
     return {}
 
 
-def find_discovery_evidence(run_dir: Path, artifact_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Return compact and detailed discovery data from one verified snapshot."""
-
-    blocked = {"research_lane": "rl_discovery", "status": "BLOCK", "verdict": "NO_GO"}
-    capture_paths = frozenset({"summary.json", "terminal_receipt.json"})
-    if artifact_type == "rl_discovery_d5":
-        capture_paths |= frozenset({"inputs/prereg.json"}) | frozenset(
-            f"outcomes/{reward.value}/seed-{seed}.json"
-            for reward in D4RewardArmId
-            for seed in range(5)
-        )
-    if artifact_type == "rl_discovery_d5r":
-        capture_paths |= frozenset({"inputs/prereg.json", "inputs/amendment.json"}) | frozenset(
-            f"outcomes/{reward}/seed-{seed}/steps-{steps}.json"
-            for reward in ("NATIVE", "SHUFFLED")
-            for seed in range(3)
-            for steps in (400_000, 800_000)
-        )
-    try:
-        snapshot = read_evidence_snapshot(
+def _sb3_summary(run_dir: Path) -> dict[str, JsonValue]:
+    payload = _json.read_run_json(run_dir, run_dir / "sb3_smoke_summary.json")
+    summary = cast(
+        dict[str, JsonValue],
+        _state.require_discovery_terminal_receipt(
             run_dir,
-            capture_paths=capture_paths,
-            excluded_manifest_paths=frozenset({"terminal_receipt.json"}),
-        )
-        payload_value: object = json.loads(snapshot.captured["summary.json"])
-        receipt_value: object = json.loads(snapshot.captured["terminal_receipt.json"])
-    except (OSError, ValueError):
-        return blocked, {}
-    if not isinstance(payload_value, dict) or not isinstance(receipt_value, dict):
-        return blocked, {}
-    payload = payload_value
-    receipt = receipt_value
-    expected_schema = {
-        "rl_discovery_d2": "kronos.rl-discovery.d2.result.v1",
-        "rl_discovery_d3": "kronos.rl-discovery.d3.result.v1",
-        "rl_discovery_d4": "kronos.rl-discovery.d4.result.v1",
-        "rl_discovery_d5": "kronos.rl-discovery.d5.result.v1",
-        "rl_discovery_d5r": "kronos.rl-discovery.d5r.capacity.v1",
-    }.get(artifact_type)
-    digest = snapshot.manifest_sha256
-    if (
-        payload.get("schema_version") != expected_schema
-        or payload.get("status") != "COMPLETE"
-        or payload.get("profile") != "PRIMARY"
-        or receipt.get("status") != "COMPLETE"
-        or receipt.get("profile") != "PRIMARY"
-        or receipt.get("verdict") != payload.get("verdict")
-        or (artifact_type != "rl_discovery_d5r" and receipt.get("prereg_sha256") != payload.get("prereg_sha256"))
-        or (artifact_type != "rl_discovery_d5r" and receipt.get("episode_snapshot_sha256") != payload.get("episode_snapshot_sha256"))
-        or receipt.get("fresh_oos") != "NOT_RUN_NO_READ"
-        or receipt.get("artifact_manifest_sha256") != digest
-    ):
-        return blocked, {}
-    if artifact_type == "rl_discovery_d4" and not _valid_d4_primary(run_dir, payload, receipt, digest):
-        return blocked, {}
-    if artifact_type == "rl_discovery_d5" and not valid_d5_primary(
-        run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
-    ):
-        return blocked, {}
-    if artifact_type == "rl_discovery_d5r" and not valid_d5r_primary(
-        run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
-    ):
-        return blocked, {}
-    is_d5 = artifact_type == "rl_discovery_d5"
-    is_d5r = artifact_type == "rl_discovery_d5r"
-    prereg_sha = hashlib.sha256(snapshot.captured["inputs/prereg.json"]).hexdigest() if is_d5r else payload.get("prereg_sha256")
-    compact = {
-        "research_lane": "rl_discovery",
-        "status": payload.get("status"),
-        "verdict": payload.get("verdict"),
-        "profile": payload.get("profile"),
-        "fresh_oos": payload.get("fresh_oos"),
-        "type1_outcome": "D5R_CAPACITY_EVALUATED" if is_d5r else ("D5_TRAIN_ONLY_EVALUATED" if is_d5 else ("COMPLETE_NO_GO" if artifact_type != "rl_discovery_d4" else "D4_TRAIN_ONLY_CONFIRMED")),
-        "primary_round_trip_cost_bp": 23 if is_d5 or is_d5r else 0,
-        "diagnostic_round_trip_cost_bp": 0 if is_d5 or is_d5r else 23,
-        "prereg_sha256": prereg_sha,
-        "promotion_allowed": False,
-        "profitability_claim_allowed": False,
-        "live_broker_order_allowed": False,
-        "artifact_manifest_sha256": digest,
-    }
-    if is_d5 or is_d5r:
-        payload = {**payload, "live_broker_order_allowed": False}
-    return compact, payload
-
-
-def _valid_d4_primary(run_dir: Path, payload: dict[object, object], receipt: dict[object, object], digest: str) -> bool:
-    expected = {
-        (algorithm.value, reward.value, seed)
-        for algorithm in D4AlgorithmArmId for reward in D4RewardArmId for seed in (0, 1, 2)
-    }
-    models = payload.get("models")
-    if not isinstance(models, list) or len(models) != 24:
-        return False
-    observed: set[tuple[object, object, object]] = set()
-    for row in models:
-        if not isinstance(row, dict):
-            return False
-        if not all(isinstance(row.get(metric), dict) for metric in ("fit", "native", "cost_23bp")):
-            return False
-        observed.add((row.get("algorithm_arm"), row.get("reward_arm"), row.get("seed")))
-    gate = payload.get("gate")
-    approved_smoke = payload.get("approved_smoke")
-    raw_key = os.environ.get("KRONOS_D4_APPROVAL_KEY_HEX", "")
-    try:
-        key = bytes.fromhex(raw_key)
-    except ValueError:
-        return False
-    if (
-        observed != expected or not isinstance(gate, dict)
-        or gate.get("best_rl_arm") != "C_DQN_DISCRETE"
-        or gate.get("confirmed_rl_arms") != ["C_DQN_DISCRETE"]
-        or gate.get("supervised_ceiling_confirmed") is not True
-        or payload.get("promotion_allowed") is not False
-        or payload.get("profitability_claim_allowed") is not False
-        or not isinstance(approved_smoke, str)
-    ):
-        return False
-    if len(key) >= 32:
-        expected_signature = primary_custody_signature(
-            key, run_name=run_dir.name, prereg_sha=str(payload.get("prereg_sha256", "")),
-            episode_sha=str(payload.get("episode_snapshot_sha256", "")), manifest_sha=digest,
-            approved_smoke=approved_smoke,
-        )
-        if hmac.compare_digest(str(receipt.get("primary_custody_hmac_sha256", "")), expected_signature):
-            return True
-    return _matches_committed_d4_custody(run_dir, digest)
-
-
-def _matches_committed_d4_custody(run_dir: Path, digest: str) -> bool:
-    custody_path = Path(__file__).resolve().parents[1] / "docs" / "evidence" / f"{run_dir.name}.custody.json"
-    try:
-        value: object = json.loads(custody_path.read_bytes())
-        summary_sha = hashlib.sha256((run_dir / "summary.json").read_bytes()).hexdigest()
-        receipt_sha = hashlib.sha256((run_dir / "terminal_receipt.json").read_bytes()).hexdigest()
-    except (OSError, ValueError):
-        return False
-    return (
-        isinstance(value, dict)
-        and value.get("schema_version") == "kronos.rl-discovery.d4.custody.v1"
-        and value.get("run_name") == run_dir.name
-        and value.get("artifact_manifest_sha256") == digest
-        and value.get("summary_sha256") == summary_sha
-        and value.get("terminal_receipt_sha256") == receipt_sha
-        and value.get("model_count") == 24
-        and value.get("outcome_count") == 24
+            cast(dict[str, object], _json.json_object(payload.get("summary"))),
+        ),
     )
-
-
-def _sb3_summary(run_dir: Path) -> dict[str, Any]:
-    payload = _read_run_json(run_dir, run_dir / "sb3_smoke_summary.json")
-    summary = require_discovery_terminal_receipt(run_dir, dict(payload.get("summary", {})))
-    live_summary = payload.get("live_events")
-    if isinstance(live_summary, dict):
-        summary.setdefault("live_event_count", live_summary.get("event_count"))
-        summary.setdefault("live_event_phases", live_summary.get("phases"))
+    live_value = payload.get("live_events")
+    live_summary = _json.json_object(live_value)
+    if isinstance(live_value, dict):
+        _ = summary.setdefault("live_event_count", live_summary.get("event_count"))
+        _ = summary.setdefault("live_event_phases", live_summary.get("phases"))
     else:
-        for file_name in LIVE_SUMMARY_FILE_NAMES:
+        for file_name in _files.LIVE_SUMMARY_FILE_NAMES:
             summary_path = run_dir / file_name
-            if _is_run_file(run_dir, summary_path):
-                file_summary = _read_run_json(run_dir, summary_path)
-                summary.setdefault("live_event_count", file_summary.get("event_count"))
-                summary.setdefault("live_event_phases", file_summary.get("phases"))
+            if _files._is_run_file(run_dir, summary_path):
+                file_summary = _json.read_run_json(run_dir, summary_path)
+                _ = summary.setdefault("live_event_count", file_summary.get("event_count"))
+                _ = summary.setdefault("live_event_phases", file_summary.get("phases"))
                 break
-    models = payload.get("models", [])
+    models = _json.json_objects(payload.get("models"))
     best_model = summary.get("best_model")
     selected = next((row for row in models if row.get("model") == best_model), models[0] if models else {})
-    summary.setdefault(
+    _ = summary.setdefault(
         "max_training_timesteps",
         max((_int_or_zero(row.get("training_timesteps")) for row in models), default=0),
     )
     for key in ("avg_episode_net_return_pct", "trade_count", "cost_bps", "slippage_bps", "passes_cost_gate"):
         if key in selected:
-            summary.setdefault(key, selected[key])
+            _ = summary.setdefault(key, selected[key])
     return summary
+
+
+def _int_or_zero(value: JsonValue | None) -> int:
+    try:
+        return int(float(value)) if isinstance(value, (bool, int, float, str)) else 0
+    except ValueError:
+        return 0
