@@ -44,8 +44,8 @@ test('page matrix describes every V6 user surface in navigation order', () => {
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.eta.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'D5_PRIMARY_10_OF_10');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D5_FULL_TRAIN_COST_NOT_CONFIRMED');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'D5R_PRIMARY_12_OF_12');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D5R_CAPACITY_NOT_CONFIRMED');
 });
 
 test('capability inventory separates available research from blocked claims', () => {

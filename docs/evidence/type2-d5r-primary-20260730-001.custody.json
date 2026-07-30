@@ -1,0 +1,14 @@
+{
+  "schema_version": "kronos.rl-discovery.d5r.custody.v1",
+  "run_name": "type2-d5r-primary-20260730-001",
+  "artifact_manifest_sha256": "a2d71046a9636fc66c272fb95474c0529f39a5fe02367c8349efc35739742747",
+  "summary_sha256": "add2faea6ad64cb16d817ea661d01ab29a66b5db1bff0660d8e16f26981c6921",
+  "terminal_receipt_sha256": "3d78ca3d80b091671328d618723322c74cf84ada906a939334e9dfdcba23c6c6",
+  "model_count": 12,
+  "outcome_count": 12,
+  "research_branch": "codex/rl-d5r-capacity-objective-v1",
+  "base_release": "fork-v1.15.0-kronos-rl-d5-full-train-cost",
+  "producer_commit": "6423fcdd4a7a48bad0a555c94dd56ed20589a8c6",
+  "producer_tree": "43f49fb2d3ba8f914414ee792219de625823d379",
+  "release_status": "PR_PENDING"
+}
