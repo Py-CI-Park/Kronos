@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import type { JsonObject, RlRunDetail } from '$lib/rlApi';
 import { parseD6REvidence } from './d6rEvidence';
+
+const discoveryPage = readFileSync(new URL('../pages/DiscoveryPage.svelte', import.meta.url), 'utf8');
+const evidencePanel = readFileSync(new URL('../pages/D6REvidencePanel.svelte', import.meta.url), 'utf8');
 
 function evaluation(
   profile: 'COST_ONLY' | 'TURNOVER_10BP',
@@ -117,4 +121,15 @@ test('parseD6REvidence rejects an incomplete matrix or an opened D7', () => {
     detail: sealed.detail ? { ...sealed.detail, d7: 'OPEN' } : undefined,
   };
   assert.equal(parseD6REvidence(opened), null);
+});
+
+test('Discovery prioritizes D6R and keeps all ten gates plus D7 lock visible', () => {
+  const d6rPosition = discoveryPage.indexOf("startsWith('D6R_TRAIN_FALSIFICATION_')");
+  const d6Position = discoveryPage.indexOf("startsWith('D6_REUSED_VALIDATION_')");
+
+  assert.ok(d6rPosition >= 0 && d6rPosition < d6Position);
+  assert.match(discoveryPage, /D6REvidencePanel/u);
+  assert.match(evidencePanel, /10개 연구 게이트/u);
+  assert.match(evidencePanel, /D7 \{evidence\.d7\}/u);
+  assert.match(evidencePanel, /후보 ≠ 확인/u);
 });
