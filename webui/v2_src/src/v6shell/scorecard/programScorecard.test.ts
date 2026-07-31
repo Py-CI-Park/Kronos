@@ -18,7 +18,7 @@ test('program score is the rounded weighted sum of every audited lane', () => {
 
   // Then
   assert.equal(totalWeight, 100);
-  assert.equal(score, 82);
+  assert.equal(score, 83);
 });
 
 test('every lane score is derived from a frozen 100-point evidence rubric', () => {
@@ -44,11 +44,11 @@ test('page matrix describes every V6 user surface in navigation order', () => {
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.eta.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'D5S_PRIMARY_36_OF_36');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D6_REUSED_VALIDATION_NOT_CONFIRMED');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'D6_NATIVE_DELTA_NEG_0_039');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'D6R_PRIMARY_60_MODELS_3M_STEPS');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D6R_TRAIN_FALSIFICATION_NOT_CONFIRMED');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'D6R_NATIVE_DELTA_POS_0_017_BELOW_GATE');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, 'RL 점수 제외 유지');
-  assert.match(PROGRAM_LANES.find((lane) => lane.id === 'live')?.nextAction ?? '', /D6.*D7/u);
+  assert.match(PROGRAM_LANES.find((lane) => lane.id === 'live')?.nextAction ?? '', /D7/u);
 });
 
 test('capability inventory separates available research from blocked claims', () => {
@@ -61,6 +61,7 @@ test('capability inventory separates available research from blocked claims', ()
   assert.ok(available.some((capability) => capability.id === 'd4-primary'));
   assert.ok(available.some((capability) => capability.id === 'd5-primary'));
   assert.ok(available.some((capability) => capability.id === 'd6-validation'));
+  assert.ok(available.some((capability) => capability.id === 'd6r-research'));
   assert.ok(blocked.some((capability) => capability.id === 'fresh-oos'));
   assert.ok(blocked.some((capability) => capability.id === 'live-trading'));
 });

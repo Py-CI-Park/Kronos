@@ -1,0 +1,133 @@
+{
+  "schema_version": "kronos.rl-discovery.d6r.prereg.v1",
+  "status": "FROZEN_BEFORE_D6R_IMPLEMENTATION_AND_EXECUTION",
+  "experiment_id": "TYPE2-D6R-TRAIN-ONLY-FALSIFICATION",
+  "parent_release": "fork-v1.18.0-kronos-rl-d6-reused-validation",
+  "base_commit": "de2bfff567c63489f21f53c1dfca123b9816c1ee",
+  "source": {
+    "episode_source_run": "type2-d5r-primary-20260730-001",
+    "episode_snapshot_sha256": "8a1b8c5f83087ddddf14ec606c5a744ee124f2fca2ef791483f477807956ce40",
+    "episode_count": 573,
+    "partition": "TRAIN_ONLY",
+    "d5s_run": "type2-d5s-primary-20260730-001",
+    "d5s_artifact_manifest_sha256": "c9f7f0a35c16491b02a78fe2932f9b006891d62e5318b731d696893e788387f9",
+    "d5s_summary_sha256": "4f0e9803e181425dfd0780c49d15ec7b2f0783119f6f4e0fb71f9abdb563832a",
+    "d5s_terminal_receipt_sha256": "8a03a4b8d646090a4b3674f6dbe2eaf09abad579f1b067882a985820cf5b9984",
+    "d5s_prereg_sha256": "2428784401c15351c91823ec62ff62cf01353bc74280e46a9a276b16b5ac6c1c"
+  },
+  "prior_d6": {
+    "run_name": "type2-d6-primary-20260731-002",
+    "verdict": "D6_REUSED_VALIDATION_NOT_CONFIRMED",
+    "artifact_manifest_sha256": "4e72f8bf7ef0e52fbe7e7e093a9991980c1aa2806e0d993adb869bc97b676a63",
+    "summary_sha256": "a0828b1006734ba40c5838bb09edfab28d87035b9b4d42e0e0a210c8b9bbe21f",
+    "terminal_receipt_sha256": "b47f74a44af33b27df803d0d71c372517b5dd9ed4011471bcc57427490d89049",
+    "validation_episode_sha256": "31134cd5307174b6530031990d4580f1ff45360b6d6df2dbdc3cd2e14ae1e1c7",
+    "result_document_sha256": "d32bf82c333c0794c9c8eb60c3dd0a7826a7200628adcc015372ae789cfb3b6b",
+    "custody_document_sha256": "39bac115eea5a6f4abb2bafcee24e5f7d8692c0bf1880a847b4be3fa4f3e3f34",
+    "use_in_d6r_training_or_selection": false,
+    "interpretation": "D6 establishes the failure question only. Its validation rows, actions, rewards, thresholds, and seed outcomes are forbidden D6R inputs."
+  },
+  "hypothesis": {
+    "primary": "A globally fixed 10bp training-only trade penalty reduces action churn while retaining non-negative 23bp reward on five chronological TRAIN_ONLY replay folds and remains separated from shuffled-label controls.",
+    "null": "The penalty profile still trades too often, fails no-trade reward, lacks fold and seed stability, exceeds drawdown, or is not separated from shuffled controls.",
+    "interpretation_boundary": "A failure falsifies the proposed churn remedy. A pass only creates a candidate for a newly sealed confirmatory period because the full TRAIN_ONLY normalizer predates these folds."
+  },
+  "representation": {
+    "id": "D_TOP5_CONTEXT_4X",
+    "candidate_count": 5,
+    "action_count": 6,
+    "hold_action": 0,
+    "market_context": true,
+    "normalizer": "EXISTING_FULL_TRAIN_ONLY_NORMALIZER_NO_REFIT",
+    "normalizer_temporal_limitation": "Feature scaling used all 573 TRAIN_ONLY sessions. It contains no validation or Fresh OOS values, but a positive D6R result is diagnostic rather than confirmatory."
+  },
+  "folds": [
+    {"fold_id": 0, "train_start": 0, "train_end_exclusive": 323, "evaluation_start": 323, "evaluation_end_exclusive": 373},
+    {"fold_id": 1, "train_start": 0, "train_end_exclusive": 373, "evaluation_start": 373, "evaluation_end_exclusive": 423},
+    {"fold_id": 2, "train_start": 0, "train_end_exclusive": 423, "evaluation_start": 423, "evaluation_end_exclusive": 473},
+    {"fold_id": 3, "train_start": 0, "train_end_exclusive": 473, "evaluation_start": 473, "evaluation_end_exclusive": 523},
+    {"fold_id": 4, "train_start": 0, "train_end_exclusive": 523, "evaluation_start": 523, "evaluation_end_exclusive": 573}
+  ],
+  "execution": {
+    "algorithm": "SB3_DQN",
+    "learning_rate": 0.0003,
+    "gamma": 1.0,
+    "buffer_size": 200000,
+    "learning_starts": 128,
+    "batch_size": 64,
+    "train_freq": 4,
+    "gradient_steps": 1,
+    "target_update_interval": 10000,
+    "exploration_fraction": 0.2,
+    "exploration_final_eps": 0.02,
+    "net_arch": [256, 128],
+    "device": "cpu",
+    "deterministic_algorithms": true,
+    "reward_profiles": [
+      {"id": "COST_ONLY", "training_round_trip_cost_bp": 23, "additional_trade_penalty_bp": 0},
+      {"id": "TURNOVER_10BP", "training_round_trip_cost_bp": 23, "additional_trade_penalty_bp": 10}
+    ],
+    "primary_profile": "TURNOVER_10BP",
+    "reward_arms": ["NATIVE", "SHUFFLED"],
+    "seeds": [0, 1, 2],
+    "training_steps_per_unit": 50000,
+    "fold_count": 5,
+    "primary_unit_count": 60,
+    "total_primary_rl_steps": 3000000,
+    "evaluation_round_trip_cost_bp": 23,
+    "diagnostic_zero_cost_bp": 0,
+    "per_fold_or_seed_model_selection_allowed": false,
+    "post_fold_retraining_allowed": false,
+    "d6_validation_read_allowed": false,
+    "fresh_oos_read_allowed": false
+  },
+  "smoke": {
+    "fold_ids": [0],
+    "reward_profiles": ["COST_ONLY", "TURNOVER_10BP"],
+    "reward_arms": ["NATIVE", "SHUFFLED"],
+    "seeds": [0],
+    "training_steps_per_unit": 4096,
+    "unit_count": 4,
+    "primary_requires_complete_smoke": true
+  },
+  "gate": {
+    "primary_profile": "TURNOVER_10BP",
+    "minimum_native_median_accuracy": 0.2,
+    "minimum_native_median_reward_ratio": 0.0,
+    "minimum_native_median_total_reward": 0.0,
+    "minimum_native_reward_delta_vs_shuffled": 0.1,
+    "minimum_positive_fold_fraction": 0.8,
+    "minimum_positive_seed_fraction": 0.6666666666666666,
+    "maximum_native_median_trade_rate": 0.65,
+    "minimum_trade_rate_reduction_vs_cost_only": 0.15,
+    "maximum_native_median_reward_drawdown": 0.25,
+    "zero_invalid_actions": true,
+    "candidate_verdict": "D6R_TRAIN_FALSIFICATION_CANDIDATE",
+    "failed_verdict": "D6R_TRAIN_FALSIFICATION_NOT_CONFIRMED"
+  },
+  "controls": {
+    "no_trade_total_reward": 0.0,
+    "negative_control": "SHUFFLED",
+    "cost_only_profile": "COST_ONLY",
+    "random_action_accuracy_reference": 0.16666666666666666,
+    "ts_imb_classification": "RULE_BASELINE_NOT_DIRECTLY_COMPARABLE"
+  },
+  "stop_rules": {
+    "stop_primary_on_incomplete_smoke": true,
+    "stop_on_non_finite_metric": true,
+    "stop_on_invalid_action": true,
+    "stop_on_matrix_identity_mismatch": true,
+    "continue_after_research_gate_failure": false
+  },
+  "claims_boundary": {
+    "research_only": true,
+    "candidate_is_not_confirmation": true,
+    "profitability_claim_allowed": false,
+    "promotion_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "reused_validation": "NO_READ_ALREADY_CONSUMED_DIAGNOSTIC_ONLY",
+    "fresh_oos": "NOT_RUN_NO_READ",
+    "d7": "LOCKED"
+  }
+}

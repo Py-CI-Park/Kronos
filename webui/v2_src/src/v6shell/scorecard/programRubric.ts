@@ -11,22 +11,22 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<
       evidence: "V6 사용자 페이지 12개",
     },
     {
-      id: "d6-api",
+      id: "d6r-api",
       points: 20,
       achieved: true,
-      evidence: "D4~D6 전용 API와 변조 차단",
+      evidence: "D4~D6R 전용 API와 60-unit 변조 차단",
     },
     {
       id: "reviewed-snapshot",
       points: 20,
       achieved: true,
-      evidence: "D6 6-evaluation custody snapshot",
+      evidence: "D6R 60-evaluation custody snapshot",
     },
     {
       id: "global-research-ux",
       points: 18,
       achieved: true,
-      evidence: "전 페이지 validation NO-GO/OOS 경계",
+      evidence: "전 페이지 D6R NO-GO/OOS 경계",
     },
     {
       id: "evidence-viewer",
@@ -46,13 +46,13 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<
       id: "real-rl-models",
       points: 18,
       achieved: true,
-      evidence: "D5S 실제 DQN 6 lineages·36 checkpoints·2.4M steps",
+      evidence: "D6R 실제 DQN 60모델·3.0M steps",
     },
     {
       id: "negative-control",
       points: 15,
       achieved: true,
-      evidence: "Native 대 Shuffled, 각 3 seeds",
+      evidence: "Native 대 Shuffled, 5 folds·3 seeds",
     },
     {
       id: "algorithm-ablation",
@@ -79,10 +79,16 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<
       evidence: "D5S 100K TRAIN_ONLY stability confirmed",
     },
     {
-      id: "reused-validation",
-      points: 15,
+      id: "d6r-train-falsification",
+      points: 5,
+      achieved: true,
+      evidence: "D6R exact 60-unit chronological train-only falsification",
+    },
+    {
+      id: "reused-validation-confirmation",
+      points: 10,
       achieved: false,
-      evidence: "D6 1/7 gates pass; validation NOT_CONFIRMED",
+      evidence: "D6·D6R 모두 NOT_CONFIRMED",
     },
     {
       id: "fresh-oos",
@@ -114,7 +120,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<
       id: "matrix-identity",
       points: 15,
       achieved: true,
-      evidence: "D4 24·D5 10·D5R 12·D5S 36·D6 6 exact matrix",
+      evidence: "D4 24·D5 10·D5R 12·D5S 36·D6 6·D6R 60 exact matrix",
     },
     {
       id: "tests-build",
@@ -132,7 +138,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<
       id: "cross-process-resume",
       points: 3,
       achieved: true,
-      evidence: "D6 실패 snapshot 통제 복구",
+      evidence: "D6 복구와 D6R 3M-step 독립 실행",
     },
   ],
   governance: [
@@ -140,7 +146,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<
       id: "prereg-first",
       points: 25,
       achieved: true,
-      evidence: "검증 읽기 전 prereg commit",
+      evidence: "D6R 구현·실행 전 prereg commit",
     },
     {
       id: "custody",
@@ -158,7 +164,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<
       id: "controls",
       points: 15,
       achieved: true,
-      evidence: "shuffle control·3 seeds·6 evaluations",
+      evidence: "shuffle control·5 folds·3 seeds·60 evaluations",
     },
     {
       id: "claim-separation",
@@ -170,7 +176,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<
       id: "release-lineage",
       points: 8,
       achieved: true,
-      evidence: "D6 prereg·producer·custody·release 계보",
+      evidence: "D6R prereg·producer·custody·release 계보",
     },
   ],
   live: [

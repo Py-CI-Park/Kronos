@@ -19,6 +19,7 @@ DISCOVERY_ARTIFACT_TYPES = frozenset(
         "rl_discovery_d5r",
         "rl_discovery_d5s",
         "rl_discovery_d6",
+        "rl_discovery_d6r",
     }
 )
 
