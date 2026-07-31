@@ -4,10 +4,12 @@
   import { parseDiscoveryEvidence, summarizeDiscoveryArms, type DiscoveryEvidence } from '../discovery/discoveryEvidence';
   import { parseD5SEvidence, type D5SEvidence } from '../discovery/d5sEvidence';
   import { parseD6Evidence, type D6Evidence } from '../discovery/d6Evidence';
+  import { parseD6REvidence, type D6REvidence } from '../discovery/d6rEvidence';
   import D5EvidencePanel from './D5EvidencePanel.svelte';
   import D5REvidencePanel from './D5REvidencePanel.svelte';
   import D5SEvidencePanel from './D5SEvidencePanel.svelte';
   import D6EvidencePanel from './D6EvidencePanel.svelte';
+  import D6REvidencePanel from './D6REvidencePanel.svelte';
 
   const LADDER = [
     ['D0', 'PPO attribution', 'NO-GO closed'], ['D1', 'action / reward', 'train-only confirmed'],
@@ -30,9 +32,11 @@
   let evidence = $state<DiscoveryEvidence | null>(null);
   let d5sEvidence = $state<D5SEvidence | null>(null);
   let d6Evidence = $state<D6Evidence | null>(null);
+  let d6rEvidence = $state<D6REvidence | null>(null);
   let loading = $state(true);
   let notice = $state<string | null>(null);
   const isD5S = $derived(d5sEvidence !== null);
+  const isD6R = $derived(d6rEvidence !== null);
   const isD6 = $derived(d6Evidence !== null);
   const isD5 = $derived(evidence?.verdict.startsWith('D5_FULL_TRAIN_COST_') === true);
   const isD5R = $derived(evidence?.verdict.startsWith('D5R_CAPACITY_') === true);
@@ -43,29 +47,38 @@
     loading = true; notice = null;
     try {
       const runs = await rlApi.rlRuns(100);
-      const record = runs?.runs.find((run) => String(run.summary?.verdict ?? '').startsWith('D6_REUSED_VALIDATION_'))
+      const record = runs?.runs.find((run) => String(run.summary?.verdict ?? '').startsWith('D6R_TRAIN_FALSIFICATION_'))
+        ?? runs?.runs.find((run) => String(run.summary?.verdict ?? '').startsWith('D6_REUSED_VALIDATION_'))
         ?? runs?.runs.find((run) => String(run.summary?.verdict ?? '').startsWith('D5S_STABILITY_'))
         ?? runs?.runs.find((run) => String(run.summary?.verdict ?? '').startsWith('D5R_CAPACITY_'))
         ?? runs?.runs.find((run) => String(run.summary?.verdict ?? '').startsWith('D5_FULL_TRAIN_COST_'))
         ?? runs?.runs.find((run) => run.summary?.verdict === 'D4_ALGORITHM_OBJECTIVE_CONFIRMED');
-      if (!record) { evidence = null; d5sEvidence = null; d6Evidence = null; notice = '검증 가능한 D6/D5S/D5/D4 evidence가 없습니다. BLOCK 상태입니다.'; return; }
+      if (!record) { evidence = null; d5sEvidence = null; d6Evidence = null; d6rEvidence = null; notice = '검증 가능한 D6R/D6/D5 evidence가 없습니다. BLOCK 상태입니다.'; return; }
       const detail = await rlApi.rlRun(record.name);
-      if (String(record.summary?.verdict ?? '').startsWith('D6_REUSED_VALIDATION_')) {
+      if (String(record.summary?.verdict ?? '').startsWith('D6R_TRAIN_FALSIFICATION_')) {
+        d6rEvidence = detail ? parseD6REvidence(detail) : null;
+        d6Evidence = null;
+        d5sEvidence = null;
+        evidence = null;
+      } else if (String(record.summary?.verdict ?? '').startsWith('D6_REUSED_VALIDATION_')) {
         d6Evidence = detail ? parseD6Evidence(detail) : null;
+        d6rEvidence = null;
         d5sEvidence = null;
         evidence = null;
       } else if (String(record.summary?.verdict ?? '').startsWith('D5S_STABILITY_')) {
         d5sEvidence = detail ? parseD5SEvidence(detail) : null;
+        d6rEvidence = null;
         d6Evidence = null;
         evidence = null;
       } else {
         evidence = detail ? parseDiscoveryEvidence(detail) : null;
+        d6rEvidence = null;
         d5sEvidence = null;
         d6Evidence = null;
       }
-      if (!detail || (!evidence && !d5sEvidence && !d6Evidence)) notice = 'D6/D5S/D5/D4 evidence 검증에 실패했습니다. BLOCK 상태입니다.';
+      if (!detail || (!evidence && !d5sEvidence && !d6Evidence && !d6rEvidence)) notice = 'D6R/D6/D5 evidence 검증에 실패했습니다. BLOCK 상태입니다.';
     } catch {
-      evidence = null; d5sEvidence = null; d6Evidence = null;
+      evidence = null; d5sEvidence = null; d6Evidence = null; d6rEvidence = null;
       notice = 'Discovery API 연결에 실패했습니다. EVIDENCE_UNAVAILABLE / BLOCK.';
     } finally { loading = false; }
   }
@@ -73,12 +86,14 @@
 </script>
 
 <section class="page" aria-labelledby="discovery-title">
-  <header class="hero"><div><p>RL DISCOVERY LAB // D6 → D4 EVIDENCE</p><h1 id="discovery-title">강화학습 발견 실험실</h1><span>TRAIN 성공과 VALIDATION 실패를 비용, seed, negative control 증거로 분리합니다.</span></div><button type="button" onclick={load} disabled={loading}>증거 새로고침</button></header>
-  <section class="safety" aria-label="연구 안전 상태"><article><span>{isD6 ? 'VALIDATION' : 'TRAIN'}</span><strong>{isD6 ? '128 EPISODES' : isD5S || isD5 || isD5R ? '573 EPISODES' : '128 EPISODES'}</strong></article><article><span>FRESH OOS</span><strong>NOT_RUN_NO_READ</strong></article><article><span>PROMOTION</span><strong>BLOCKED</strong></article><article><span>CLAIMS</span><strong>RESEARCH ONLY</strong></article><article><span>COST</span><strong>{isD6 ? '23BP VALIDATION / 0BP DIAG' : isD5S || isD5 || isD5R ? '23BP TRAIN / 0BP DIAG' : '0BP TRAIN / 23BP DIAG'}</strong></article></section>
+  <header class="hero"><div><p>RL DISCOVERY LAB // D6R → D4 EVIDENCE</p><h1 id="discovery-title">강화학습 발견 실험실</h1><span>TRAIN 성공과 검증 실패를 비용, fold, seed, negative control 증거로 분리합니다.</span></div><button type="button" onclick={load} disabled={loading}>증거 새로고침</button></header>
+  <section class="safety" aria-label="연구 안전 상태"><article><span>{isD6R ? 'TRAIN FALSIFICATION' : isD6 ? 'VALIDATION' : 'TRAIN'}</span><strong>{isD6 ? '128 EPISODES' : isD6R || isD5S || isD5 || isD5R ? '573 EPISODES' : '128 EPISODES'}</strong></article><article><span>FRESH OOS</span><strong>NOT_RUN_NO_READ</strong></article><article><span>PROMOTION</span><strong>BLOCKED</strong></article><article><span>CLAIMS</span><strong>RESEARCH ONLY</strong></article><article><span>COST</span><strong>{isD6 ? '23BP VALIDATION / 0BP DIAG' : isD6R || isD5S || isD5 || isD5R ? '23BP TRAIN / 0BP DIAG' : '0BP TRAIN / 23BP DIAG'}</strong></article></section>
   {#if notice}<div class="notice">{notice}</div>{/if}
-  <section class="panel"><div class="title"><p>PROGRAM MAP</p><h2>D0–D7 연구 사다리</h2></div><ol class="ladder">{#each LADDER as stage, index}<li class:active={index === (isD6 ? 6 : isD5S || isD5 || isD5R ? 5 : 4)} class:next={!isD6 && !isD5S && !isD5 && !isD5R && index === 5} class:locked={isD6 ? index >= 7 : index >= 6}><b>{stage[0]}</b><strong>{stage[1]}</strong><small>{index === 6 && isD6 ? 'NO-GO / D7 LOCKED' : index === 5 && isD5S ? 'D5S STABILITY EVALUATED' : index === 5 && isD5R ? 'D5R CAPACITY EVALUATED' : index === 5 && isD5 ? 'NOT_CONFIRMED' : stage[2]}</small></li>{/each}</ol></section>
+  <section class="panel"><div class="title"><p>PROGRAM MAP</p><h2>D0–D7 연구 사다리</h2></div><ol class="ladder">{#each LADDER as stage, index}<li class:active={index === (isD6R || isD6 ? 6 : isD5S || isD5 || isD5R ? 5 : 4)} class:next={!isD6R && !isD6 && !isD5S && !isD5 && !isD5R && index === 5} class:locked={isD6R || isD6 ? index >= 7 : index >= 6}><b>{stage[0]}</b><strong>{stage[1]}</strong><small>{index === 6 && isD6R ? 'D6R COMPLETE / D7 LOCKED' : index === 6 && isD6 ? 'NO-GO / D7 LOCKED' : index === 5 && isD5S ? 'D5S STABILITY EVALUATED' : index === 5 && isD5R ? 'D5R CAPACITY EVALUATED' : index === 5 && isD5 ? 'NOT_CONFIRMED' : stage[2]}</small></li>{/each}</ol></section>
 
-  {#if loading}<div class="notice">최신 D6/D5S/D5/D4 Primary 증거를 확인하는 중입니다.</div>
+  {#if loading}<div class="notice">최신 D6R/D6/D5 Primary 증거를 확인하는 중입니다.</div>
+  {:else if d6rEvidence}
+    <D6REvidencePanel evidence={d6rEvidence} />
   {:else if d6Evidence}
     <D6EvidencePanel evidence={d6Evidence} />
   {:else if d5sEvidence}

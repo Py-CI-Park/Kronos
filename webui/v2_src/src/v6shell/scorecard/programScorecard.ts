@@ -13,8 +13,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("platform"),
     weight: 30,
     state: "STRONG",
-    evidence: "12개 페이지, D6 API, exact 6-evaluation custody",
-    nextAction: "D6R train-only falsification 연결",
+    evidence: "12개 페이지, D6R API, exact 60-evaluation custody",
+    nextAction: "D6R2 MDP-specification falsification 연결",
   },
   {
     id: "rl-evidence",
@@ -23,8 +23,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("rl-evidence"),
     weight: 30,
     state: "PARTIAL",
-    evidence: "D5S train success → D6 validation 1/7 gates, NO-GO",
-    nextAction: "D6R 무거래·거래 페널티와 walk-forward train-only 검증",
+    evidence: "D6R 3M steps·5 folds·3 seeds → 1/10 gates, NO-GO",
+    nextAction: "gamma=0 contextual 진단과 stateful portfolio MDP 분리",
   },
   {
     id: "engineering",
@@ -33,8 +33,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("engineering"),
     weight: 20,
     state: "STRONG",
-    evidence: "D6 실패 snapshot 복구, 6/6 평가, terminal receipt",
-    nextAction: "schema registry 분리로 대형 파일 경고 해소",
+    evidence: "D6R 60/60 평가, fail-closed verifier, terminal receipt",
+    nextAction: "fold-local normalizer 계약 추가",
   },
   {
     id: "governance",
@@ -43,7 +43,7 @@ export const PROGRAM_LANES = [
     score: programRubricScore("governance"),
     weight: 10,
     state: "STRONG",
-    evidence: "D6 prereg·실패 보존·recovery·custody 완료",
+    evidence: "D6R prereg·producer·custody·control 계보 완료",
     nextAction: "research→master→tag 계보 완료",
   },
   {
@@ -53,8 +53,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("live"),
     weight: 10,
     state: "BLOCKED",
-    evidence: "D6 validation 실패; D7 Fresh OOS 봉인; 브로커 권한 없음",
-    nextAction: "D6R 이후 새 확인 가설 없이는 D7 진행 금지",
+    evidence: "D6R train falsification 실패; D7 Fresh OOS 봉인; 브로커 권한 없음",
+    nextAction: "새 MDP 가설과 새 prereg 없이는 D7 진행 금지",
   },
 ] as const satisfies readonly ProgramLane[];
 

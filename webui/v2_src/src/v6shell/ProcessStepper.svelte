@@ -57,7 +57,7 @@
   button.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), 0 8px 18px var(--shadow); transform: translateY(-2px); }
   .step-number { color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .09em; }
   strong { color: var(--fg-strong); font-size: 1rem; line-height: 1.25; }
-  .chip { margin-top: auto; border: 1px solid currentColor; border-radius: 999px; padding: 3px 7px; font-size: .68rem; font-weight: 800; overflow-wrap: anywhere; }
+  .chip { max-width: 100%; margin-top: auto; border: 1px solid currentColor; border-radius: 999px; padding: 3px 7px; font-size: .62rem; font-weight: 800; letter-spacing: -.015em; white-space: nowrap; }
   .complete { border-color: var(--success); background: var(--success-soft); }
   .complete .chip { color: var(--success); }
   .waiting .chip, .neutral .chip { color: var(--muted); }
