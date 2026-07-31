@@ -9,11 +9,17 @@ from stom_rl.rl_discovery.d6_execution import execute_d6
 from stom_rl.rl_discovery.storage import RunDirectoryGuard, create_run_directory
 
 
-def run_d6(repo_root: Path, *, run_root: Path, run_id: str) -> Path:
+def run_d6(
+    repo_root: Path,
+    *,
+    run_root: Path,
+    run_id: str,
+    recovery_run: Path | None = None,
+) -> Path:
     run_dir = create_run_directory(run_root, run_id)
     guard = RunDirectoryGuard.capture(run_root, run_dir)
     try:
-        return execute_d6(repo_root, guard=guard)
+        return execute_d6(repo_root, guard=guard, recovery_run=recovery_run)
     except BaseException as exc:  # BROAD_EXCEPT_OK terminal boundary
         receipt = guard.run_dir / "terminal_receipt.json"
         if not receipt.exists():

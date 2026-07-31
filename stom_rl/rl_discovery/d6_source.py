@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from stom_rl.daily_type1_contract import canonical_json_bytes
 from stom_rl.rl_discovery.d2_custody import (
@@ -24,10 +24,24 @@ from stom_rl.rl_discovery.d6_data import build_reused_validation_episodes
 from stom_rl.rl_discovery.storage import artifact_manifest_sha256
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
+_EPISODES = TypeAdapter(tuple[D3Episode, ...])
 
 
 class D6SourceError(ValueError):
     """D6 source artifacts do not match the frozen preregistration."""
+
+
+class _FailedReceipt(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    schema_version: Literal["kronos.rl-discovery.d6.receipt.v1"]
+    profile: Literal["PRIMARY"]
+    status: Literal["FAILED"]
+    verdict: Literal["NO_GO"]
+    error_type: str
+    reused_validation: Literal["FAILED"]
+    fresh_oos: Literal["NOT_RUN_NO_READ"]
+    live_broker_order_allowed: Literal[False]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,9 +62,15 @@ class D6SourceBundle:
     validation_sha256: str
     models: tuple[D6ModelArtifact, ...]
     input_hashes: tuple[tuple[str, str], ...]
+    validation_origin: Literal["FROZEN_DATASET", "FAILED_RUN_SNAPSHOT"]
+    recovery_run: str | None
 
 
-def load_d6_source(repo_root: Path) -> D6SourceBundle:
+def load_d6_source(
+    repo_root: Path,
+    *,
+    recovery_run: Path | None = None,
+) -> D6SourceBundle:
     """Verify D5S models and materialize the preregistered validation prefix once."""
 
     root = repo_root.absolute()
@@ -87,7 +107,20 @@ def load_d6_source(repo_root: Path) -> D6SourceBundle:
         _verified_model(root, run_dir, model.reward_arm, model.seed, model.relative_path, model.sha256)
         for model in prereg.source_run.models
     )
-    episodes, validation_bytes, hashes = _load_validation(root, prereg)
+    if recovery_run is None:
+        episodes, validation_bytes, hashes = _load_validation(root, prereg)
+        validation_origin: Literal["FROZEN_DATASET", "FAILED_RUN_SNAPSHOT"] = "FROZEN_DATASET"
+        recovery_name = None
+    else:
+        episodes, validation_bytes = load_d6_recovery_validation(
+            root,
+            recovery_run,
+            prereg_bytes=prereg_bytes,
+            episode_count=prereg.dataset.episode_count,
+        )
+        hashes = _registered_input_hashes(prereg)
+        validation_origin = "FAILED_RUN_SNAPSHOT"
+        recovery_name = recovery_run.name
     return D6SourceBundle(
         prereg,
         prereg_bytes,
@@ -97,6 +130,8 @@ def load_d6_source(repo_root: Path) -> D6SourceBundle:
         hashlib.sha256(validation_bytes).hexdigest(),
         models,
         hashes,
+        validation_origin,
+        recovery_name,
     )
 
 
@@ -157,3 +192,36 @@ def _load_validation(
 
 def _verified_hash(path: Path, expected: str, root: Path) -> str:
     return hashlib.sha256(verified_bytes(path, expected_sha256=expected, anchor=root)).hexdigest()
+
+
+def _registered_input_hashes(prereg: D6Preregistration) -> tuple[tuple[str, str], ...]:
+    return (
+        ("rows", prereg.dataset.rows_sha256),
+        ("manifest", prereg.dataset.manifest_sha256),
+        ("materializer_receipt", prereg.dataset.materializer_receipt_sha256),
+        ("normalizer", prereg.dataset.normalizer_file_sha256),
+    )
+
+
+def load_d6_recovery_validation(
+    repo_root: Path,
+    recovery_run: Path,
+    *,
+    prereg_bytes: bytes,
+    episode_count: int,
+) -> tuple[tuple[D3Episode, ...], bytes]:
+    root = repo_root.absolute()
+    run = assert_plain_path(recovery_run, anchor=root, require_file=False)
+    receipt = _FailedReceipt.model_validate_json(
+        held_bytes(run / "terminal_receipt.json", anchor=root)
+    )
+    if not receipt.error_type:
+        raise D6SourceError("D6 recovery receipt lacks an error type")
+    recovered_prereg = held_bytes(run / "inputs/prereg.json", anchor=root)
+    if recovered_prereg != prereg_bytes:
+        raise D6SourceError("D6 recovery preregistration is mismatched")
+    snapshot = held_bytes(run / "inputs/validation_episodes.json", anchor=root)
+    episodes = _EPISODES.validate_json(snapshot)
+    if len(episodes) != episode_count:
+        raise D6SourceError("D6 recovery validation snapshot is incomplete")
+    return episodes, snapshot

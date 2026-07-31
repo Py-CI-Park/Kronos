@@ -37,8 +37,13 @@ class D6EvaluationRow:
     maximum_drawdown_23bp: float
 
 
-def execute_d6(repo_root: Path, *, guard: RunDirectoryGuard) -> Path:
-    source = load_d6_source(repo_root)
+def execute_d6(
+    repo_root: Path,
+    *,
+    guard: RunDirectoryGuard,
+    recovery_run: Path | None = None,
+) -> Path:
+    source = load_d6_source(repo_root, recovery_run=recovery_run)
     _ = guard.publish_bytes(source.prereg_bytes, "inputs", "prereg.json")
     _ = guard.publish_bytes(source.validation_bytes, "inputs", "validation_episodes.json")
     representation = D3Representation.for_arm(D3PolicyArmId.TOP5_CONTEXT_4X)
@@ -151,6 +156,9 @@ def _finish_d6(
         "validation_episode_count": len(source.validation_episodes),
         "validation_episode_sha256": source.validation_sha256,
         "input_hashes": dict(source.input_hashes),
+        "validation_origin": source.validation_origin,
+        "recovery_run": source.recovery_run,
+        "validation_read_count": 1,
         "reused_validation": "COMPLETE",
         "fresh_oos": "NOT_RUN_NO_READ",
         "promotion_allowed": False,
@@ -170,6 +178,8 @@ def _finish_d6(
         "verdict": gate.verdict,
         "artifact_manifest_sha256": digest,
         "validation_episode_sha256": source.validation_sha256,
+        "validation_origin": source.validation_origin,
+        "recovery_run": source.recovery_run,
         "reused_validation": "COMPLETE",
         "fresh_oos": "NOT_RUN_NO_READ",
         "live_broker_order_allowed": False,
