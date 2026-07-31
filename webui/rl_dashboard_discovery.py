@@ -19,11 +19,25 @@ if __package__:
     from .rl_dashboard_d5r import valid_d5r_primary
     from .rl_dashboard_d5s import valid_d5s_primary
     from .rl_dashboard_d6 import valid_d6_primary
+    from .rl_dashboard_d6r import valid_d6r_primary
+    from .rl_dashboard_discovery_meta import (
+        CUSTODIED_PREREG_TYPES,
+        TRAIN_COST_TYPES,
+        discovery_type1_outcome,
+        expected_discovery_schema,
+    )
 else:  # pragma: no cover - supports direct script-style imports
     from webui.rl_dashboard_d5 import valid_d5_primary
     from webui.rl_dashboard_d5r import valid_d5r_primary
     from webui.rl_dashboard_d5s import valid_d5s_primary
     from webui.rl_dashboard_d6 import valid_d6_primary
+    from webui.rl_dashboard_d6r import valid_d6r_primary
+    from webui.rl_dashboard_discovery_meta import (
+        CUSTODIED_PREREG_TYPES,
+        TRAIN_COST_TYPES,
+        discovery_type1_outcome,
+        expected_discovery_schema,
+    )
 
 
 def find_discovery_evidence(
@@ -64,6 +78,14 @@ def find_discovery_evidence(
             for reward in ("NATIVE", "SHUFFLED")
             for seed in range(3)
         )
+    if artifact_type == "rl_discovery_d6r":
+        capture_paths |= frozenset({"inputs/prereg.json"}) | frozenset(
+            f"outcomes/{profile}/{reward}/fold-{fold_id}/seed-{seed}.json"
+            for profile in ("COST_ONLY", "TURNOVER_10BP")
+            for reward in ("NATIVE", "SHUFFLED")
+            for seed in range(3)
+            for fold_id in range(5)
+        )
     try:
         snapshot = read_evidence_snapshot(
             run_dir,
@@ -84,17 +106,9 @@ def find_discovery_evidence(
         return blocked, {}
     payload = payload_value
     receipt = receipt_value
-    expected_schema = {
-        "rl_discovery_d2": "kronos.rl-discovery.d2.result.v1",
-        "rl_discovery_d3": "kronos.rl-discovery.d3.result.v1",
-        "rl_discovery_d4": "kronos.rl-discovery.d4.result.v1",
-        "rl_discovery_d5": "kronos.rl-discovery.d5.result.v1",
-        "rl_discovery_d5r": "kronos.rl-discovery.d5r.capacity.v1",
-        "rl_discovery_d5s": "kronos.rl-discovery.d5s.stability.v1",
-        "rl_discovery_d6": "kronos.rl-discovery.d6.validation.v1",
-    }.get(artifact_type)
+    expected_schema = expected_discovery_schema(artifact_type)
     digest = snapshot.manifest_sha256
-    source_identity_in_receipt = artifact_type not in {"rl_discovery_d5r", "rl_discovery_d5s", "rl_discovery_d6"}
+    source_identity_in_receipt = artifact_type not in CUSTODIED_PREREG_TYPES
     if (
         payload.get("schema_version") != expected_schema
         or payload.get("status") != "COMPLETE"
@@ -126,25 +140,19 @@ def find_discovery_evidence(
         run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
     ):
         return blocked, {}
-    is_d5 = artifact_type == "rl_discovery_d5"
-    is_d5r = artifact_type == "rl_discovery_d5r"
-    is_d5s = artifact_type == "rl_discovery_d5s"
-    is_d6 = artifact_type == "rl_discovery_d6"
-    is_train_cost = is_d5 or is_d5r or is_d5s or is_d6
+    if artifact_type == "rl_discovery_d6r" and not valid_d6r_primary(
+        run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
+    ):
+        return blocked, {}
+    is_train_cost = artifact_type in TRAIN_COST_TYPES
     prereg_value = payload.get("prereg_sha256")
-    if is_d5r or is_d5s or is_d6:
+    if artifact_type in CUSTODIED_PREREG_TYPES:
         prereg_sha: JsonValue = hashlib.sha256(
             snapshot.captured["inputs/prereg.json"]
         ).hexdigest()
     else:
         prereg_sha = prereg_value if isinstance(prereg_value, str) else None
-    type1_outcome = {
-        "rl_discovery_d4": "D4_TRAIN_ONLY_CONFIRMED",
-        "rl_discovery_d5": "D5_TRAIN_ONLY_EVALUATED",
-        "rl_discovery_d5r": "D5R_CAPACITY_EVALUATED",
-        "rl_discovery_d5s": "D5S_STABILITY_EVALUATED",
-        "rl_discovery_d6": str(payload.get("verdict", "D6_REUSED_VALIDATION_NOT_CONFIRMED")),
-    }.get(artifact_type, "COMPLETE_NO_GO")
+    type1_outcome = discovery_type1_outcome(artifact_type, payload)
     compact: dict[str, JsonValue] = {
         "research_lane": "rl_discovery",
         "status": payload.get("status"),
