@@ -1,7 +1,7 @@
-<aside class="research-context" aria-label="D6R 강화학습 공통 연구 상태">
-  <div class="stamp"><span>CURRENT RESEARCH STAGE</span><strong>D6R</strong><em>TRAIN FALSIFICATION · NO-GO</em></div>
-  <dl><div><dt>검증 구조</dt><dd>60 / 60 EVALUATIONS</dd></div><div><dt>통과 게이트</dt><dd>1 / 10 GATES</dd></div><div><dt>Fresh OOS</dt><dd>NOT_RUN_NO_READ</dd></div><div><dt>D7 / Promotion</dt><dd>LOCKED / BLOCKED</dd></div></dl>
-  <p>10bp 거래 페널티는 5-fold TRAIN_ONLY replay에서 거래율을 88% 아래로 낮추지 못했습니다. Native median reward ratio −0.107, 양수 fold 1/5, 양수 seed 0/3이므로 D7을 열지 않습니다.</p>
+<aside class="research-context" aria-label="D6R2 강화학습 공통 연구 상태">
+  <div class="stamp"><span>CURRENT RESEARCH STAGE</span><strong>D6R2</strong><em>TOP-5 SIGNAL FLOOR · NO-GO</em></div>
+  <dl><div><dt>검증 구조</dt><dd>70 / 70 EVALUATIONS</dd></div><div><dt>통과 게이트</dt><dd>2 / 13 GATES</dd></div><div><dt>Fresh OOS</dt><dd>NOT_RUN_NO_READ</dd></div><div><dt>D7 / Promotion</dt><dd>LOCKED / BLOCKED</dd></div></dl>
+  <p>fold-local 정규화와 gamma=0 DQN도 23bp reward ratio −0.128에 그쳤고, 비RL ridge signal floor도 −0.153으로 실패했습니다. 같은 top-5/14-feature 반복을 종료하고 D7은 열지 않습니다.</p>
 </aside>
 <style>
   .research-context{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(260px,.6fr);gap:14px;align-items:center;border:1px solid var(--border-strong);border-left:4px solid var(--danger);padding:11px 14px;background:linear-gradient(105deg,color-mix(in srgb,var(--danger) 11%,transparent),var(--surface-raised) 42%);min-width:0}.stamp{display:grid;grid-template-columns:auto auto;align-items:end;gap:5px 8px}.stamp span{grid-column:1/-1;color:var(--danger);font:800 .58rem ui-monospace,monospace;letter-spacing:.11em}.stamp strong{font:900 1.85rem/.9 ui-monospace,monospace}.stamp em{border:1px solid var(--danger);padding:2px 5px;color:var(--danger);font:900 .6rem ui-monospace,monospace;font-style:normal}dl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0}dl div{border-left:1px solid var(--border);padding-left:8px}dt{color:var(--dim);font:800 .58rem ui-monospace,monospace}dd{margin:3px 0 0;font:700 .66rem ui-monospace,monospace;overflow-wrap:anywhere}.research-context p{margin:0;color:var(--muted);font-size:.68rem;line-height:1.45}@media(max-width:1000px){.research-context{grid-template-columns:1fr}.research-context p{grid-column:auto}dl{grid-template-columns:1fr 1fr}}

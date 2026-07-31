@@ -25,6 +25,7 @@ RL_ARTIFACT_TYPES = frozenset(
         "rl_discovery_d5s",
         "rl_discovery_d6",
         "rl_discovery_d6r",
+        "rl_discovery_d6r2",
     }
 )
 EVALUATION_ARTIFACT_TYPES = frozenset({"cost_gate", "performance_leaderboard", "episode_manifest", "portfolio_paper"})
