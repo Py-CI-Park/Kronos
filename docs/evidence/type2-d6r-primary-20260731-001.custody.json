@@ -1,0 +1,17 @@
+{
+  "schema_version": "kronos.rl-discovery.d6r.custody.v1",
+  "run_name": "type2-d6r-primary-20260731-001",
+  "artifact_manifest_sha256": "83e71bc3bf9d5bfae66c7af3ac76521e1e1a6f700ec81fb6eb90d0ffe53aeee4",
+  "summary_sha256": "2d492a295066d8e29beb8b1d4f04af6986fc625a3512b63fe78ec0ee6dc23a92",
+  "terminal_receipt_sha256": "ab159550c080c88f545e2e16d0936bb7346f37fa61b65cb3b74b8e5547d205b4",
+  "source_episode_sha256": "8a1b8c5f83087ddddf14ec606c5a744ee124f2fca2ef791483f477807956ce40",
+  "source_episode_count": 573,
+  "unit_count": 60,
+  "verdict": "D6R_TRAIN_FALSIFICATION_NOT_CONFIRMED",
+  "prereg_commit": "91d88ce6d2dfbab7b388bca32b85e552c4ec0150",
+  "producer_commit": "bbbdf5a3d5553126337b24f11d831ee879673b9b",
+  "producer_tree": "da7c65c800b5982e672e7e130e620f57aa82b925",
+  "research_branch": "codex/rl-d6r-train-falsification-v1",
+  "base_release": "fork-v1.18.0-kronos-rl-d6-reused-validation",
+  "release_status": "PR_PENDING"
+}
