@@ -18,10 +18,12 @@ if __package__:
     from .rl_dashboard_d5 import valid_d5_primary
     from .rl_dashboard_d5r import valid_d5r_primary
     from .rl_dashboard_d5s import valid_d5s_primary
+    from .rl_dashboard_d6 import valid_d6_primary
 else:  # pragma: no cover - supports direct script-style imports
     from webui.rl_dashboard_d5 import valid_d5_primary
     from webui.rl_dashboard_d5r import valid_d5r_primary
     from webui.rl_dashboard_d5s import valid_d5s_primary
+    from webui.rl_dashboard_d6 import valid_d6_primary
 
 
 def find_discovery_evidence(
@@ -56,6 +58,12 @@ def find_discovery_evidence(
             for seed in range(3)
             for steps in (50_000, 100_000, 150_000, 200_000, 300_000, 400_000)
         )
+    if artifact_type == "rl_discovery_d6":
+        capture_paths |= frozenset({"inputs/prereg.json", "inputs/validation_episodes.json"}) | frozenset(
+            f"outcomes/{reward}/seed-{seed}.json"
+            for reward in ("NATIVE", "SHUFFLED")
+            for seed in range(3)
+        )
     try:
         snapshot = read_evidence_snapshot(
             run_dir,
@@ -83,9 +91,10 @@ def find_discovery_evidence(
         "rl_discovery_d5": "kronos.rl-discovery.d5.result.v1",
         "rl_discovery_d5r": "kronos.rl-discovery.d5r.capacity.v1",
         "rl_discovery_d5s": "kronos.rl-discovery.d5s.stability.v1",
+        "rl_discovery_d6": "kronos.rl-discovery.d6.validation.v1",
     }.get(artifact_type)
     digest = snapshot.manifest_sha256
-    source_identity_in_receipt = artifact_type not in {"rl_discovery_d5r", "rl_discovery_d5s"}
+    source_identity_in_receipt = artifact_type not in {"rl_discovery_d5r", "rl_discovery_d5s", "rl_discovery_d6"}
     if (
         payload.get("schema_version") != expected_schema
         or payload.get("status") != "COMPLETE"
@@ -113,12 +122,17 @@ def find_discovery_evidence(
         run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
     ):
         return blocked, {}
+    if artifact_type == "rl_discovery_d6" and not valid_d6_primary(
+        run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
+    ):
+        return blocked, {}
     is_d5 = artifact_type == "rl_discovery_d5"
     is_d5r = artifact_type == "rl_discovery_d5r"
     is_d5s = artifact_type == "rl_discovery_d5s"
-    is_train_cost = is_d5 or is_d5r or is_d5s
+    is_d6 = artifact_type == "rl_discovery_d6"
+    is_train_cost = is_d5 or is_d5r or is_d5s or is_d6
     prereg_value = payload.get("prereg_sha256")
-    if is_d5r or is_d5s:
+    if is_d5r or is_d5s or is_d6:
         prereg_sha: JsonValue = hashlib.sha256(
             snapshot.captured["inputs/prereg.json"]
         ).hexdigest()
@@ -129,6 +143,7 @@ def find_discovery_evidence(
         "rl_discovery_d5": "D5_TRAIN_ONLY_EVALUATED",
         "rl_discovery_d5r": "D5R_CAPACITY_EVALUATED",
         "rl_discovery_d5s": "D5S_STABILITY_EVALUATED",
+        "rl_discovery_d6": str(payload.get("verdict", "D6_REUSED_VALIDATION_NOT_CONFIRMED")),
     }.get(artifact_type, "COMPLETE_NO_GO")
     compact: dict[str, JsonValue] = {
         "research_lane": "rl_discovery",
