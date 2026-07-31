@@ -1,0 +1,112 @@
+{
+  "schema_version": "kronos.rl-discovery.d6.prereg.v1",
+  "status": "FROZEN_BEFORE_REUSED_VALIDATION_READ",
+  "experiment_id": "TYPE2-D6-REUSED-VALIDATION",
+  "parent_release": "fork-v1.17.0-kronos-rl-d5s-stability-earlystop",
+  "source_run": {
+    "run_name": "type2-d5s-primary-20260730-001",
+    "artifact_manifest_sha256": "c9f7f0a35c16491b02a78fe2932f9b006891d62e5318b731d696893e788387f9",
+    "summary_sha256": "4f0e9803e181425dfd0780c49d15ec7b2f0783119f6f4e0fb71f9abdb563832a",
+    "terminal_receipt_sha256": "8a03a4b8d646090a4b3674f6dbe2eaf09abad579f1b067882a985820cf5b9984",
+    "verdict": "D5S_STABILITY_CONFIRMED",
+    "selected_steps": 100000,
+    "reward_arms": ["NATIVE", "SHUFFLED"],
+    "seeds": [0, 1, 2],
+    "model_count": 6,
+    "models": [
+      {
+        "reward_arm": "NATIVE",
+        "seed": 0,
+        "relative_path": "models/NATIVE/seed-0/steps-100000/model.zip",
+        "sha256": "40dcd57e81af5e4e7d9a64276fd4dc2b893e3212352bb89dd5ef5948b0d918cf"
+      },
+      {
+        "reward_arm": "NATIVE",
+        "seed": 1,
+        "relative_path": "models/NATIVE/seed-1/steps-100000/model.zip",
+        "sha256": "def06a9f4504892bc58ed2585c5643b78ab9ab994fba723070d044d15522b13e"
+      },
+      {
+        "reward_arm": "NATIVE",
+        "seed": 2,
+        "relative_path": "models/NATIVE/seed-2/steps-100000/model.zip",
+        "sha256": "754ccae14dfac10e757e9e6bab1ab63d75e6a380abe707d6ffae9836c51a472e"
+      },
+      {
+        "reward_arm": "SHUFFLED",
+        "seed": 0,
+        "relative_path": "models/SHUFFLED/seed-0/steps-100000/model.zip",
+        "sha256": "06e9011fdf7b8ac4d0d0f30b1c41c177db7b8c5833dd868414009891da8eaa00"
+      },
+      {
+        "reward_arm": "SHUFFLED",
+        "seed": 1,
+        "relative_path": "models/SHUFFLED/seed-1/steps-100000/model.zip",
+        "sha256": "438a826c094209fc59d7275ac46a8047ec17ea207636c43cc13d19e3e1afd667"
+      },
+      {
+        "reward_arm": "SHUFFLED",
+        "seed": 2,
+        "relative_path": "models/SHUFFLED/seed-2/steps-100000/model.zip",
+        "sha256": "a0625fcecfe40282e9368fe3a2b62d050d9d460b6364acd6ad3256f263aca26d"
+      }
+    ]
+  },
+  "dataset": {
+    "dataset_id": "type1-close-20260803-005",
+    "rows_relative_path": "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/public_rows.json",
+    "rows_sha256": "a0fbeb1b54e59e3c1e83c66c8ca5aa85caa7063b7cbb382efeb716e86ae915cf",
+    "manifest_sha256": "25cb145689933946d0f5600ddbc007690b4e433e537e4f9dd3f7b6f7dcc4d172",
+    "materializer_receipt_sha256": "913b2fe9a4986109f04d776071f6ac3bbb50d5d430117e1d42c8eeca009ad75c",
+    "normalizer_relative_path": "webui/rl_runs/v6_daily_h1/type1-close-20260803-005/train_type1-public-005/primary/seed_0/normalizer.json",
+    "normalizer_file_sha256": "4d0ad81bf989bd279b37af2b7223cb448aa8617fa162061bc865fed92416debb",
+    "normalizer_digest": "a783484f56b39ae77a2b236e1e06ce5967621071a2ebd049ec0b45d720113b50",
+    "partition": "REUSED_VALIDATION",
+    "selection": "FIRST_128_CHRONOLOGICAL_ELIGIBLE_VALIDATION_SESSIONS",
+    "episode_count": 128,
+    "normalizer_policy": "TRAIN_ONLY_NORMALIZER_NO_REFIT"
+  },
+  "hypothesis": {
+    "primary": "The globally selected 100k Native DQN policies retain positive 23bp reward and remain separated from the preregistered Shuffled controls on the frozen reused-validation prefix.",
+    "null": "The Native policies fail the no-trade baseline, collapse to near-random action accuracy, exceed the drawdown limit, or lose their reward separation from Shuffled controls.",
+    "interpretation_boundary": "This is reused validation and may reject the D5S train-only hypothesis. It is not Fresh OOS, profitability, promotion, paper-forward, broker, or live evidence."
+  },
+  "execution": {
+    "method": "LOAD_FROZEN_100K_MODELS_AND_EVALUATE_ON_REUSED_VALIDATION_WITHOUT_TRAINING",
+    "representation": "D_TOP5_CONTEXT_4X",
+    "candidate_count": 5,
+    "market_context": true,
+    "round_trip_cost_bp": 23,
+    "diagnostic_zero_cost_bp": 0,
+    "retraining_allowed": false,
+    "model_mutation_allowed": false,
+    "per_seed_selection_allowed": false,
+    "threshold_amendment_after_read_allowed": false,
+    "validation_read_once": true
+  },
+  "gate": {
+    "minimum_native_median_accuracy": 0.2,
+    "minimum_native_median_reward_ratio": 0.0,
+    "minimum_native_median_total_reward": 0.0,
+    "minimum_native_reward_delta_vs_shuffled": 0.1,
+    "minimum_passing_native_seed_fraction": 0.6666666666666666,
+    "maximum_native_median_reward_drawdown": 0.25,
+    "zero_invalid_actions": true,
+    "confirmed_verdict": "D6_REUSED_VALIDATION_CONFIRMED",
+    "failed_verdict": "D6_REUSED_VALIDATION_NOT_CONFIRMED"
+  },
+  "controls": {
+    "negative_control": "SHUFFLED",
+    "no_trade_total_reward": 0.0,
+    "random_action_accuracy_reference": 0.16666666666666666,
+    "ts_imb_classification": "RULE_BASELINE_NOT_DIRECTLY_COMPARABLE"
+  },
+  "claims_boundary": {
+    "research_only": true,
+    "profitability_claim_allowed": false,
+    "promotion_allowed": false,
+    "live_broker_order_allowed": false,
+    "reused_validation": "AUTHORIZED_AFTER_PREREG_COMMIT",
+    "fresh_oos": "NOT_RUN_NO_READ"
+  }
+}

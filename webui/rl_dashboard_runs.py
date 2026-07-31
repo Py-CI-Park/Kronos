@@ -53,6 +53,8 @@ def _detect_artifact_type(run_dir: Path) -> str:
             return "rl_discovery_d5r"
         if schema == "kronos.rl-discovery.d5s.stability.v1":
             return "rl_discovery_d5s"
+        if schema == "kronos.rl-discovery.d6.validation.v1":
+            return "rl_discovery_d6"
     for artifact_type, file_name in _files.ARTIFACT_SIGNATURES:
         if _files._is_run_file(run_dir, run_dir / file_name):
             return artifact_type
