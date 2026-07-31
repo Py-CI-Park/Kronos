@@ -20,6 +20,7 @@ if __package__:
     from .rl_dashboard_d5s import valid_d5s_primary
     from .rl_dashboard_d6 import valid_d6_primary
     from .rl_dashboard_d6r import valid_d6r_primary
+    from .rl_dashboard_d6r2 import valid_d6r2_primary
     from .rl_dashboard_discovery_meta import (
         CUSTODIED_PREREG_TYPES,
         TRAIN_COST_TYPES,
@@ -32,6 +33,7 @@ else:  # pragma: no cover - supports direct script-style imports
     from webui.rl_dashboard_d5s import valid_d5s_primary
     from webui.rl_dashboard_d6 import valid_d6_primary
     from webui.rl_dashboard_d6r import valid_d6r_primary
+    from webui.rl_dashboard_d6r2 import valid_d6r2_primary
     from webui.rl_dashboard_discovery_meta import (
         CUSTODIED_PREREG_TYPES,
         TRAIN_COST_TYPES,
@@ -84,6 +86,14 @@ def find_discovery_evidence(
             for profile in ("COST_ONLY", "TURNOVER_10BP")
             for reward in ("NATIVE", "SHUFFLED")
             for seed in range(3)
+            for fold_id in range(5)
+        )
+    if artifact_type == "rl_discovery_d6r2":
+        capture_paths |= frozenset({"inputs/prereg.json", "inputs/fold_normalizers.json"}) | frozenset(
+            f"outcomes/{algorithm}/{reward}/fold-{fold_id}/seed-{seed}.json"
+            for algorithm in ("DQN_GAMMA_0_CONTEXTUAL", "DQN_GAMMA_1_SEQUENCE_CONTROL", "RIDGE_REWARD_CEILING")
+            for reward in ("NATIVE", "SHUFFLED")
+            for seed in ((0,) if algorithm == "RIDGE_REWARD_CEILING" else range(3))
             for fold_id in range(5)
         )
     try:
@@ -141,6 +151,10 @@ def find_discovery_evidence(
     ):
         return blocked, {}
     if artifact_type == "rl_discovery_d6r" and not valid_d6r_primary(
+        run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
+    ):
+        return blocked, {}
+    if artifact_type == "rl_discovery_d6r2" and not valid_d6r2_primary(
         run_dir, payload, receipt, digest, snapshot.relative_paths, snapshot.captured,
     ):
         return blocked, {}

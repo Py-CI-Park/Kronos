@@ -55,6 +55,7 @@ export function typeLabel(type: string | undefined): string {
     case 'orderbook_rl_readiness': return 'RL readiness';
     case 'daily_ohlcv_portfolio': return 'Daily portfolio (research)';
     case 'daily_close_slot_train': return 'Close-slot train (research)';
+    case 'rl_discovery_d6r2': return 'D6R2 MDP falsification (NO-GO)';
     default: return type ?? 'unknown';
   }
 }
@@ -65,6 +66,7 @@ export function typeTone(type: string | undefined): string {
   if (type === 'cost_gate' || type === 'performance_leaderboard') return 'info';
   if (type === 'sb3_smoke' || type === 'contextual_bandit' || type === 'portfolio_paper') return 'accent';
   if (type === 'daily_ohlcv_portfolio' || type === 'daily_close_slot_train') return 'accent';
+  if (type === 'rl_discovery_d6r2') return 'warn';
   if (type === 'orderbook_rl_readiness') return 'warn';
   return '';
 }
