@@ -1,0 +1,21 @@
+{
+  "schema_version": "kronos.rl-discovery.d6.custody.v1",
+  "run_name": "type2-d6-primary-20260731-002",
+  "failed_run_name": "type2-d6-primary-20260731-001",
+  "artifact_manifest_sha256": "4e72f8bf7ef0e52fbe7e7e093a9991980c1aa2806e0d993adb869bc97b676a63",
+  "summary_sha256": "a0828b1006734ba40c5838bb09edfab28d87035b9b4d42e0e0a210c8b9bbe21f",
+  "terminal_receipt_sha256": "b47f74a44af33b27df803d0d71c372517b5dd9ed4011471bcc57427490d89049",
+  "validation_episode_sha256": "31134cd5307174b6530031990d4580f1ff45360b6d6df2dbdc3cd2e14ae1e1c7",
+  "validation_episode_count": 128,
+  "source_model_count": 6,
+  "outcome_count": 6,
+  "validation_read_count": 1,
+  "validation_origin": "FAILED_RUN_SNAPSHOT",
+  "verdict": "D6_REUSED_VALIDATION_NOT_CONFIRMED",
+  "prereg_commit": "094cae71fbdfd23af88b37e32ee0e53df73698fc",
+  "producer_commit": "e47ffc88b07c9f0d34cdaaa7f07cfdf1c6460997",
+  "producer_tree": "41f83f938cffaa785f609a31fe37cec6582fe109",
+  "research_branch": "codex/rl-d6-reused-validation-v1",
+  "base_release": "fork-v1.17.0-kronos-rl-d5s-stability-earlystop",
+  "release_status": "PR_PENDING"
+}
