@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "lane_id": "ETF_STATEFUL_MDP_Q0_Q2",
+  "run_id": "etf-stateful-q0-q2-canary-20260801",
+  "overall_verdict": "BLOCKED_Q1_DATA_CUSTODY",
+  "q3_ppo_allowed": false,
+  "receipt_sha256": "5547b7379ccd9b82e1fb55fa56bcaebc77a8b51f4fb7f7a20a8921fb796e669c",
+  "scores": {
+    "existing_d6r2_model_performance": 18,
+    "etf_lane_design_readiness": 44,
+    "etf_q0_q2_execution_completeness": 72,
+    "research_platform": 90,
+    "live_readiness_range": [0, 5]
+  },
+  "q1": {
+    "verdict": "BLOCKED_DATA_CUSTODY",
+    "passed_gates": 7,
+    "total_gates": 11,
+    "blockers": [
+      "POINT_IN_TIME_UNIVERSE",
+      "OFFICIAL_INSTRUMENT_IDENTITY",
+      "AVAILABLE_AT_CUTOFF",
+      "TOTAL_RETURN_CONTRACT"
+    ]
+  },
+  "q2a": {
+    "verdict": "NO_GO_SIGNAL_FLOOR",
+    "evidence_scope": "DIAGNOSTIC_ONLY",
+    "sample_count": 20071,
+    "date_count": 4461,
+    "primary_cost_bps": 23.0,
+    "diagnostic_cost_bps": 9.0,
+    "native_23bp_mean_bps": -9.227069927828932,
+    "native_9bp_mean_bps": 4.7729300721710555,
+    "shuffle_23bp_mean_bps": -6.892996401302184,
+    "native_minus_shuffle_bps": -2.3340735265267485,
+    "equal_weight_23bp_mean_bps": -5.7508289650377655,
+    "positive_folds": 1,
+    "fold_count": 5,
+    "positive_seed_comparisons": 0,
+    "seed_count": 3,
+    "maximum_drawdown": 0.9478779880076197
+  },
+  "q2b": {
+    "verdict": "PASS_SYNTHETIC_STATEFUL_MDP",
+    "passed_seeds": 3,
+    "seed_count": 3,
+    "round_trip_cost_bps": 23.0
+  },
+  "locks": {
+    "existing_d7": "LOCKED_NOT_RUN_NO_READ",
+    "q3_ppo": "LOCKED_NOT_RUN",
+    "paper_forward": false,
+    "live_broker_order": false,
+    "profitability_claim": false
+  }
+}
