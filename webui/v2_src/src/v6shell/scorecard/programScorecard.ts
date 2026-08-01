@@ -14,8 +14,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("platform"),
     weight: 30,
     state: "STRONG",
-    evidence: "12개 페이지, D6R API, exact 60-evaluation custody",
-    nextAction: "D6R2 MDP-specification falsification 연결",
+    evidence: "12개 페이지, D6R2 70-evaluation custody, ETF Q0~Q2 receipt",
+    nextAction: "ETF result SHA와 12페이지 gate 상태 유지",
   },
   {
     id: "rl-evidence",
@@ -24,8 +24,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("rl-evidence"),
     weight: 30,
     state: "PARTIAL",
-    evidence: "D6R 3M steps·5 folds·3 seeds → 1/10 gates, NO-GO",
-    nextAction: "gamma=0 contextual 진단과 stateful portfolio MDP 분리",
+    evidence: "기존 모델 18/100; ETF Q2-A 23bp -9.23bp·1/5 fold NO-GO",
+    nextAction: "Q1 custody와 새 supervised floor 없이는 PPO 금지",
   },
   {
     id: "engineering",
@@ -34,8 +34,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("engineering"),
     weight: 20,
     state: "STRONG",
-    evidence: "D6R 60/60 평가, fail-closed verifier, terminal receipt",
-    nextAction: "fold-local normalizer 계약 추가",
+    evidence: "ETF read-only DB·11 tests·5-fold/3-shuffle·stateful accounting",
+    nextAction: "공식 point-in-time metadata adapter 추가",
   },
   {
     id: "governance",
@@ -44,8 +44,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("governance"),
     weight: 10,
     state: "STRONG",
-    evidence: "D6R prereg·producer·custody·control 계보 완료",
-    nextAction: "research→master→tag 계보 완료",
+    evidence: "Q0 prereg→Q1/Q2 receipt→실행/부모 브랜치 계보",
+    nextAction: "실행 브랜치→부모 연구 브랜치 PR·검토",
   },
   {
     id: "live",
@@ -54,8 +54,8 @@ export const PROGRAM_LANES = [
     score: programRubricScore("live"),
     weight: 10,
     state: "BLOCKED",
-    evidence: "D6R train falsification 실패; D7 Fresh OOS 봉인; 브로커 권한 없음",
-    nextAction: "새 MDP 가설과 새 prereg 없이는 D7 진행 금지",
+    evidence: "ETF Q1·Q2-A 차단; Q3 NOT_RUN; D7 봉인; 브로커 권한 없음",
+    nextAction: "PIT 데이터와 23bp signal floor 전까지 Q3·D7 금지",
   },
 ] as const satisfies readonly ProgramLane[];
 

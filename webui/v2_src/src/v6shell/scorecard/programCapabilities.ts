@@ -52,8 +52,44 @@ export const PROGRAM_CAPABILITIES = [
   {
     id: "d6r2-research",
     capability: "D6R2 MDP-specification falsification",
+    state: "AVAILABLE",
+    boundary: "70 evaluations·2/13 gates·18/100 NO-GO; D7 read 금지",
+  },
+  {
+    id: "etf-q0-prereg",
+    capability: "ETF stateful MDP Q0 사전등록",
+    state: "AVAILABLE",
+    boundary: "23bp primary·5-fold·3-shuffle·Q3 lock 고정",
+  },
+  {
+    id: "etf-q0-q2-foundation",
+    capability: "ETF Q0~Q2 foundation runner",
     state: "PARTIAL",
-    boundary: "설계·prereg 필요; fold-local normalizer; D7 read 금지",
+    boundary: "Q1 BLOCKED·Q2-A NO-GO·Q2-B 3/3 PASS; diagnostic only",
+  },
+  {
+    id: "etf-q1-data",
+    capability: "ETF point-in-time data readiness",
+    state: "BLOCKED",
+    boundary: "PIT universe·identity·available_at·total return 없음",
+  },
+  {
+    id: "etf-q2a-signal",
+    capability: "ETF 20일 momentum signal floor",
+    state: "BLOCKED",
+    boundary: "23bp -9.23bp·native-shuffle -2.33bp·positive folds 1/5",
+  },
+  {
+    id: "etf-q2b-environment",
+    capability: "ETF stateful accounting synthetic gate",
+    state: "AVAILABLE",
+    boundary: "cash·units·position·23bp invariant; known policy 3/3 PASS",
+  },
+  {
+    id: "etf-q3-ppo",
+    capability: "ETF Residual MLP PPO pilot",
+    state: "BLOCKED",
+    boundary: "Q1·Q2-A 미통과; NOT_RUN; model score 변경 없음",
   },
   {
     id: "fresh-oos",

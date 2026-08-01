@@ -44,16 +44,18 @@ test('page matrix describes every V6 user surface in navigation order', () => {
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.eta.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'D6R_PRIMARY_60_MODELS_3M_STEPS');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'D6R_TRAIN_FALSIFICATION_NOT_CONFIRMED');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'D6R_NATIVE_DELTA_POS_0_017_BELOW_GATE');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, 'RL 점수 제외 유지');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'home')?.evidenceState, 'ETF_Q0_Q2_BLOCKED_Q1_Q2A');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'ETF_Q3_LOCKED_NOT_RUN');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'ETF_Q2A_23BP_NO_GO_1_OF_5');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'ETF_NATIVE_MINUS_SHUFFLE_NEG_2_334BP');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, '외부 설계와 Kronos 성과 분리 유지');
   assert.match(PROGRAM_LANES.find((lane) => lane.id === 'live')?.nextAction ?? '', /D7/u);
 });
 
 test('capability inventory separates available research from blocked claims', () => {
   // Given / When
   const available = PROGRAM_CAPABILITIES.filter((capability) => capability.state === 'AVAILABLE');
+  const partial = PROGRAM_CAPABILITIES.filter((capability) => capability.state === 'PARTIAL');
   const blocked = PROGRAM_CAPABILITIES.filter((capability) => capability.state === 'BLOCKED');
 
   // Then
@@ -62,6 +64,12 @@ test('capability inventory separates available research from blocked claims', ()
   assert.ok(available.some((capability) => capability.id === 'd5-primary'));
   assert.ok(available.some((capability) => capability.id === 'd6-validation'));
   assert.ok(available.some((capability) => capability.id === 'd6r-research'));
+  assert.ok(available.some((capability) => capability.id === 'etf-q0-prereg'));
+  assert.ok(available.some((capability) => capability.id === 'etf-q2b-environment'));
+  assert.ok(partial.some((capability) => capability.id === 'etf-q0-q2-foundation'));
+  assert.ok(blocked.some((capability) => capability.id === 'etf-q1-data'));
+  assert.ok(blocked.some((capability) => capability.id === 'etf-q2a-signal'));
+  assert.ok(blocked.some((capability) => capability.id === 'etf-q3-ppo'));
   assert.ok(blocked.some((capability) => capability.id === 'fresh-oos'));
   assert.ok(blocked.some((capability) => capability.id === 'live-trading'));
 });
