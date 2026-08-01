@@ -11,8 +11,8 @@ test('V6 shell uses isolated navigation and main class names', async () => {
   assert.doesNotMatch(source, /class="sidebar"/u);
   assert.match(source, /ResearchContext/u);
   assert.match(source, /<ResearchContext \/>/u);
-  assert.match(context, /<strong>D6R<\/strong>/u);
-  assert.match(context, /60 \/ 60 EVALUATIONS/u);
-  assert.match(context, /TRAIN FALSIFICATION · NO-GO/u);
+  assert.match(context, /<strong>D6R2<\/strong>/u);
+  assert.match(context, /70 \/ 70 EVALUATIONS/u);
+  assert.match(context, /TOP-5 SIGNAL FLOOR · NO-GO/u);
   assert.match(context, /NOT_RUN_NO_READ/u);
 });
