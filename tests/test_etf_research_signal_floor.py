@@ -25,6 +25,7 @@ def test_signal_floor_passes_predictive_native_score_against_shuffle() -> None:
     assert receipt.positive_fold_count == 5
     assert receipt.positive_seed_count >= 2
     assert receipt.native_mean_bps > 0
+    assert receipt.diagnostic_9bp_native_mean_bps > receipt.native_mean_bps
     assert receipt.native_minus_shuffle_bps >= 10.0
 
 
@@ -47,3 +48,17 @@ def test_signal_floor_fails_when_cost_exceeds_native_return() -> None:
     assert receipt.native_mean_bps < 0
     assert receipt.positive_fold_count == 0
 
+
+def test_signal_floor_excludes_dates_without_the_full_canary_cross_section() -> None:
+    # Given: one early date has only one ETF while a later date has both ETFs.
+    samples = (
+        SignalSample(day=1, code="069500", score=1.0, gross_return=-0.50),
+        SignalSample(day=2, code="069500", score=1.0, gross_return=0.01),
+        SignalSample(day=2, code="102110", score=-1.0, gross_return=-0.01),
+    )
+
+    # When: the cross-sectional diagnostic runs.
+    receipt = evaluate_signal_floor(samples, SignalFloorThresholds.registered(), shuffle_seeds=(0, 1, 2))
+
+    # Then: the incomplete historical cross-section is not treated as a tradable ranking date.
+    assert receipt.date_count == 1
