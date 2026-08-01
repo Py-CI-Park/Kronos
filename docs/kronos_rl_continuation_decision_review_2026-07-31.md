@@ -178,3 +178,19 @@ Phase A와 B를 모두 통과한 단 하나의 사전등록 후보만 작은 nes
 이 조건을 지키는 한 다음 단계는 의미가 있다. 조건을 지키지 않고 동일 데이터·환경에서 튜닝을 반복하는 다음 단계는 의미가 없으며 과적합 가능성만 높인다.
 
 직접 화면 검토 순서, 12페이지별 체크 항목과 정확한 기대 수치는 [`kronos_rl_dashboard_direct_review_guide_2026-08-01.md`](kronos_rl_dashboard_direct_review_guide_2026-08-01.md)에 기록했다.
+
+## 10. Quantylab ETF stateful MDP 외부 연구 업데이트
+
+2026-08-01에 Quantylab의 `파이썬을 이용한 강화학습 주식투자` 카테고리 12개 글을 검토했다. 새 자료는 기존 D6R2 성과를 바꾸지 않지만, 다음 연구의 구체적인 후보를 제공한다.
+
+| 항목 | 업데이트 |
+|---|---|
+| 기존 top-5/14-feature lane | `STOP` 유지 |
+| 기존 모델 성과 | 18/100 유지 |
+| 신규 가설 | 국내 ETF swing + continuous target position + stateful cash/position transition |
+| 비용 | 23bp primary 유지, 9bp ETF diagnostic 추가 |
+| 우선 모델 | Residual MLP PPO baseline |
+| 선행 조건 | point-in-time audit + supervised signal floor + synthetic learnability |
+| D7 | 계속 `LOCKED` |
+
+상세 글별 분석, 설계 위험, 점수와 Q0~Q7 실행 계획은 [`kronos_quantylab_rl_etf_content_review_2026-08-01.md`](kronos_quantylab_rl_etf_content_review_2026-08-01.md)에 기록했다. 기존 Phase A와 B는 병렬 준비할 수 있지만, 두 gate가 모두 통과하기 전 실제 시장 PPO 학습은 금지한다.

@@ -199,3 +199,21 @@ py -3.11 webui\run.py
 - [`evidence/type2-d6r2-primary-20260731-001.custody.json`](evidence/type2-d6r2-primary-20260731-001.custody.json): 장기 증거 custody
 
 이 검토의 핵심은 모델 점수를 억지로 20점 이상으로 높이는 것이 아니다. 새 신호가 있는지 먼저 확인하고, 올바른 순차 MDP가 합성 환경에서 학습되는지 확인한 뒤에만 실제 시장 RL 비용을 지출하는 것이다.
+
+## 14. Quantylab ETF 신규 lane 검토 항목
+
+외부 설계 검토 후 다음 대시보드 업데이트 후보가 추가됐다.
+
+| 페이지 | 추가 검토 항목 |
+|---|---|
+| Home | `ETF STATEFUL MDP · CANDIDATE · NOT RUN` 표시 |
+| Scorecard | 기존 모델 18과 ETF lane 연구 준비도 44를 분리 |
+| Discovery | Q0~Q7 신규 lane, 기존 D7 잠금 유지 |
+| Data | point-in-time ETF universe, raw/as-of timestamp, bfill 0 |
+| Experiment | 9/23bp, reward 3-arm, Residual MLP first |
+| Training | PPO entropy, policy std, action histogram, trade rate |
+| Evaluation | 5fold×3seed, shuffle, no-trade, momentum, MDD/Sharpe/Calmar |
+| Compare | 기존 stock top-5와 ETF lane cross-rank 금지 |
+| Report | external design reference와 Kronos 실행 evidence 분리 |
+
+상세 근거는 [`kronos_quantylab_rl_etf_content_review_2026-08-01.md`](kronos_quantylab_rl_etf_content_review_2026-08-01.md)를 따른다. 이 외부 자료는 성과 evidence가 아니라 신규 prereg 설계 입력이다.
