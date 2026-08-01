@@ -2,6 +2,7 @@ import { PROGRAM_SCORE_RUBRIC, programRubricScore } from "./programRubric";
 import type { ProgramLane } from "./programTypes";
 
 export * from "./programPages";
+export { PROGRAM_CAPABILITIES } from "./programCapabilities";
 export { PROGRAM_SCORE_RUBRIC, programRubricScore };
 export type * from "./programTypes";
 
