@@ -5,9 +5,9 @@ import type * as Registry from './registry';
 const registryPath = ['.', 'registry.ts'].join('/');
 const { V6_BRAND, V6_INSIGHT_SUBTABS, V6_PAGES, V6_RL_STEPS, resolveV6Location }: typeof Registry = await import(registryPath);
 
-test('V6 registry exposes the five-tab information architecture in navigation order', () => {
-  assert.deepEqual(V6_PAGES.map((page) => page.id), ['home', 'scorecard', 'rl', 'insight', 'lanes', 'settings']);
-  assert.deepEqual(V6_PAGES.map((page) => page.group), ['COMMAND', 'COMMAND', 'RESEARCH', 'RESEARCH', 'PLATFORM', 'ADVANCED']);
+test('V6 registry exposes Kronos as an explicit research lane in navigation order', () => {
+  assert.deepEqual(V6_PAGES.map((page) => page.id), ['home', 'scorecard', 'rl', 'insight', 'kronos', 'lanes', 'settings']);
+  assert.deepEqual(V6_PAGES.map((page) => page.group), ['COMMAND', 'COMMAND', 'RESEARCH', 'RESEARCH', 'PLATFORM', 'PLATFORM', 'ADVANCED']);
   assert.ok(V6_PAGES.every((page) => page.status === 'BUILT'));
 });
 
@@ -20,6 +20,7 @@ test('V6 registry resolves legacy locations into their workspace deep links', ()
   assert.deepEqual(resolveV6Location('overview', null, null), { tab: 'home' });
   assert.deepEqual(resolveV6Location('training', null, null), { tab: 'rl', step: 'training' });
   assert.deepEqual(resolveV6Location('insight-flow', null, null), { tab: 'insight', sub: 'flow' });
+  assert.deepEqual(resolveV6Location('kronos', null, null), { tab: 'kronos' });
   assert.deepEqual(resolveV6Location('intraday', null, null), { tab: 'lanes' });
   assert.deepEqual(resolveV6Location(null, null, null, '/training'), { tab: 'rl', step: 'training' });
   assert.deepEqual(resolveV6Location(null, null, null, '/dashboard'), { tab: 'rl', step: 'training' });

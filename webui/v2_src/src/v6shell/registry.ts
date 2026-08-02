@@ -47,6 +47,7 @@ export const V6_PAGES: readonly V6PageDef[] = [
   { id: 'scorecard', label: 'Program Scorecard', labelKo: '프로그램 점수', group: 'COMMAND', step: null, status: 'BUILT', description: '전체 페이지, 역량, 연구 증거와 개발 거버넌스를 점수로 감사합니다.' },
   { id: 'rl', label: 'Reinforcement Learning', labelKo: '강화학습', group: 'RESEARCH', step: 2, status: 'BUILT', description: '강화학습 연구 여정과 단계별 근거를 다루는 작업공간입니다.' },
   { id: 'insight', label: 'Insights', labelKo: '인사이트', group: 'RESEARCH', step: null, status: 'BUILT', description: '종목, 수급, 시장 국면 관찰을 다루는 작업공간입니다.' },
+  { id: 'kronos', label: 'Kronos Model', labelKo: 'Kronos 모델', group: 'PLATFORM', step: null, status: 'BUILT', description: 'Kronos 예측 모델의 가용성과 강화학습 policy와의 경계를 확인합니다.' },
   { id: 'lanes', label: 'Other Lanes', labelKo: '다른 레인', group: 'PLATFORM', step: null, status: 'BUILT', description: '인트라데이 RL과 Kronos 예측 레인을 함께 확인합니다.' },
   { id: 'settings', label: 'Settings', labelKo: '설정', group: 'ADVANCED', step: null, status: 'BUILT', description: 'V6 연구 환경 설정을 다루는 화면입니다.' },
 ];
@@ -69,7 +70,7 @@ export function resolveV6Location(tab: string | null, step: string | null, sub: 
   if (tab === 'insight-symbol') return { tab: 'insight', sub: 'symbol' };
   if (tab === 'insight-flow') return { tab: 'insight', sub: 'flow' };
   if (tab === 'insight-regime') return { tab: 'insight', sub: 'regime' };
-  if (tab === 'intraday' || tab === 'kronos') return { tab: 'lanes' };
+  if (tab === 'intraday') return { tab: 'lanes' };
   if (!V6_PAGES.some((page) => page.id === tab)) {
     const compatibility = compatibilityLocation(tab, pathname);
     if (compatibility) return compatibility;

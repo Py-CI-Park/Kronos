@@ -9,17 +9,19 @@ const researchContext = readFileSync(new URL('../ResearchContext.svelte', import
 test('execution banner preserves the research boundary and delivery lineage', () => {
   assert.equal(PROGRAM_EXECUTION.overallScore, programOverallScore(PROGRAM_LANES));
   assert.equal(PROGRAM_EXECUTION.pageCount, PROGRAM_PAGE_MATRIX.length);
+  assert.equal(PROGRAM_EXECUTION.pageCount, 13);
   assert.equal(PROGRAM_EXECUTION.freshOos, 'NOT_RUN_NO_READ');
   assert.equal(PROGRAM_EXECUTION.liveTrading, 'BLOCKED');
-  assert.match(PROGRAM_EXECUTION.deliveryLane, /codex\/rl-d6r/);
-  assert.equal(PROGRAM_EXECUTION.baseRelease, 'fork-v1.18.0-kronos-rl-d6-reused-validation');
-  assert.equal(PROGRAM_EXECUTION.stage, 'D6R_TRAIN_FALSIFICATION_NOT_CONFIRMED');
+  assert.match(PROGRAM_EXECUTION.deliveryLane, /codex\/rl-close-recovery-v1/);
+  assert.equal(PROGRAM_EXECUTION.baseRelease, 'fork-v1.20.0-kronos-rl-d6r2-mdp-falsification');
+  assert.equal(PROGRAM_EXECUTION.stage, 'ETF_Q0_Q2_BLOCKED_Q1_Q2A');
   assert.equal(PROGRAM_EXECUTION.authority, 'REVIEWED_SNAPSHOT');
-  assert.equal(PROGRAM_EXECUTION.reviewedRun, 'type2-d6r-primary-20260731-001');
+  assert.equal(PROGRAM_EXECUTION.reviewedRun, 'etf-stateful-q0-q2-canary-20260801');
   assert.match(PROGRAM_EXECUTION.reviewedEvidenceManifest, /^[0-9a-f]{64}$/);
-  assert.match(PROGRAM_EXECUTION.nextAction, /D6R2/i);
-  assert.match(researchContext, /D6R/);
-  assert.match(researchContext, /60 \/ 60 EVALUATIONS/);
-  assert.match(researchContext, /TRAIN FALSIFICATION · NO-GO/);
-  assert.match(researchContext, /1 \/ 10 GATES/);
+  assert.match(PROGRAM_EXECUTION.nextAction, /point-in-time/i);
+  assert.ok(PROGRAM_PAGE_MATRIX.some((page) => page.id === 'kronos'));
+  assert.match(researchContext, /D6R2/);
+  assert.match(researchContext, /70 \/ 70 EVALUATIONS/);
+  assert.match(researchContext, /TOP-5 SIGNAL FLOOR · NO-GO/);
+  assert.match(researchContext, /2 \/ 13 GATES/);
 });
