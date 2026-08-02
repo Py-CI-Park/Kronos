@@ -2,24 +2,27 @@
   import { onMount } from 'svelte';
   import { getV6Experiment, getV6ResearchRegistry, nextDraftPresentation, type V6Experiment, type V6ResearchRegistry } from '../v6Api';
   import { TYPE1_FACTS } from '../type1Presentation';
-  let experiment = $state<V6Experiment | null>(null); let registry = $state<V6ResearchRegistry | null>(null); let error = $state<string | null>(null); let registryError = $state<string | null>(null); let loading = $state(true);
+  let experiment = $state<V6Experiment | null>(null); let registry = $state<V6ResearchRegistry | null>(null); let error = $state<string | null>(null); let registryError = $state<string | null>(null); let experimentLoading = $state(true); let registryLoading = $state(true);
   const text = (value: unknown) => value === undefined || value === null || value === '' ? 'MISSING' : typeof value === 'string' ? value : JSON.stringify(value);
   const won = (value: unknown) => typeof value === 'number' ? `₩${new Intl.NumberFormat('ko-KR').format(value)}` : 'MISSING';
   const lockState = (value: boolean | undefined) => value === false ? 'false' : value === true ? 'true' : 'MISSING';
   const draftState = $derived(nextDraftPresentation(registry));
   const registryText = (value: unknown) => registryError ? 'UNAVAILABLE' : text(value);
-  async function load(): Promise<void> { loading = true; error = null; registryError = null; const [experimentResult, registryResult] = await Promise.all([getV6Experiment(), getV6ResearchRegistry()]); if (experimentResult.ok && experimentResult.data) experiment = experimentResult.data; else error = experimentResult.error ?? '실험 API를 불러오지 못했습니다.'; if (registryResult.ok && registryResult.data) registry = registryResult.data; else registryError = registryResult.error ?? '연구 레지스트리 API를 불러오지 못했습니다.'; loading = false; }
-  onMount(() => { void load(); });
+  async function loadExperiment(): Promise<void> { experimentLoading = true; error = null; const result = await getV6Experiment(); if (result.ok && result.data) experiment = result.data; else error = result.error ?? '실험 API를 불러오지 못했습니다.'; experimentLoading = false; }
+  async function loadRegistry(): Promise<void> { registryLoading = true; registryError = null; const result = await getV6ResearchRegistry(); if (result.ok && result.data) registry = result.data; else registryError = result.error ?? '연구 레지스트리 API를 불러오지 못했습니다.'; registryLoading = false; }
+  onMount(() => { void loadExperiment(); void loadRegistry(); });
 </script>
 
 <section class="experiment-page" aria-labelledby="experiment-title">
   <header><p class="eyebrow">EXPERIMENT CONTRACT</p><h1 id="experiment-title">실험 설계</h1><p>표시된 계약은 읽기 전용 API 응답에 한정됩니다. MISSING은 성공한 응답에 필드가 없는 경우입니다.</p></header>
-  {#if loading}<p class="notice" role="status">실험 설계를 확인하고 있습니다.</p>{/if}
-  {#if error}<section class="notice error" role="alert"><strong>UNAVAILABLE</strong><span>{error}</span><button type="button" onclick={() => void load()}>다시 시도</button></section>{/if}
-  {#if registryError}<section class="notice error" role="alert"><strong>UNAVAILABLE</strong><span>{registryError}</span><button type="button" onclick={() => void load()}>다시 시도</button></section>{/if}
+  {#if experimentLoading}<p class="notice" role="status">실험 계약을 확인하고 있습니다.</p>{/if}
+  {#if error}<section class="notice error" role="alert"><strong>UNAVAILABLE</strong><span>{error}</span><button type="button" onclick={() => void loadExperiment()}>다시 시도</button></section>{/if}
+  {#if registryError}<section class="notice error" role="alert"><strong>UNAVAILABLE</strong><span>{registryError}</span><button type="button" onclick={() => void loadRegistry()}>다시 시도</button></section>{/if}
   <section class="card draft" aria-labelledby="draft-title">
     <p class="eyebrow">NEXT PREREGISTRATION</p><h2 id="draft-title">다음 초안</h2>
-    {#if draftState.kind === 'draft'}
+    {#if registryLoading}
+      <div class="empty-draft" role="status"><strong>연구 레지스트리 검증 중</strong><span>모델·보고서 무결성 확인은 별도로 완료됩니다.</span></div>
+    {:else if draftState.kind === 'draft'}
       <dl><div><dt>ID</dt><dd>{registryText(draftState.entry.prereg_id)}</dd></div><div><dt>family</dt><dd>{registryText(draftState.entry.family)}</dd></div><div><dt>state</dt><dd class="warn">{registryText(draftState.entry.status)}</dd></div><div><dt>run_count</dt><dd>{registryText(draftState.entry.run_count)}</dd></div></dl>
       <p class="blocker"><strong>실행 차단:</strong> 기존 모델 판정 토큰은 연구 레지스트리 API 원문 그대로이며, 재사용 validation은 fresh confirmatory evidence가 아닙니다. OOS custody의 분리·동결 artifact, gate receipt, one-time access ledger가 없으므로 신규 run 또는 OOS 시작은 허용되지 않습니다.</p>
     {:else}
@@ -33,7 +36,7 @@
     <h2 id="type1-contract-title">MaskablePPO 연구 계약</h2>
     <div class="type1-grid">
       <dl><div><dt>algorithm</dt><dd>{TYPE1_FACTS.identity.algorithm}</dd></div><div><dt>reward</dt><dd>고정된 비용·제약 회계 reward</dd></div><div><dt>actions</dt><dd>maskable action set · 허용되지 않은 행동은 선택 불가</dd></div><div><dt>accounting</dt><dd>{TYPE1_FACTS.accounting.initialNav} · 최대 {TYPE1_FACTS.accounting.maxSlots} slots</dd></div></dl>
-      <dl><div><dt>primary cost</dt><dd>{TYPE1_FACTS.execution.roundTripCost}</dd></div><div><dt>controls</dt><dd>0bp control · 46bp stress</dd></div><div><dt>seeds</dt><dd>{TYPE1_FACTS.evaluation.fixedSeeds} planned seeds · {loading ? 'LOADING' : error ? 'UNAVAILABLE' : text(experiment?.planned?.seeds)}</dd></div><div><dt>frozen prereg</dt><dd>{loading ? 'LOADING' : error ? 'UNAVAILABLE' : text(experiment?.prereg?.state)}</dd></div></dl>
+      <dl><div><dt>primary cost</dt><dd>{TYPE1_FACTS.execution.roundTripCost}</dd></div><div><dt>controls</dt><dd>0bp control · 46bp stress</dd></div><div><dt>seeds</dt><dd>{TYPE1_FACTS.evaluation.fixedSeeds} planned seeds · {experimentLoading ? 'LOADING' : error ? 'UNAVAILABLE' : text(experiment?.planned?.seeds)}</dd></div><div><dt>frozen prereg</dt><dd>{experimentLoading ? 'LOADING' : error ? 'UNAVAILABLE' : text(experiment?.prereg?.state)}</dd></div></dl>
     </div>
     <p class="blocker"><strong>reused-validation gate:</strong> {TYPE1_FACTS.evaluation.validationReuse} Type1 선택·튜닝의 근거만 남깁니다. <strong>OOS seal: {TYPE1_FACTS.evaluation.freshOos}.</strong> fresh OOS를 여는 control은 없습니다. deliberate synthetic overfit은 plumbing 검증 전용이며 모델 품질·수익성·배포 가능성 증거가 아닙니다.</p>
   </section>

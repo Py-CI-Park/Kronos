@@ -15,7 +15,8 @@
   let active = $state('discovery');
   let status = $state<V6Status | null>(null);
   let newestRun = $state<V6TrainingRun | null>(null);
-  let discoveryState = $state('NOT_RUN');
+  let statusLoading = $state(true);
+  let discoveryState = $state('LOADING');
 
   function selectFromLocation(): void {
     const params = new URLSearchParams(window.location.search);
@@ -27,26 +28,36 @@
     history.pushState(history.state, '', `?ui=v6&tab=rl&step=${encodeURIComponent(id)}`);
   }
   function states(): Record<string, string | undefined> {
+    const statusState = (value: string | undefined): string => statusLoading ? 'LOADING' : (value ?? 'UNAVAILABLE');
     return {
       discovery: discoveryState,
-      data: status?.journey.data.state,
-      experiment: status?.journey.experiment.state,
-      training: status?.journey.training.state,
-      evaluation: status?.journey.evaluation.state,
-      compare: status?.journey.data.index_overlay === 'BLOCKED_INDEX_SERIES_SOURCE' ? 'BLOCKED_INDEX' : (status?.journey.evaluation.state ?? 'NOT_RUN'),
-      report: status?.journey.report.state,
+      data: statusState(status?.journey.data.state),
+      experiment: statusState(status?.journey.experiment.state),
+      training: statusState(status?.journey.training.state),
+      evaluation: statusState(status?.journey.evaluation.state),
+      compare: statusLoading ? 'LOADING' : status?.journey.data.index_overlay === 'BLOCKED_INDEX_SERIES_SOURCE' ? 'BLOCKED_INDEX' : (status?.journey.evaluation.state ?? 'UNAVAILABLE'),
+      report: statusState(status?.journey.report.state),
     };
   }
-  async function load(): Promise<void> {
-    const [statusResult, runsResult, discoveryRuns] = await Promise.all([getV6Status(), getV6Runs(), rlApi.rlRuns(100)]);
+  async function loadStatus(): Promise<void> {
+    const statusResult = await getV6Status();
     if (statusResult.ok && statusResult.data) status = statusResult.data;
+    statusLoading = false;
+  }
+  async function loadRuns(): Promise<void> {
+    const runsResult = await getV6Runs();
     if (runsResult.ok && runsResult.data) newestRun = runsResult.data.runs?.[0] ?? null;
+  }
+  async function loadDiscovery(): Promise<void> {
+    const discoveryRuns = await rlApi.rlRuns(100);
     discoveryState = discoveryRuns?.runs.find((run) => run.summary?.research_lane === 'rl_discovery')?.summary?.status?.toString() ?? 'NOT_RUN';
   }
 
   onMount(() => {
     selectFromLocation();
-    void load();
+    void loadStatus();
+    void loadRuns();
+    void loadDiscovery();
     window.addEventListener('popstate', selectFromLocation);
     return () => window.removeEventListener('popstate', selectFromLocation);
   });
