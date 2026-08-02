@@ -6,6 +6,7 @@
     getV6RunDetail,
     getV6Runs,
     observedV6TrainingState,
+    type1TrainingSummary,
     type V6RunDetail,
     type V6RunSeed,
     type V6Runs,
@@ -97,6 +98,7 @@
       isType1Identity(`${run.dataset_run_id ?? ''} ${run.run_id ?? ''}`),
     ),
   );
+  const type1Summary = $derived(type1TrainingSummary(type1Run));
   const type1OverviewState = $derived(
     isType1
       ? type1EvidenceState
@@ -182,8 +184,6 @@
     loading = false;
     if (response.ok && response.data) {
       runsData = response.data;
-      const run = response.data.runs?.[0];
-      if (run) await open(run.dataset_run_id, run.run_id);
     } else {
       error = response.error ?? '알 수 없는 오류가 발생했습니다.';
     }
@@ -211,6 +211,7 @@
       <h2>Sequential MaskablePPO</h2>
       <p>Planned: 5 primary + 5 shuffled-label control seeds × 200,000 fixed episodes.</p>
       <p>Current Type1 evidence: <strong>{type1StateLabel(type1OverviewState)}</strong> — no observed completion is implied without an eligible completed Type1 manifest.</p>
+      {#if type1Summary}<p>학습 <strong>{type1Summary.state}</strong> · primary {text(type1Summary.primarySeedCount)}개 · shuffled control {text(type1Summary.shuffledSeedCount)}개 · seed당 {text(type1Summary.timestepsPerSeed)} steps.</p>{/if}
       <p>Fresh OOS: <strong>NOT_RUN</strong>. {TYPE1_FACTS.execution.officialCloseStatement} {TYPE1_FACTS.claims.statement}</p>
     </section>
 
@@ -380,6 +381,8 @@
           </div>
         </section>
       {/if}
+    {:else}
+      <section class="card wide" role="status"><strong>상세 검증 대기</strong><p class="note">실행별 모델 SHA·seed 지표가 필요할 때만 위 표의 상세 버튼을 누르세요. 목록의 COMPLETE·NO_GO·5+5 seed 요약은 이미 검증된 runs 응답입니다.</p></section>
     {/if}
   </section>
 {/if}

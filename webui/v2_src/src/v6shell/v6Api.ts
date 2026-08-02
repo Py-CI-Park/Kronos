@@ -151,6 +151,25 @@ export interface V6TrainingRun {
   readonly generated_utc?: string;
   readonly dataset_run_id?: string;
   readonly verdict_candidate?: { readonly value?: string; readonly reasons?: readonly unknown[] };
+  readonly training_state?: string;
+  readonly seed_counts?: { readonly primary?: number; readonly shuffled_reward?: number };
+  readonly timesteps_per_seed?: number;
+  readonly fresh_oos?: { readonly state?: string; readonly read_performed?: boolean; readonly no_read?: boolean };
+}
+export interface V6Type1TrainingSummary {
+  readonly state: string;
+  readonly primarySeedCount: number | undefined;
+  readonly shuffledSeedCount: number | undefined;
+  readonly timestepsPerSeed: number | undefined;
+}
+export function type1TrainingSummary(run: V6TrainingRun | null | undefined): V6Type1TrainingSummary | null {
+  if (!run) return null;
+  return {
+    state: run.training_state ?? run.state ?? 'MISSING',
+    primarySeedCount: run.seed_counts?.primary,
+    shuffledSeedCount: run.seed_counts?.shuffled_reward,
+    timestepsPerSeed: run.timesteps_per_seed,
+  };
 }
 export interface V6Runs {
   readonly datasets?: readonly V6DatasetRun[];

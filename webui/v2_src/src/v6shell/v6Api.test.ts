@@ -6,9 +6,24 @@ import {
   insightQuickPickCodes,
   nextDraftPresentation,
   observedV6TrainingState,
+  type1TrainingSummary,
   v6ProjectReportHtmlUrl,
   v6ReportHtmlUrl,
 } from './v6Api';
+
+test('Type1 run summary exposes model counts without opening heavy detail', () => {
+  assert.deepEqual(type1TrainingSummary({
+    state: 'COMPLETE',
+    training_state: 'COMPLETE',
+    seed_counts: { primary: 5, shuffled_reward: 5 },
+    timesteps_per_seed: 200_000,
+  }), {
+    state: 'COMPLETE',
+    primarySeedCount: 5,
+    shuffledSeedCount: 5,
+    timestepsPerSeed: 200_000,
+  });
+});
 
 test('training completion uses lifecycle state instead of transport status', () => {
   assert.equal(observedV6TrainingState(
