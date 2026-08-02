@@ -353,3 +353,9 @@ Beta distribution은 `[0,1]` 포지션에 자연스럽지만 `α,β≥1.5`는 0%
 - [`kronos_rl_discovery_type2_d6r2_program_report_2026-07-31.md`](kronos_rl_discovery_type2_d6r2_program_report_2026-07-31.md)
 
 이 검토로 바뀐 것은 기존 모델의 성과가 아니라 다음 가설의 구체성이다. 현재 18점 모델은 그대로 실패지만, ETF 스윙·연속 포지션·action-dependent transition을 사용하면 지금까지와 다른 강화학습 문제를 과학적으로 검증할 수 있다.
+
+## 15. Kronos Q0~Q2 실제 실행 업데이트
+
+외부 설계 검토 이후 Q0 사전등록, Q1 데이터 감사, Q2-A 20일 momentum canary, Q2-B stateful 환경을 실제로 구현·실행했다. 결과는 Q1 `BLOCKED_DATA_CUSTODY`, Q2-A `NO_GO_SIGNAL_FLOOR`, Q2-B `PASS_SYNTHETIC_STATEFUL_MDP`, Q3 `LOCKED_NOT_RUN`이다.
+
+상세 수치·테스트·브랜치 계보·12페이지 반영은 [`kronos_etf_stateful_mdp_q0_q2_result_2026-08-01.md`](kronos_etf_stateful_mdp_q0_q2_result_2026-08-01.md)에 기록했다. 이 실행으로 ETF 설계가 검증된 수익 모델로 승격된 것은 아니다.

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "lane_id": "ETF_STATEFUL_MDP_Q0_Q2",
+  "status": "PREREGISTERED_NOT_RUN",
+  "strategy_label": "RL experiment candidate - single ETF position control",
+  "parent_branch": "codex/rl-etf-stateful-mdp-v1",
+  "execution_branch": "codex/rl-etf-q0-q2-foundation-v1",
+  "hypotheses": {
+    "signal_floor": "A 20-day ETF momentum canary remains positive after 23bp in at least four of five chronological folds and exceeds shuffled controls by at least 10bp.",
+    "stateful_mdp": "A target-position action changes cash, units, position ratio, portfolio value, and the next observation under deterministic accounting."
+  },
+  "universe": {
+    "mode": "CANARY_DB_ONLY",
+    "codes": ["069500", "102110", "091160", "091170"],
+    "minimum_history_rows": 250,
+    "point_in_time_required_for_promotion": true,
+    "official_instrument_metadata_required_for_promotion": true,
+    "canary_is_final_universe": false
+  },
+  "information_contract": {
+    "feature_cutoff": "t_minus_1_close",
+    "entry": "t_open",
+    "mark": "t_close",
+    "signal_lookback_days": 20,
+    "holding_days": 5,
+    "backfill_allowed": false,
+    "fold_local_scaler_required": true
+  },
+  "evaluation": {
+    "primary_round_trip_cost_bps": 23.0,
+    "diagnostic_round_trip_cost_bps": 9.0,
+    "chronological_folds": 5,
+    "shuffle_seeds": [0, 1, 2],
+    "positive_fold_minimum": 4,
+    "positive_seed_minimum": 2,
+    "native_minus_shuffle_minimum_bps": 10.0,
+    "maximum_drawdown_limit": 0.25
+  },
+  "required_controls": [
+    "NO_TRADE",
+    "EQUAL_WEIGHT",
+    "SHUFFLED_SCORE",
+    "SIMPLE_MOMENTUM"
+  ],
+  "data_gates": [
+    "READ_ONLY_SOURCE",
+    "LEADING_ZERO_PRESERVED",
+    "STRICT_DATE_ORDER",
+    "VALID_OHLC",
+    "POINT_IN_TIME_UNIVERSE",
+    "OFFICIAL_INSTRUMENT_IDENTITY",
+    "AVAILABLE_AT_CUTOFF",
+    "TOTAL_RETURN_CONTRACT",
+    "NO_BACKFILL",
+    "FOLD_LOCAL_SCALER"
+  ],
+  "locks": {
+    "existing_d7": "LOCKED_NOT_RUN_NO_READ",
+    "q3_ppo_allowed": false,
+    "paper_forward_allowed": false,
+    "live_broker_order_allowed": false,
+    "profitability_claim_allowed": false
+  },
+  "stop_rule": "If Q1, Q2-A, or Q2-B fails, Q3 PPO training is prohibited until a new preregistered data or hypothesis amendment is committed."
+}
