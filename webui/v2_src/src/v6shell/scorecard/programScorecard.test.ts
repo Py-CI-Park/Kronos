@@ -37,7 +37,7 @@ test('page matrix describes every V6 user surface in navigation order', () => {
   // Then
   assert.deepEqual(pageIds, [
     'home', 'scorecard', 'rl-discovery', 'rl-data', 'rl-experiment', 'rl-training',
-    'rl-evaluation', 'rl-compare', 'rl-report', 'insights', 'lanes', 'settings',
+    'rl-evaluation', 'rl-compare', 'rl-report', 'insights', 'lanes', 'kronos', 'settings',
   ]);
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.delivery === 'BUILT'));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.progress >= 0 && page.progress <= 100));
@@ -48,7 +48,8 @@ test('page matrix describes every V6 user surface in navigation order', () => {
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'ETF_Q3_LOCKED_NOT_RUN');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'ETF_Q2A_23BP_NO_GO_1_OF_5');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'ETF_NATIVE_MINUS_SHUFFLE_NEG_2_334BP');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, '외부 설계와 Kronos 성과 분리 유지');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, '외부 설계와 RL 성과 분리 유지');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'kronos')?.evidenceState, 'AVAILABLE_NOT_LOADED_NOT_RL_POLICY');
   assert.match(PROGRAM_LANES.find((lane) => lane.id === 'live')?.nextAction ?? '', /D7/u);
 });
 
