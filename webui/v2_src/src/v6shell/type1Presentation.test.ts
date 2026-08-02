@@ -38,6 +38,7 @@ test('Type1 lifecycle state remains fail-closed for adverse and missing evidence
   assert.equal(classifyType1State({ integrity: 'HASH_MISMATCH', verdict: 'NO_GO' }), 'TAMPERED');
   assert.equal(classifyType1State({ status: 'BLOCKED_MISSING_LINEAGE' }), 'BLOCKED');
   assert.equal(classifyType1State({ verdict: 'INCONCLUSIVE_NO_GO' }), 'NO_GO');
+  assert.equal(classifyType1State({ state: 'COMPLETE', verdict_candidate: { value: 'NO_GO' } }), 'NO_GO');
   assert.equal(classifyType1State({ test_state: 'ACCUMULATING_NOT_RUN' }), 'NOT_RUN');
   assert.equal(classifyType1State(undefined, true), 'LOADING');
   assert.equal(classifyType1State({ status: 'COMPLETE' }), 'EMPTY');

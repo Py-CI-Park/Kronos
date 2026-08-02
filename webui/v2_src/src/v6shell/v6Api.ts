@@ -4,6 +4,27 @@ export interface V6ApiResult<T> {
   readonly error?: string;
 }
 
+export interface V6ModelStatus {
+  readonly available?: boolean;
+  readonly loaded?: boolean;
+  readonly message?: string;
+}
+
+export type V6ModelStatusPresentation =
+  | { readonly state: 'LOADED'; readonly label: '로드됨' }
+  | { readonly state: 'AVAILABLE_NOT_LOADED'; readonly label: '사용 가능 · 아직 미로드' }
+  | { readonly state: 'UNAVAILABLE'; readonly label: '사용 불가' };
+
+export function classifyV6ModelStatus(status: V6ModelStatus | null | undefined): V6ModelStatusPresentation {
+  if (status?.available === true && status.loaded === true) {
+    return { state: 'LOADED', label: '로드됨' };
+  }
+  if (status?.available === true) {
+    return { state: 'AVAILABLE_NOT_LOADED', label: '사용 가능 · 아직 미로드' };
+  }
+  return { state: 'UNAVAILABLE', label: '사용 불가' };
+}
+
 export interface V6JourneyStep {
   readonly state?: string;
 }
@@ -130,6 +151,25 @@ export interface V6TrainingRun {
   readonly generated_utc?: string;
   readonly dataset_run_id?: string;
   readonly verdict_candidate?: { readonly value?: string; readonly reasons?: readonly unknown[] };
+  readonly training_state?: string;
+  readonly seed_counts?: { readonly primary?: number; readonly shuffled_reward?: number };
+  readonly timesteps_per_seed?: number;
+  readonly fresh_oos?: { readonly state?: string; readonly read_performed?: boolean; readonly no_read?: boolean };
+}
+export interface V6Type1TrainingSummary {
+  readonly state: string;
+  readonly primarySeedCount: number | undefined;
+  readonly shuffledSeedCount: number | undefined;
+  readonly timestepsPerSeed: number | undefined;
+}
+export function type1TrainingSummary(run: V6TrainingRun | null | undefined): V6Type1TrainingSummary | null {
+  if (!run) return null;
+  return {
+    state: run.training_state ?? run.state ?? 'MISSING',
+    primarySeedCount: run.seed_counts?.primary,
+    shuffledSeedCount: run.seed_counts?.shuffled_reward,
+    timestepsPerSeed: run.timesteps_per_seed,
+  };
 }
 export interface V6Runs {
   readonly datasets?: readonly V6DatasetRun[];
@@ -151,6 +191,8 @@ export interface V6RunSeed {
 
 export interface V6RunDetail {
   readonly status?: string;
+  readonly state?: string;
+  readonly execution_status?: string;
   readonly dataset_run_id?: string;
   readonly train_run_id?: string;
   readonly manifest?: {
@@ -172,6 +214,7 @@ export interface V6RunDetail {
       readonly primary_cost_rate?: number;
     };
     readonly false_research_locks?: unknown;
+    readonly training_state?: string;
   };
   readonly manifest_sha256?: string;
   readonly events_tail?: readonly { readonly episode?: unknown; readonly val_nav?: unknown }[];
@@ -219,6 +262,35 @@ export interface V6InsightFlow {
   readonly price_basis_caveat?: string;
   readonly flow_caveat?: string;
   readonly reason?: string;
+}
+
+export function observedV6TrainingState(
+  detail: V6RunDetail | null | undefined,
+  run: V6TrainingRun | null | undefined,
+  aggregate: string | undefined,
+): string | undefined {
+  return detail?.state ?? detail?.manifest?.training_state ?? run?.state ?? aggregate;
+}
+
+export function insightQuickPickCodes(flow: V6InsightFlow | null | undefined, limit = 8): readonly string[] {
+  const codes: string[] = [];
+  const seen = new Set<string>();
+  const groups = [
+    flow?.top_inst_buy ?? [],
+    flow?.top_foreign_gain ?? [],
+    flow?.top_inst_sell ?? [],
+    flow?.top_foreign_loss ?? [],
+  ] as const;
+  for (const rows of groups) {
+    for (const row of rows) {
+      const code = row.code;
+      if (typeof code !== 'string' || !/^\d{6}$/.test(code) || seen.has(code)) continue;
+      seen.add(code);
+      codes.push(code);
+      if (codes.length === limit) return codes;
+    }
+  }
+  return codes;
 }
 
 export interface V6InsightRegime {
@@ -408,10 +480,28 @@ export interface V6ResearchRegistry {
   readonly preregistrations?: readonly V6PreregEntry[];
   readonly result_docs?: readonly V6ResultDoc[];
 }
+
+export type V6NextDraftPresentation =
+  | { readonly kind: 'draft'; readonly entry: V6PreregEntry }
+  | { readonly kind: 'empty'; readonly frozenCount: number; readonly latestFrozenId: string | null };
+
 export function newestDraftPreregistration(registry: V6ResearchRegistry | null | undefined): V6PreregEntry | null {
   return [...(registry?.preregistrations ?? [])]
     .filter((entry) => entry.status === 'DRAFT_NOT_FROZEN')
     .sort((left, right) => String(right.prereg_id ?? '').localeCompare(String(left.prereg_id ?? '')))[0] ?? null;
+}
+
+export function nextDraftPresentation(registry: V6ResearchRegistry | null | undefined): V6NextDraftPresentation {
+  const draft = newestDraftPreregistration(registry);
+  if (draft !== null) return { kind: 'draft', entry: draft };
+  const frozen = [...(registry?.preregistrations ?? [])]
+    .filter((entry) => entry.status === 'FROZEN')
+    .sort((left, right) => String(right.frozen_utc ?? '').localeCompare(String(left.frozen_utc ?? '')));
+  return {
+    kind: 'empty',
+    frozenCount: frozen.length,
+    latestFrozenId: frozen[0]?.prereg_id ?? null,
+  };
 }
 
 export interface V6ResearchDoc {
@@ -450,11 +540,20 @@ export function v6ExactReportHtmlUrl(
 export const initialReportSelection = (): null => null;
 
 export const getV6Status = (): Promise<V6ApiResult<V6Status>> => getV6('/api/v6/status');
+export const getV6ModelStatus = (): Promise<V6ApiResult<V6ModelStatus>> => getV6('/api/model-status');
 export const getV6Universe = (limit: number): Promise<V6ApiResult<V6Universe>> =>
   getV6(`/api/v6/universe?limit=${encodeURIComponent(String(limit))}`);
 export const getV6DataReadiness = (): Promise<V6ApiResult<V6DataReadiness>> => getV6('/api/v6/data-readiness');
 export const getV6Experiment = (): Promise<V6ApiResult<V6Experiment>> => getV6('/api/v6/experiment');
-export const getV6Runs = (): Promise<V6ApiResult<V6Runs>> => getV6('/api/v6/runs');
+let v6RunsInFlight: Promise<V6ApiResult<V6Runs>> | null = null;
+export function getV6Runs(): Promise<V6ApiResult<V6Runs>> {
+  if (v6RunsInFlight) return v6RunsInFlight;
+  const request = getV6<V6Runs>('/api/v6/runs');
+  v6RunsInFlight = request;
+  const clear = (): void => { if (v6RunsInFlight === request) v6RunsInFlight = null; };
+  void request.then(clear, clear);
+  return request;
+}
 export const getV6RunDetail = (dataset: string, train: string): Promise<V6ApiResult<V6RunDetail>> =>
   getV6(`/api/v6/run-detail?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}`);
 export const getV6InsightSymbol = (code: string, maxPoints?: number): Promise<V6ApiResult<V6InsightSymbol>> =>

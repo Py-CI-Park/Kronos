@@ -732,6 +732,36 @@ def test_catalog_rehashes_fixed_source_paths(tmp_path):
         verify_report_catalog(tmp_path)
 
 
+def test_publisher_source_sha_accepts_crlf_checkout_for_lf_receipt():
+    lf_source = b"from __future__ import annotations\nVALUE = 1\n"
+    crlf_source = lf_source.replace(b"\n", b"\r\n")
+    expected_lf_sha = type1_report._sha(lf_source)
+
+    assert type1_report._source_bytes_match_sha(crlf_source, expected_lf_sha)
+    assert not type1_report._source_bytes_match_sha(
+        crlf_source.replace(b"VALUE = 1", b"VALUE = 2"),
+        expected_lf_sha,
+    )
+
+
+def test_catalog_preserves_committed_evidence_when_report_builder_changes(tmp_path, monkeypatch):
+    inserted = insert_report_revision(tmp_path, _revision(tmp_path))
+    materialized = materialize_report_revision(tmp_path, inserted["event_sha256"])
+    commit_report_tip(tmp_path, materialized["event_sha256"])
+    original_source_sha256 = type1_report.report_source_sha256
+
+    def source_sha256_with_new_builder(run_dir):
+        sources = original_source_sha256(run_dir)
+        return {**sources, "builder_source": "f" * 64}
+
+    monkeypatch.setattr(type1_report, "report_source_sha256", source_sha256_with_new_builder)
+
+    snapshot = verify_report_catalog(tmp_path)
+
+    assert snapshot["state"] == "COMMITTED"
+    assert snapshot["revision"]["source_sha256"]["builder_source"] != "f" * 64
+
+
 def test_revision_requires_publication_receipt_evidence(tmp_path):
     revision = _revision(tmp_path)
     revision["evidence"].pop("publication_receipt")
