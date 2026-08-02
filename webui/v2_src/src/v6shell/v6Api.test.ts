@@ -5,9 +5,23 @@ import {
   getV6Runs,
   insightQuickPickCodes,
   nextDraftPresentation,
+  observedV6TrainingState,
   v6ProjectReportHtmlUrl,
   v6ReportHtmlUrl,
 } from './v6Api';
+
+test('training completion uses lifecycle state instead of transport status', () => {
+  assert.equal(observedV6TrainingState(
+    { status: 'OK', state: 'COMPLETE', manifest: { training_state: 'COMPLETE' } },
+    { state: 'MISSING' },
+    'NOT_RUN',
+  ), 'COMPLETE');
+  assert.equal(observedV6TrainingState(
+    { status: 'OK', manifest: { training_state: 'COMPLETE' } },
+    { state: 'MISSING' },
+    'NOT_RUN',
+  ), 'COMPLETE');
+});
 
 test('concurrent runs readers share one integrity request but later reads refresh', async () => {
   const originalFetch = globalThis.fetch;

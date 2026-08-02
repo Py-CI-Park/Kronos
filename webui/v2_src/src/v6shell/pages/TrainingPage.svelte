@@ -5,6 +5,7 @@
   import {
     getV6RunDetail,
     getV6Runs,
+    observedV6TrainingState,
     type V6RunDetail,
     type V6RunSeed,
     type V6Runs,
@@ -68,7 +69,7 @@
   const observedEpisodes = $derived(
     seedEntries.reduce((total, [, seed]) => total + (finiteNumber(seed.episodes_ran) ?? 0), 0),
   );
-  const observedTrainingState = $derived(detail?.status ?? selectedRun?.state ?? runsData?.training_state);
+  const observedTrainingState = $derived(observedV6TrainingState(detail, selectedRun, runsData?.training_state));
   const runArtifactPath = $derived(selectedRun?.path);
   const datasetArtifactPath = $derived(
     (runsData?.datasets ?? []).find((dataset) => dataset.run_id === detail?.dataset_run_id)?.path,

@@ -172,6 +172,8 @@ export interface V6RunSeed {
 
 export interface V6RunDetail {
   readonly status?: string;
+  readonly state?: string;
+  readonly execution_status?: string;
   readonly dataset_run_id?: string;
   readonly train_run_id?: string;
   readonly manifest?: {
@@ -193,6 +195,7 @@ export interface V6RunDetail {
       readonly primary_cost_rate?: number;
     };
     readonly false_research_locks?: unknown;
+    readonly training_state?: string;
   };
   readonly manifest_sha256?: string;
   readonly events_tail?: readonly { readonly episode?: unknown; readonly val_nav?: unknown }[];
@@ -240,6 +243,14 @@ export interface V6InsightFlow {
   readonly price_basis_caveat?: string;
   readonly flow_caveat?: string;
   readonly reason?: string;
+}
+
+export function observedV6TrainingState(
+  detail: V6RunDetail | null | undefined,
+  run: V6TrainingRun | null | undefined,
+  aggregate: string | undefined,
+): string | undefined {
+  return detail?.state ?? detail?.manifest?.training_state ?? run?.state ?? aggregate;
 }
 
 export function insightQuickPickCodes(flow: V6InsightFlow | null | undefined, limit = 8): readonly string[] {
