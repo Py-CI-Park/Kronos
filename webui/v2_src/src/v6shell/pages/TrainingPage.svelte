@@ -99,9 +99,9 @@
   const type1OverviewState = $derived(
     isType1
       ? type1EvidenceState
-      : classifyType1State(type1Run?.state) === 'EMPTY'
+      : classifyType1State(type1Run) === 'EMPTY'
         ? 'NOT_RUN'
-        : classifyType1State(type1Run?.state),
+        : classifyType1State(type1Run),
   );
 
   const navOption = $derived.by(() => {
