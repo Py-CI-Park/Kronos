@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import Future, ThreadPoolExecutor
+from threading import Event
 
 import os
 import pytest
@@ -209,6 +211,42 @@ def test_v6_registry_reuses_single_request_report_snapshot(client, monkeypatch, 
     monkeypatch.setattr(v6_platform_api, "_build_report_entries", counted)
     assert client.get("/api/v6/research-registry").status_code == 200
     assert calls == 1
+
+
+def test_type1_catalog_verification_is_single_flight_only(monkeypatch, tmp_path) -> None:
+    from stom_rl import daily_v1_type1_report as type1_report
+
+    started = Event()
+    waiting = Event()
+    release = Event()
+    calls = 0
+
+    class ObservableFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    def verify_report_catalog(_run_dir):
+        nonlocal calls
+        calls += 1
+        started.set()
+        assert release.wait(2)
+        return {"state": "COMMITTED"}
+
+    monkeypatch.setattr(type1_report, "verify_report_catalog", verify_report_catalog)
+    monkeypatch.setattr(v6_platform_api, "Future", ObservableFuture)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(v6_platform_api._type1_catalog_snapshot, tmp_path)
+        assert started.wait(2)
+        second = executor.submit(v6_platform_api._type1_catalog_snapshot, tmp_path)
+        assert waiting.wait(2)
+        release.set()
+        assert first.result(timeout=2)[0] == {"state": "COMMITTED"}
+        assert second.result(timeout=2)[0] == {"state": "COMMITTED"}
+    assert calls == 1
+
+    v6_platform_api._type1_catalog_snapshot(tmp_path)
+    assert calls == 2
 
 
 def test_v6_rejects_unknown_query_parameters(client) -> None:
