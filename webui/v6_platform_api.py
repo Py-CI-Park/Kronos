@@ -8,8 +8,10 @@ import math
 import re
 import sqlite3
 import stat
+from concurrent.futures import Future
 from collections.abc import Mapping
 from pathlib import Path
+from threading import Lock
 from typing import Any, Final
 
 from flask import Blueprint, Response, g, has_request_context, request
@@ -75,6 +77,8 @@ TYPE1_RECOVERY_SOURCE_FILES: Final = {
     "recovery_receipt": "recovery_receipt.json",
     "publication_receipt": "publication_receipt.json",
 }
+_TYPE1_CATALOG_INFLIGHT: dict[str, Future[tuple[dict[str, Any] | None, list[str]]]] = {}
+_TYPE1_CATALOG_INFLIGHT_LOCK = Lock()
 
 
 def _response(payload: Mapping[str, Any], status_code: int = 200) -> Response:
@@ -584,16 +588,42 @@ def _type1_report_dir(dataset_run_id: str, train_run_id: str) -> Path | None:
 
 
 def _type1_catalog_snapshot(run_dir: Path) -> tuple[dict[str, Any] | None, list[str]]:
+    key = str(run_dir.resolve())
+    with _TYPE1_CATALOG_INFLIGHT_LOCK:
+        future = _TYPE1_CATALOG_INFLIGHT.get(key)
+        leader = future is None
+        if future is None:
+            future = Future()
+            _TYPE1_CATALOG_INFLIGHT[key] = future
+    if not leader:
+        return future.result()
+
     try:
         from stom_rl import daily_v1_type1_report as type1_report
     except ImportError:
-        return None, ["TYPE1_CATALOG_INVALID"]
+        result = (None, ["TYPE1_CATALOG_INVALID"])
+        future.set_result(result)
+        with _TYPE1_CATALOG_INFLIGHT_LOCK:
+            if _TYPE1_CATALOG_INFLIGHT.get(key) is future:
+                del _TYPE1_CATALOG_INFLIGHT[key]
+        return result
 
     try:
         snapshot = type1_report.verify_report_catalog(run_dir)
     except (type1_report.Type1ReportError, OSError, ValueError):
-        return None, ["TYPE1_CATALOG_INVALID"]
-    return (snapshot, []) if snapshot.get("state") == "COMMITTED" else (None, ["TYPE1_COMMITTED_TIP_MISSING"])
+        result = (None, ["TYPE1_CATALOG_INVALID"])
+    except BaseException as exc:
+        future.set_exception(exc)
+        raise
+    else:
+        result = (snapshot, []) if snapshot.get("state") == "COMMITTED" else (None, ["TYPE1_COMMITTED_TIP_MISSING"])
+    finally:
+        if not future.done():
+            future.set_result(result)
+        with _TYPE1_CATALOG_INFLIGHT_LOCK:
+            if _TYPE1_CATALOG_INFLIGHT.get(key) is future:
+                del _TYPE1_CATALOG_INFLIGHT[key]
+    return result
 
 
 def _type1_materializations(run_dir: Path) -> tuple[list[dict[str, Any]] | None, list[str]]:

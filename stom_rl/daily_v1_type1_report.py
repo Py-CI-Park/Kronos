@@ -813,6 +813,16 @@ def _publication_expected_materializer(sources: Mapping[str, Any]) -> dict[str, 
     }
 
 
+def _source_bytes_match_sha(raw: bytes, expected_sha256: object) -> bool:
+    if not isinstance(expected_sha256, str):
+        return False
+    return expected_sha256 in {_sha(raw), _source_sha(raw)}
+
+
+def _source_sha(raw: bytes) -> str:
+    return _sha(raw.replace(b"\r\n", b"\n"))
+
+
 def _validate_publication_hash_maps(
     materializer: Any,
     members: Any,
@@ -882,7 +892,11 @@ def _validate_recovered_publication_receipt(
     materializer = receipt.get("materializer_sha256")
     expected_materializer = _publication_expected_materializer(sources)
     expected_members = _expected_member_artifact_sha256(sources)
-    expected_publisher_source_sha256 = _sha(_read_bytes(REPO_ROOT / "stom_rl" / "daily_type1_publication.py", "publisher source"))
+    publisher_source = _read_bytes(
+        REPO_ROOT / "stom_rl" / "daily_type1_publication.py",
+        "publisher source",
+    )
+    expected_publisher_source_sha256 = _source_sha(publisher_source)
     required = {
         "schema_version", "role", "status", "verdict", "mode", "disclosure",
         "run_evidence_mode", "identity", "source_logical_path", "destination_logical_path",
@@ -913,7 +927,7 @@ def _validate_recovered_publication_receipt(
         or receipt.get("false_research_locks") != LOCKS
         or materializer != expected_materializer
         or receipt.get("materializer_public_rows_sha256") != expected_materializer["public_rows_sha256"]
-        or receipt.get("publisher_source_sha256") != expected_publisher_source_sha256
+        or not _source_bytes_match_sha(publisher_source, receipt.get("publisher_source_sha256"))
     ):
         raise Type1ReportError("publication receipt does not prove the recovered v5 publication move")
     _validate_recovery_identity(receipt.get("identity"), sources, "publication receipt identity", authority_sessions)
@@ -1583,6 +1597,21 @@ def _render(revision: Mapping[str, Any], revision_sha: str) -> bytes:
     )
     return text.encode("utf-8")
 
+
+def _revision_sources_match(
+    committed: Mapping[str, Any],
+    current: Mapping[str, Any],
+) -> bool:
+    if set(committed) != set(current):
+        return False
+    _require_sha(committed.get("builder_source"), "committed builder source SHA")
+    return all(
+        committed.get(label) == digest
+        for label, digest in current.items()
+        if label != "builder_source"
+    )
+
+
 def verify_report_catalog(run_dir: str | Path, *, verify_parent: bool = True) -> dict[str, Any]:
     root=_root(run_dir); events_dir=_safe_child(root,Path("events")); objects_dir=_safe_child(root,Path("objects"))
     try: paths=list(events_dir.iterdir())
@@ -1602,12 +1631,13 @@ def verify_report_catalog(run_dir: str | Path, *, verify_parent: bool = True) ->
             _validate_revision(event)
             if event.get("previous_revision_event_sha256") != (events[-2][1] if len(events)>=2 else None) or event["revision_id"] in revisions or event["revision_ordinal"]!=(pos+1)//2: raise Type1ReportError("revision predecessor mismatch")
             sources = report_source_sha256(run_dir)
-            if event["source_sha256"] != sources: raise Type1ReportError("revision source hashes differ from fixed evidence paths")
+            if not _revision_sources_match(event["source_sha256"], sources): raise Type1ReportError("revision source hashes differ from fixed evidence paths")
             _validate_runner_evidence(run_dir, sources)
             revisions[event["revision_id"]]=(event,digest)
         else:
             required={"schema_version","catalog_ordinal","previous_event_sha256","revision_event_sha256","builder_version","builder_source_sha256","object_id","html_sha256","byte_size"}
-            if set(event)!=required or event.get("schema_version")!=MATERIALIZATION_SCHEMA or event.get("revision_event_sha256")!=events[-1][1] or event.get("builder_version")!=BUILDER_VERSION or event.get("builder_source_sha256")!=report_source_sha256(run_dir)["builder_source"]: raise Type1ReportError("materialization does not bind preceding revision")
+            committed_builder = events[-1][0]["source_sha256"]["builder_source"]
+            if set(event)!=required or event.get("schema_version")!=MATERIALIZATION_SCHEMA or event.get("revision_event_sha256")!=events[-1][1] or event.get("builder_version")!=BUILDER_VERSION or event.get("builder_source_sha256")!=committed_builder: raise Type1ReportError("materialization does not bind preceding revision")
             oid=event.get("object_id"); _require_sha(event.get("html_sha256"),"HTML SHA")
             if not isinstance(oid,str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,80}",oid) or oid in materialized or type(event.get("byte_size")) is not int or event["byte_size"]<1: raise Type1ReportError("materialization is invalid")
             materialized[oid]=(event,digest)
