@@ -58,13 +58,23 @@ function stateTokens(value: unknown): readonly string[] {
   if (typeof value === 'string') return [value.toUpperCase()];
   if (value === null || typeof value !== 'object') return [];
   const record = value as Readonly<Record<string, unknown>>;
-  return ['status', 'state', 'report_state', 'integrity', 'test_state', 'verdict', 'reason', 'failures', 'integrity_reasons']
+  const direct = ['status', 'state', 'report_state', 'integrity', 'test_state', 'verdict', 'reason', 'failures', 'integrity_reasons']
     .flatMap((key) => {
       const item = record[key];
       return Array.isArray(item) ? item : [item];
     })
     .filter((item): item is string => typeof item === 'string')
     .map((item) => item.toUpperCase());
+  const nested = ['verdict_candidate', 'fresh_oos', 'test']
+    .flatMap((key) => {
+      const item = record[key];
+      if (item === null || typeof item !== 'object') return [];
+      const nestedRecord = item as Readonly<Record<string, unknown>>;
+      return [nestedRecord.value, nestedRecord.outcome, nestedRecord.state, nestedRecord.status];
+    })
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.toUpperCase());
+  return [...direct, ...nested];
 }
 
 /** Classifies only evidenced lifecycle states; unrecognized evidence remains EMPTY. */

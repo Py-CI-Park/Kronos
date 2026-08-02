@@ -24,9 +24,9 @@ export const PROGRAM_EXECUTION: ProgramExecution = {
   overallScore: programOverallScore(PROGRAM_LANES),
   pageCount: PROGRAM_PAGE_MATRIX.length,
   deliveryLane:
-    "codex/rl-etf-q0-q2-foundation-v1 → codex/rl-etf-stateful-mdp-v1 → integration PR → annotated ETF foundation tag",
+    "codex/rl-close-recovery-v1 → codex/rl-etf-stateful-mdp-v1 → integration PR → annotated recovery tag",
   baseRelease: "fork-v1.20.0-kronos-rl-d6r2-mdp-falsification",
-  releaseCandidate: "etf-stateful-q0-q2-foundation-v1",
+  releaseCandidate: "rl-close-recovery-v1",
   stage: "ETF_Q0_Q2_BLOCKED_Q1_Q2A",
   nextAction: "Acquire point-in-time ETF identity, available_at, and total-return custody before Q3",
   eta: "Q1 data 1~2d / Q2-A rerun 1~2d / Q3 remains locked",
