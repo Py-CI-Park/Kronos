@@ -2,11 +2,39 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   classifyV6ModelStatus,
+  getV6Runs,
   insightQuickPickCodes,
   nextDraftPresentation,
   v6ProjectReportHtmlUrl,
   v6ReportHtmlUrl,
 } from './v6Api';
+
+test('concurrent runs readers share one integrity request but later reads refresh', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  globalThis.fetch = async () => {
+    calls += 1;
+    await gate;
+    return new Response(JSON.stringify({ status: 'OK', runs: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const first = getV6Runs();
+    const second = getV6Runs();
+    await Promise.resolve();
+    assert.equal(calls, 1);
+    release?.();
+    await Promise.all([first, second]);
+    await getV6Runs();
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('project report URL separates inline viewing from download', () => {
   assert.equal(

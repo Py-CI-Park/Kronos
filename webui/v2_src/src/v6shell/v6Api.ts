@@ -515,7 +515,15 @@ export const getV6Universe = (limit: number): Promise<V6ApiResult<V6Universe>> =
   getV6(`/api/v6/universe?limit=${encodeURIComponent(String(limit))}`);
 export const getV6DataReadiness = (): Promise<V6ApiResult<V6DataReadiness>> => getV6('/api/v6/data-readiness');
 export const getV6Experiment = (): Promise<V6ApiResult<V6Experiment>> => getV6('/api/v6/experiment');
-export const getV6Runs = (): Promise<V6ApiResult<V6Runs>> => getV6('/api/v6/runs');
+let v6RunsInFlight: Promise<V6ApiResult<V6Runs>> | null = null;
+export function getV6Runs(): Promise<V6ApiResult<V6Runs>> {
+  if (v6RunsInFlight) return v6RunsInFlight;
+  const request = getV6<V6Runs>('/api/v6/runs');
+  v6RunsInFlight = request;
+  const clear = (): void => { if (v6RunsInFlight === request) v6RunsInFlight = null; };
+  void request.then(clear, clear);
+  return request;
+}
 export const getV6RunDetail = (dataset: string, train: string): Promise<V6ApiResult<V6RunDetail>> =>
   getV6(`/api/v6/run-detail?dataset=${encodeURIComponent(dataset)}&train=${encodeURIComponent(train)}`);
 export const getV6InsightSymbol = (code: string, maxPoints?: number): Promise<V6ApiResult<V6InsightSymbol>> =>
