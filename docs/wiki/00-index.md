@@ -1,5 +1,10 @@
 # Kronos Wiki Index
 
+## 2026-08-04 일봉 종가매매 RL G1~G6
+
+- [전체 개발 중간 검토](../kronos_daily_close_rl_full_development_mid_review_2026-08-04.md)
+- [G1~G6 전체 개발 결과](../kronos_daily_close_rl_g1_g6_full_development_result_2026-08-04.md)
+
 This wiki is the current operator-facing documentation for Kronos. It is served
 inside **Kronos 대시보드** from the Docs tab and loaded from `docs/wiki/` through
 read-only `/api/docs/*` endpoints.
