@@ -9,7 +9,7 @@ import {
   programRubricScore,
 } from './programScorecard';
 
-test('program score is the rounded weighted sum of every audited lane', () => {
+test('program score is the rounded weighted sum of current evidence', () => {
   // Given
   const totalWeight = PROGRAM_LANES.reduce((total, lane) => total + lane.weight, 0);
 
@@ -18,9 +18,8 @@ test('program score is the rounded weighted sum of every audited lane', () => {
 
   // Then
   assert.equal(totalWeight, 100);
-  assert.equal(score, 83);
+  assert.equal(score, 63);
 });
-
 test('every lane score is derived from a frozen 100-point evidence rubric', () => {
   for (const lane of PROGRAM_LANES) {
     const maximum = PROGRAM_SCORE_RUBRIC[lane.id].reduce((total, criterion) => total + criterion.points, 0);
@@ -30,7 +29,7 @@ test('every lane score is derived from a frozen 100-point evidence rubric', () =
   }
 });
 
-test('page matrix describes every V6 user surface in navigation order', () => {
+test('page matrix describes every completed V6 surface in navigation order', () => {
   // Given / When
   const pageIds = PROGRAM_PAGE_MATRIX.map((page) => page.id);
 
@@ -40,37 +39,36 @@ test('page matrix describes every V6 user surface in navigation order', () => {
     'rl-evaluation', 'rl-compare', 'rl-report', 'insights', 'lanes', 'kronos', 'settings',
   ]);
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.delivery === 'BUILT'));
-  assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.progress >= 0 && page.progress <= 100));
+  assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.progress === 100));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.eta.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'home')?.evidenceState, 'ETF_Q0_Q2_BLOCKED_Q1_Q2A');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'ETF_Q3_LOCKED_NOT_RUN');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'ETF_Q2A_23BP_NO_GO_1_OF_5');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'ETF_NATIVE_MINUS_SHUFFLE_NEG_2_334BP');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, '외부 설계와 RL 성과 분리 유지');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'home')?.evidenceState, 'DAILY_CLOSE_G1_G6_IMPLEMENTED_75');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'scorecard')?.evidenceState, 'PROGRAM_63_IMPLEMENTATION_75_ECONOMIC_20');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-data')?.evidenceState, 'G2_BLOCKED_5_CUSTODY_GATES');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'SYNTHETIC_CQL_CREATED_MARKET_MODEL_NOT_CREATED');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'G3_DIAGNOSTIC_PASS_4_OF_4_UNVERIFIED_CUSTODY');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'CQL_IQM_0_1195_SHUFFLED_NEG_0_00524');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, '레인 간 성과 전이를 금지하고 독립 증거를 유지한다');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'kronos')?.evidenceState, 'AVAILABLE_NOT_LOADED_NOT_RL_POLICY');
-  assert.match(PROGRAM_LANES.find((lane) => lane.id === 'live')?.nextAction ?? '', /D7/u);
+  assert.match(PROGRAM_LANES.find((lane) => lane.id === 'live')?.nextAction ?? '', /G7/u);
 });
 
-test('capability inventory separates available research from blocked claims', () => {
+test('capability inventory separates current research from blocked claims', () => {
   // Given / When
   const available = PROGRAM_CAPABILITIES.filter((capability) => capability.state === 'AVAILABLE');
   const partial = PROGRAM_CAPABILITIES.filter((capability) => capability.state === 'PARTIAL');
   const blocked = PROGRAM_CAPABILITIES.filter((capability) => capability.state === 'BLOCKED');
 
   // Then
-  assert.ok(available.some((capability) => capability.id === 'd0-d3-history'));
-  assert.ok(available.some((capability) => capability.id === 'd4-primary'));
-  assert.ok(available.some((capability) => capability.id === 'd5-primary'));
-  assert.ok(available.some((capability) => capability.id === 'd6-validation'));
-  assert.ok(available.some((capability) => capability.id === 'd6r-research'));
-  assert.ok(available.some((capability) => capability.id === 'etf-q0-prereg'));
-  assert.ok(available.some((capability) => capability.id === 'etf-q2b-environment'));
-  assert.ok(partial.some((capability) => capability.id === 'etf-q0-q2-foundation'));
-  assert.ok(blocked.some((capability) => capability.id === 'etf-q1-data'));
-  assert.ok(blocked.some((capability) => capability.id === 'etf-q2a-signal'));
-  assert.ok(blocked.some((capability) => capability.id === 'etf-q3-ppo'));
+  assert.ok(available.some((capability) => capability.id === 'history-evidence'));
+  assert.ok(available.some((capability) => capability.id === 'daily-close-contracts'));
+  assert.ok(available.some((capability) => capability.id === 'portfolio-environment'));
+  assert.ok(available.some((capability) => capability.id === 'offline-cql-calibration'));
+  assert.ok(partial.some((capability) => capability.id === 'daily-close-foundation'));
+  assert.ok(partial.some((capability) => capability.id === 'diagnostic-signal'));
+  assert.ok(blocked.some((capability) => capability.id === 'point-in-time-custody'));
+  assert.ok(blocked.some((capability) => capability.id === 'economic-market-model'));
   assert.ok(blocked.some((capability) => capability.id === 'fresh-oos'));
   assert.ok(blocked.some((capability) => capability.id === 'live-trading'));
 });

@@ -12,6 +12,7 @@
   import ReportPage from './pages/ReportPage.svelte';
   import DiscoveryPage from './pages/DiscoveryPage.svelte';
   import DailyCloseResearchStatus from './DailyCloseResearchStatus.svelte';
+  import PageDecisionRail from './PageDecisionRail.svelte';
 
   let active = $state('discovery');
   let status = $state<V6Status | null>(null);
@@ -70,6 +71,7 @@
     {#if newestRun?.verdict_candidate?.value}<span class="verdict">{newestRun.verdict_candidate.value}</span>{/if}
   </header>
   <DailyCloseResearchStatus />
+  <PageDecisionRail pageId={`rl-${active}`} />
   <ProcessStepper steps={V6_RL_STEPS} {active} states={states()} onSelect={selectStep} />
   <div class="step-body">
     {#if active === 'discovery'}<DiscoveryPage />

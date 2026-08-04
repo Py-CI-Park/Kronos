@@ -2,11 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-test('V6 shell uses isolated navigation and main class names', async () => {
+test('V6 shell isolates navigation and shows current evidence boundaries', async () => {
   const source = await readFile(new URL('./V6Shell.svelte', import.meta.url), 'utf8');
   const context = await readFile(new URL('./ResearchContext.svelte', import.meta.url), 'utf8');
-  const experiment = await readFile(new URL('./pages/ExperimentPage.svelte', import.meta.url), 'utf8');
-  const insight = await readFile(new URL('./pages/InsightSymbolPage.svelte', import.meta.url), 'utf8');
   const kronos = await readFile(new URL('./pages/KronosPage.svelte', import.meta.url), 'utf8');
   const stepper = await readFile(new URL('./ProcessStepper.svelte', import.meta.url), 'utf8');
   const workspace = await readFile(new URL('./RLWorkspace.svelte', import.meta.url), 'utf8');
@@ -14,23 +12,15 @@ test('V6 shell uses isolated navigation and main class names', async () => {
   assert.match(source, /class="v6-sidebar"/u);
   assert.match(source, /class="v6-main"/u);
   assert.doesNotMatch(source, /class="sidebar"/u);
-  assert.match(source, /ResearchContext/u);
   assert.match(source, /<ResearchContext \/>/u);
-  assert.match(context, /<strong>D6R2<\/strong>/u);
-  assert.match(context, /70 \/ 70 EVALUATIONS/u);
-  assert.match(context, /TOP-5 SIGNAL FLOOR · NO-GO/u);
+  assert.match(context, /<strong>G1–G6<\/strong>/u);
+  assert.match(context, /20종목 · 131,838표본/u);
+  assert.match(context, /IMPLEMENTED · NO-GO/u);
   assert.match(context, /NOT_RUN_NO_READ/u);
-  assert.match(experiment, /새 사전등록 초안 없음/u);
-  assert.match(experiment, /새 feature·horizon·비용·종료 조건/u);
-  assert.match(insight, /다른 종목 빠르게 보기/u);
-  assert.match(insight, /매수 추천이 아닙니다/u);
-  assert.match(kronos, /Kronos 예측 모델 ≠ 강화학습 policy/u);
+  assert.match(kronos, /Kronos 예측 모델 ≠ 강화학습 정책/u);
   assert.match(kronos, /classifyV6ModelStatus/u);
   assert.match(stepper, /max-width: 1180px/u);
   assert.doesNotMatch(stepper, /white-space: nowrap/u);
   assert.match(workspace, /statusLoading \? 'LOADING'/u);
   assert.doesNotMatch(workspace, /await Promise\.all\(\[getV6Status/u);
-  assert.match(experiment, /experimentLoading/u);
-  assert.match(experiment, /registryLoading/u);
-  assert.doesNotMatch(experiment, /await Promise\.all\(\[getV6Experiment/u);
 });

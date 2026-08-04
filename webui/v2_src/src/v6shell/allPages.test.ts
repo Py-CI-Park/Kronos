@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+import { V6_INSIGHT_SUBTABS, V6_PAGES, V6_RL_STEPS } from './registry';
+
+test('all V6 navigation labels are readable Korean and current', () => {
+  // Given / When
+  const pageLabels = V6_PAGES.map((page) => page.labelKo);
+  const stepLabels = V6_RL_STEPS.map((step) => step.labelKo);
+  const insightLabels = V6_INSIGHT_SUBTABS.map((tab) => tab.labelKo);
+
+  // Then
+  assert.deepEqual(pageLabels, ['홈', '프로그램 점수', '강화학습', '인사이트', 'Kronos 모델', '다른 레인', '설정']);
+  assert.deepEqual(stepLabels, ['RL 발견 실험실', '데이터', '실험 설계', '학습', '평가', '비교', '보고서']);
+  assert.deepEqual(insightLabels, ['종목 관찰', '수급 흐름', '시장 국면']);
+});
+
+test('every V6 surface exposes a page-specific decision rail', async () => {
+  // Given
+  const sources = await Promise.all([
+    './pages/HomePage.svelte', './pages/ProgramScorecardPage.svelte', './RLWorkspace.svelte',
+    './InsightWorkspace.svelte', './pages/IntradayPage.svelte', './pages/KronosPage.svelte',
+    './pages/SettingsPage.svelte',
+  ].map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
+
+  // When / Then
+  for (const source of sources) assert.match(source, /PageDecisionRail/u);
+});
+
+test('shell and independent workspaces contain no legacy mojibake markers', async () => {
+  // Given
+  const source = (await Promise.all([
+    './V6Shell.svelte', './InsightWorkspace.svelte', './pages/IntradayPage.svelte',
+    './pages/KronosPage.svelte', './pages/SettingsPage.svelte',
+  ].map((path) => readFile(new URL(path, import.meta.url), 'utf8')))).join('\n');
+
+  // When / Then
+  assert.doesNotMatch(source, /(?:媛|紐|醫|寃)/u);
+});

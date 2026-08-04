@@ -1,11 +1,7 @@
 import { writable } from 'svelte/store';
 
-/** V6-scoped display preferences (theme + zoom scale), persisted locally.
- *  'inherit' follows the global light/dark toggle; named themes override
- *  design tokens only inside the V6 shell subtree via [data-v6-theme]. */
-
 export const V6_THEMES = [
-  { id: 'inherit', labelKo: '전역 따름 (라이트/다크)' },
+  { id: 'inherit', labelKo: '전역 설정 따름' },
   { id: 'dark', labelKo: '다크' },
   { id: 'ocean', labelKo: '오션' },
   { id: 'forest', labelKo: '포레스트' },
@@ -13,7 +9,6 @@ export const V6_THEMES = [
 ] as const;
 
 export type V6ThemeId = (typeof V6_THEMES)[number]['id'];
-
 export const V6_SCALES = [0.9, 1, 1.1, 1.25] as const;
 export type V6Scale = (typeof V6_SCALES)[number];
 
@@ -30,33 +25,20 @@ export function normalizeV6Scale(value: unknown): V6Scale {
 }
 
 function storageAvailable(): boolean {
-  try {
-    return typeof localStorage !== 'undefined';
-  } catch {
-    return false;
-  }
+  try { return typeof localStorage !== 'undefined'; } catch { return false; }
 }
 
 function readStored(key: string): string | null {
   if (!storageAvailable()) return null;
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
 function writeStored(key: string, value: string): void {
   if (!storageAvailable()) return;
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    /* persistence is best-effort */
-  }
+  try { localStorage.setItem(key, value); } catch { /* persistence is best-effort */ }
 }
 
 export const v6Theme = writable<V6ThemeId>(normalizeV6Theme(readStored(THEME_KEY)));
 export const v6Scale = writable<V6Scale>(normalizeV6Scale(readStored(SCALE_KEY)));
-
 v6Theme.subscribe((value) => writeStored(THEME_KEY, value));
 v6Scale.subscribe((value) => writeStored(SCALE_KEY, String(value)));
