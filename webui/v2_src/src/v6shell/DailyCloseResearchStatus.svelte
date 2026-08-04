@@ -1,0 +1,26 @@
+<script lang="ts">
+  import { DAILY_CLOSE_RESEARCH, dailyCloseProgress, type DailyCloseGateState } from './dailyCloseResearch';
+  const snapshot = DAILY_CLOSE_RESEARCH;
+  const progress = dailyCloseProgress(snapshot.gates);
+  const won = (value: number): string => `${new Intl.NumberFormat('ko-KR').format(value)}원`;
+  const percent = (value: number): string => `${value.toFixed(3)}%`;
+  const stateLabel = (state: DailyCloseGateState): string => ({ COMPLETE: '완료', DIAGNOSTIC_PASS: '진단 통과', BLOCKED: '차단', LOCKED: '잠금' })[state];
+</script>
+
+<section class="research-status" aria-labelledby="daily-close-status-title">
+  <header><div><p class="eyebrow">DAILY-CLOSE RL · {snapshot.version} · {snapshot.reviewedAt}</p><h2 id="daily-close-status-title">일봉 종가매매 강화학습</h2><p>{snapshot.targetModel}</p></div><div class="score" aria-label={`연구 성숙도 ${progress}점`}><strong>{progress}</strong><span>/ 100</span></div></header>
+  <div class="verdict-row"><strong>{snapshot.overallVerdict}</strong><span>경제 모델 생성: {snapshot.economicModelCreated ? '완료' : '아직 아님'}</span><span>현재 모델: {snapshot.modelScope}</span></div>
+  <div class="summary-grid">
+    <article><span>연구자금</span><strong>{won(snapshot.accounting.initialNavKrw)}</strong><small>노출 {won(snapshot.accounting.maximumExposureKrw)} · 예비금 {won(snapshot.accounting.reserveKrw)}</small></article>
+    <article><span>주식 실제비용 가정</span><strong>{percent(snapshot.costs.stockKrxRoundTripPercent)}</strong><small>NXT {percent(snapshot.costs.stockNxtRoundTripPercent)} · ETF {percent(snapshot.costs.equityEtfKrxRoundTripPercent)}</small></article>
+    <article><span>신호 진단</span><strong>{percent(snapshot.signalFloor.netMeanPercent)}</strong><small>{snapshot.signalFloor.positiveFolds}/{snapshot.signalFloor.foldCount} fold · shuffle 대비 {percent(snapshot.signalFloor.nativeMinusShufflePercent)}</small></article>
+    <article><span>Synthetic CQL</span><strong>{snapshot.calibration.positiveSeeds}/{snapshot.calibration.seedCount} seeds</strong><small>IQM {snapshot.calibration.cqlIqmReturn.toFixed(4)} · shuffle {snapshot.calibration.shuffledCqlIqmReturn.toFixed(4)}</small></article>
+  </div>
+  <div class="gate-scroll" aria-label="G1부터 G8까지 연구 단계">{#each snapshot.gates as gate}<article class={`gate ${gate.state.toLowerCase()}`}><div><b>{gate.id}</b><span>{stateLabel(gate.state)}</span></div><strong>{gate.label}</strong><p>{gate.result}</p></article>{/each}</div>
+  <aside class="warning" role="note"><strong>왜 아직 NO-GO인가?</strong><p>신호 수치는 유망하지만 현재 20종목은 과거 시점별 종목군이 아니며 수정주가·가용시각·원천 해시가 확인되지 않았습니다. 생존편향이나 기업행사 왜곡일 수 있으므로 수익 증명으로 승격하지 않습니다.</p><p><b>다음:</b> {snapshot.nextAction}</p></aside>
+</section>
+
+<style>
+  .research-status{display:grid;gap:14px;min-width:0;border:1px solid var(--border-strong);border-left:5px solid var(--warn);border-radius:12px;padding:clamp(16px,3vw,24px);background:linear-gradient(135deg,var(--surface-raised),var(--surface));color:var(--fg)}header{display:flex;align-items:end;justify-content:space-between;gap:18px}h2{margin:5px 0;color:var(--fg-strong);font-size:clamp(1.35rem,3vw,2rem)}header p:last-child{margin:0;color:var(--muted)}.eyebrow{margin:0;color:var(--accent);font:800 .68rem/1.3 ui-monospace,monospace;letter-spacing:.1em}.score{display:flex;align-items:end;border-left:3px solid var(--accent);padding-left:12px}.score strong{color:var(--fg-strong);font:800 2.8rem/.85 ui-monospace,monospace}.score span{color:var(--muted);font:.75rem ui-monospace,monospace}.verdict-row{display:flex;flex-wrap:wrap;gap:8px}.verdict-row>*{max-width:100%;border:1px solid var(--border);padding:5px 8px;overflow-wrap:anywhere;font:700 .7rem ui-monospace,monospace}.verdict-row strong{border-color:var(--warn);color:var(--warn)}.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.summary-grid article{display:grid;gap:5px;min-width:0;border-top:1px solid var(--border);padding:11px 0}.summary-grid span,.summary-grid small{color:var(--muted);font-size:.72rem}.summary-grid strong{color:var(--fg-strong);font-size:1.1rem;overflow-wrap:anywhere}.gate-scroll{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:7px;overflow-x:auto;padding-bottom:4px}.gate{min-width:120px;border:1px solid var(--border);padding:10px;background:var(--surface-raised)}.gate>div{display:flex;justify-content:space-between;gap:6px}.gate b,.gate span{font:800 .62rem ui-monospace,monospace}.gate span{color:var(--muted)}.gate>strong{display:block;margin-top:8px;color:var(--fg-strong);font-size:.78rem}.gate p{margin:4px 0 0;color:var(--muted);font-size:.68rem;line-height:1.4}.gate.complete{border-top:3px solid var(--success)}.gate.diagnostic_pass{border-top:3px solid var(--info)}.gate.blocked{border-top:3px solid var(--danger)}.gate.locked{border-top:3px solid var(--muted)}.warning{border:1px solid var(--warn);padding:12px;background:var(--warn-soft)}.warning strong{color:var(--warn)}.warning p{margin:5px 0 0;color:var(--muted);font-size:.78rem;line-height:1.55}.warning b{color:var(--fg-strong)}@media(max-width:900px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){header{align-items:start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.score strong{font-size:2.2rem}}
+</style>
+

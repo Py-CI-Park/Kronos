@@ -4,6 +4,7 @@
   import { V6_RL_STEPS } from '../registry';
   import { getV6DataReadiness, getV6Experiment, getV6ResearchRegistry, getV6RunDetail, getV6Runs, getV6Status, newestDraftPreregistration, type V6DataReadiness, type V6Experiment, type V6ResearchRegistry, type V6RunDetail, type V6Runs, type V6Status } from '../v6Api';
   import { TYPE1_FACTS, classifyType1State, type1StateLabel } from '../type1Presentation';
+  import DailyCloseResearchStatus from '../DailyCloseResearchStatus.svelte';
 
   let status = $state<V6Status | null>(null);
   let runs = $state<V6Runs | null>(null);
@@ -73,6 +74,7 @@
 
 <section class="home" aria-labelledby="home-title">
   <header><p class="eyebrow">COMMAND HOME</p><h1 id="home-title">연구 현황</h1><p>성공한 응답에서 없는 값은 MISSING, API 요청 실패는 UNAVAILABLE로 표시합니다.</p></header>
+  <DailyCloseResearchStatus />
   {#if loading}<p class="notice" role="status">연구 현황을 불러오는 중입니다.</p>{/if}
   {#if Object.keys(errors).length}<section class="notice unavailable" role="alert"><strong>일부 API를 사용할 수 없습니다.</strong><span>{Object.values(errors).join(' ')}</span><button type="button" onclick={() => void load()}>다시 시도</button></section>{/if}
   <div class="kpis">

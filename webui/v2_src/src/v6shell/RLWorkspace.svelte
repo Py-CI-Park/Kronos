@@ -11,6 +11,7 @@
   import ComparePage from './pages/ComparePage.svelte';
   import ReportPage from './pages/ReportPage.svelte';
   import DiscoveryPage from './pages/DiscoveryPage.svelte';
+  import DailyCloseResearchStatus from './DailyCloseResearchStatus.svelte';
 
   let active = $state('discovery');
   let status = $state<V6Status | null>(null);
@@ -68,6 +69,7 @@
     <div><p class="eyebrow">RESEARCH WORKSPACE</p><h1 id="rl-title">강화학습</h1><p>연구 단계별 원본 상태 토큰과 읽기 전용 근거를 함께 확인합니다.</p></div>
     {#if newestRun?.verdict_candidate?.value}<span class="verdict">{newestRun.verdict_candidate.value}</span>{/if}
   </header>
+  <DailyCloseResearchStatus />
   <ProcessStepper steps={V6_RL_STEPS} {active} states={states()} onSelect={selectStep} />
   <div class="step-body">
     {#if active === 'discovery'}<DiscoveryPage />

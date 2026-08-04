@@ -1,12 +1,14 @@
 <script lang="ts">
   import { PROGRAM_CAPABILITIES, PROGRAM_LANES, PROGRAM_PAGE_MATRIX, programOverallScore } from '../scorecard/programScorecard';
   import { PROGRAM_EXECUTION } from '../scorecard/programExecution';
+  import DailyCloseResearchStatus from '../DailyCloseResearchStatus.svelte';
 
   const overall = programOverallScore(PROGRAM_LANES);
   const stateClass = (state: string) => state === 'STRONG' || state === 'AVAILABLE' ? 'good' : state === 'BLOCKED' ? 'blocked' : 'partial';
 </script>
 
 <section class="scorecard" aria-labelledby="program-score-title">
+  <DailyCloseResearchStatus />
   <aside class="snapshot-note" aria-label="scorecard evidence authority"><strong>REVIEWED SNAPSHOT</strong><span>{PROGRAM_EXECUTION.reviewedRun} · manifest {PROGRAM_EXECUTION.reviewedEvidenceManifest.slice(0, 16)}… · live artifact state가 아님</span></aside>
   <header class="masthead">
     <div><p class="eyebrow">PROGRAM CONTROL // AUDITED 2026-07-29</p><h1 id="program-score-title">Kronos 프로그램 점수표</h1><p>구현 완성도와 연구 증거를 분리해, 가능한 작업과 금지된 작업을 함께 측정합니다.</p></div>
