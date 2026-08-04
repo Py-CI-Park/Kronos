@@ -33,7 +33,7 @@
 
   <div class="split">
     <section class="panel"><header><div><p class="eyebrow">CAPABILITY BOUNDARY</p><h2>현재 가능한 것과 차단된 것</h2></div></header><div class="capabilities">{#each PROGRAM_CAPABILITIES as item}<article><div><strong>{item.capability}</strong><p>{item.boundary}</p></div><span class={stateClass(item.state)}>{item.state}</span></article>{/each}</div></section>
-    <section class="panel release"><header><div><p class="eyebrow">DELIVERY LINEAGE</p><h2>브랜치·PR·버전 흐름</h2></div></header><dl><div><dt>기준 버전</dt><dd>{PROGRAM_EXECUTION.baseRelease}</dd></div><div><dt>개발 계보</dt><dd>{PROGRAM_EXECUTION.deliveryLane}</dd></div><div><dt>후보 버전</dt><dd>{PROGRAM_EXECUTION.releaseCandidate}</dd></div><div><dt>Fresh OOS</dt><dd>{PROGRAM_EXECUTION.freshOos}</dd></div></dl><ol><li>기능·UI·문서 커밋을 구분합니다.</li><li>전체 테스트와 빌드 후 부모 연구 브랜치에 fast-forward 합니다.</li><li>원격 push·Draft PR·태그·master 병합은 별도 승인 경계입니다.</li></ol><p class="warning">버전 태그는 연구 플랫폼 릴리스만 표시하며 모델 GO 또는 실거래 준비를 뜻하지 않습니다.</p></section>
+    <section class="panel release"><header><div><p class="eyebrow">DELIVERY LINEAGE</p><h2>브랜치·PR·버전 흐름</h2></div></header><dl><div><dt>개발 버전</dt><dd>{PROGRAM_EXECUTION.developmentVersion}</dd></div><div><dt>개발 계보</dt><dd>{PROGRAM_EXECUTION.deliveryLane}</dd></div><div><dt>후보 버전</dt><dd>{PROGRAM_EXECUTION.releaseCandidate}</dd></div><div><dt>Fresh OOS</dt><dd>{PROGRAM_EXECUTION.freshOos}</dd></div></dl><ol><li>v1.28.0-dev 안에서 짧은 작업 브랜치를 병합합니다.</li><li>검증 후 develop에 비FF 병합하고 작업 브랜치는 삭제합니다.</li><li>모든 릴리스 게이트 전에는 RC·태그·master 병합을 만들지 않습니다.</li></ol><p class="warning">버전 태그는 연구 플랫폼 릴리스만 표시하며 모델 GO 또는 실거래 준비를 뜻하지 않습니다.</p></section>
   </div>
 </section>
 

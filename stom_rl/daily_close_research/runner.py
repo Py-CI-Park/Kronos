@@ -6,6 +6,7 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Final
 
 from stom_rl.etf_research.data import load_price_series
 
@@ -17,6 +18,7 @@ from .contracts import (
     registered_execution_contract,
 )
 from .costs import InstrumentKind, TradingVenue, registered_cost_contract
+from .custody import SourceCustodyReceipt, assert_source_unchanged, bind_source_hash, inspect_source_custody
 from .evaluation import CalibrationReceipt, run_synthetic_calibration
 from .features import build_rank_samples
 from .models import OfflineAlgorithm, TrainingConfig, train_offline_q
@@ -29,6 +31,13 @@ _REGISTERED_CODES = (
     "000270", "005380", "012330", "066570", "028260",
     "032830", "086790", "003550", "096770", "034730",
 )
+_CUSTODY_GATE_NAMES: Final = frozenset({
+    "POINT_IN_TIME_UNIVERSE",
+    "AVAILABLE_AT_PROVEN",
+    "OFFICIAL_PRICE_IDENTITY",
+    "CORPORATE_ACTION_CONTRACT",
+    "IMMUTABLE_SOURCE_HASH",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +67,7 @@ class ResearchReceipt:
     maximum_exposure_krw: int
     maximum_slots: int
     execution_audit: ExecutionAuditReceipt
+    source_custody: SourceCustodyReceipt
     signal_floor: RankSignalReceipt
     calibration: CalibrationReceipt
     calibration_model_created: bool
@@ -71,7 +81,9 @@ class ResearchReceipt:
 def run_research(config: ResearchRunConfig) -> ResearchReceipt:
     costs = registered_cost_contract(InstrumentKind.STOCK, TradingVenue.KRX)
     execution = registered_execution_contract(CloseExecutionMode.POST_CLOSE_NEXT_OPEN)
-    execution_audit = audit_execution_readiness(execution, config.execution_evidence)
+    source_custody = inspect_source_custody(config.database, config.codes)
+    execution_evidence = bind_source_hash(config.execution_evidence, source_custody)
+    execution_audit = audit_execution_readiness(execution, execution_evidence)
     series = load_price_series(config.database, config.codes)
     samples = build_rank_samples(series, horizons=(5, 10, 20), holding_days=5)
     signal_floor = evaluate_rank_signal(
@@ -92,19 +104,21 @@ def run_research(config: ResearchRunConfig) -> ResearchReceipt:
         ),
         output=model_path,
     )
+    assert_source_unchanged(source_custody)
     verdict, next_action = _verdict(execution_audit, signal_floor, calibration)
     return ResearchReceipt(
-        research_id="DAILY_CLOSE_OFFLINE_RL_G1_G6_V2",
+        research_id="DAILY_CLOSE_OFFLINE_RL_G2_SOURCE_SNAPSHOT_V1",
         target_model="KR_STOCK_DAILY_CLOSE_60M_10_SLOT_CONTROLLER",
         overall_verdict=verdict,
         model_scope="SYNTHETIC_CALIBRATION_ONLY",
-        signal_evidence_scope="DIAGNOSTIC_ONLY_UNVERIFIED_CUSTODY",
+        signal_evidence_scope="DIAGNOSTIC_ONLY_PARTIAL_SOURCE_CUSTODY",
         stock_round_trip_cost_percent=costs.round_trip_percent,
         execution_mode=execution.mode.value,
         initial_nav_krw=60_000_000,
         maximum_exposure_krw=50_000_000,
         maximum_slots=10,
         execution_audit=execution_audit,
+        source_custody=source_custody,
         signal_floor=signal_floor,
         calibration=calibration,
         calibration_model_created=model_path.is_file(),
@@ -134,7 +148,10 @@ def _verdict(
     calibrated = calibration.verdict == "PASS_SYNTHETIC_OFFLINE_RL"
     prefix = "IMPLEMENTED_CALIBRATED" if calibrated else "IMPLEMENTED_MODEL_ARTIFACT"
     if execution.verdict != "PASS_EXECUTION_READY":
-        return f"{prefix}_NO_GO_DATA_CUSTODY", "PIT universe와 available_at 증거를 등록한다"
+        return (
+            f"{prefix}_NO_GO_DATA_CUSTODY",
+            "PIT universe·available_at·공식 가격·기업행사 권위 증거를 등록한다",
+        )
     if signal.verdict != "PASS_SIGNAL_FLOOR":
         return f"{prefix}_NO_GO_SIGNAL_FLOOR", "새 가설을 사전등록하고 signal floor를 재실행한다"
     if not calibrated:
@@ -148,8 +165,7 @@ def _maturity_score(
     calibration: CalibrationReceipt,
 ) -> int:
     score = 30
-    if execution.verdict == "PASS_EXECUTION_READY":
-        score += 15
+    score += 3 * sum(gate.passed for gate in execution.gates if gate.name in _CUSTODY_GATE_NAMES)
     if signal.verdict == "PASS_SIGNAL_FLOOR":
         score += 20
     if calibration.verdict == "PASS_SYNTHETIC_OFFLINE_RL":

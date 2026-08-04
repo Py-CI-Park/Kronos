@@ -11,7 +11,17 @@ test('daily-close research snapshot keeps implementation and economic verdict se
   assert.equal(DAILY_CLOSE_RESEARCH.signalFloor.positiveFolds, 4);
   assert.equal(DAILY_CLOSE_RESEARCH.economicModelCreated, false);
   assert.equal(DAILY_CLOSE_RESEARCH.freshOosState, 'NOT_RUN_NO_READ');
-  assert.equal(dailyCloseProgress(DAILY_CLOSE_RESEARCH.gates), 75);
+  assert.equal(DAILY_CLOSE_RESEARCH.version, 'v1.28.0-dev');
+  assert.equal(DAILY_CLOSE_RESEARCH.sourceCustody.databaseHashState, 'SHA256_BOUND');
+  assert.equal(DAILY_CLOSE_RESEARCH.sourceCustody.passedGateCount, 1);
+  assert.equal(DAILY_CLOSE_RESEARCH.sourceCustody.externalBlockerCount, 4);
+  assert.equal(dailyCloseProgress(DAILY_CLOSE_RESEARCH.gates), 78);
+  assert.deepEqual(DAILY_CLOSE_RESEARCH.blockers, [
+    'POINT_IN_TIME_UNIVERSE',
+    'AVAILABLE_AT_PROVEN',
+    'OFFICIAL_PRICE_IDENTITY',
+    'CORPORATE_ACTION_CONTRACT',
+  ]);
 });
 
 test('RL workspace exposes the same status panel on every research step', async () => {
