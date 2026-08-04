@@ -36,6 +36,13 @@ read-only `/api/docs/*` endpoints.
 - [18-type2-d3-representation-action](18-type2-d3-representation-action) - Type2-D3 representation/action reviewed evidence
 - [19-type2-d4-algorithm-objective](19-type2-d4-algorithm-objective) - Type2-D4 algorithm/objective reviewed evidence
 
+### 2026-08-04 RL continuation baseline
+
+- [경제성·환경·보상 설계 재검토](../kronos_rl_economic_research_design_review_2026-08-04.md) - 개별주식 0.23%와 국내주식형 ETF 0.03% 비용 분리, MDP·보상·일반화 기준
+- [버전·브랜치·커밋·태그 정책](../kronos_version_branch_release_policy_2026-08-04.md) - `vMAJOR.MINOR.PATCH`, minor 자연 증가, patch fix 규칙
+- [v1.21~v1.29 전체 실행 계획](../kronos_rl_v1_21_to_v1_29_master_execution_plan_2026-08-04.md) - G0~G8와 13페이지 실행표
+- [전체 진행용 재사용 프롬프트](../kronos_rl_continuous_execution_prompt_2026-08-04.md) - 단계 실행·재개·GPT 외부 검토 프롬프트
+
 ### Latest Type2-D0 evidence
 
 - [Type2-D0 reviewed summary](15-type2-d0-primary) - 12/12 units, `PRIMARY_COMPLETE`, hypothesis `NO-GO`, custody limitations, and source paths
