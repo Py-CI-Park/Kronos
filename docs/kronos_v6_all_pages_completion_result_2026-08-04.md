@@ -1,5 +1,7 @@
 # Kronos V6 전체 페이지 완료 결과
 
+> 버전·브랜치 운영 방식은 후속 문서 `kronos_v1_28_dev_g2_source_custody_result_2026-08-04.md`에서 교정했다. 이 문서의 `v1.28.0-rc.1` 후보와 연속 작업 브랜치 방식은 더 이상 현재 운영 기준이 아니다.
+
 - 기준일: 2026-08-04 KST
 - 개발 브랜치: `codex/rl-all-pages-v1-28`
 - 부모 연구 브랜치: `research/daily-close-offline-rl-v2`
