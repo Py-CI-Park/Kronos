@@ -66,5 +66,6 @@ def test_receipt_writer_preserves_gate_and_model_scope(tmp_path: Path) -> None:
     payload = json.loads(output.read_text(encoding="utf-8"))
 
     assert payload["model_scope"] == "SYNTHETIC_CALIBRATION_ONLY"
+    assert payload["signal_evidence_scope"] == "DIAGNOSTIC_ONLY_UNVERIFIED_CUSTODY"
     assert payload["execution_audit"]["verdict"] == "PASS_EXECUTION_READY"
     assert payload["fresh_oos_state"] == "NOT_RUN_NO_READ"

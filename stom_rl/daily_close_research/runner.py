@@ -51,6 +51,7 @@ class ResearchReceipt:
     target_model: str
     overall_verdict: str
     model_scope: str
+    signal_evidence_scope: str
     stock_round_trip_cost_percent: float
     execution_mode: str
     initial_nav_krw: int
@@ -97,6 +98,7 @@ def run_research(config: ResearchRunConfig) -> ResearchReceipt:
         target_model="KR_STOCK_DAILY_CLOSE_60M_10_SLOT_CONTROLLER",
         overall_verdict=verdict,
         model_scope="SYNTHETIC_CALIBRATION_ONLY",
+        signal_evidence_scope="DIAGNOSTIC_ONLY_UNVERIFIED_CUSTODY",
         stock_round_trip_cost_percent=costs.round_trip_percent,
         execution_mode=execution.mode.value,
         initial_nav_krw=60_000_000,
@@ -181,4 +183,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
