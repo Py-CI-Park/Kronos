@@ -3,7 +3,7 @@ import type { ProgramLaneId, ProgramScoreCriterion } from './programTypes';
 export const PROGRAM_SCORE_RUBRIC: Readonly<Record<ProgramLaneId, readonly ProgramScoreCriterion[]>> = {
   platform: [
     { id: 'all-pages', points: 20, achieved: true, evidence: 'V6 13개 사용자 화면과 공통 결정 레일' },
-    { id: 'research-status', points: 20, achieved: true, evidence: 'G1~G8와 75/63/20 점수 분리' },
+    { id: 'research-status', points: 20, achieved: true, evidence: 'G1~G8와 78/63/20 점수 분리' },
     { id: 'evidence-viewer', points: 20, achieved: true, evidence: '비용·fold·seed·control·차단 원인 조회' },
     { id: 'readable-responsive', points: 15, achieved: true, evidence: 'UTF-8 한글·내부 표 스크롤·줄바꿈 규칙' },
     { id: 'tests-build', points: 10, achieved: true, evidence: '410 frontend tests와 production build 기준' },
@@ -34,7 +34,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<Record<ProgramLaneId, readonly Progr
     { id: 'failure-honesty', points: 15, achieved: true, evidence: '좋은 진단과 NO-GO를 동시에 공개' },
     { id: 'claim-separation', points: 15, achieved: true, evidence: 'artifact·calibration·economic·OOS 상태 분리' },
     { id: 'branch-lineage', points: 15, achieved: true, evidence: 'v1.21~v1.28 단계별 한국어 커밋 계보' },
-    { id: 'data-custody', points: 20, achieved: false, evidence: 'G2 custody blocker 5개' },
+    { id: 'data-custody', points: 20, achieved: false, evidence: '원천 SHA 통과, G2 외부 blocker 4개' },
     { id: 'fresh-oos-approval', points: 10, achieved: false, evidence: 'G7 별도 승인 필요' },
     { id: 'remote-pr-release', points: 10, achieved: false, evidence: 'push·PR·tag 미수행' },
   ],

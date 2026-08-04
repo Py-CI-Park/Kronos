@@ -10,7 +10,7 @@
     <div><dt>현재 판정</dt><dd>{PROGRAM_EXECUTION.stage}</dd></div>
     <div><dt>다음 실행</dt><dd>{PROGRAM_EXECUTION.nextAction}</dd></div>
   </dl>
-  <div class="guards"><span>{PROGRAM_EXECUTION.pageCount} PAGES</span><span>FRESH OOS: SEALED</span><span>LIVE: BLOCKED</span></div>
+  <div class="guards"><span>DEV: {PROGRAM_EXECUTION.developmentVersion}</span><span>{PROGRAM_EXECUTION.pageCount} PAGES</span><span>FRESH OOS: SEALED</span><span>LIVE: BLOCKED</span></div>
 </aside>
 
 <style>
