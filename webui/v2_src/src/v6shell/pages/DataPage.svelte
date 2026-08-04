@@ -38,10 +38,20 @@
     </div>
     <p class="blocker"><strong>차단:</strong> tampered/blocked source의 승인 증거는 MISSING이며 fail-closed입니다. historical dataset이 invalid로 표시된 경우 Type1 학습·평가·OOS에 적격하지 않습니다. 이 화면의 DB 존재 또는 manifest는 적격·수익성·fresh OOS를 의미하지 않습니다.</p>
   </section>
+  <section class="card authority-audit" aria-labelledby="authority-audit-title">
+    <p class="eyebrow">REVIEWED SNAPSHOT</p>
+    <h2 id="authority-audit-title">G2 로컬 권위성 감사</h2>
+    <div class="type1-grid">
+      <dl><div><dt>등록 종목</dt><dd>20</dd></div><div><dt>2017 앵커 상위 500</dt><dd>19 / 20</dd></div><div><dt>앵커 시점 제외</dt><dd>1 / 20 · 068270</dd></div><div><dt>제외 사유</dt><dd>not_effective_at_anchor</dd></div></dl>
+      <dl><div><dt>원천 DB SHA 일치</dt><dd>PASS</dd></div><div><dt>날짜별 PIT</dt><dd>BLOCKED</dd></div><div><dt>공식 가격·기업행사</dt><dd>BLOCKED</dd></div><div><dt>Fresh OOS</dt><dd>NOT_RUN_NO_READ</dd></div></dl>
+    </div>
+    <p class="blocker"><strong>경계:</strong> 로컬 서명 자료의 2017-12-29 단일 앵커 감사이며 외부 KRX 증명은 아닙니다. 고정 20종목을 전 기간에 사용하면 생존편향이 생기므로 공식 날짜별 universe가 준비될 때까지 G2는 NO-GO입니다.</p>
+  </section>
   <section class="card wide"><h2>연구 universe <span class="chip">{universe ? number(universe.total) : unavailable('universe')}</span></h2><div class="table-wrap"><table><caption>API가 반환한 상위 20개 universe 행</caption><thead><tr><th scope="col">table</th><th scope="col">code</th><th scope="col">rows</th><th scope="col">first_date</th><th scope="col">last_date</th></tr></thead><tbody>{#if universe?.universe?.length}{#each universe.universe as row}<tr><td>{text(row.table)}</td><td>{text(row.code)}</td><td>{number(row.rows)}</td><td>{text(row.first_date)}</td><td>{text(row.last_date)}</td></tr>{/each}{:else}<tr><td colspan="5">{universe ? 'EMPTY' : unavailable('universe')}</td></tr>{/if}</tbody></table></div></section>
 </section>
 
 <style>
   .data-page { width:100%; min-width:0; border:1px solid var(--border); border-radius:14px; padding:clamp(18px,4vw,32px); background:var(--surface); color:var(--fg) }.matrix { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:16px; margin-top:16px }.card { min-width:0; border:1px solid var(--border-strong); border-radius:10px; padding:16px; background:var(--surface-raised) }.wide { margin-top:16px }.eyebrow { margin:0;color:var(--accent);font-size:.82rem;font-weight:800;letter-spacing:.1em }h1 { margin:7px 0;color:var(--fg-strong);font-size:clamp(1.8rem,6vw,2.6rem) }h2 { margin:0 0 12px;color:var(--fg-strong);font-size:1.15rem }header>p,dt,caption { color:var(--muted) }.notice { margin-top:16px;padding:12px;border:1px solid var(--border-strong);border-radius:10px;color:var(--muted) }.error { display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;border-color:var(--danger);color:var(--danger) }dl { margin:0;display:grid;gap:10px }dt { font-size:.78rem }dd { margin:2px 0 0;overflow-wrap:anywhere }.chip { display:inline-block;border:1px solid var(--info);border-radius:999px;padding:2px 6px;color:var(--accent-strong);font-size:.78rem }.table-wrap { overflow-x:auto }table { width:100%;min-width:550px;border-collapse:collapse;font-size:.85rem }caption { padding:12px 0 6px;text-align:left }th,td { border-top:1px solid var(--border);padding:8px;text-align:left;overflow-wrap:anywhere }th { color:var(--muted) }button { border:1px solid var(--accent);border-radius:6px;padding:6px 10px;background:transparent;color:var(--accent-strong);font:inherit;cursor:pointer }button:focus-visible { outline:2px solid var(--accent);outline-offset:2px }
   .type1-data { margin-top:16px;border-color:var(--warn) }.type1-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px }.type1-grid dl { min-width:0 }.type1-grid dt { color:var(--muted);font-size:.78rem }.type1-grid dd { margin:2px 0 0;overflow-wrap:anywhere }.blocker { margin:14px 0 0;color:var(--muted);line-height:1.55 }.blocker strong { color:var(--warn) }
+  .authority-audit { margin-top:16px;border-color:var(--danger) }
 </style>

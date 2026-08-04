@@ -43,9 +43,9 @@ test('page matrix describes every completed V6 surface in navigation order', () 
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.eta.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'home')?.evidenceState, 'DAILY_CLOSE_G2_SOURCE_HASH_BOUND_78');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'home')?.evidenceState, 'DAILY_CLOSE_G2_LOCAL_AUTHORITY_AUDITED_78');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'scorecard')?.evidenceState, 'PROGRAM_63_IMPLEMENTATION_78_ECONOMIC_20');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-data')?.evidenceState, 'G2_PARTIAL_1_PASS_4_EXTERNAL_BLOCKERS');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-data')?.evidenceState, 'G2_LOCAL_ANCHOR_19_STABLE_1_EXCLUDED_4_EXTERNAL_BLOCKERS');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'SYNTHETIC_CQL_CREATED_MARKET_MODEL_NOT_CREATED');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'G3_DIAGNOSTIC_PASS_4_OF_4_UNVERIFIED_CUSTODY');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'CQL_IQM_0_1195_SHUFFLED_NEG_0_00524');

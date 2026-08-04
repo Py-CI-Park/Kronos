@@ -8,7 +8,7 @@ export const PROGRAM_CAPABILITIES = [
   { id: 'robust-controls', capability: 'shuffle·random·IQM·bootstrap 검증', state: 'AVAILABLE', boundary: 'negative control 분리 확인' },
   { id: 'research-receipt', capability: 'G1~G6 통합 runner와 JSON receipt', state: 'AVAILABLE', boundary: '실패와 차단을 그대로 보존' },
   { id: 'all-page-control-room', capability: '13개 페이지 연구 결정 레일', state: 'AVAILABLE', boundary: '화면에서 GO를 생성할 수 없음' },
-  { id: 'daily-close-foundation', capability: '일봉 종가매매 G1~G6 연구 기반', state: 'PARTIAL', boundary: '구현 78/100, G2 외부 권위 차단' },
+  { id: 'daily-close-foundation', capability: '일봉 종가매매 G1~G6 연구 기반', state: 'PARTIAL', boundary: '구현 78/100, 20종목 로컬 앵커 감사 완료, G2 외부 권위 차단' },
   { id: 'diagnostic-signal', capability: '5·10·20일 지도학습 신호 바닥', state: 'PARTIAL', boundary: '4/4 fold지만 관리 미검증 진단용' },
   { id: 'insight-observation', capability: '종목·수급·시장 국면 관찰', state: 'PARTIAL', boundary: '현재 universe 관찰이며 매수 추천 아님' },
   { id: 'kronos-model', capability: 'Kronos foundation 모델 상태 조회', state: 'PARTIAL', boundary: 'AVAILABLE_NOT_LOADED, RL 정책 아님' },

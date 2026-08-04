@@ -29,9 +29,14 @@ test('RL workspace exposes the same status panel on every research step', async 
   const scorecard = await readFile(new URL('./pages/ProgramScorecardPage.svelte', import.meta.url), 'utf8');
   const home = await readFile(new URL('./pages/HomePage.svelte', import.meta.url), 'utf8');
   const panel = await readFile(new URL('./DailyCloseResearchStatus.svelte', import.meta.url), 'utf8');
+  const dataPage = await readFile(new URL('./pages/DataPage.svelte', import.meta.url), 'utf8');
 
   assert.match(workspace, /DailyCloseResearchStatus/u);
   assert.match(panel, /일봉 종가매매 강화학습/u);
   assert.match(scorecard, /DailyCloseResearchStatus/u);
   assert.match(home, /DailyCloseResearchStatus/u);
+  assert.match(dataPage, /G2 로컬 권위성 감사/u);
+  assert.match(dataPage, /19 \/ 20/u);
+  assert.match(dataPage, /068270/u);
+  assert.match(dataPage, /외부 KRX 증명은 아닙니다/u);
 });
