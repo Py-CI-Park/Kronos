@@ -5,6 +5,7 @@
   import HomePage from './pages/HomePage.svelte';
   import ResearchWorkspace from './pages/research/ResearchWorkspace.svelte';
   import LiveTrainingPage from './pages/live/LiveTrainingPage.svelte';
+  import EvaluationWorkspace from './pages/evaluation/EvaluationWorkspace.svelte';
   import RLWorkspace from './RLWorkspace.svelte';
   import InsightWorkspace from './InsightWorkspace.svelte';
   import KronosPage from './pages/KronosPage.svelte';
@@ -52,7 +53,7 @@
     {#if page.id === 'command'}<HomePage />
     {:else if page.id === 'research'}<ResearchWorkspace />
     {:else if page.id === 'live'}<LiveTrainingPage />
-    {:else if page.id === 'evaluation'}<RLWorkspace initialStep="evaluation" />
+    {:else if page.id === 'evaluation'}<EvaluationWorkspace />
     {:else if page.id === 'evidence'}<InsightWorkspace />
     {:else if page.id === 'models'}<KronosPage />
     {:else if page.id === 'governance'}<RLWorkspace initialStep="report" />
