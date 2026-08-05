@@ -74,7 +74,7 @@ class ResearchPage:
     page_size: int
 
 
-def _lane(run_id: str) -> str:
+def research_lane(run_id: str) -> str:
     lowered = run_id.lower()
     if lowered.startswith(("daily_", "v6_daily", "v8_daily")):
         return "daily_close"
@@ -130,7 +130,7 @@ def discover_runs(root: Path) -> tuple[ResearchRun, ...]:
             ResearchRun(
                 run_id=run_id,
                 name=directory.name,
-                lane=_lane(run_id),
+                lane=research_lane(run_id),
                 status=metadata.status,
                 algorithm=metadata.algorithm,
                 dataset_id=metadata.dataset_id,

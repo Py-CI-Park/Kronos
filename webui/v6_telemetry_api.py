@@ -61,6 +61,7 @@ def create_v6_telemetry_blueprint(
                     {
                         "run_id": row.run_id,
                         "name": row.name,
+                        "lane": row.lane,
                         "status": row.status,
                         "algorithm": row.algorithm,
                         "event_bytes": row.event_bytes,

@@ -83,3 +83,4 @@ def test_discover_telemetry_runs_lists_only_direct_recorded_event_files(tmp_path
     assert {row.run_id for row in rows} == {"run_a", "run_b"}
     assert all(row.event_bytes > 0 for row in rows)
     assert all(row.status == "NO-GO" and row.algorithm == "DQN" for row in rows)
+    assert all(row.lane == "other" for row in rows)
