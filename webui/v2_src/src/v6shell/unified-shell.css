@@ -1,0 +1,35 @@
+.unified-v6-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(224px, 264px) minmax(0, 1fr);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 35%),
+    var(--surface-sunken);
+  color: var(--fg);
+}
+
+.unified-v6-main {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 2vw, 24px);
+  padding: clamp(14px, 2.5vw, 36px);
+  overflow-x: clip;
+}
+
+@media (max-width: 920px) {
+  .unified-v6-shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .unified-v6-shell {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .unified-v6-main {
+    padding: 10px;
+  }
+}

@@ -9,10 +9,12 @@ test('V6 shell isolates navigation and shows current evidence boundaries', async
   const stepper = await readFile(new URL('./ProcessStepper.svelte', import.meta.url), 'utf8');
   const workspace = await readFile(new URL('./RLWorkspace.svelte', import.meta.url), 'utf8');
 
-  assert.match(source, /class="v6-sidebar"/u);
-  assert.match(source, /class="v6-main"/u);
+  assert.match(source, /<UnifiedSidebar/u);
+  assert.match(source, /<SystemStatusRail/u);
+  assert.match(source, /class="unified-v6-main"/u);
   assert.doesNotMatch(source, /class="sidebar"/u);
-  assert.match(source, /<ResearchContext \/>/u);
+  assert.doesNotMatch(source, /<ResearchContext \/>/u);
+  assert.doesNotMatch(source, /style:zoom/u);
   assert.match(context, /<strong>G1–G6<\/strong>/u);
   assert.match(context, /20종목 · 131,838표본/u);
   assert.match(context, /IMPLEMENTED · NO-GO/u);
