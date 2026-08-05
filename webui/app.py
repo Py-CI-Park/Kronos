@@ -2741,6 +2741,14 @@ def _create_v6_insight_blueprint():
     return create_v6_insight_blueprint()
 
 
+def _create_v6_research_blueprint():
+    try:
+        from .v6_research_api import create_v6_research_blueprint
+    except ImportError:
+        from v6_research_api import create_v6_research_blueprint
+    return create_v6_research_blueprint()
+
+
 def create_app(config=None, *, blueprint_factories=None):
     """Create an isolated dashboard app while preserving process-wide model state."""
     target = Flask(__name__)
@@ -2754,13 +2762,14 @@ def create_app(config=None, *, blueprint_factories=None):
         "v51": _build_kronos_v51_blueprint,
         "v6_platform": _create_v6_platform_blueprint,
         "v6_insight": _create_v6_insight_blueprint,
+        "v6_research": _create_v6_research_blueprint,
     }
     if blueprint_factories is not None:
         factories.update(blueprint_factories)
 
     diagnostics = {}
 
-    for subsystem in ("v2", "v5", "v51", "v6_platform", "v6_insight"):
+    for subsystem in ("v2", "v5", "v51", "v6_platform", "v6_insight", "v6_research"):
         try:
             result = factories[subsystem]()
             blueprint, subsystem_config = result if subsystem in {"v5", "v51"} and isinstance(result, tuple) else (result, {})
