@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Final, TypedDict
 
 from webui.v6_research_metadata import observe_metadata
+from webui.v6_research_catalog import research_lane
 
 EVENT_FILE: Final = "rl_live_events.jsonl"
 HALF_SCAN_BYTES: Final = 2 * 1024 * 1024
@@ -64,6 +65,7 @@ class TelemetrySnapshot:
 class TelemetryRun:
     run_id: str
     name: str
+    lane: str
     status: str
     algorithm: str
     event_bytes: int
@@ -191,6 +193,7 @@ def discover_telemetry_runs(root: Path) -> tuple[TelemetryRun, ...]:
             TelemetryRun(
                 run_id=run_id,
                 name=directory.name,
+                lane=research_lane(run_id),
                 status=metadata.status,
                 algorithm=metadata.algorithm,
                 event_bytes=stat_result.st_size,

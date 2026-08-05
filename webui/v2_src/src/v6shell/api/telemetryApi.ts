@@ -5,6 +5,7 @@ import type { ResearchApiResult } from './researchApi';
 const TelemetryRunSchema = z.object({
   run_id: z.string().min(1),
   name: z.string().min(1),
+  lane: z.string().min(1),
   status: z.string().min(1),
   algorithm: z.string().min(1),
   event_bytes: z.number().int().nonnegative(),

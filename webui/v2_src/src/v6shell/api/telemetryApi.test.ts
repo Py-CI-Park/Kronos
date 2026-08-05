@@ -7,7 +7,7 @@ test('telemetry schemas preserve follow mode sampling and metric points', () => 
     schema_version: 'kronos_v6_telemetry_runs.v1',
     status: 'OK',
     total: 1,
-    items: [{ run_id: 'daily/seed-1', name: 'seed-1', status: 'NO-GO', algorithm: 'DQN', event_bytes: 2048, updated_at: '2026-08-05T00:00:00Z' }],
+    items: [{ run_id: 'daily/seed-1', name: 'seed-1', lane: 'daily_close', status: 'NO-GO', algorithm: 'DQN', event_bytes: 2048, updated_at: '2026-08-05T00:00:00Z' }],
   });
   const snapshot = TelemetrySnapshotSchema.parse({
     schema_version: 'kronos_v6_run_telemetry.v1',
@@ -24,6 +24,7 @@ test('telemetry schemas preserve follow mode sampling and metric points', () => 
 
   assert.equal(runs.items[0].run_id, 'daily/seed-1');
   assert.equal(runs.items[0].status, 'NO-GO');
+  assert.equal(runs.items[0].lane, 'daily_close');
   assert.equal(snapshot.points[0].equity, 1.02);
   assert.equal(snapshot.claims.profitability, false);
 });
