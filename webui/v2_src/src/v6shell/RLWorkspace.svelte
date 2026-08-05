@@ -14,6 +14,12 @@
   import DailyCloseResearchStatus from './DailyCloseResearchStatus.svelte';
   import PageDecisionRail from './PageDecisionRail.svelte';
 
+  interface Props {
+    readonly initialStep?: string;
+  }
+
+  let { initialStep = 'discovery' }: Props = $props();
+
   let active = $state('discovery');
   let status = $state<V6Status | null>(null);
   let newestRun = $state<V6TrainingRun | null>(null);
@@ -23,11 +29,12 @@
   function selectFromLocation(): void {
     const params = new URLSearchParams(window.location.search);
     const location = resolveV6Location(params.get('tab'), params.get('step'), null);
-    active = location.tab === 'rl' && location.step ? location.step : 'discovery';
+    active = location.step ?? initialStep;
   }
   function selectStep(id: string): void {
     active = id;
-    history.pushState(history.state, '', `?ui=v6&tab=rl&step=${encodeURIComponent(id)}`);
+    const destination = id === 'training' ? 'live' : id === 'evaluation' || id === 'compare' ? 'evaluation' : id === 'report' ? 'governance' : 'research';
+    history.pushState(history.state, '', `?ui=v6&tab=${destination}`);
   }
   function states(): Record<string, string | undefined> {
     const statusState = (value: string | undefined): string => statusLoading ? 'LOADING' : (value ?? 'UNAVAILABLE');

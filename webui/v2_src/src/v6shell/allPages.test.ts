@@ -11,7 +11,7 @@ test('all V6 navigation labels are readable Korean and current', () => {
   const insightLabels = V6_INSIGHT_SUBTABS.map((tab) => tab.labelKo);
 
   // Then
-  assert.deepEqual(pageLabels, ['홈', '프로그램 점수', '강화학습', '인사이트', 'Kronos 모델', '다른 레인', '설정']);
+  assert.deepEqual(pageLabels, ['통합 현황', '연구 라이브러리', '실시간 학습', '평가·비교', '데이터·증거', '모델·산출물', '보고서·거버넌스', '설정']);
   assert.deepEqual(stepLabels, ['RL 발견 실험실', '데이터', '실험 설계', '학습', '평가', '비교', '보고서']);
   assert.deepEqual(insightLabels, ['종목 관찰', '수급 흐름', '시장 국면']);
 });
