@@ -2,14 +2,14 @@
   import { onMount } from 'svelte';
   import UnifiedSidebar from './components/shell/UnifiedSidebar.svelte';
   import SystemStatusRail from './components/shell/SystemStatusRail.svelte';
-  import HomePage from './pages/HomePage.svelte';
+  import CommandCenterPage from './pages/command/CommandCenterPage.svelte';
   import ResearchWorkspace from './pages/research/ResearchWorkspace.svelte';
   import LiveTrainingPage from './pages/live/LiveTrainingPage.svelte';
   import EvaluationWorkspace from './pages/evaluation/EvaluationWorkspace.svelte';
   import DataEvidencePage from './pages/evidence/DataEvidencePage.svelte';
   import ModelsArtifactsPage from './pages/models/ModelsArtifactsPage.svelte';
   import ReportsGovernancePage from './pages/governance/ReportsGovernancePage.svelte';
-  import SettingsPage from './pages/SettingsPage.svelte';
+  import UnifiedSettingsPage from './pages/settings/UnifiedSettingsPage.svelte';
   import { V6_PAGES, resolveV6Location, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
   import { v6Theme } from './v6Theme';
   import './v6-themes.css';
@@ -50,13 +50,13 @@
   <UnifiedSidebar activePageId={page.id} onSelect={selectPage} />
   <main class="unified-v6-main">
     <SystemStatusRail />
-    {#if page.id === 'command'}<HomePage />
+    {#if page.id === 'command'}<CommandCenterPage onNavigate={selectPage} />
     {:else if page.id === 'research'}<ResearchWorkspace />
     {:else if page.id === 'live'}<LiveTrainingPage />
     {:else if page.id === 'evaluation'}<EvaluationWorkspace />
     {:else if page.id === 'evidence'}<DataEvidencePage />
     {:else if page.id === 'models'}<ModelsArtifactsPage />
     {:else if page.id === 'governance'}<ReportsGovernancePage />
-    {:else}<SettingsPage />{/if}
+    {:else}<UnifiedSettingsPage />{/if}
   </main>
 </div>

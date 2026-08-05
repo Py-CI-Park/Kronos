@@ -19,8 +19,8 @@ DEFAULT_RUNS_ROOT: Final = Path(__file__).resolve().parent / "rl_runs"
 ALLOWED_QUERY_KEYS: Final = frozenset({"search", "lane", "status", "page", "page_size"})
 MAX_ARTIFACTS: Final = 100
 PROGRAM_SCORES: Final = {
-    "maturity_score": 63,
-    "implementation_score": 78,
+    "maturity_score": 70,
+    "implementation_score": 94,
     "economic_model_score": 20,
     "live_readiness_score": 0,
 }

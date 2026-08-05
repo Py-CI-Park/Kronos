@@ -16,23 +16,27 @@ test('all V6 navigation labels are readable Korean and current', () => {
   assert.deepEqual(insightLabels, ['종목 관찰', '수급 흐름', '시장 국면']);
 });
 
-test('every V6 surface exposes a page-specific decision rail', async () => {
+test('every official V6 page uses the common page header grammar', async () => {
   // Given
   const sources = await Promise.all([
-    './pages/HomePage.svelte', './pages/ProgramScorecardPage.svelte', './RLWorkspace.svelte',
-    './InsightWorkspace.svelte', './pages/IntradayPage.svelte', './pages/KronosPage.svelte',
-    './pages/SettingsPage.svelte',
+    './pages/command/CommandCenterPage.svelte', './pages/research/ResearchLibraryPage.svelte',
+    './pages/live/LiveTrainingPage.svelte', './pages/evaluation/EvaluationWorkspace.svelte',
+    './pages/evidence/DataEvidencePage.svelte', './pages/models/ModelsArtifactsPage.svelte',
+    './pages/governance/ReportsGovernancePage.svelte', './pages/settings/UnifiedSettingsPage.svelte',
   ].map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
 
   // When / Then
-  for (const source of sources) assert.match(source, /PageDecisionRail/u);
+  for (const source of sources) assert.match(source, /PageHeader/u);
 });
 
 test('shell and independent workspaces contain no legacy mojibake markers', async () => {
   // Given
   const source = (await Promise.all([
-    './V6Shell.svelte', './InsightWorkspace.svelte', './pages/IntradayPage.svelte',
-    './pages/KronosPage.svelte', './pages/SettingsPage.svelte',
+    './V6Shell.svelte', './pages/command/CommandCenterPage.svelte',
+    './pages/research/ResearchLibraryPage.svelte', './pages/live/LiveTrainingPage.svelte',
+    './pages/evaluation/EvaluationWorkspace.svelte', './pages/evidence/DataEvidencePage.svelte',
+    './pages/models/ModelsArtifactsPage.svelte', './pages/governance/ReportsGovernancePage.svelte',
+    './pages/settings/UnifiedSettingsPage.svelte',
   ].map((path) => readFile(new URL(path, import.meta.url), 'utf8')))).join('\n');
 
   // When / Then

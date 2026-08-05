@@ -27,14 +27,14 @@ test('daily-close research snapshot keeps implementation and economic verdict se
 test('RL workspace exposes the same status panel on every research step', async () => {
   const workspace = await readFile(new URL('./RLWorkspace.svelte', import.meta.url), 'utf8');
   const scorecard = await readFile(new URL('./pages/ProgramScorecardPage.svelte', import.meta.url), 'utf8');
-  const home = await readFile(new URL('./pages/HomePage.svelte', import.meta.url), 'utf8');
+  const command = await readFile(new URL('./pages/command/CommandCenterPage.svelte', import.meta.url), 'utf8');
   const panel = await readFile(new URL('./DailyCloseResearchStatus.svelte', import.meta.url), 'utf8');
   const dataPage = await readFile(new URL('./pages/DataPage.svelte', import.meta.url), 'utf8');
 
   assert.match(workspace, /DailyCloseResearchStatus/u);
   assert.match(panel, /일봉 종가매매 강화학습/u);
   assert.match(scorecard, /DailyCloseResearchStatus/u);
-  assert.match(home, /DailyCloseResearchStatus/u);
+  assert.match(command, /경제 모델/u);
   assert.match(dataPage, /G2 로컬 권위성 감사/u);
   assert.match(dataPage, /19 \/ 20/u);
   assert.match(dataPage, /068270/u);

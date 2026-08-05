@@ -3,10 +3,10 @@
 </script>
 
 <section class="rail" data-system-status-rail aria-label="시스템 연구 상태">
-  <div class="score"><span>MATURITY</span><strong>{PROGRAM_EXECUTION.overallScore}</strong><small>/100</small></div>
+  <div class="score"><span>PROGRAM</span><strong>{PROGRAM_EXECUTION.overallScore}</strong><small>/100</small></div>
   <div class="status"><span class="blocked">NO-GO</span><span>READ-ONLY</span><span>FRESH OOS SEALED</span></div>
   <dl>
-    <div><dt>연구 구현</dt><dd>{PROGRAM_EXECUTION.implementationScore}/100</dd></div>
+    <div><dt>제품 구현·UX</dt><dd>{PROGRAM_EXECUTION.implementationScore}/100</dd></div>
     <div><dt>경제 모델</dt><dd>{PROGRAM_EXECUTION.economicModelScore}/100 · 미생성</dd></div>
     <div><dt>개발선</dt><dd>{PROGRAM_EXECUTION.developmentVersion}</dd></div>
   </dl>

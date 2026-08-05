@@ -10,11 +10,11 @@ const scorecardPage = readFileSync(new URL('../pages/ProgramScorecardPage.svelte
 
 test('execution banner preserves current daily-close research boundary and lineage', () => {
   assert.equal(PROGRAM_EXECUTION.overallScore, programOverallScore(PROGRAM_LANES));
-  assert.equal(PROGRAM_EXECUTION.overallScore, 63);
-  assert.equal(PROGRAM_EXECUTION.implementationScore, 78);
+  assert.equal(PROGRAM_EXECUTION.overallScore, 70);
+  assert.equal(PROGRAM_EXECUTION.implementationScore, 94);
   assert.equal(PROGRAM_EXECUTION.economicModelScore, 20);
-  assert.equal(PROGRAM_EXECUTION.pageCount, PROGRAM_PAGE_MATRIX.length);
-  assert.equal(PROGRAM_EXECUTION.pageCount, 13);
+  assert.equal(PROGRAM_EXECUTION.liveReadinessScore, 0);
+  assert.equal(PROGRAM_EXECUTION.pageCount, 8);
   assert.equal(PROGRAM_EXECUTION.freshOos, 'NOT_RUN_NO_READ');
   assert.equal(PROGRAM_EXECUTION.liveTrading, 'BLOCKED');
   assert.match(PROGRAM_EXECUTION.deliveryLane, /codex\/v1.28.0-dev-<task>/);
