@@ -35,7 +35,12 @@ function readStored(key: string): string | null {
 
 function writeStored(key: string, value: string): void {
   if (!storageAvailable()) return;
-  try { localStorage.setItem(key, value); } catch { /* persistence is best-effort */ }
+  try {
+    localStorage.setItem(key, value);
+  } catch (error) {
+    if (error instanceof Error) return;
+    throw error;
+  }
 }
 
 export const v6Theme = writable<V6ThemeId>(normalizeV6Theme(readStored(THEME_KEY)));

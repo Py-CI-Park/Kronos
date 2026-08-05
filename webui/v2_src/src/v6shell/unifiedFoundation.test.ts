@@ -15,6 +15,9 @@ test('unified shell uses one status rail and reusable shell components', async (
   assert.doesNotMatch(shell, /<ProgramExecutionStrip/u);
   assert.doesNotMatch(shell, /<ResearchContext/u);
   assert.doesNotMatch(shell, /<IntradayPage \/><KronosPage/u);
+  assert.match(shell, /function initialPage\(\): V6PageDef/u);
+  assert.match(shell, /\$state<V6PageDef>\(initialPage\(\)\)/u);
+  assert.doesNotMatch(shell, /\$state<V6PageDef>\(V6_PAGES\[0\]\)/u);
 });
 
 test('foundation components expose the shared page grammar', async () => {
