@@ -41,8 +41,8 @@ def test_summary_is_lightweight_and_separates_program_from_economic_score(client
     assert response.status_code == 200
     assert payload["schema_version"] == "kronos_v6_research_summary.v1"
     assert payload["program"] == {
-        "maturity_score": 63,
-        "implementation_score": 78,
+        "maturity_score": 70,
+        "implementation_score": 94,
         "economic_model_score": 20,
         "live_readiness_score": 0,
     }

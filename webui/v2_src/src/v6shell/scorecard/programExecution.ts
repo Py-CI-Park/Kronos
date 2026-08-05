@@ -1,9 +1,11 @@
-import { PROGRAM_LANES, PROGRAM_PAGE_MATRIX, programOverallScore } from './programScorecard';
+import { V6_PAGES } from '../registry';
+import { PROGRAM_LANES, programOverallScore } from './programScorecard';
 
 export type ProgramExecution = {
   readonly overallScore: number;
   readonly implementationScore: number;
   readonly economicModelScore: number;
+  readonly liveReadinessScore: number;
   readonly pageCount: number;
   readonly deliveryLane: string;
   readonly developmentVersion: 'v1.28.0-dev';
@@ -22,9 +24,10 @@ export type ProgramExecution = {
 
 export const PROGRAM_EXECUTION: ProgramExecution = {
   overallScore: programOverallScore(PROGRAM_LANES),
-  implementationScore: 78,
+  implementationScore: 94,
   economicModelScore: 20,
-  pageCount: PROGRAM_PAGE_MATRIX.length,
+  liveReadinessScore: 0,
+  pageCount: V6_PAGES.length,
   deliveryLane: 'codex/v1.28.0-dev-<task> → develop/v1.28.0-dev (MERGED 보존) → future RC → master',
   developmentVersion: 'v1.28.0-dev',
   releaseCandidate: 'NOT_CREATED',

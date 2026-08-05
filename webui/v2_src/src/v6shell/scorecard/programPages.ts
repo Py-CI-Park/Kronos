@@ -1,8 +1,8 @@
 import type { ProgramPageRow } from './programTypes';
 
 export const PROGRAM_PAGE_MATRIX = [
-  { id: 'home', group: 'COMMAND', page: '홈', purpose: '전체 연구 판정과 다음 행동 확인', delivery: 'BUILT', evidenceState: 'DAILY_CLOSE_G2_LOCAL_AUTHORITY_AUDITED_78', progress: 100, priority: 'P0', nextAction: 'G2 외부 권위 증거 4개 확보', eta: '화면 완료', mergeGate: '구현·경제·OOS 점수 분리 표시' },
-  { id: 'scorecard', group: 'COMMAND', page: '프로그램 점수', purpose: '프로그램과 페이지별 성숙도 감사', delivery: 'BUILT', evidenceState: 'PROGRAM_63_IMPLEMENTATION_78_ECONOMIC_20', progress: 100, priority: 'P0', nextAction: '실행 영수증 API 동적 연결', eta: 'API 1~2시간', mergeGate: '총점 계산식과 13개 상태 일치' },
+  { id: 'home', group: 'COMMAND', page: '통합 현황', purpose: '8개 공식 페이지의 판정과 다음 행동 확인', delivery: 'BUILT', evidenceState: 'UNIFIED_COMMAND_8_PAGES_PRODUCT_94', progress: 100, priority: 'P0', nextAction: 'G2 외부 권위 증거 4개 확보', eta: '화면 완료', mergeGate: '구현·경제·OOS·live 점수 분리 표시' },
+  { id: 'scorecard', group: 'COMMAND', page: '프로그램 점수', purpose: '연구 프로그램과 제품 구현 성숙도 분리 감사', delivery: 'BUILT', evidenceState: 'PROGRAM_70_IMPLEMENTATION_94_ECONOMIC_20_LIVE_0', progress: 100, priority: 'P0', nextAction: '원격 PR·릴리스 증거 연결', eta: '원격 승인 후', mergeGate: '100점 rubric과 직접 검증 증거 일치' },
   { id: 'rl-discovery', group: 'RL', page: 'RL 발견 실험실', purpose: '과거 실패와 G1~G6 가설 비교', delivery: 'BUILT', evidenceState: 'HISTORY_PRESERVED_DAILY_CLOSE_V2_ACTIVE', progress: 100, priority: 'P1', nextAction: '과거 D계열과 CQL 근거 혼합 금지', eta: '화면 완료', mergeGate: '규칙·지도학습·RL 분리' },
   { id: 'rl-data', group: 'RL', page: '데이터', purpose: 'PIT·가용시각·수정주가·원천 관리', delivery: 'BUILT', evidenceState: 'G2_LOCAL_ANCHOR_19_STABLE_1_EXCLUDED_4_EXTERNAL_BLOCKERS', progress: 100, priority: 'P0', nextAction: 'KRX·OpenDART 키로 날짜별 universe, available_at, 공식 가격, 기업행사 등록', eta: '키 승인 후 1~2일', mergeGate: '5개 관리 gate 모두 PASS' },
   { id: 'rl-experiment', group: 'RL', page: '실험 설계', purpose: '자금·행동·보상·종료 조건 사전등록', delivery: 'BUILT', evidenceState: 'G1_G6_EXECUTED_G7_LOCKED', progress: 100, priority: 'P0', nextAction: 'G2 통과 후 시장 모델 amendment 동결', eta: '동결 후 1~2시간', mergeGate: 'Fresh OOS 자동 개봉 금지' },
