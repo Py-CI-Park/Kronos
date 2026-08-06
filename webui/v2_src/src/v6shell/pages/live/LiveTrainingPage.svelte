@@ -68,7 +68,7 @@
   onDestroy(() => { if (timer !== null) clearInterval(timer); });
 </script>
 
-<div class="live-page" data-live-training>
+<div class="live-page v6-page" data-live-training>
   <PageHeader eyebrow="RL TELEMETRY" title="학습 진행과 성과를 한 화면에서" description="실행 파일에 실제로 기록된 reward·equity·loss·exploration만 읽습니다." status={loading ? 'LOADING' : snapshot?.follow_mode ?? 'UNAVAILABLE'} />
   <KpiStrip items={kpis} />
 

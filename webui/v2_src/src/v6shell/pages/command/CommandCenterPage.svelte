@@ -7,8 +7,10 @@
   import PageHeader from '../../components/shell/PageHeader.svelte';
   import ResearchPanel from '../../components/shell/ResearchPanel.svelte';
   import StateMatrix, { type StateItem } from '../../components/shell/StateMatrix.svelte';
+  import AccessibleBarChart from '../../components/visualization/AccessibleBarChart.svelte';
   import { V6_PAGES } from '../../registry';
   import { PROGRAM_EXECUTION } from '../../scorecard/programExecution';
+  import { PROGRAM_LANES } from '../../scorecard/programScorecard';
 
   interface Props { readonly onNavigate: (id: string) => void }
   let { onNavigate }: Props = $props();
@@ -33,6 +35,12 @@
     { label: 'OFFICIAL VERDICT', state: noGoCount > 0 ? `${noGoCount} NO-GO` : 'NO GO FOUND', detail: 'NO-GO는 추가 학습 금지가 아니라 운영 승격 차단 판정입니다.', tone: noGoCount > 0 ? 'warning' : 'neutral' },
     { label: 'FRESH OOS', state: 'SEALED', detail: '외부 권위와 사람 승인 전에는 열거나 읽지 않습니다.', tone: 'danger' },
   ]);
+  const programChartItems = PROGRAM_LANES.map((lane) => ({
+    label: lane.labelKo,
+    value: lane.score,
+    displayValue: `${lane.score}/100`,
+    tone: lane.state === 'BLOCKED' ? 'danger' as const : lane.state === 'PARTIAL' ? 'warning' as const : 'positive' as const,
+  }));
   const phase = (id: string): string => ({ command: 'P0', research: 'P0', live: 'P1', evaluation: 'P1', evidence: 'P2', models: 'P2', governance: 'P2', settings: 'P2' })[id] ?? 'P2';
   const nextAction = (id: string): string => ({
     command: '최종 회귀·릴리스 증거 유지', research: 'PIT 데이터 재실행 준비', live: '새 학습 실행에 telemetry 연결', evaluation: '동일 lane OOS 비교',
@@ -54,9 +62,12 @@
   onMount(() => { void load(); });
 </script>
 
-<div class="command" data-command-center>
+<div class="command v6-page" data-command-center>
   <PageHeader eyebrow="RESEARCH COMMAND CENTER" title="통합 현황" description="연구 실행, 학습 성과, 실패 원인, 증거와 다음 행동을 한 화면에서 봅니다." status={loading ? 'LOADING' : error ? 'UNAVAILABLE' : 'READ-ONLY'} />
   <KpiStrip items={kpis} />
+  <ResearchPanel title="프로그램 성숙도 지도" description="제품 UX와 경제 모델·실거래 준비도를 분리한 공식 5개 영역 점수입니다.">
+    <AccessibleBarChart title="영역별 근거 점수" ariaLabel="플랫폼 UX, 강화학습 증거, 엔지니어링, 거버넌스, 실거래 준비도 점수 비교" summary="가중 종합은 70점입니다. 플랫폼 구현이 높아도 경제성·Fresh OOS·실거래 gate를 대신하지 않습니다." items={programChartItems} valueHeader="점수" />
+  </ResearchPanel>
   {#if error}<p class="error" role="alert">{error}<button type="button" onclick={() => void load()}>다시 불러오기</button></p>{/if}
   <ResearchPanel title="현재 연구 판정" description="제품 완성도와 수익 모델 성공 여부를 섞지 않습니다."><StateMatrix items={states} /></ResearchPanel>
   <div class="grid">

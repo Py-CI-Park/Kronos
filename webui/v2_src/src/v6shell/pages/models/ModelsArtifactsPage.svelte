@@ -4,6 +4,7 @@
   import KpiStrip from '../../components/shell/KpiStrip.svelte';
   import ResearchPanel from '../../components/shell/ResearchPanel.svelte';
   import StateMatrix, { type StateItem } from '../../components/shell/StateMatrix.svelte';
+  import AccessibleBarChart from '../../components/visualization/AccessibleBarChart.svelte';
   import { loadResearchRunDetail, loadResearchRuns, type ResearchRun, type ResearchRunDetail } from '../../api/researchApi';
   import { getV6ModelStatus, type V6ModelStatus } from '../../v6Api';
 
@@ -15,7 +16,22 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
 
+  function formatBytes(value: number): string {
+    if (value >= 1_048_576) return `${(value / 1_048_576).toFixed(2)} MB`;
+    if (value >= 1_024) return `${(value / 1_024).toFixed(1)} KB`;
+    return `${value} B`;
+  }
+
   const modelArtifacts = $derived(detail?.artifacts.filter((artifact) => /\.(zip|pt|pth|ckpt|onnx|pkl)$/iu.test(artifact.name)) ?? []);
+  const artifactChartItems = $derived([...(detail?.artifacts ?? [])]
+    .sort((left, right) => right.size_bytes - left.size_bytes)
+    .slice(0, 8)
+    .map((artifact) => ({
+      label: artifact.name,
+      value: artifact.size_bytes,
+      displayValue: formatBytes(artifact.size_bytes),
+      tone: /\.(zip|pt|pth|ckpt|onnx|pkl)$/iu.test(artifact.name) ? 'positive' as const : 'accent' as const,
+    })));
   const visibleRuns = $derived.by(() => {
     const query = runSearch.trim().toLocaleLowerCase('ko-KR');
     const filtered = runs.filter((run) => !query || run.run_id.toLocaleLowerCase('ko-KR').includes(query) || run.algorithm.toLocaleLowerCase('ko-KR').includes(query));
@@ -64,12 +80,13 @@
   });
 </script>
 
-<div class="models" data-models-page>
+<div class="models v6-page" data-models-page>
   <PageHeader eyebrow="MODELS & ARTIFACTS" title="모델·산출물" description="파일 존재, 런타임 로드, 경제 판정, 운영 승격을 한 단어로 합치지 않습니다." status={loading ? 'LOADING' : error ? 'UNAVAILABLE' : 'RESEARCH ONLY'} />
   <KpiStrip items={kpis} />
   <ResearchPanel title="모델 상태 계약" description="Kronos Core와 trading policy artifact는 서로 다른 모델 계열입니다."><StateMatrix items={states} /></ResearchPanel>
   <ResearchPanel title="실행 산출물 선택" description="모델 파일이 없어도 실패 실행과 증거 파일은 목록에 남깁니다."><div class="picker"><label>실행 검색<input bind:value={runSearch} placeholder="run id 또는 알고리즘" /></label><label>연구 실행<select bind:value={selected} onchange={() => void loadSelected()}>{#each visibleRuns as run}<option value={run.run_id}>{run.status} · {run.name}</option>{/each}</select></label><button type="button" onclick={() => void loadSelected()} disabled={loading}>다시 확인</button></div></ResearchPanel>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if detail}<ResearchPanel title="산출물 크기 지도" description="선택 run의 큰 파일 8개를 metadata 바이트 기준으로 비교합니다."><AccessibleBarChart title="직접 산출물 크기" ariaLabel="선택한 연구 실행의 산출물 파일 크기 막대그래프" summary="파일 크기와 모델 확장자는 성능·로드 성공·운영 승격을 증명하지 않습니다." items={artifactChartItems} valueHeader="파일 크기" /></ResearchPanel>{/if}
   {#if detail}<ResearchPanel title="직접 산출물" description="내용을 자동 실행하거나 역직렬화하지 않는 metadata 목록입니다."><div class="artifacts">{#each detail.artifacts as artifact}<article class:model={modelArtifacts.some((model) => model.name === artifact.name)}><div><strong>{artifact.name}</strong><code>{artifact.relative_path}</code></div><span>{new Intl.NumberFormat('ko-KR').format(artifact.size_bytes)} bytes</span><small>{artifact.modified_at}</small></article>{:else}<p>직접 산출물이 없습니다.</p>{/each}</div></ResearchPanel>{/if}
 </div>
 

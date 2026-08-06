@@ -3,6 +3,7 @@
   import PageHeader from '../../components/shell/PageHeader.svelte';
   import KpiStrip from '../../components/shell/KpiStrip.svelte';
   import ResearchPanel from '../../components/shell/ResearchPanel.svelte';
+  import AccessibleBarChart from '../../components/visualization/AccessibleBarChart.svelte';
   import { loadResearchRuns, type ResearchPage } from '../../api/researchApi';
 
   interface Props {
@@ -25,6 +26,15 @@
     { label: 'NO-GO', value: String(visibleNoGo), detail: '실패 결과도 같은 비중으로 보존', tone: 'danger' as const },
     { label: 'BLOCKED', value: String(visibleBlocked), detail: '외부 권위·데이터 차단', tone: 'warning' as const },
   ]);
+  const statusChartItems = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const row of page?.items ?? []) counts.set(row.status, (counts.get(row.status) ?? 0) + 1);
+    return [...counts.entries()].map(([label, value]) => ({
+      label,
+      value,
+      tone: /NO[_-]?GO|BLOCK|CORRUPT/u.test(label) ? 'danger' as const : 'accent' as const,
+    }));
+  });
 
   async function refresh(): Promise<void> {
     loading = true;
@@ -38,9 +48,10 @@
   onMount(() => void refresh());
 </script>
 
-<div class="library" data-research-library>
+<div class="library v6-page" data-research-library>
   <PageHeader eyebrow="RESEARCH LIBRARY" title="지금까지의 모든 연구" description="실패와 NO-GO도 숨기지 않습니다. run 하나를 선택하면 결과·증거·산출물의 영구 상세 화면으로 이동합니다." status={loading ? 'LOADING' : error ? 'UNAVAILABLE' : 'READ-ONLY'} />
   <KpiStrip items={kpis} />
+  <ResearchPanel title="현재 필터 판정 분포" description="화면에 표시된 최대 100개 run의 실제 판정 건수입니다."><AccessibleBarChart title="표시 run 상태" ariaLabel="현재 연구 라이브러리 필터 결과의 상태별 실행 건수" summary="필터 결과의 구성만 보여주며 알고리즘 우열이나 경제적 성능을 의미하지 않습니다." items={statusChartItems} valueHeader="실행 수" /></ResearchPanel>
   <ResearchPanel title="실험·실행 찾기" description="lane, 판정, 알고리즘 또는 run id로 검색합니다.">
     <form onsubmit={(event) => { event.preventDefault(); void refresh(); }}>
       <label>검색<input bind:value={search} placeholder="run id 또는 알고리즘" /></label>

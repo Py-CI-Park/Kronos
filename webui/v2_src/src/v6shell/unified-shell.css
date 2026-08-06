@@ -18,18 +18,51 @@
   overflow-x: clip;
 }
 
+.v6-page {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: v6-page-enter 180ms ease-out;
+}
+
+.unified-v6-shell button {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.unified-v6-shell button:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+@keyframes v6-page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 920px) {
   .unified-v6-shell {
     grid-template-columns: 72px minmax(0, 1fr);
   }
 }
 
-@media (max-width: 520px) {
+@media (max-width: 680px) {
   .unified-v6-shell {
-    grid-template-columns: 56px minmax(0, 1fr);
+    display: block;
   }
 
   .unified-v6-main {
     padding: 10px;
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
   }
+
+  .unified-v6-shell nav {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v6-page { animation: none; }
 }
