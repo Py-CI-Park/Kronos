@@ -59,6 +59,8 @@ test('navigation provides mobile-safe tap targets and non-overlapping status det
 
   assert.match(sidebar, /min-height:44px/u);
   assert.match(sidebar, /touch-action:manipulation/u);
+  assert.match(sidebar, /\.sidebar\[data-unified-sidebar\]\{[^}]*transform:none/u);
+  assert.match(sidebar, /width:auto/u);
   assert.match(shellCss, /overflow-x:\s*auto/u);
   assert.match(shellCss, /padding-bottom\s*:/u);
   assert.match(rail, /details>div\{position:static/u);

@@ -20,6 +20,8 @@ test('daily close process uses post-close next-open and reduced-motion safeguard
   for (const token of ['POST_CLOSE_NEXT_OPEN', 'D일 공식 종가', 'PIT·available-at', '6천만원', 'D+1 시가', '0.230%', 'reward·NAV', 'artifact']) assert.ok(source.includes(token));
   assert.match(source, /prefers-reduced-motion/u);
   assert.match(source, /aria-current/u);
+  assert.match(source, /class="step-button"/u);
+  assert.match(source, /단계 상세/u);
 });
 
 test('unified shell maps evaluation to the focused workspace', async () => {

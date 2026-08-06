@@ -4,6 +4,7 @@
   import KpiStrip from '../../components/shell/KpiStrip.svelte';
   import ResearchPanel from '../../components/shell/ResearchPanel.svelte';
   import { loadTelemetry, loadTelemetryRuns, type TelemetryRun, type TelemetrySnapshot } from '../../api/telemetryApi';
+  import ActionTimeline from './ActionTimeline.svelte';
   import TelemetryCharts from './TelemetryCharts.svelte';
 
   let runs = $state<readonly TelemetryRun[]>([]);
@@ -17,7 +18,6 @@
   const latest = $derived(snapshot?.points.at(-1) ?? null);
   const selectedRun = $derived(runs.find((run) => run.run_id === selected) ?? null);
   const rewardTotal = $derived(snapshot?.points.reduce((sum, point) => sum + (point.reward ?? 0), 0) ?? 0);
-  const actions = $derived(snapshot?.points.filter((point) => point.action_name !== 'MISSING').slice(-10).reverse() ?? []);
   const kpis = $derived([
     { label: '최근 STEP', value: latest ? new Intl.NumberFormat('ko-KR').format(latest.step) : 'MISSING', detail: latest?.phase ?? 'phase 없음', tone: 'neutral' as const },
     { label: '실행 판정', value: selectedRun?.status ?? 'MISSING', detail: selectedRun?.algorithm ?? 'algorithm 없음', tone: selectedRun?.status.includes('NO') ? 'danger' as const : 'neutral' as const },
@@ -87,14 +87,19 @@
       <span>{modeMessage(snapshot.follow_mode)}</span>
       <small>{snapshot.updated_at} · {snapshot.sampling} · 오류 행 {snapshot.invalid_lines}</small>
     </aside>
+    <section class="reading-order" aria-label="학습 화면 읽는 순서">
+      <article><span>01</span><div><b>학습 신호</b><small>reward·loss·exploration이 안정되는지 봅니다.</small></div></article>
+      <article><span>02</span><div><b>경제 경로</b><small>equity·drawdown은 reward와 분리해 봅니다.</small></div></article>
+      <article><span>03</span><div><b>정책 행동</b><small>시간대별 행동·쏠림·최근 결정을 확인합니다.</small></div></article>
+      <article><span>04</span><div><b>공식 판정</b><small>이 화면만으로 GO·수익성을 판정하지 않습니다.</small></div></article>
+    </section>
     <ResearchPanel title="학습·성과 곡선" description="보상 개선과 경제적 성과를 분리해 읽습니다."><TelemetryCharts points={snapshot.points} /></ResearchPanel>
-    <ResearchPanel title="최근 행동" description="표본에 포함된 마지막 행동 이벤트입니다.">
-      <div class="actions">{#each actions as action}<article><b>{action.action_name}</b><span>step {action.step} · {action.phase}</span><small>{action.timestamp}</small></article>{:else}<p>표시할 행동 이벤트가 없습니다.</p>{/each}</div>
-    </ResearchPanel>
+    <ResearchPanel title="행동 분석" description="기록 시각·step·행동 분포·최근 결정을 하나의 표본으로 봅니다."><ActionTimeline points={snapshot.points} /></ResearchPanel>
   {/if}
 </div>
 
 <style>
-  .live-page{display:flex;flex-direction:column;gap:16px;min-width:0}.controls{display:grid;grid-template-columns:minmax(260px,1fr) auto auto;gap:14px;align-items:end}.controls label{display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:.68rem;font-weight:800}.controls select,.controls button{min-width:0;height:40px;border:1px solid var(--border-strong);border-radius:8px;padding:0 10px;background:var(--surface-sunken);color:var(--fg);font:inherit}.controls button{background:var(--accent);color:var(--on-accent);font-weight:900;cursor:pointer}.controls .toggle{height:40px;flex-direction:row;align-items:center}.toggle input{accent-color:var(--accent)}aside{display:grid;grid-template-columns:auto 1fr auto;gap:8px 14px;align-items:center;border:1px solid var(--warn);border-radius:10px;padding:12px 14px;background:var(--surface-raised)}aside.following{border-color:var(--success)}aside strong{color:var(--warn);font:900 .68rem var(--font-mono)}aside.following strong{color:var(--success)}aside span{color:var(--fg);font-size:.74rem}aside small{color:var(--muted);font:.61rem var(--font-mono)}.actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}.actions article{display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface-sunken)}.actions b{color:var(--accent-strong)}.actions span,.actions small{color:var(--muted);font-size:.64rem}.error{border:1px solid var(--danger);border-radius:8px;padding:12px;color:var(--danger)}
-  @media(max-width:760px){.controls{grid-template-columns:1fr}.controls button{width:100%}aside{grid-template-columns:1fr}}
+  .live-page{display:flex;flex-direction:column;gap:16px;min-width:0}.controls{display:grid;grid-template-columns:minmax(260px,1fr) auto auto;gap:14px;align-items:end}.controls label{display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:.68rem;font-weight:800}.controls select,.controls button{min-width:0;height:40px;border:1px solid var(--border-strong);border-radius:8px;padding:0 10px;background:var(--surface-sunken);color:var(--fg);font:inherit}.controls button{background:var(--accent);color:var(--on-accent);font-weight:900;cursor:pointer}.controls .toggle{height:40px;flex-direction:row;align-items:center}.toggle input{accent-color:var(--accent)}aside{display:grid;grid-template-columns:auto 1fr auto;gap:8px 14px;align-items:center;border:1px solid var(--warn);border-radius:10px;padding:12px 14px;background:var(--surface-raised)}aside.following{border-color:var(--success)}aside strong{color:var(--warn);font:900 .68rem var(--font-mono)}aside.following strong{color:var(--success)}aside span{color:var(--fg);font-size:.74rem}aside small{color:var(--muted);font:.61rem var(--font-mono)}.reading-order{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.reading-order article{display:grid;grid-template-columns:auto 1fr;gap:8px;border:1px solid var(--border);border-radius:9px;padding:10px;background:var(--surface-raised)}.reading-order span{color:var(--accent);font:900 .58rem var(--font-mono)}.reading-order div{display:flex;min-width:0;flex-direction:column;gap:3px}.reading-order b{color:var(--fg-strong);font-size:.7rem}.reading-order small{color:var(--muted);font-size:.61rem;line-height:1.45}.error{border:1px solid var(--danger);border-radius:8px;padding:12px;color:var(--danger)}
+  @media(max-width:900px){.reading-order{grid-template-columns:1fr 1fr}}
+  @media(max-width:760px){.controls{grid-template-columns:1fr}.controls button{width:100%}aside{grid-template-columns:1fr}.reading-order{grid-template-columns:1fr}}
 </style>
