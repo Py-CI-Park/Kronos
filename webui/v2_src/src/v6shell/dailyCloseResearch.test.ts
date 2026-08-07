@@ -11,7 +11,7 @@ test('daily-close research snapshot keeps implementation and economic verdict se
   assert.equal(DAILY_CLOSE_RESEARCH.signalFloor.positiveFolds, 4);
   assert.equal(DAILY_CLOSE_RESEARCH.economicModelCreated, false);
   assert.equal(DAILY_CLOSE_RESEARCH.freshOosState, 'NOT_RUN_NO_READ');
-  assert.equal(DAILY_CLOSE_RESEARCH.version, 'v1.28.0-dev');
+  assert.equal(DAILY_CLOSE_RESEARCH.version, 'v1.28.0');
   assert.equal(DAILY_CLOSE_RESEARCH.sourceCustody.databaseHashState, 'SHA256_BOUND');
   assert.equal(DAILY_CLOSE_RESEARCH.sourceCustody.passedGateCount, 1);
   assert.equal(DAILY_CLOSE_RESEARCH.sourceCustody.externalBlockerCount, 4);
