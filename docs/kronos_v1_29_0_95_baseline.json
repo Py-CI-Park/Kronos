@@ -1,0 +1,88 @@
+{
+  "schema_version": "kronos.v1_29_maturity_baseline.v1",
+  "as_of": "2026-08-07",
+  "development_branch": "develop/v1.29.0-dev",
+  "release_base": "v1.28.0",
+  "score": 73,
+  "maximum_score": 100,
+  "gate_95": false,
+  "model_verdict": "NO-GO",
+  "fresh_oos": "NOT_RUN_NO_READ",
+  "live_trading": "BLOCKED",
+  "category_floors_for_95": {
+    "A_data_execution_authority": 19,
+    "B_rl_system": 19,
+    "C_economic_validation": 19,
+    "D_ux_observability": 18,
+    "E_engineering_release": 19
+  },
+  "categories": [
+    {
+      "id": "A",
+      "name": "data_execution_authority",
+      "score": 11,
+      "maximum_score": 20,
+      "criteria": [
+        { "id": "A1", "score": 4, "maximum_score": 5, "evidence": "full SQLite SHA-256, mode=ro, query_only, mutation detection", "gap": "independent review hash" },
+        { "id": "A2", "score": 2, "maximum_score": 5, "evidence": "single 2017 anchor and 068270 exclusion counterexample", "gap": "dated point-in-time membership" },
+        { "id": "A3", "score": 2, "maximum_score": 5, "evidence": "future timestamp guard and fold-local transform", "gap": "real source publication/receipt timestamps" },
+        { "id": "A4", "score": 3, "maximum_score": 5, "evidence": "POST_CLOSE_NEXT_OPEN and explicit cost contract", "gap": "official/adjusted price identity and corporate actions" }
+      ]
+    },
+    {
+      "id": "B",
+      "name": "rl_system",
+      "score": 12,
+      "maximum_score": 20,
+      "criteria": [
+        { "id": "B1", "score": 4, "maximum_score": 5, "evidence": "60M KRW, 50M exposure, 10M reserve, 10-slot integer-share environment", "gap": "real market episode evidence" },
+        { "id": "B2", "score": 0, "maximum_score": 5, "evidence": "no real-market OfflineTransition training path", "gap": "market dataset, split, model and review" },
+        { "id": "B3", "score": 5, "maximum_score": 5, "evidence": "synthetic DQN/CQL three seeds plus shuffled and random controls", "gap": "calibration only; no economic claim" },
+        { "id": "B4", "score": 3, "maximum_score": 5, "evidence": "generic telemetry API with schema and missing-data behavior", "gap": "daily_close telemetry runtime and reviewed lineage" }
+      ]
+    },
+    {
+      "id": "C",
+      "name": "economic_validation",
+      "score": 12,
+      "maximum_score": 20,
+      "criteria": [
+        { "id": "C1", "score": 5, "maximum_score": 5, "evidence": "0.230% KRX stock round trip and next-open execution", "gap": "maintain" },
+        { "id": "C2", "score": 2, "maximum_score": 5, "evidence": "four expanding folds exist for ridge diagnostic", "gap": "multi-seed RL walk-forward evidence" },
+        { "id": "C3", "score": 3, "maximum_score": 5, "evidence": "ridge shuffle and synthetic controls", "gap": "same-condition real-market baselines and controls" },
+        { "id": "C4", "score": 2, "maximum_score": 5, "evidence": "sealed Fresh OOS and fail-closed tests", "gap": "approved one-time OOS and paper-forward ledger" }
+      ]
+    },
+    {
+      "id": "D",
+      "name": "ux_observability",
+      "score": 20,
+      "maximum_score": 20,
+      "criteria": [
+        { "id": "D1", "score": 5, "maximum_score": 5, "evidence": "eight-page unified shell and design tokens", "gap": "maintain" },
+        { "id": "D2", "score": 5, "maximum_score": 5, "evidence": "24 responsive browser combinations and accessible fallbacks", "gap": "maintain" },
+        { "id": "D3", "score": 5, "maximum_score": 5, "evidence": "research, telemetry, action and comparison visualizations", "gap": "bind real daily-close run" },
+        { "id": "D4", "score": 5, "maximum_score": 5, "evidence": "interactive nine-step process and governance boundaries", "gap": "maintain" }
+      ]
+    },
+    {
+      "id": "E",
+      "name": "engineering_release",
+      "score": 18,
+      "maximum_score": 20,
+      "criteria": [
+        { "id": "E1", "score": 5, "maximum_score": 5, "evidence": "173 focused Python tests, 454 frontend tests, Svelte and production build", "gap": "maintain" },
+        { "id": "E2", "score": 4, "maximum_score": 5, "evidence": "database/model/report hashes", "gap": "complete market-run manifest hash graph" },
+        { "id": "E3", "score": 4, "maximum_score": 5, "evidence": "read-only APIs, path guards and clean browser logs", "gap": "close or replace long legacy runs endpoint" },
+        { "id": "E4", "score": 5, "maximum_score": 5, "evidence": "v1.28.0 GitHub Release, no-ff branch lineage and independent QA", "gap": "maintain" }
+      ]
+    }
+  ],
+  "active_hard_caps": [
+    "NO_REAL_MARKET_RL_MODEL",
+    "NO_REAL_MARKET_CONTROL_COMPARISON",
+    "DATA_AUTHORITY_INCOMPLETE",
+    "FRESH_OOS_NOT_RUN",
+    "PAPER_FORWARD_NOT_RUN"
+  ]
+}
