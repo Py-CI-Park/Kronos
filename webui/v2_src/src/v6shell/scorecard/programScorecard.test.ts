@@ -18,7 +18,7 @@ test('program score is the rounded weighted sum of current evidence', () => {
 
   // Then
   assert.equal(totalWeight, 100);
-  assert.equal(score, 70);
+  assert.equal(score, 71);
 });
 test('every lane score is derived from a frozen 100-point evidence rubric', () => {
   for (const lane of PROGRAM_LANES) {
@@ -44,7 +44,7 @@ test('page matrix describes every completed V6 surface in navigation order', () 
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.nextAction.length > 0));
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'home')?.evidenceState, 'UNIFIED_COMMAND_8_PAGES_PRODUCT_94');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'scorecard')?.evidenceState, 'PROGRAM_70_IMPLEMENTATION_94_ECONOMIC_20_LIVE_0');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'scorecard')?.evidenceState, 'PROGRAM_71_IMPLEMENTATION_94_ECONOMIC_20_LIVE_0');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-data')?.evidenceState, 'G2_LOCAL_ANCHOR_19_STABLE_1_EXCLUDED_4_EXTERNAL_BLOCKERS');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'SYNTHETIC_CQL_CREATED_MARKET_MODEL_NOT_CREATED');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'G3_DIAGNOSTIC_PASS_4_OF_4_UNVERIFIED_CUSTODY');
@@ -52,6 +52,9 @@ test('page matrix describes every completed V6 surface in navigation order', () 
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, '레인 간 성과 전이를 금지하고 독립 증거를 유지한다');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'kronos')?.evidenceState, 'AVAILABLE_NOT_LOADED_NOT_RL_POLICY');
   assert.match(PROGRAM_LANES.find((lane) => lane.id === 'live')?.nextAction ?? '', /G7/u);
+  const remoteRelease = PROGRAM_SCORE_RUBRIC.governance.find((criterion) => criterion.id === 'remote-pr-release');
+  assert.equal(remoteRelease?.achieved, true);
+  assert.match(remoteRelease?.evidence ?? '', /releases\/tag\/v1.28.0/u);
 });
 
 test('capability inventory separates current research from blocked claims', () => {

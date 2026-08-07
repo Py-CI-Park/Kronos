@@ -29,7 +29,7 @@ export interface V6StepDef {
 export const V6_BRAND = {
   name: 'Kronos Reinforcement Learning',
   subtitle: 'Evidence-first Quant Research Command Center',
-  version: 'v1.28.0',
+  version: 'v1.29.0-dev',
   updateDate: '2026-08-07',
 } as const;
 

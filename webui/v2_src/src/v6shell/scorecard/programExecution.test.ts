@@ -10,22 +10,22 @@ const scorecardPage = readFileSync(new URL('../pages/ProgramScorecardPage.svelte
 
 test('execution banner preserves current daily-close research boundary and lineage', () => {
   assert.equal(PROGRAM_EXECUTION.overallScore, programOverallScore(PROGRAM_LANES));
-  assert.equal(PROGRAM_EXECUTION.overallScore, 70);
+  assert.equal(PROGRAM_EXECUTION.overallScore, 71);
   assert.equal(PROGRAM_EXECUTION.implementationScore, 94);
   assert.equal(PROGRAM_EXECUTION.economicModelScore, 20);
   assert.equal(PROGRAM_EXECUTION.liveReadinessScore, 0);
   assert.equal(PROGRAM_EXECUTION.pageCount, 8);
   assert.equal(PROGRAM_EXECUTION.freshOos, 'NOT_RUN_NO_READ');
   assert.equal(PROGRAM_EXECUTION.liveTrading, 'BLOCKED');
-  assert.match(PROGRAM_EXECUTION.deliveryLane, /codex\/v1.28.0-dev-<task>/);
-  assert.match(PROGRAM_EXECUTION.deliveryLane, /develop\/v1.28.0-dev/);
+  assert.match(PROGRAM_EXECUTION.deliveryLane, /codex\/v1.29.0-dev-<task>/);
+  assert.match(PROGRAM_EXECUTION.deliveryLane, /develop\/v1.29.0-dev/);
   assert.match(PROGRAM_EXECUTION.deliveryLane, /v1.28.0/);
-  assert.equal(PROGRAM_EXECUTION.developmentVersion, 'v1.28.0');
-  assert.equal(PROGRAM_EXECUTION.releaseCandidate, 'v1.28.0');
-  assert.equal(PROGRAM_EXECUTION.versionPolicy, 'RESEARCH_PLATFORM_RELEASE_MODEL_GATE_SEPARATE');
+  assert.equal(PROGRAM_EXECUTION.developmentVersion, 'v1.29.0-dev');
+  assert.equal(PROGRAM_EXECUTION.latestRelease, 'v1.28.0');
+  assert.equal(PROGRAM_EXECUTION.versionPolicy, 'ONE_DEV_LINE_TASK_BRANCH_NO_FF_PRESERVE');
   assert.equal(PROGRAM_EXECUTION.branchRetentionPolicy, 'KEEP_MERGED_BRANCHES');
   assert.match(PROGRAM_EXECUTION.deliveryLane, /MERGED 보존/);
-  assert.equal(PROGRAM_EXECUTION.stage, 'RELEASE_READY_RESEARCH_PLATFORM_MODEL_NO_GO');
+  assert.equal(PROGRAM_EXECUTION.stage, 'V1_29_DEV_ACTIVE_MODEL_NO_GO');
   assert.equal(PROGRAM_EXECUTION.authority, 'REVIEWED_SNAPSHOT');
   assert.equal(PROGRAM_EXECUTION.reviewedRun, 'DAILY_CLOSE_OFFLINE_RL_G2_PIT_AUTHORITY_AUDIT_V1');
   assert.match(PROGRAM_EXECUTION.nextAction, /날짜별 PIT/);
