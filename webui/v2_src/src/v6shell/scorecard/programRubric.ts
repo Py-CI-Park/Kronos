@@ -36,7 +36,7 @@ export const PROGRAM_SCORE_RUBRIC: Readonly<Record<ProgramLaneId, readonly Progr
     { id: 'branch-lineage', points: 15, achieved: true, evidence: '작업 브랜치 비FF 병합 및 병합 브랜치 보존' },
     { id: 'data-custody', points: 20, achieved: false, evidence: '외부 원천·PIT custody gate 미완료' },
     { id: 'fresh-oos-approval', points: 10, achieved: false, evidence: 'G7 별도 사람 승인 필요' },
-    { id: 'remote-pr-release', points: 10, achieved: false, evidence: '원격 push·PR·release tag 미수행' },
+    { id: 'remote-pr-release', points: 10, achieved: true, evidence: 'https://github.com/Py-CI-Park/Kronos/releases/tag/v1.28.0 · 원격 브랜치·주석 태그·GitHub Release 게시' },
   ],
   live: [
     { id: 'fresh-oos-pass', points: 30, achieved: false, evidence: 'Fresh OOS 미실행' },
