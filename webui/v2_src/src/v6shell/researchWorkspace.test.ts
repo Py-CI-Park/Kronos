@@ -17,6 +17,15 @@ test('research workspace offers a catalog and permanent run detail route', async
   assert.match(detail, /data-run-detail/u);
   assert.match(detail, /DIRECT_DIRECTORY_METADATA_ONLY/u);
   assert.match(detail, /Artifacts/u);
+  assert.match(detail, /TelemetryCharts/u);
+  assert.match(detail, /관측 결과 시각화/u);
+});
+
+test('research library ignores stale overlapping refresh responses', async () => {
+  const library = await readFile(new URL('./pages/research/ResearchLibraryPage.svelte', import.meta.url), 'utf8');
+
+  assert.match(library, /requestGeneration/u);
+  assert.match(library, /currentRequest !== requestGeneration/u);
 });
 
 test('unified shell renders the research workspace instead of the legacy stepper', async () => {

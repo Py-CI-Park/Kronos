@@ -1,4 +1,4 @@
-import ky, { HTTPError, TimeoutError } from 'ky';
+import ky, { HTTPError, TimeoutError, type KyInstance } from 'ky';
 import { z, ZodError } from 'zod';
 
 export const ResearchRunSchema = z.object({
@@ -76,6 +76,8 @@ export type ResearchApiResult<T> =
   | { readonly ok: true; readonly data: T }
   | { readonly ok: false; readonly kind: ResearchApiErrorKind; readonly message: string };
 
+const RESEARCH_SUMMARY_TIMEOUT_MS = 20_000;
+
 const researchClient = ky.create({
   timeout: 8_000,
   retry: { limit: 1, methods: ['get'], statusCodes: [408, 429, 500, 502, 503, 504] },
@@ -96,9 +98,9 @@ function encodedRunPath(runId: string): string {
   return runId.split('/').map((segment) => encodeURIComponent(segment)).join('/');
 }
 
-async function requestParsed<T>(path: string, schema: z.ZodType<T>): Promise<ResearchApiResult<T>> {
+async function requestParsed<T>(path: string, schema: z.ZodType<T>, timeoutMs = 8_000, client: KyInstance = researchClient): Promise<ResearchApiResult<T>> {
   try {
-    const payload = await researchClient.get(path).json();
+    const payload = await client.get(path, { timeout: timeoutMs }).json();
     return { ok: true, data: schema.parse(payload) };
   } catch (error) {
     if (error instanceof TimeoutError) return { ok: false, kind: 'timeout', message: '응답 제한 시간을 초과했습니다.' };
@@ -109,8 +111,8 @@ async function requestParsed<T>(path: string, schema: z.ZodType<T>): Promise<Res
   }
 }
 
-export const loadResearchSummary = (): Promise<ResearchApiResult<ResearchSummary>> =>
-  requestParsed('/api/v6/summary', ResearchSummarySchema);
+export const loadResearchSummary = (timeoutMs = RESEARCH_SUMMARY_TIMEOUT_MS, client: KyInstance = researchClient, path = '/api/v6/summary'): Promise<ResearchApiResult<ResearchSummary>> =>
+  requestParsed(path, ResearchSummarySchema, timeoutMs, client);
 
 export const loadResearchRuns = (filters: ResearchFilters): Promise<ResearchApiResult<ResearchPage>> =>
   requestParsed(buildResearchRunsUrl(filters), ResearchPageSchema);

@@ -24,6 +24,14 @@ export function normalizeV6Scale(value: unknown): V6Scale {
   return V6_SCALES.includes(numeric as V6Scale) ? (numeric as V6Scale) : 1;
 }
 
+export function v6ScaleCssPercent(scale: V6Scale): string {
+  return `${Math.round(scale * 100)}%`;
+}
+
+export function applyV6ScaleToRoot(root: { readonly style: { fontSize: string } }, scale: V6Scale): void {
+  root.style.fontSize = v6ScaleCssPercent(scale);
+}
+
 function storageAvailable(): boolean {
   try { return typeof localStorage !== 'undefined'; } catch { return false; }
 }

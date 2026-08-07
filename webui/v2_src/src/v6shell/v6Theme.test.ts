@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { get } from 'svelte/store';
-import { V6_SCALES, V6_THEMES, normalizeV6Scale, normalizeV6Theme, v6Scale, v6Theme } from './v6Theme';
+import { V6_SCALES, V6_THEMES, applyV6ScaleToRoot, normalizeV6Scale, normalizeV6Theme, v6Scale, v6ScaleCssPercent, v6Theme } from './v6Theme';
 
 test('V6 theme ids are unique with inherit as the default first entry', () => {
   const ids = V6_THEMES.map((theme) => theme.id);
@@ -22,6 +22,21 @@ test('normalizeV6Scale accepts known scales as number or string', () => {
   assert.equal(normalizeV6Scale('0.9'), 0.9);
   assert.equal(normalizeV6Scale('2'), 1);
   assert.equal(normalizeV6Scale(undefined), 1);
+});
+
+test('V6 scale maps to an explicit root font-size percentage', () => {
+  assert.equal(v6ScaleCssPercent(0.9), '90%');
+  assert.equal(v6ScaleCssPercent(1), '100%');
+  assert.equal(v6ScaleCssPercent(1.1), '110%');
+  assert.equal(v6ScaleCssPercent(1.25), '125%');
+});
+
+test('V6 scale changes the observable root font size', () => {
+  const root = { style: { fontSize: '100%' } };
+  applyV6ScaleToRoot(root, 1.25);
+  assert.equal(root.style.fontSize, '125%');
+  applyV6ScaleToRoot(root, 0.9);
+  assert.equal(root.style.fontSize, '90%');
 });
 
 test('stores initialise to safe defaults and accept writes without localStorage', () => {

@@ -68,7 +68,7 @@
   });
 </script>
 
-<div class="evaluation" data-evaluation-workspace>
+<div class="evaluation v6-page" data-evaluation-workspace>
   <PageHeader eyebrow="EVALUATION" title="같은 증거 lane에서만 비교" description="공식 판정과 기록 텔레메트리를 함께 보되, 표본 차이를 수익 모델 순위로 바꾸지 않습니다." status={loading ? 'LOADING' : error ? 'UNAVAILABLE' : 'DESCRIPTIVE'} />
   <KpiStrip items={kpis} />
   <DailyCloseProcessFlow />

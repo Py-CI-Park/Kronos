@@ -12,7 +12,7 @@ export interface DailyCloseGate {
 
 export const DAILY_CLOSE_RESEARCH = {
   reviewedAt: '2026-08-04 KST',
-  version: 'v1.28.0-dev',
+  version: 'v1.28.0',
   targetModel: '국내 개별주식 일봉 종가 의사결정 · 6천만원 · 최대 10종목',
   overallVerdict: 'IMPLEMENTED_CALIBRATED_NO_GO_DATA_CUSTODY',
   modelScope: 'SYNTHETIC_CALIBRATION_ONLY',

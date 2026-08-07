@@ -11,7 +11,7 @@
   import ReportsGovernancePage from './pages/governance/ReportsGovernancePage.svelte';
   import UnifiedSettingsPage from './pages/settings/UnifiedSettingsPage.svelte';
   import { V6_PAGES, resolveV6Location, resolveV6Page, v6PageUrl, type V6PageDef } from './registry';
-  import { v6Theme } from './v6Theme';
+  import { applyV6ScaleToRoot, v6Scale, v6Theme } from './v6Theme';
   import './v6-themes.css';
   import './unified-shell.css';
 
@@ -40,13 +40,22 @@
   }
 
   onMount(() => {
+    const root = document.documentElement;
+    const previousRootFontSize = root.style.fontSize;
+    const unsubscribeScale = v6Scale.subscribe((value) => {
+      applyV6ScaleToRoot(root, value);
+    });
     selectFromLocation();
     window.addEventListener('popstate', selectFromLocation);
-    return () => window.removeEventListener('popstate', selectFromLocation);
+    return () => {
+      unsubscribeScale();
+      root.style.fontSize = previousRootFontSize;
+      window.removeEventListener('popstate', selectFromLocation);
+    };
   });
 </script>
 
-<div class="unified-v6-shell" data-unified-v6-shell data-v6-theme={$v6Theme === 'inherit' ? undefined : $v6Theme}>
+<div class="unified-v6-shell" data-unified-v6-shell data-v6-theme={$v6Theme === 'inherit' ? undefined : $v6Theme} data-v6-scale={$v6Scale}>
   <UnifiedSidebar activePageId={page.id} onSelect={selectPage} />
   <main class="unified-v6-main">
     <SystemStatusRail />

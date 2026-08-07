@@ -19,12 +19,13 @@ test('execution banner preserves current daily-close research boundary and linea
   assert.equal(PROGRAM_EXECUTION.liveTrading, 'BLOCKED');
   assert.match(PROGRAM_EXECUTION.deliveryLane, /codex\/v1.28.0-dev-<task>/);
   assert.match(PROGRAM_EXECUTION.deliveryLane, /develop\/v1.28.0-dev/);
-  assert.equal(PROGRAM_EXECUTION.developmentVersion, 'v1.28.0-dev');
-  assert.equal(PROGRAM_EXECUTION.releaseCandidate, 'NOT_CREATED');
-  assert.equal(PROGRAM_EXECUTION.versionPolicy, 'FREEZE_DEV_VERSION_UNTIL_RELEASE_GATE');
+  assert.match(PROGRAM_EXECUTION.deliveryLane, /v1.28.0/);
+  assert.equal(PROGRAM_EXECUTION.developmentVersion, 'v1.28.0');
+  assert.equal(PROGRAM_EXECUTION.releaseCandidate, 'v1.28.0');
+  assert.equal(PROGRAM_EXECUTION.versionPolicy, 'RESEARCH_PLATFORM_RELEASE_MODEL_GATE_SEPARATE');
   assert.equal(PROGRAM_EXECUTION.branchRetentionPolicy, 'KEEP_MERGED_BRANCHES');
   assert.match(PROGRAM_EXECUTION.deliveryLane, /MERGED 보존/);
-  assert.equal(PROGRAM_EXECUTION.stage, 'AUDITED_LOCAL_ANCHOR_NO_GO_EXTERNAL_AUTHORITY');
+  assert.equal(PROGRAM_EXECUTION.stage, 'RELEASE_READY_RESEARCH_PLATFORM_MODEL_NO_GO');
   assert.equal(PROGRAM_EXECUTION.authority, 'REVIEWED_SNAPSHOT');
   assert.equal(PROGRAM_EXECUTION.reviewedRun, 'DAILY_CLOSE_OFFLINE_RL_G2_PIT_AUTHORITY_AUDIT_V1');
   assert.match(PROGRAM_EXECUTION.nextAction, /날짜별 PIT/);
@@ -35,5 +36,7 @@ test('execution banner preserves current daily-close research boundary and linea
   assert.match(researchContext, /NOT_RUN_NO_READ/);
   assert.match(executionStrip, /PROGRAM_EXECUTION\.developmentVersion/);
   assert.match(scorecardPage, /병합된 작업 브랜치는 MERGED 이력으로 보존합니다/);
+  assert.match(scorecardPage, /다음 개발선은 develop\/v1.29.0-dev/);
+  assert.match(scorecardPage, /모델 GO를 뜻하지 않습니다/);
   assert.doesNotMatch(scorecardPage, /작업 브랜치는 삭제합니다/);
 });
