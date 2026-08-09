@@ -8,6 +8,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
+from .daily_market_path_custody import has_reparse_component
 from .daily_market_rl_contract import DailyMarketRlContractError, MarketAlgorithm
 from .daily_market_rl_evaluation import MarketPolicyMetrics, MarketTrajectoryStep
 from .daily_market_rl_experiment_contract import (
@@ -90,9 +91,11 @@ def write_experiment_artifacts(
     output_directory: Path,
 ) -> ExperimentArtifactPaths:
     """Write summary, full receipt, and action JSONL without mixing their scopes."""
-    if output_directory.is_symlink():
-        raise DailyMarketRlContractError("EXPERIMENT_OUTPUT_SYMLINK_REJECTED")
+    if has_reparse_component(output_directory):
+        raise DailyMarketRlContractError("EXPERIMENT_OUTPUT_UNTRUSTED")
     output_directory.mkdir(parents=True, exist_ok=True)
+    if has_reparse_component(output_directory):
+        raise DailyMarketRlContractError("EXPERIMENT_OUTPUT_UNTRUSTED")
     summary_path = output_directory / "summary.json"
     receipt_path = output_directory / "experiment_receipt.json"
     ledger_path = output_directory / "action_ledger.jsonl"

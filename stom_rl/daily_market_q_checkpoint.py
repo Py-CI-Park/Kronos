@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import math
-import stat
 from pathlib import Path
 from typing import Final
 
 import numpy as np
 from pydantic import TypeAdapter, ValidationError
 
+from .daily_market_path_custody import has_reparse_component
 from .daily_market_q_network import FloatArray, MarketQNetwork
 from .daily_market_rl_contract import DailyMarketRlContractError
 
@@ -30,18 +30,6 @@ def _arrays(network: MarketQNetwork) -> tuple[FloatArray, ...]:
     )
 
 
-def _has_reparse_component(path: Path) -> bool:
-    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-    for component in (path, *path.parents):
-        try:
-            attributes = int(getattr(component.lstat(), "st_file_attributes", 0))
-        except OSError:
-            continue
-        if attributes & reparse_flag:
-            return True
-    return False
-
-
 def _payload_bytes(shapes: tuple[tuple[int, ...], ...]) -> int:
     total = sum(math.prod(shape) * 8 for shape in shapes)
     if total > MAX_CHECKPOINT_BYTES:
@@ -52,7 +40,7 @@ def _payload_bytes(shapes: tuple[tuple[int, ...], ...]) -> int:
 def save_network(network: MarketQNetwork, path: Path) -> None:
     """Write a bounded JSON shape header followed by raw float64 arrays."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    if _has_reparse_component(path.parent):
+    if has_reparse_component(path.parent):
         raise DailyMarketRlContractError("MODEL_CHECKPOINT_OUTPUT_UNTRUSTED")
     temporary = path.with_suffix(f"{path.suffix}.tmp")
     arrays = _arrays(network)
@@ -75,7 +63,7 @@ def load_network(
     expected_shapes: tuple[tuple[int, ...], ...],
 ) -> MarketQNetwork:
     """Parse numeric arrays without executing serialized code."""
-    if _has_reparse_component(path) or not path.is_file():
+    if has_reparse_component(path) or not path.is_file():
         raise DailyMarketRlContractError("MODEL_CHECKPOINT_UNTRUSTED", str(path))
     with path.open("rb") as handle:
         if handle.read(len(MAGIC)) != MAGIC:

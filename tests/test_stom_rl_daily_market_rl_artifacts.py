@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import subprocess
+
+import pytest
 
 from stom_rl.daily_market_rl_artifacts import write_experiment_artifacts
-from stom_rl.daily_market_rl_contract import MarketAlgorithm
+from stom_rl.daily_market_rl_contract import DailyMarketRlContractError, MarketAlgorithm
 from stom_rl.daily_market_rl_evaluation import (
     MarketPolicyMetrics,
     MarketPolicyTrajectory,
@@ -157,3 +161,24 @@ def test_artifacts_write_bounded_dashboard_summary_and_separate_action_ledger(tm
     assert paths.receipt.is_file()
     assert paths.action_ledger.is_file()
     assert paths.action_ledger.read_text(encoding="utf-8").count("\n") == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction boundary")
+def test_artifacts_reject_junction_output_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    junction = tmp_path / "artifact-junction"
+    created = subprocess.run(
+        ["cmd.exe", "/d", "/c", "mklink", "/J", str(junction), str(outside)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if created.returncode != 0:
+        pytest.skip("junction creation unavailable")
+    try:
+        with pytest.raises(DailyMarketRlContractError, match="EXPERIMENT_OUTPUT_UNTRUSTED"):
+            write_experiment_artifacts(_execution(), junction)
+        assert tuple(outside.iterdir()) == ()
+    finally:
+        junction.rmdir()

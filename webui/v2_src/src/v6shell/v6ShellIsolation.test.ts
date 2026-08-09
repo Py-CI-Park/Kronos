@@ -16,7 +16,10 @@ test('V6 shell isolates navigation and shows current evidence boundaries', async
   assert.doesNotMatch(source, /<ResearchContext \/>/u);
   assert.doesNotMatch(source, /style:zoom/u);
   assert.match(context, /<strong>G1–G6<\/strong>/u);
-  assert.match(context, /20종목 · 131,838표본/u);
+  assert.match(context, /TRAIN 76 · VAL 24 · TEST 23/u);
+  assert.match(context, /2,432 TRANSITIONS/u);
+  assert.match(context, /DQN\/CQL 20개/u);
+  assert.match(context, /CQL TEST 중앙값 -10\.19%/u);
   assert.match(context, /IMPLEMENTED · NO-GO/u);
   assert.match(context, /NOT_RUN_NO_READ/u);
   assert.match(kronos, /Kronos 예측 모델 ≠ 강화학습 정책/u);
