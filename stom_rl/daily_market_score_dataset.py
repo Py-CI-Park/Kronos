@@ -20,6 +20,7 @@ from .daily_market_artifact_guard import (
     MAX_SCORE_ROWS,
     resolve_trusted_artifact,
 )
+from .daily_market_errors import DailyMarketScoreError
 from .daily_market_transition_contract import (
     DailyMarketScore,
     SplitName,
@@ -71,7 +72,7 @@ class DailyMarketScoreDataset(BaseModel):
     @model_validator(mode="after")
     def reject_fresh_oos_days(self) -> Self:
         if any(day.split == "FRESH_OOS" for day in self.days):
-            raise ValueError("FRESH_OOS remains sealed")
+            raise DailyMarketScoreError("FRESH_OOS remains sealed")
         return self
 
 
@@ -92,18 +93,18 @@ def _load_manifest(path: Path) -> dict[str, JsonValue]:
     try:
         return MANIFEST_ADAPTER.validate_json(path.read_bytes())
     except ValueError as exc:
-        raise ValueError("SOURCE_MANIFEST_INVALID") from exc
+        raise DailyMarketScoreError("SOURCE_MANIFEST_INVALID") from exc
 
 
 def _validate_manifest(manifest: Mapping[str, JsonValue]) -> None:
     if manifest.get("fill_mode") != SOURCE_FILL_MODE:
-        raise ValueError("SOURCE_FILL_MODE_UNEXPECTED")
+        raise DailyMarketScoreError("SOURCE_FILL_MODE_UNEXPECTED")
     if manifest.get("price_basis") != "unknown":
-        raise ValueError("SOURCE_PRICE_BASIS_REQUIRES_REVIEW")
+        raise DailyMarketScoreError("SOURCE_PRICE_BASIS_REQUIRES_REVIEW")
     if manifest.get("decision_grade_return_status") != "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED":
-        raise ValueError("SOURCE_DECISION_GRADE_STATUS_REQUIRES_REVIEW")
+        raise DailyMarketScoreError("SOURCE_DECISION_GRADE_STATUS_REQUIRES_REVIEW")
     if manifest.get("promotion_allowed") is not False:
-        raise ValueError("SOURCE_PROMOTION_LOCK_MISSING")
+        raise DailyMarketScoreError("SOURCE_PROMOTION_LOCK_MISSING")
 
 
 def _parse_date(value: str) -> date:
@@ -111,7 +112,7 @@ def _parse_date(value: str) -> date:
     try:
         return datetime.strptime(text, "%Y%m%d").date()
     except ValueError as exc:
-        raise ValueError("INVALID_DECISION_DATE") from exc
+        raise DailyMarketScoreError("INVALID_DECISION_DATE") from exc
 
 
 def _parse_split(value: str) -> SplitName:
@@ -126,7 +127,7 @@ def _parse_split(value: str) -> SplitName:
     try:
         return aliases[normalized]
     except KeyError as exc:
-        raise ValueError(f"UNSUPPORTED_SPLIT:{normalized}") from exc
+        raise DailyMarketScoreError(f"UNSUPPORTED_SPLIT:{normalized}") from exc
 
 
 def _market_prefix(table: str) -> Literal["A", "Q"]:
@@ -134,7 +135,7 @@ def _market_prefix(table: str) -> Literal["A", "Q"]:
         return "A"
     if table.startswith("Q"):
         return "Q"
-    raise ValueError("UNSUPPORTED_MARKET_PREFIX")
+    raise DailyMarketScoreError("UNSUPPORTED_MARKET_PREFIX")
 
 
 def _parse_score_row(row: Mapping[str, str | None]) -> DailyMarketScore:
@@ -142,14 +143,14 @@ def _parse_score_row(row: Mapping[str, str | None]) -> DailyMarketScore:
     table = validate_daily_table_name(raw_table)
     code = (row.get("code") or "").strip()
     if table[1:] != code or len(code) != 6 or not code.isdigit():
-        raise ValueError("TABLE_CODE_IDENTITY_MISMATCH")
+        raise DailyMarketScoreError("TABLE_CODE_IDENTITY_MISMATCH")
     raw_score = row.get("score") or ""
     try:
         score = float(raw_score)
     except ValueError as exc:
-        raise ValueError("INVALID_CAUSAL_SCORE") from exc
+        raise DailyMarketScoreError("INVALID_CAUSAL_SCORE") from exc
     if not math.isfinite(score):
-        raise ValueError("INVALID_CAUSAL_SCORE")
+        raise DailyMarketScoreError("INVALID_CAUSAL_SCORE")
     return DailyMarketScore(
         decision_date=_parse_date(row.get("date") or ""),
         code=code,
@@ -187,10 +188,10 @@ def load_market_score_dataset(
         reader = csv.DictReader(handle)
         required = {"date", "table", "code", "score", "split", "eligible_for_selection"}
         if reader.fieldnames is None or not required.issubset(reader.fieldnames):
-            raise ValueError("CANDIDATE_SCORE_COLUMNS_MISSING")
+            raise DailyMarketScoreError("CANDIDATE_SCORE_COLUMNS_MISSING")
         for row_number, row in enumerate(reader, start=1):
             if row_number > MAX_SCORE_ROWS:
-                raise ValueError("CANDIDATE_SCORE_ROW_LIMIT_EXCEEDED")
+                raise DailyMarketScoreError("CANDIDATE_SCORE_ROW_LIMIT_EXCEEDED")
             if (row.get("eligible_for_selection") or "").strip().lower() not in {"true", "1"}:
                 ineligible_rows += 1
                 continue
@@ -199,17 +200,17 @@ def load_market_score_dataset(
                 continue
             score = _parse_score_row(row)
             if score.split == "FRESH_OOS":
-                raise ValueError("FRESH_OOS remains sealed")
+                raise DailyMarketScoreError("FRESH_OOS remains sealed")
             grouped[(score.decision_date, score.split)].append(score)
             scored_rows += 1
     if not grouped:
-        raise ValueError("NO_CAUSAL_SCORE_DAYS")
+        raise DailyMarketScoreError("NO_CAUSAL_SCORE_DAYS")
     splits_by_date: dict[date, SplitName] = {}
     days: list[CausalMarketScoreDay] = []
     for (decision_date, split), scores in sorted(grouped.items()):
         previous_split = splits_by_date.setdefault(decision_date, split)
         if previous_split != split:
-            raise ValueError("DECISION_DATE_SPLIT_CONFLICT")
+            raise DailyMarketScoreError("DECISION_DATE_SPLIT_CONFLICT")
         ranked = rank_market_scores(scores)
         days.append(
             CausalMarketScoreDay(

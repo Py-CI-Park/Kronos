@@ -8,6 +8,7 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .daily_market_errors import DailyMarketInvariantError
 from .daily_market_score_dataset import DailyMarketScoreDataset
 from .daily_market_transition_contract import SplitName
 from .daily_market_transition_db import load_daily_market_candidates
@@ -73,7 +74,7 @@ def audit_daily_market_rewards(
             )
             continue
         if batch.split_hash != day.day_hash:
-            raise RuntimeError("MARKET_REWARD_SPLIT_HASH_MISMATCH")
+            raise DailyMarketInvariantError("MARKET_REWARD_SPLIT_HASH_MISMATCH")
         split_pass_counts[day.split] += 1
         rows.append(
             DailyMarketRewardAuditRow(

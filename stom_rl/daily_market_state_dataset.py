@@ -18,6 +18,7 @@ from .daily_market_artifact_guard import (
     MAX_PANEL_ROWS,
     resolve_trusted_artifact,
 )
+from .daily_market_errors import DailyMarketInvariantError, DailyMarketStateError
 from .daily_market_score_dataset import DailyMarketScoreDataset
 from .daily_market_transition_contract import SplitName
 from .daily_ohlcv_db import validate_daily_table_name
@@ -33,8 +34,7 @@ CAUSAL_FEATURE_COLUMNS = (
     "institutional_net_buy",
 )
 SLOTS = 10
-VALUES_PER_FEATURE = 2
-STATE_VECTOR_SIZE = SLOTS * len(CAUSAL_FEATURE_COLUMNS) * VALUES_PER_FEATURE
+STATE_VECTOR_SIZE = SLOTS * len(CAUSAL_FEATURE_COLUMNS) * 2
 STATE_BLOCKERS = (
     "D0_PRICE_BASIS_NOT_VERIFIED",
     "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED",
@@ -117,9 +117,9 @@ def _feature_value(row: Mapping[str, str | None], feature: str) -> float | None:
     try:
         value = float(raw)
     except ValueError as exc:
-        raise ValueError(f"INVALID_CAUSAL_FEATURE:{feature}") from exc
+        raise DailyMarketStateError(f"INVALID_CAUSAL_FEATURE:{feature}") from exc
     if not math.isfinite(value):
-        raise ValueError(f"NONFINITE_CAUSAL_FEATURE:{feature}")
+        raise DailyMarketStateError(f"NONFINITE_CAUSAL_FEATURE:{feature}")
     return value
 
 
@@ -127,14 +127,14 @@ def _selected_keys(dataset: DailyMarketScoreDataset) -> dict[tuple[str, str], Sp
     selected: dict[tuple[str, str], SplitName] = {}
     for day in dataset.days:
         if day.split == "FRESH_OOS" or any(score.split == "FRESH_OOS" for score in day.scores):
-            raise ValueError("FRESH_OOS remains sealed")
+            raise DailyMarketStateError("FRESH_OOS remains sealed")
         if len(day.scores) != SLOTS:
-            raise ValueError("STATE_DATASET_REQUIRES_EXACTLY_10_SCORES_PER_DAY")
+            raise DailyMarketStateError("STATE_DATASET_REQUIRES_EXACTLY_10_SCORES_PER_DAY")
         date_key = day.decision_date.strftime("%Y%m%d")
         for score in day.scores:
             key = (date_key, score.table)
             if key in selected:
-                raise ValueError("DUPLICATE_SELECTED_SCORE_KEY")
+                raise DailyMarketStateError("DUPLICATE_SELECTED_SCORE_KEY")
             selected[key] = day.split
     return selected
 
@@ -148,28 +148,28 @@ def _read_selected_panel(
         reader = csv.DictReader(handle)
         required = {"date", "table", "code", "split", *CAUSAL_FEATURE_COLUMNS}
         if reader.fieldnames is None or not required.issubset(reader.fieldnames):
-            raise ValueError("CAUSAL_PANEL_COLUMNS_MISSING")
+            raise DailyMarketStateError("CAUSAL_PANEL_COLUMNS_MISSING")
         for row_number, row in enumerate(reader, start=1):
             if row_number > MAX_PANEL_ROWS:
-                raise ValueError("CAUSAL_PANEL_ROW_LIMIT_EXCEEDED")
+                raise DailyMarketStateError("CAUSAL_PANEL_ROW_LIMIT_EXCEEDED")
             table = validate_daily_table_name(row.get("table") or "")
             key = ((row.get("date") or "").strip().replace("-", ""), table)
             expected_split = selected.get(key)
             if expected_split is None:
                 continue
             if table[1:] != (row.get("code") or "").strip():
-                raise ValueError("PANEL_TABLE_CODE_IDENTITY_MISMATCH")
+                raise DailyMarketStateError("PANEL_TABLE_CODE_IDENTITY_MISMATCH")
             if not _split_matches(row.get("split") or "", expected_split):
-                raise ValueError("PANEL_SCORE_SPLIT_MISMATCH")
+                raise DailyMarketStateError("PANEL_SCORE_SPLIT_MISMATCH")
             if key in rows:
-                raise ValueError("DUPLICATE_SELECTED_PANEL_ROW")
+                raise DailyMarketStateError("DUPLICATE_SELECTED_PANEL_ROW")
             rows[key] = _RawPanelRow(
                 split=expected_split,
                 values=tuple(_feature_value(row, feature) for feature in CAUSAL_FEATURE_COLUMNS),
             )
     missing = sorted(set(selected) - set(rows))
     if missing:
-        raise ValueError(f"SELECTED_PANEL_ROW_MISSING:{missing[0][0]}:{missing[0][1]}")
+        raise DailyMarketStateError(f"SELECTED_PANEL_ROW_MISSING:{missing[0][0]}:{missing[0][1]}")
     return rows
 
 
@@ -183,7 +183,7 @@ def _fit_statistics(rows: Mapping[tuple[str, str], _RawPanelRow]) -> tuple[Featu
         ]
         values = [value for value in observed if value is not None]
         if not values:
-            raise ValueError(f"TRAIN_FEATURE_HAS_NO_OBSERVATIONS:{feature}")
+            raise DailyMarketStateError(f"TRAIN_FEATURE_HAS_NO_OBSERVATIONS:{feature}")
         mean = sum(values) / len(values)
         deviation = math.sqrt(sum((value - mean) ** 2 for value in values) / len(values))
         statistics.append(
@@ -219,7 +219,7 @@ def _day_vector(
                 missing_count += int(is_missing)
         vector = tuple(values)
         if len(vector) != STATE_VECTOR_SIZE:
-            raise RuntimeError("STATE_FEATURE_VECTOR_SIZE_MISMATCH")
+            raise DailyMarketInvariantError("STATE_FEATURE_VECTOR_SIZE_MISMATCH")
         feature_hash = _sha_payload([repr(value) for value in vector])
         output.append(
             CausalMarketStateDay(

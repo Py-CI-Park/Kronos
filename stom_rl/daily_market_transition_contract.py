@@ -13,6 +13,8 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from .daily_market_errors import DailyMarketContractError
+
 SplitName = Literal["TRAIN", "VALIDATION", "TEST", "FRESH_OOS"]
 ActionName = Literal["CASH", "INVEST_TOP10_EQUAL_SLOT"]
 PositiveMoney = Annotated[Decimal, Field(gt=0)]
@@ -51,7 +53,7 @@ class DailyMarketCandidate(DailyMarketScore):
     @model_validator(mode="after")
     def validate_horizon(self) -> DailyMarketCandidate:
         if not self.decision_date < self.entry_date < self.exit_date:
-            raise ValueError("expected decision_date < entry_date < exit_date")
+            raise DailyMarketContractError("expected decision_date < entry_date < exit_date")
         return self
 
 
@@ -69,9 +71,9 @@ class MarketTransitionConfig:
 
     def __post_init__(self) -> None:
         if self.initial_capital_krw <= 0 or self.max_slots != 10:
-            raise ValueError("market transition requires positive capital and exactly 10 slots")
+            raise DailyMarketContractError("market transition requires positive capital and exactly 10 slots")
         if self.stock_exposure_cap_krw + self.cash_reserve_floor_krw > self.initial_capital_krw:
-            raise ValueError("exposure cap plus cash reserve exceeds initial capital")
+            raise DailyMarketContractError("exposure cap plus cash reserve exceeds initial capital")
         costs = (
             self.buy_commission_percent,
             self.sell_commission_percent,
@@ -80,7 +82,7 @@ class MarketTransitionConfig:
             self.sell_slippage_percent,
         )
         if any(value < 0 for value in costs):
-            raise ValueError("cost percentages must be nonnegative")
+            raise DailyMarketContractError("cost percentages must be nonnegative")
 
     @property
     def round_trip_cost_percent(self) -> Decimal:
@@ -164,18 +166,18 @@ def _state_digest(payload: JsonValue) -> str:
 
 def rank_market_scores(candidates: Sequence[DailyMarketScore]) -> tuple[DailyMarketScore, ...]:
     if not candidates:
-        raise ValueError("market state requires candidates")
+        raise DailyMarketContractError("market state requires candidates")
     decision_date = candidates[0].decision_date
     split: SplitName = candidates[0].split
     if any(
         candidate.decision_date != decision_date or candidate.split != split
         for candidate in candidates
     ):
-        raise ValueError("all candidates must share one decision date and split")
+        raise DailyMarketContractError("all candidates must share one decision date and split")
     if split == "FRESH_OOS":
-        raise ValueError("FRESH_OOS remains sealed until preregistration and human approval")
+        raise DailyMarketContractError("FRESH_OOS remains sealed until preregistration and human approval")
     if len({candidate.code for candidate in candidates}) != len(candidates):
-        raise ValueError("candidate codes must be unique within one decision date")
+        raise DailyMarketContractError("candidate codes must be unique within one decision date")
     return tuple(sorted(candidates, key=lambda candidate: (-candidate.score, candidate.code))[:10])
 
 
@@ -206,7 +208,7 @@ def build_market_state(
     previous_drawdown: Decimal,
 ) -> MarketState:
     if not feature_vector:
-        raise ValueError("market state requires causal features")
+        raise DailyMarketContractError("market state requires causal features")
     ranked = rank_market_scores(candidates)
     decision_date = ranked[0].decision_date
     split = ranked[0].split

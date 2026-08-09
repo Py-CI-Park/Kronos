@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 
+from .daily_market_errors import DailyMarketTransitionError
 from .daily_market_transition_contract import (
     ActionName,
     BinaryAction,
@@ -43,11 +44,11 @@ def _validate_transition_identity(
         previous_drawdown=state.previous_drawdown,
     )
     if rebuilt.state_hash != state.state_hash:
-        raise ValueError("candidate identity does not match the recorded market state")
+        raise DailyMarketTransitionError("candidate identity does not match the recorded market state")
     entry_dates = {candidate.entry_date for candidate in candidates}
     exit_dates = {candidate.exit_date for candidate in candidates}
     if len(entry_dates) != 1 or len(exit_dates) != 1:
-        raise ValueError("one transition requires a shared entry and exit date")
+        raise DailyMarketTransitionError("one transition requires a shared entry and exit date")
     return {candidate.table: candidate for candidate in candidates}
 
 
@@ -142,12 +143,12 @@ def execute_binary_transition(
     """Execute one research-only binary action without exposing future prices to state."""
     selected_config = config or MarketTransitionConfig()
     if previous_nav_krw <= 0 or previous_peak_nav_krw <= 0:
-        raise ValueError("previous NAV and peak NAV must be positive")
+        raise DailyMarketTransitionError("previous NAV and peak NAV must be positive")
     candidate_by_table = _validate_transition_identity(state, candidates)
     try:
         requested = BinaryAction(action)
     except ValueError as exc:
-        raise ValueError(f"unsupported binary market action: {action}") from exc
+        raise DailyMarketTransitionError(f"unsupported binary market action: {action}") from exc
     requested_name: ActionName = (
         "CASH" if requested is BinaryAction.CASH else "INVEST_TOP10_EQUAL_SLOT"
     )

@@ -8,10 +8,11 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import ClassVar, Literal, Protocol
+from typing import ClassVar, Literal, Protocol, assert_never
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from .daily_market_errors import DailyMarketDataError, DailyMarketInvariantError
 from .daily_market_transition_contract import (
     DailyMarketCandidate,
     DailyMarketScore,
@@ -28,6 +29,7 @@ from .daily_ohlcv_db import (
 
 PRICE_BASIS_BLOCKER = "D0_PRICE_BASIS_NOT_VERIFIED"
 SqliteScalar = str | int | float | bool | None
+SqliteDateScalar = str | int | bool
 SqliteRow = tuple[SqliteScalar, ...]
 SqliteRows = list[SqliteRow]
 SqliteBoundary = SqliteRow | SqliteRows | None
@@ -68,29 +70,33 @@ def _source_identity(path: Path) -> str:
 
 
 def _parse_db_date(value: SqliteScalar, *, code: str) -> date:
-    if isinstance(value, bool):
-        raise ValueError(f"{code}:INVALID_TRADING_DATE")
-    if isinstance(value, int):
-        text = str(value)
-    elif isinstance(value, str):
-        text = value.strip().replace("-", "")
-    else:
-        raise ValueError(f"{code}:INVALID_TRADING_DATE")
+    if not isinstance(value, (str, int, bool)):
+        raise DailyMarketDataError(f"{code}:INVALID_TRADING_DATE")
+    date_value: SqliteDateScalar = value
+    match date_value:
+        case bool():
+            raise DailyMarketDataError(f"{code}:INVALID_TRADING_DATE")
+        case int():
+            text = str(value)
+        case str():
+            text = date_value.strip().replace("-", "")
+        case _:
+            assert_never(date_value)
     try:
         return datetime.strptime(text, "%Y%m%d").date()
     except ValueError as exc:
-        raise ValueError(f"{code}:INVALID_TRADING_DATE") from exc
+        raise DailyMarketDataError(f"{code}:INVALID_TRADING_DATE") from exc
 
 
 def _parse_open(value: SqliteScalar, *, code: str, label: str) -> Decimal:
     if isinstance(value, bool) or value is None:
-        raise ValueError(f"{code}:INVALID_{label}_OPEN")
+        raise DailyMarketDataError(f"{code}:INVALID_{label}_OPEN")
     try:
         price = Decimal(str(value))
     except (InvalidOperation, ValueError) as exc:
-        raise ValueError(f"{code}:INVALID_{label}_OPEN") from exc
+        raise DailyMarketDataError(f"{code}:INVALID_{label}_OPEN") from exc
     if not price.is_finite() or price <= 0:
-        raise ValueError(f"{code}:INVALID_{label}_OPEN")
+        raise DailyMarketDataError(f"{code}:INVALID_{label}_OPEN")
     return price
 
 
@@ -116,7 +122,7 @@ def _fetch_optional_row(
     try:
         return SQLITE_ROW_ADAPTER.validate_python(raw)
     except ValueError as exc:
-        raise ValueError("SQLITE_ROW_SHAPE_INVALID") from exc
+        raise DailyMarketDataError("SQLITE_ROW_SHAPE_INVALID") from exc
 
 
 def _fetch_rows(cursor: _ObjectCursor) -> SqliteRows:
@@ -124,7 +130,7 @@ def _fetch_rows(cursor: _ObjectCursor) -> SqliteRows:
     try:
         return SQLITE_ROWS_ADAPTER.validate_python(raw)
     except ValueError as exc:
-        raise ValueError("SQLITE_ROWS_SHAPE_INVALID") from exc
+        raise DailyMarketDataError("SQLITE_ROWS_SHAPE_INVALID") from exc
 
 
 def _load_candidate(
@@ -140,7 +146,7 @@ def _load_candidate(
         )
     )
     if decision_row is None:
-        raise ValueError(f"{score.code}:MISSING_DECISION_ROW")
+        raise DailyMarketDataError(f"{score.code}:MISSING_DECISION_ROW")
     rows = _fetch_rows(
         connection.execute(
             f'SELECT date, open FROM "{table}" WHERE date > ? ORDER BY date ASC LIMIT 2',
@@ -148,9 +154,9 @@ def _load_candidate(
         )
     )
     if not rows:
-        raise ValueError(f"{score.code}:MISSING_ENTRY_OPEN")
+        raise DailyMarketDataError(f"{score.code}:MISSING_ENTRY_OPEN")
     if len(rows) < 2:
-        raise ValueError(f"{score.code}:MISSING_EXIT_OPEN")
+        raise DailyMarketDataError(f"{score.code}:MISSING_EXIT_OPEN")
     return DailyMarketCandidate(
         decision_date=score.decision_date,
         code=score.code,
@@ -173,17 +179,17 @@ def load_daily_market_candidates(
     ranked = rank_market_scores(scores)
     raw_path = Path(db_path)
     if raw_path.is_symlink():
-        raise ValueError("daily market transition DB must not be a symbolic link")
+        raise DailyMarketDataError("daily market transition DB must not be a symbolic link")
     resolved_path = raw_path.resolve()
     if not resolved_path.is_file():
         raise FileNotFoundError(resolved_path)
     with connect_readonly(resolved_path) as connection:
         query_only = _fetch_optional_row(connection.execute("PRAGMA query_only"))
         if not _query_only_enabled(query_only):
-            raise RuntimeError("daily market transition DB is not query-only")
+            raise DailyMarketInvariantError("daily market transition DB is not query-only")
         candidates = tuple(_load_candidate(connection, score) for score in ranked)
     if PRICE_BASIS != "unknown" or DECISION_GRADE_RETURN_STATUS != "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED":
-        raise RuntimeError("market transition authority contract changed; explicit review required")
+        raise DailyMarketInvariantError("market transition authority contract changed; explicit review required")
     return DailyMarketCandidateBatch(
         schema_version="kronos_daily_market_candidate_batch.v1",
         candidates=candidates,
