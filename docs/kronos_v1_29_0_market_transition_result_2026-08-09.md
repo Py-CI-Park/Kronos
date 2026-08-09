@@ -70,6 +70,7 @@ D 종가까지의 특징과 종목 점수
 | A/Q 교차 후보 | A 상태에 같은 코드의 Q 후보 전달 | **상태 신원 불일치** |
 | 신뢰 루트 밖 파일 | 외부 manifest/panel 전달 | **읽기 거부** |
 | strict type scan | 신규 production의 `object`·`Any`·`cast`·ignore | **0건** |
+| programming no-excuse | typed error·variant exhaustive·금지 패턴 검사 | **8개 파일 · 0 violations** |
 
 ## 5. 현재 프로젝트 DB 실검증
 
