@@ -51,18 +51,25 @@ D 종가까지의 특징과 종목 점수
 - 누락 종목만 사후 제거하지 않고 해당 전이 전체를 실패시킨다.
 - DB는 SQLite `mode=ro`와 `PRAGMA query_only=ON`을 함께 사용한다.
 - DB 파일 경로·크기·수정시각의 SHA-256은 계보 식별자이며 DB 내용 전체 해시로 과장하지 않는다.
+- 상태·체결 원장·해시는 6자리 코드만이 아니라 `A/Q + 코드` 전체 시장 테이블 신원을 포함한다.
+- score·manifest·panel은 호출자가 명시한 신뢰 루트 내부의 일반 파일만 읽고 심볼릭 링크를 거부한다.
+- manifest 4MB, score CSV 64MB, panel CSV 256MB와 CSV별 500만 행 상한을 둔다.
 
 ## 4. 자동 검증 결과
 
 | 검증 | 명령 또는 범위 | 결과 |
 |---|---|---:|
-| 신규 계약·회귀 | `pytest` 시장 전이 2개 파일 | **10 passed** |
+| 신규 계약·회귀 | 시장 전이·score/state/reward·artifact guard | **20 passed, 1 symlink-host skip** |
 | 주변 일봉 회귀 | OHLCV DB·close-slot dataset/train 포함 | **30 passed** |
 | Python 정적 규칙 | Ruff, 신규 소스·테스트 | **PASS** |
 | Python 타입 | Basedpyright, 신규 소스·테스트 | **0 errors, 0 warnings** |
 | 미래 시가 변경 | 청산 시가만 변경한 두 DB의 상태 해시 비교 | **동일** |
 | 정확한 시가 누락 | 0원 진입 시가를 다음 유효 시가로 건너뛰는지 검사 | **건너뛰지 않고 실패** |
 | Fresh OOS | `FRESH_OOS` 상태 생성 시도 | **봉인 오류 발생** |
+| Fresh OOS 우회 객체 | 공개 state builder에 직접 구성 객체 전달 | **봉인 오류 발생** |
+| A/Q 교차 후보 | A 상태에 같은 코드의 Q 후보 전달 | **상태 신원 불일치** |
+| 신뢰 루트 밖 파일 | 외부 manifest/panel 전달 | **읽기 거부** |
+| strict type scan | 신규 production의 `object`·`Any`·`cast`·ignore | **0건** |
 
 ## 5. 현재 프로젝트 DB 실검증
 
