@@ -10,9 +10,9 @@ from collections import defaultdict
 from collections.abc import Mapping
 from datetime import date, datetime
 from pathlib import Path
-from typing import ClassVar, Literal, cast
+from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from .daily_market_transition_contract import (
     DailyMarketScore,
@@ -30,6 +30,7 @@ REQUIRED_BLOCKERS = (
     "STATE_FEATURE_VECTOR_NOT_BUILT",
     "NEXT_OPEN_REWARD_NOT_MATERIALIZED",
 )
+MANIFEST_ADAPTER = TypeAdapter(dict[str, JsonValue])
 
 
 class CausalMarketScoreDay(BaseModel):
@@ -75,14 +76,11 @@ def _sha256_payload(value: object) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _load_manifest(path: Path) -> Mapping[str, object]:
-    raw = cast(object, json.loads(path.read_text(encoding="utf-8")))
-    if not isinstance(raw, dict):
-        raise ValueError("SOURCE_MANIFEST_INVALID")
-    untyped_mapping = cast("dict[object, object]", raw)
-    if not all(isinstance(key, str) for key in untyped_mapping):
-        raise ValueError("SOURCE_MANIFEST_INVALID")
-    return cast("Mapping[str, object]", untyped_mapping)
+def _load_manifest(path: Path) -> dict[str, JsonValue]:
+    try:
+        return MANIFEST_ADAPTER.validate_json(path.read_bytes())
+    except ValueError as exc:
+        raise ValueError("SOURCE_MANIFEST_INVALID") from exc
 
 
 def _validate_manifest(manifest: Mapping[str, object]) -> None:
@@ -119,6 +117,14 @@ def _parse_split(value: str) -> SplitName:
         raise ValueError(f"UNSUPPORTED_SPLIT:{normalized}") from exc
 
 
+def _market_prefix(table: str) -> Literal["A", "Q"]:
+    if table.startswith("A"):
+        return "A"
+    if table.startswith("Q"):
+        return "Q"
+    raise ValueError("UNSUPPORTED_MARKET_PREFIX")
+
+
 def _parse_score_row(row: Mapping[str, str | None]) -> DailyMarketScore:
     raw_table = row.get("table") or ""
     table = validate_daily_table_name(raw_table)
@@ -137,7 +143,7 @@ def _parse_score_row(row: Mapping[str, str | None]) -> DailyMarketScore:
         code=code,
         score=score,
         split=_parse_split(row.get("split") or ""),
-        market_prefix=cast("Literal['A', 'Q']", table[0]),
+        market_prefix=_market_prefix(table),
     )
 
 

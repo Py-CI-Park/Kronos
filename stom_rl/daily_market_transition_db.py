@@ -8,9 +8,9 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import ClassVar, Literal, cast
+from typing import ClassVar, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from .daily_market_transition_contract import (
     DailyMarketCandidate,
@@ -27,6 +27,16 @@ from .daily_ohlcv_db import (
 )
 
 PRICE_BASIS_BLOCKER = "D0_PRICE_BASIS_NOT_VERIFIED"
+SQLITE_ROW_ADAPTER = TypeAdapter(tuple[JsonValue, ...])
+SQLITE_ROWS_ADAPTER = TypeAdapter(list[tuple[JsonValue, ...]])
+
+
+class _ObjectCursor(Protocol):
+    """Typed view over sqlite3's dynamically typed fetch boundary."""
+
+    def fetchone(self) -> object: ...
+
+    def fetchall(self) -> object: ...
 
 
 class DailyMarketCandidateBatch(BaseModel):
@@ -93,27 +103,45 @@ def _query_only_enabled(row: tuple[object, ...] | None) -> bool:
     return False
 
 
+def _fetch_optional_row(
+    cursor: _ObjectCursor,
+) -> tuple[JsonValue, ...] | None:
+    raw: object = cursor.fetchone()
+    if raw is None:
+        return None
+    try:
+        return SQLITE_ROW_ADAPTER.validate_python(raw)
+    except ValueError as exc:
+        raise ValueError("SQLITE_ROW_SHAPE_INVALID") from exc
+
+
+def _fetch_rows(cursor: _ObjectCursor) -> list[tuple[JsonValue, ...]]:
+    raw: object = cursor.fetchall()
+    try:
+        return SQLITE_ROWS_ADAPTER.validate_python(raw)
+    except ValueError as exc:
+        raise ValueError("SQLITE_ROWS_SHAPE_INVALID") from exc
+
+
 def _load_candidate(
     connection: sqlite3.Connection,
     score: DailyMarketScore,
 ) -> DailyMarketCandidate:
     table = validate_daily_table_name(score.table)
     decision_key = int(score.decision_date.strftime("%Y%m%d"))
-    decision_row = cast(
-        "tuple[object, ...] | None",
+    decision_row = _fetch_optional_row(
         connection.execute(
             f'SELECT 1 FROM "{table}" WHERE date = ? LIMIT 1',
             (decision_key,),
-        ).fetchone(),
+        )
     )
     if decision_row is None:
         raise ValueError(f"{score.code}:MISSING_DECISION_ROW")
-    rows = cast(
-        "list[tuple[object, object]]",
+    rows = _fetch_rows(
         connection.execute(
             f'SELECT date, open FROM "{table}" WHERE date > ? ORDER BY date ASC LIMIT 2',
             (decision_key,),
-        ).fetchall(),
+        )
     )
     if not rows:
         raise ValueError(f"{score.code}:MISSING_ENTRY_OPEN")
@@ -146,10 +174,7 @@ def load_daily_market_candidates(
     if not resolved_path.is_file():
         raise FileNotFoundError(resolved_path)
     with connect_readonly(resolved_path) as connection:
-        query_only = cast(
-            "tuple[object, ...] | None",
-            connection.execute("PRAGMA query_only").fetchone(),
-        )
+        query_only = _fetch_optional_row(connection.execute("PRAGMA query_only"))
         if not _query_only_enabled(query_only):
             raise RuntimeError("daily market transition DB is not query-only")
         candidates = tuple(_load_candidate(connection, score) for score in ranked)
