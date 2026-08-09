@@ -74,7 +74,7 @@ export const ResearchRunDetailSchema = z.object({
   status: z.literal('OK'),
   run: ResearchRunSchema,
   artifacts: z.array(ArtifactSchema).readonly(),
-  evidence_scope: z.literal('DIRECT_DIRECTORY_METADATA_ONLY'),
+  evidence_scope: z.enum(['DIRECT_DIRECTORY_METADATA_ONLY', 'DIRECT_EVIDENCE_AND_BOUNDED_MODEL_METADATA_ONLY']),
   observed_outcome: ObservedOutcomeSchema,
 }).readonly();
 

@@ -31,8 +31,10 @@ test('execution banner preserves current daily-close research boundary and linea
   assert.match(PROGRAM_EXECUTION.nextAction, /날짜별 PIT/);
   assert.ok(PROGRAM_PAGE_MATRIX.some((page) => page.id === 'kronos'));
   assert.match(researchContext, /G1–G6/);
-  assert.match(researchContext, /20종목 · 131,838표본/);
-  assert.match(researchContext, /3 \/ 3 SEEDS/);
+  assert.match(researchContext, /TRAIN 76 · VAL 24 · TEST 23/);
+  assert.match(researchContext, /DQN\/CQL 20개/);
+  assert.match(researchContext, /중앙값 -10\.19%/);
+  assert.match(researchContext, /2,432 TRANSITIONS/);
   assert.match(researchContext, /NOT_RUN_NO_READ/);
   assert.match(executionStrip, /PROGRAM_EXECUTION\.developmentVersion/);
   assert.match(scorecardPage, /병합된 작업 브랜치는 MERGED 이력으로 보존합니다/);

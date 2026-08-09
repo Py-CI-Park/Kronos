@@ -26,7 +26,7 @@
   const kpis = $derived([
     { label: '제품 구현·UX', value: `${PROGRAM_EXECUTION.implementationScore}/100`, detail: '통합 페이지·API·QA 점수', tone: 'positive' as const },
     { label: '연구 프로그램', value: `${PROGRAM_EXECUTION.overallScore}/100`, detail: 'RL·거버넌스·live 포함', tone: 'warning' as const },
-    { label: '경제 모델', value: `${PROGRAM_EXECUTION.economicModelScore}/100`, detail: '비용 후 GO 정책 미생성', tone: 'danger' as const },
+    { label: '경제 모델', value: `${PROGRAM_EXECUTION.economicModelScore}/100`, detail: '체크포인트 20개 · 비용 후 GO 없음', tone: 'danger' as const },
     { label: '실거래 준비', value: `${PROGRAM_EXECUTION.liveReadinessScore}/100`, detail: 'Fresh OOS·paper·broker 차단', tone: 'danger' as const },
   ]);
   const states = $derived<readonly StateItem[]>([
@@ -43,8 +43,8 @@
   }));
   const phase = (id: string): string => ({ command: 'P0', research: 'P0', live: 'P1', evaluation: 'P1', evidence: 'P2', models: 'P2', governance: 'P2', settings: 'P2' })[id] ?? 'P2';
   const nextAction = (id: string): string => ({
-    command: '최종 회귀·릴리스 증거 유지', research: 'PIT 데이터 재실행 준비', live: '새 학습 실행에 telemetry 연결', evaluation: '동일 lane OOS 비교',
-    evidence: '외부 KRX·기업행사 custody 확보', models: '경제성 gate 통과 정책 생성', governance: 'Fresh OOS 사람 승인', settings: '접근성 사용자 검수',
+    command: '최종 회귀·릴리스 증거 유지', research: '새 가설 사전등록·PIT 권위 확보', live: '다음 실행에 seed별 telemetry 연결', evaluation: '동일 TEST 재튜닝 금지·새 검증 구간 설계',
+    evidence: '가격·universe custody 확보', models: '20개 체크포인트와 경제성 NO-GO 분리 검토', governance: 'Fresh OOS 사람 승인', settings: '접근성 사용자 검수',
   })[id] ?? '근거 유지';
 
   async function load(): Promise<void> {

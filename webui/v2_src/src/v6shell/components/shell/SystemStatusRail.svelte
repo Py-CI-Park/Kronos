@@ -7,7 +7,7 @@
   <div class="status"><span class="blocked">NO-GO</span><span>READ-ONLY</span><span>FRESH OOS SEALED</span></div>
   <dl>
     <div><dt>제품 구현·UX</dt><dd>{PROGRAM_EXECUTION.implementationScore}/100</dd></div>
-    <div><dt>경제 모델</dt><dd>{PROGRAM_EXECUTION.economicModelScore}/100 · 미생성</dd></div>
+    <div><dt>경제 모델</dt><dd>{PROGRAM_EXECUTION.economicModelScore}/100 · 경제성 통과 모델 없음</dd></div>
     <div><dt>개발선</dt><dd>{PROGRAM_EXECUTION.developmentVersion}</dd></div>
   </dl>
   <details>

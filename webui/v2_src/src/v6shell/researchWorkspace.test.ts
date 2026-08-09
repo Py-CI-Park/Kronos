@@ -15,7 +15,7 @@ test('research workspace offers a catalog and permanent run detail route', async
   assert.match(library, /data-research-library/u);
   assert.match(library, /실패와 NO-GO도 숨기지 않습니다/u);
   assert.match(detail, /data-run-detail/u);
-  assert.match(detail, /DIRECT_DIRECTORY_METADATA_ONLY/u);
+  assert.match(detail, /detail\.evidence_scope/u);
   assert.match(detail, /Artifacts/u);
   assert.match(detail, /TelemetryCharts/u);
   assert.match(detail, /관측 결과 시각화/u);

@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from webui.v6_research_catalog import ResearchQuery, discover_runs, filter_runs
 
@@ -145,6 +149,42 @@ def test_discover_runs_keeps_child_runs_when_group_has_a_direct_index_file(tmp_p
     }
 
 
+def test_discover_runs_counts_bounded_nested_model_checkpoints(tmp_path: Path) -> None:
+    # Given
+    run = tmp_path / "daily_market_cql"
+    _write_summary(run, {"status": "NO_GO", "algorithm": "CQL"})
+    model_dir = run / "models" / "CQL"
+    model_dir.mkdir(parents=True)
+    (model_dir / "seed-0.kq").write_bytes(b"KQ01")
+
+    # When
+    row = discover_runs(tmp_path)[0]
+
+    # Then
+    assert row.artifact_count == 2
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction boundary")
+def test_discover_runs_rejects_junction_outside_research_root(tmp_path: Path) -> None:
+    root = tmp_path / "runs"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    _write_summary(outside, {"status": "SECRET_STATUS", "algorithm": "LEAK"})
+    junction = root / "daily_junction_escape"
+    created = subprocess.run(
+        ["cmd.exe", "/d", "/c", "mklink", "/J", str(junction), str(outside)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if created.returncode != 0:
+        pytest.skip("junction creation unavailable")
+    try:
+        assert discover_runs(root) == ()
+    finally:
+        junction.rmdir()
+
+
 def test_filter_runs_applies_lane_status_query_and_pagination(tmp_path: Path) -> None:
     # Given
     for index in range(4):
@@ -163,3 +203,14 @@ def test_filter_runs_applies_lane_status_query_and_pagination(tmp_path: Path) ->
     assert page.page == 2
     assert page.page_size == 2
     assert len(page.items) == 1
+
+
+def test_filter_runs_matches_generic_no_go_status_family(tmp_path: Path) -> None:
+    _write_summary(
+        tmp_path / "daily_market_cql",
+        {"status": "NO_GO_HISTORICAL_ECONOMIC_GATE", "algorithm": "CQL"},
+    )
+
+    page = filter_runs(discover_runs(tmp_path), ResearchQuery(status="NO_GO"))
+
+    assert [row.run_id for row in page.items] == ["daily_market_cql"]

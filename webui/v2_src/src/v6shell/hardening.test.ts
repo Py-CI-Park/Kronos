@@ -38,3 +38,13 @@ test('unified score keeps product quality separate from model and live readiness
   assert.match(score, /liveReadinessScore: 0/u);
   assert.match(score, /overallScore: programOverallScore/u);
 });
+
+test('system status distinguishes created checkpoints from an economic GO model', async () => {
+  const rail = await readFile(new URL('./components/shell/SystemStatusRail.svelte', import.meta.url), 'utf8');
+  const safety = await readFile(new URL('./V6SafetyStrip.svelte', import.meta.url), 'utf8');
+
+  assert.match(rail, /경제성 통과 모델 없음/u);
+  assert.doesNotMatch(rail, /· 미생성/u);
+  assert.match(safety, /20개 체크포인트/u);
+  assert.match(safety, /경제성 gate/u);
+});

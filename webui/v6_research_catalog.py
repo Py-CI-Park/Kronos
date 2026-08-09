@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import stat
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ from webui.v6_research_metadata import observe_metadata
 
 RUN_SEGMENT_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,120}$")
 MAX_CATALOG_RUNS: Final = 240
+MAX_CATALOG_ARTIFACTS: Final = 100
 
 
 class ResearchRunPayload(TypedDict):
@@ -89,33 +91,70 @@ def research_lane(run_id: str) -> str:
     return "other"
 
 
-def _artifact_count(directory: Path) -> int:
+def _safe_regular_file(path: Path) -> bool:
     try:
-        return sum(1 for path in directory.iterdir() if path.is_file() and not path.is_symlink())
+        result = path.lstat()
     except OSError:
-        return 0
+        return False
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    attributes = int(getattr(result, "st_file_attributes", 0))
+    return stat.S_ISREG(result.st_mode) and not attributes & reparse_flag
 
 
-def _direct_children(directory: Path) -> tuple[Path, ...]:
+def _safe_directory(path: Path) -> bool:
     try:
-        return tuple(path for path in directory.iterdir() if path.is_dir() and not path.is_symlink())
+        result = path.lstat()
+    except OSError:
+        return False
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    attributes = int(getattr(result, "st_file_attributes", 0))
+    return stat.S_ISDIR(result.st_mode) and not attributes & reparse_flag
+
+
+def _children(directory: Path) -> tuple[Path, ...]:
+    try:
+        return tuple(directory.iterdir())
     except OSError:
         return ()
 
 
+def discover_artifact_files(directory: Path, *, maximum: int = MAX_CATALOG_ARTIFACTS) -> tuple[Path, ...]:
+    """List direct evidence plus bounded model checkpoints without following links."""
+    files = [path for path in _children(directory) if _safe_regular_file(path)]
+    model_root = directory / "models"
+    if _safe_directory(model_root):
+        for child in _children(model_root):
+            if _safe_regular_file(child):
+                files.append(child)
+            elif _safe_directory(child):
+                files.extend(path for path in _children(child) if _safe_regular_file(path))
+    ordered = sorted(files, key=lambda path: path.relative_to(directory).as_posix())
+    return tuple(ordered[: max(0, maximum)])
+
+
+def _artifact_count(directory: Path) -> int:
+    return len(discover_artifact_files(directory))
+
+
+def _direct_children(directory: Path) -> tuple[Path, ...]:
+    return tuple(path for path in _children(directory) if _safe_directory(path))
+
+
 def _has_direct_file(directory: Path) -> bool:
+    return any(_safe_regular_file(path) for path in _children(directory))
+
+
+def _is_within_root(root: Path, directory: Path) -> bool:
     try:
-        return any(path.is_file() and not path.is_symlink() for path in directory.iterdir())
-    except OSError:
+        _ = directory.resolve(strict=True).relative_to(root.resolve(strict=True))
+    except (OSError, ValueError):
         return False
+    return True
 
 
 def discover_run_directories(root: Path) -> tuple[tuple[str, Path], ...]:
     """Expand one grouping level so the catalog represents actual runs, not containers."""
-    try:
-        top_level = tuple(path for path in root.iterdir() if path.is_dir() and not path.is_symlink())
-    except OSError:
-        return ()
+    top_level = tuple(path for path in _children(root) if _safe_directory(path))
     rows: list[tuple[str, Path]] = []
     for directory in top_level:
         children = _direct_children(directory)
@@ -135,8 +174,10 @@ def discover_runs(root: Path) -> tuple[ResearchRun, ...]:
     for run_id, directory in discover_run_directories(root):
         if len(rows) >= MAX_CATALOG_RUNS:
             break
+        if not _is_within_root(root, directory):
+            continue
         try:
-            stat_result = directory.stat()
+            stat_result = directory.lstat()
         except OSError:
             continue
         metadata = observe_metadata(directory)
@@ -162,12 +203,13 @@ def discover_runs(root: Path) -> tuple[ResearchRun, ...]:
 def filter_runs(rows: tuple[ResearchRun, ...], query: ResearchQuery) -> ResearchPage:
     """Filter and paginate a stable catalog snapshot."""
     search = query.search.casefold()
+    status = query.status.casefold()
     filtered = tuple(
         row
         for row in rows
         if (not search or search in row.run_id.casefold() or search in row.algorithm.casefold())
         and (not query.lane or row.lane == query.lane)
-        and (not query.status or row.status == query.status)
+        and (not status or status in row.status.casefold())
     )
     start = (query.page - 1) * query.page_size
     return ResearchPage(filtered[start : start + query.page_size], len(filtered), query.page, query.page_size)

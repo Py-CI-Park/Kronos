@@ -22,7 +22,7 @@
     return `${value} B`;
   }
 
-  const modelArtifacts = $derived(detail?.artifacts.filter((artifact) => /\.(zip|pt|pth|ckpt|onnx|pkl)$/iu.test(artifact.name)) ?? []);
+  const modelArtifacts = $derived(detail?.artifacts.filter((artifact) => /\.(kq|zip|pt|pth|ckpt|onnx|pkl)$/iu.test(artifact.name)) ?? []);
   const artifactChartItems = $derived([...(detail?.artifacts ?? [])]
     .sort((left, right) => right.size_bytes - left.size_bytes)
     .slice(0, 8)
@@ -30,7 +30,7 @@
       label: artifact.name,
       value: artifact.size_bytes,
       displayValue: formatBytes(artifact.size_bytes),
-      tone: /\.(zip|pt|pth|ckpt|onnx|pkl)$/iu.test(artifact.name) ? 'positive' as const : 'accent' as const,
+      tone: /\.(kq|zip|pt|pth|ckpt|onnx|pkl)$/iu.test(artifact.name) ? 'positive' as const : 'accent' as const,
     })));
   const visibleRuns = $derived.by(() => {
     const query = runSearch.trim().toLocaleLowerCase('ko-KR');
@@ -39,7 +39,7 @@
     return [current, ...filtered].filter((run, index, rows): run is ResearchRun => run !== undefined && rows.findIndex((item) => item?.run_id === run.run_id) === index).slice(0, 50);
   });
   const kpis = $derived([
-    { label: 'FILE PRESENT', value: String(modelArtifacts.length), detail: '직접 run 디렉터리 모델 후보', tone: modelArtifacts.length ? 'positive' as const : 'warning' as const },
+    { label: 'FILE PRESENT', value: String(modelArtifacts.length), detail: 'bounded models 하위 체크포인트', tone: modelArtifacts.length ? 'positive' as const : 'warning' as const },
     { label: 'LOADED', value: kronos?.loaded === true ? 'YES' : 'NO', detail: 'Kronos Core 프로세스 상태', tone: kronos?.loaded === true ? 'positive' as const : 'neutral' as const },
     { label: 'PROMOTED', value: 'NO', detail: '자동 승격 금지', tone: 'danger' as const },
     { label: 'RUN VERDICT', value: detail?.run.status ?? 'MISSING', detail: detail?.run.algorithm ?? 'algorithm 없음', tone: detail?.run.status.includes('NO') ? 'danger' as const : 'neutral' as const },

@@ -6,7 +6,7 @@
   <div class="score"><span>PROGRAM MATURITY</span><strong>{PROGRAM_EXECUTION.overallScore}</strong><small>/100</small></div>
   <dl>
     <div><dt>구현 완성도</dt><dd>{PROGRAM_EXECUTION.implementationScore}/100</dd></div>
-    <div><dt>경제 모델</dt><dd>{PROGRAM_EXECUTION.economicModelScore}/100 · 미생성</dd></div>
+    <div><dt>경제 모델</dt><dd>{PROGRAM_EXECUTION.economicModelScore}/100 · 경제성 통과 모델 없음</dd></div>
     <div><dt>현재 판정</dt><dd>{PROGRAM_EXECUTION.stage}</dd></div>
     <div><dt>다음 실행</dt><dd>{PROGRAM_EXECUTION.nextAction}</dd></div>
   </dl>
