@@ -39,6 +39,9 @@ def research_root(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (run / "events.jsonl").write_text('{"step":1}\n', encoding="utf-8")
+    model_dir = run / "models" / "CQL"
+    model_dir.mkdir(parents=True)
+    (model_dir / "seed-0.kq").write_bytes(b"KQ01")
     return tmp_path
 
 
@@ -89,8 +92,13 @@ def test_run_detail_lists_bounded_artifacts_without_opening_them(client) -> None
     # Then
     assert response.status_code == 200
     assert payload["run"]["algorithm"] == "CQL"
-    assert [artifact["name"] for artifact in payload["artifacts"]] == ["events.jsonl", "rl_live_summary.json"]
+    assert [artifact["relative_path"] for artifact in payload["artifacts"]] == [
+        "daily_close_cql_seed0/events.jsonl",
+        "daily_close_cql_seed0/models/CQL/seed-0.kq",
+        "daily_close_cql_seed0/rl_live_summary.json",
+    ]
     assert all("content" not in artifact for artifact in payload["artifacts"])
+    assert payload["evidence_scope"] == "DIRECT_EVIDENCE_AND_BOUNDED_MODEL_METADATA_ONLY"
 
 
 def test_run_detail_exposes_bounded_observed_outcome_for_visualization(client) -> None:

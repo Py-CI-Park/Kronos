@@ -11,12 +11,20 @@ from threading import Lock
 from time import monotonic
 from typing import Callable, Final, TypedDict
 
+from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 from flask import Blueprint, Response, request
 from werkzeug.datastructures import MultiDict
 
-from .v6_research_catalog import ResearchQuery, ResearchRun, discover_runs, filter_runs, resolve_run_directory
+from .v6_research_catalog import (
+    ResearchQuery,
+    ResearchRun,
+    discover_artifact_files,
+    discover_runs,
+    filter_runs,
+    resolve_run_directory,
+)
 from .v6_research_outcomes import observe_outcome
 
 DEFAULT_RUNS_ROOT: Final = Path(__file__).resolve().parent / "rl_runs"
@@ -28,6 +36,7 @@ PROGRAM_SCORES: Final = {
     "economic_model_score": 20,
     "live_readiness_score": 0,
 }
+JSON_OBJECT_ADAPTER: Final = TypeAdapter(dict[str, JsonValue])
 
 
 class ArtifactPayload(TypedDict):
@@ -46,7 +55,7 @@ class ResearchQueryError(Exception):
         return f"invalid research query field: {self.field}"
 
 
-def _response(payload: Mapping[str, object], status_code: int = 200) -> Response:
+def _response(payload: Mapping[str, JsonValue], status_code: int = 200) -> Response:
     return Response(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         status=status_code,
@@ -55,7 +64,8 @@ def _response(payload: Mapping[str, object], status_code: int = 200) -> Response
 
 
 def _error(status_code: int, code: str) -> Response:
-    return _response({"status": "ERROR", "error": {"code": code}}, status_code)
+    payload = JSON_OBJECT_ADAPTER.validate_python({"status": "ERROR", "error": {"code": code}})
+    return _response(payload, status_code)
 
 
 def _method_not_allowed() -> Response:
@@ -96,15 +106,8 @@ def parse_research_query(args: MultiDict[str, str]) -> ResearchQuery:
 
 
 def _artifact_payloads(root: Path, directory: Path) -> tuple[ArtifactPayload, ...]:
-    try:
-        files = sorted(
-            (path for path in directory.iterdir() if path.is_file() and not path.is_symlink()),
-            key=lambda path: path.name,
-        )[:MAX_ARTIFACTS]
-    except OSError:
-        return ()
     payloads: list[ArtifactPayload] = []
-    for path in files:
+    for path in discover_artifact_files(directory, maximum=MAX_ARTIFACTS):
         try:
             stat_result = path.stat()
         except OSError:
@@ -161,7 +164,7 @@ def create_v6_research_blueprint(
         rows = catalog_snapshot()
         by_status = dict(sorted(Counter(row.status for row in rows).items()))
         latest = rows[0].to_payload() if rows else None
-        return _response(
+        payload = JSON_OBJECT_ADAPTER.validate_python(
             {
                 "schema_version": "kronos_v6_research_summary.v1",
                 "status": "OK",
@@ -169,8 +172,9 @@ def create_v6_research_blueprint(
                 "program": PROGRAM_SCORES,
                 "catalog": {"total": len(rows), "by_status": by_status, "latest_run": latest},
                 "claims": {"profitability": False, "live_ready": False, "fresh_oos_opened": False},
-            }
+            },
         )
+        return _response(payload)
 
     def catalog_handler() -> Response:
         if request.method != "GET":
@@ -180,7 +184,7 @@ def create_v6_research_blueprint(
         except ResearchQueryError:
             return _error(400, "BAD_REQUEST")
         page = filter_runs(catalog_snapshot(), query)
-        return _response(
+        payload = JSON_OBJECT_ADAPTER.validate_python(
             {
                 "schema_version": "kronos_v6_research_runs.v1",
                 "status": "OK",
@@ -188,8 +192,9 @@ def create_v6_research_blueprint(
                 "total": page.total,
                 "page": page.page,
                 "page_size": page.page_size,
-            }
+            },
         )
+        return _response(payload)
 
     def detail_handler(run_id: str) -> Response:
         if request.method != "GET":
@@ -204,16 +209,17 @@ def create_v6_research_blueprint(
         run = _run_by_id(rows, run_id)
         if run is None:
             return _error(404, "RUN_NOT_FOUND")
-        return _response(
+        payload = JSON_OBJECT_ADAPTER.validate_python(
             {
                 "schema_version": "kronos_v6_research_run_detail.v1",
                 "status": "OK",
                 "run": run.to_payload(),
                 "artifacts": list(_artifact_payloads(runs_root, directory)),
-                "evidence_scope": "DIRECT_DIRECTORY_METADATA_ONLY",
+                "evidence_scope": "DIRECT_EVIDENCE_AND_BOUNDED_MODEL_METADATA_ONLY",
                 "observed_outcome": observe_outcome(directory, run.source_file),
-            }
+            },
         )
+        return _response(payload)
 
     blueprint.add_url_rule("/summary", endpoint="summary", view_func=summary_handler, methods=["GET", "POST"], provide_automatic_options=False)
     blueprint.add_url_rule("/research-runs", endpoint="runs", view_func=catalog_handler, methods=["GET", "POST"], provide_automatic_options=False)

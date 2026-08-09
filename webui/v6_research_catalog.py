@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import stat
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ from webui.v6_research_metadata import observe_metadata
 
 RUN_SEGMENT_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,120}$")
 MAX_CATALOG_RUNS: Final = 240
+MAX_CATALOG_ARTIFACTS: Final = 100
 
 
 class ResearchRunPayload(TypedDict):
@@ -89,11 +91,49 @@ def research_lane(run_id: str) -> str:
     return "other"
 
 
-def _artifact_count(directory: Path) -> int:
+def _safe_regular_file(path: Path) -> bool:
     try:
-        return sum(1 for path in directory.iterdir() if path.is_file() and not path.is_symlink())
+        result = path.lstat()
     except OSError:
-        return 0
+        return False
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    attributes = int(getattr(result, "st_file_attributes", 0))
+    return stat.S_ISREG(result.st_mode) and not attributes & reparse_flag
+
+
+def _safe_directory(path: Path) -> bool:
+    try:
+        result = path.lstat()
+    except OSError:
+        return False
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    attributes = int(getattr(result, "st_file_attributes", 0))
+    return stat.S_ISDIR(result.st_mode) and not attributes & reparse_flag
+
+
+def _children(directory: Path) -> tuple[Path, ...]:
+    try:
+        return tuple(directory.iterdir())
+    except OSError:
+        return ()
+
+
+def discover_artifact_files(directory: Path, *, maximum: int = MAX_CATALOG_ARTIFACTS) -> tuple[Path, ...]:
+    """List direct evidence plus bounded model checkpoints without following links."""
+    files = [path for path in _children(directory) if _safe_regular_file(path)]
+    model_root = directory / "models"
+    if _safe_directory(model_root):
+        for child in _children(model_root):
+            if _safe_regular_file(child):
+                files.append(child)
+            elif _safe_directory(child):
+                files.extend(path for path in _children(child) if _safe_regular_file(path))
+    ordered = sorted(files, key=lambda path: path.relative_to(directory).as_posix())
+    return tuple(ordered[: max(0, maximum)])
+
+
+def _artifact_count(directory: Path) -> int:
+    return len(discover_artifact_files(directory))
 
 
 def _direct_children(directory: Path) -> tuple[Path, ...]:

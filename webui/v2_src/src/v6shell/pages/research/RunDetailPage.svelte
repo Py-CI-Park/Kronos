@@ -25,7 +25,7 @@
   const kpis = $derived([
     { label: '판정', value: detail?.run.status ?? 'MISSING', detail: '관측된 상태 원문', tone: detail?.run.status.includes('NO') ? 'danger' as const : 'neutral' as const },
     { label: '알고리즘', value: detail?.run.algorithm ?? 'MISSING', detail: 'summary metadata', tone: 'neutral' as const },
-    { label: '산출물', value: String(detail?.artifacts.length ?? 0), detail: '직접 디렉터리 파일', tone: 'neutral' as const },
+    { label: '산출물', value: String(detail?.artifacts.length ?? 0), detail: '직접 증거 + bounded 모델 metadata', tone: 'neutral' as const },
     { label: '결과 시각화', value: telemetry || detail?.observed_outcome.series.length ? 'AVAILABLE' : 'MISSING', detail: telemetry ? `${telemetry.points.length} telemetry point` : `${detail?.observed_outcome.series.length ?? 0} summary row`, tone: telemetry || detail?.observed_outcome.series.length ? 'neutral' as const : 'warning' as const },
   ]);
   const artifactChartItems = $derived(detail?.artifacts
@@ -65,9 +65,9 @@
     </ResearchPanel>
     <div class="grid">
       <ResearchPanel title="Observed Metadata" description="추정값을 만들지 않고 evidence 파일에서 확인된 값만 표시합니다.">
-        <dl><div><dt>Run ID</dt><dd><code>{detail.run.run_id}</code></dd></div><div><dt>Lane</dt><dd>{detail.run.lane}</dd></div><div><dt>Dataset</dt><dd>{detail.run.dataset_id}</dd></div><div><dt>Source</dt><dd>{detail.run.source_file}</dd></div><div><dt>Updated</dt><dd>{detail.run.updated_at}</dd></div><div><dt>Scope</dt><dd><code>DIRECT_DIRECTORY_METADATA_ONLY</code></dd></div></dl>
+        <dl><div><dt>Run ID</dt><dd><code>{detail.run.run_id}</code></dd></div><div><dt>Lane</dt><dd>{detail.run.lane}</dd></div><div><dt>Dataset</dt><dd>{detail.run.dataset_id}</dd></div><div><dt>Source</dt><dd>{detail.run.source_file}</dd></div><div><dt>Updated</dt><dd>{detail.run.updated_at}</dd></div><div><dt>Scope</dt><dd><code>{detail.evidence_scope}</code></dd></div></dl>
       </ResearchPanel>
-      <ResearchPanel title="Artifacts" description="파일을 열거나 모델을 로드하지 않는 bounded metadata 목록입니다.">
+      <ResearchPanel title="Artifacts" description="직접 증거와 models 하위 체크포인트를 열거나 로드하지 않는 bounded metadata 목록입니다.">
         {#if artifactChartItems.length}<AccessibleBarChart title="산출물 크기 분포" ariaLabel="직접 디렉터리 산출물의 파일별 크기" summary="상위 12개 파일의 실제 byte 크기입니다. 파일 내용이나 품질을 의미하지 않습니다." items={artifactChartItems} valueHeader="bytes" />{/if}
         <div class="artifacts">
           {#each detail.artifacts as artifact}

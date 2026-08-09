@@ -2,6 +2,7 @@
   import EChartsRenderer from '../../../charts/EChartsRenderer.svelte';
   import AccessibleBarChart from '../../components/visualization/AccessibleBarChart.svelte';
   import type { ObservedOutcome, ObservedOutcomeSeries } from '../../api/researchApi';
+  import { compactOutcomeLabel } from './observedOutcomeChartModel';
 
   interface Props { readonly outcome: ObservedOutcome; }
   let { outcome }: Props = $props();
@@ -19,7 +20,7 @@
     tooltip: { trigger: 'axis', confine: true, axisPointer: { type: 'shadow' } },
     legend: { top: 0 },
     grid: { left: 82, right: 30, top: 54, bottom: 94, containLabel: true },
-    xAxis: { type: 'category', data: labels, axisLabel: { hideOverlap: true, rotate: labels.length > 4 ? 24 : 0 } },
+    xAxis: { type: 'category', data: labels, axisLabel: { hideOverlap: true, interval: 0, rotate: labels.length > 7 ? 38 : 0, fontSize: 10, formatter: compactOutcomeLabel } },
     yAxis: { type: 'value', name: '원 (KRW)' },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 18, height: 18 }],
     series: [
@@ -32,7 +33,7 @@
     tooltip: { trigger: 'axis', confine: true, axisPointer: { type: 'shadow' } },
     legend: { top: 0 },
     grid: { left: 72, right: 30, top: 54, bottom: 94, containLabel: true },
-    xAxis: { type: 'category', data: labels, axisLabel: { hideOverlap: true, rotate: labels.length > 4 ? 24 : 0 } },
+    xAxis: { type: 'category', data: labels, axisLabel: { hideOverlap: true, interval: 0, rotate: labels.length > 7 ? 38 : 0, fontSize: 10, formatter: compactOutcomeLabel } },
     yAxis: { type: 'value', name: '관측 reward' },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 18, height: 18 }],
     series: [

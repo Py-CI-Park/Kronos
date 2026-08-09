@@ -145,6 +145,21 @@ def test_discover_runs_keeps_child_runs_when_group_has_a_direct_index_file(tmp_p
     }
 
 
+def test_discover_runs_counts_bounded_nested_model_checkpoints(tmp_path: Path) -> None:
+    # Given
+    run = tmp_path / "daily_market_cql"
+    _write_summary(run, {"status": "NO_GO", "algorithm": "CQL"})
+    model_dir = run / "models" / "CQL"
+    model_dir.mkdir(parents=True)
+    (model_dir / "seed-0.kq").write_bytes(b"KQ01")
+
+    # When
+    row = discover_runs(tmp_path)[0]
+
+    # Then
+    assert row.artifact_count == 2
+
+
 def test_filter_runs_applies_lane_status_query_and_pagination(tmp_path: Path) -> None:
     # Given
     for index in range(4):
