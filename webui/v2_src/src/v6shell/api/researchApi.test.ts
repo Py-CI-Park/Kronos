@@ -57,12 +57,21 @@ test('summary request distinguishes a slow success from a real bounded timeout',
 test('research schemas parse the catalog summary page and detail boundaries', () => {
   // Given
   const page = { schema_version: 'kronos_v6_research_runs.v1', status: 'OK', items: [run], total: 1, page: 1, page_size: 40 };
-  const detail = { schema_version: 'kronos_v6_research_run_detail.v1', status: 'OK', run, artifacts: [{ name: 'events.jsonl', relative_path: 'daily_close_cql_seed0/events.jsonl', size_bytes: 12, modified_at: '2026-08-05T00:00:00Z' }], evidence_scope: 'DIRECT_DIRECTORY_METADATA_ONLY' };
+  const detail = {
+    schema_version: 'kronos_v6_research_run_detail.v1', status: 'OK', run,
+    artifacts: [{ name: 'events.jsonl', relative_path: 'daily_close_cql_seed0/events.jsonl', size_bytes: 12, modified_at: '2026-08-05T00:00:00Z' }],
+    evidence_scope: 'DIRECT_DIRECTORY_METADATA_ONLY',
+    observed_outcome: {
+      scope: 'DIRECT_SUMMARY_NUMERIC_ONLY', source_file: 'rl_live_summary.json', headline: 'NO_GO', reasons: ['cost gate'],
+      series: [{ label: 'CQL', total_net_pnl_krw: -1200, total_cost_krw: 300, mean_reward: -0.001 }],
+    },
+  };
 
   // When / Then
   assert.equal(ResearchSummarySchema.parse(summaryPayload).program.economic_model_score, 20);
   assert.equal(ResearchPageSchema.parse(page).items[0]?.run_id, 'daily_close_cql_seed0');
   assert.equal(ResearchRunDetailSchema.parse(detail).artifacts[0]?.name, 'events.jsonl');
+  assert.equal(ResearchRunDetailSchema.parse(detail).observed_outcome.series[0]?.total_net_pnl_krw, -1200);
 });
 
 test('research schemas reject a catalog row without explicit evidence identity', () => {

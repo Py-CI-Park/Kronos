@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Final, Mapping
+from typing import Final
 
 from flask import Blueprint, Response, request
 
@@ -15,7 +16,7 @@ MIN_POINTS: Final = 20
 MAX_POINTS: Final = 500
 
 
-def _response(payload: Mapping, status_code: int = 200) -> Response:
+def _response(payload: Mapping[str, object], status_code: int = 200) -> Response:
     return Response(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), status=status_code, mimetype="application/json")
 
 
@@ -83,7 +84,8 @@ def create_v6_telemetry_blueprint(
         if directory is None:
             invalid = ".." in run_id or any(not segment for segment in run_id.split("/"))
             return _error(400 if invalid else 404, "BAD_REQUEST" if invalid else "RUN_NOT_FOUND")
-        if not (directory / EVENT_FILE).is_file():
+        event_path = directory / EVENT_FILE
+        if not event_path.is_file() or event_path.is_symlink():
             return _error(404, "TELEMETRY_NOT_FOUND")
         try:
             snapshot = read_telemetry(directory, limit=limit)

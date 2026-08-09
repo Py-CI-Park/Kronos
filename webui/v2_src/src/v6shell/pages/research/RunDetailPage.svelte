@@ -8,6 +8,7 @@
   import { loadTelemetry, type TelemetrySnapshot } from '../../api/telemetryApi';
   import ActionTimeline from '../live/ActionTimeline.svelte';
   import TelemetryCharts from '../live/TelemetryCharts.svelte';
+  import ObservedOutcomeCharts from './ObservedOutcomeCharts.svelte';
 
   interface Props {
     readonly runId: string;
@@ -25,7 +26,7 @@
     { label: '판정', value: detail?.run.status ?? 'MISSING', detail: '관측된 상태 원문', tone: detail?.run.status.includes('NO') ? 'danger' as const : 'neutral' as const },
     { label: '알고리즘', value: detail?.run.algorithm ?? 'MISSING', detail: 'summary metadata', tone: 'neutral' as const },
     { label: '산출물', value: String(detail?.artifacts.length ?? 0), detail: '직접 디렉터리 파일', tone: 'neutral' as const },
-    { label: '결과 시각화', value: telemetry ? 'AVAILABLE' : 'MISSING', detail: telemetry ? `${telemetry.points.length} telemetry point` : 'event telemetry 없음', tone: telemetry ? 'neutral' as const : 'warning' as const },
+    { label: '결과 시각화', value: telemetry || detail?.observed_outcome.series.length ? 'AVAILABLE' : 'MISSING', detail: telemetry ? `${telemetry.points.length} telemetry point` : `${detail?.observed_outcome.series.length ?? 0} summary row`, tone: telemetry || detail?.observed_outcome.series.length ? 'neutral' as const : 'warning' as const },
   ]);
   const artifactChartItems = $derived(detail?.artifacts
     .filter((artifact) => artifact.size_bytes > 0)
@@ -52,6 +53,9 @@
   <KpiStrip items={kpis} />
   {#if error}<p class="error">{error}</p>{/if}
   {#if detail}
+    <ResearchPanel title="직접 관측 결과 요약" description="summary 원문의 판정 이유와 허용된 숫자만 읽어 정책·split별 손익·비용·reward를 시각화합니다.">
+      <ObservedOutcomeCharts outcome={detail.observed_outcome} />
+    </ResearchPanel>
     <ResearchPanel title="관측 결과 시각화" description="event telemetry가 존재할 때만 실제 reward·equity·loss·행동을 그립니다. 없으면 결과를 추정하지 않습니다.">
       {#if telemetry}
         <div class="result-stack"><TelemetryCharts points={telemetry.points} /><ActionTimeline points={telemetry.points} /></div>

@@ -1,19 +1,28 @@
 """Bounded, read-only telemetry snapshots for recorded RL event streams."""
 from __future__ import annotations
 
-import json
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final, TypedDict
 
+from pydantic import JsonValue, TypeAdapter, ValidationError
+
+from stom_rl.rl_events import (
+    EQUITY_KINDS,
+    METRIC_UNITS,
+    REWARD_KINDS,
+    resolve_event_metric_metadata,
+)
 from webui.v6_research_metadata import observe_metadata
-from webui.v6_research_catalog import research_lane
+from webui.v6_research_catalog import discover_run_directories, research_lane
 
 EVENT_FILE: Final = "rl_live_events.jsonl"
 HALF_SCAN_BYTES: Final = 2 * 1024 * 1024
 ACTIVE_WINDOW_SECONDS: Final = 30.0
+JSON_OBJECT_ADAPTER: Final = TypeAdapter(dict[str, JsonValue])
 
 
 class TelemetryPointPayload(TypedDict):
@@ -25,6 +34,11 @@ class TelemetryPointPayload(TypedDict):
     exploration: float | None
     action_name: str
     timestamp: str
+    reward_kind: str | None
+    reward_unit: str | None
+    equity_kind: str | None
+    equity_unit: str | None
+    action_recorded: bool | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +51,11 @@ class TelemetryPoint:
     exploration: float | None
     action_name: str
     timestamp: str
+    reward_kind: str | None
+    reward_unit: str | None
+    equity_kind: str | None
+    equity_unit: str | None
+    action_recorded: bool | None
 
     def to_payload(self) -> TelemetryPointPayload:
         return {
@@ -48,6 +67,11 @@ class TelemetryPoint:
             "exploration": self.exploration,
             "action_name": self.action_name,
             "timestamp": self.timestamp,
+            "reward_kind": self.reward_kind,
+            "reward_unit": self.reward_unit,
+            "equity_kind": self.equity_kind,
+            "equity_unit": self.equity_unit,
+            "action_recorded": self.action_recorded,
         }
 
 
@@ -73,29 +97,45 @@ class TelemetryRun:
     updated_ns: int
 
 
-def _text(mapping, key: str) -> str:
+def _text(mapping: Mapping[str, JsonValue], key: str) -> str:
     value = mapping.get(key)
     return value.strip() if type(value) is str and value.strip() else "MISSING"
 
 
-def _number(mapping, key: str) -> float | None:
+def _number(mapping: Mapping[str, JsonValue], key: str) -> float | None:
     value = mapping.get(key)
-    if type(value) not in (int, float):
+    if type(value) is int:
+        numeric = float(value)
+    elif type(value) is float:
+        numeric = value
+    else:
         return None
-    numeric = float(value)
     return numeric if math.isfinite(numeric) else None
+
+
+def _declared_text(
+    metadata: Mapping[str, object],
+    key: str,
+    allowed: tuple[str, ...],
+) -> str | None:
+    value = metadata.get(key)
+    return value if type(value) is str and value in allowed else None
+
+
+def _declared_bool(metadata: Mapping[str, object], key: str) -> bool | None:
+    value = metadata.get(key)
+    return value if type(value) is bool else None
 
 
 def _parse_line(line: str) -> TelemetryPoint | None:
     try:
-        raw = json.loads(line)
-    except json.JSONDecodeError:
-        return None
-    if type(raw) is not dict:
+        raw = JSON_OBJECT_ADAPTER.validate_json(line)
+    except ValidationError:
         return None
     step = raw.get("global_step")
     if type(step) is not int or step < 0:
         return None
+    metadata = resolve_event_metric_metadata(raw)
     timestamp = _text(raw, "timestamp_utc")
     if timestamp == "MISSING":
         timestamp = _text(raw, "timestamp")
@@ -108,6 +148,11 @@ def _parse_line(line: str) -> TelemetryPoint | None:
         exploration=_number(raw, "exploration"),
         action_name=_text(raw, "action_name"),
         timestamp=timestamp,
+        reward_kind=_declared_text(metadata, "reward_kind", REWARD_KINDS),
+        reward_unit=_declared_text(metadata, "reward_unit", METRIC_UNITS),
+        equity_kind=_declared_text(metadata, "equity_kind", EQUITY_KINDS),
+        equity_unit=_declared_text(metadata, "equity_unit", METRIC_UNITS),
+        action_recorded=_declared_bool(metadata, "action_recorded"),
     )
 
 
@@ -116,7 +161,7 @@ def _sampled_lines(path: Path, size: int) -> tuple[tuple[str, ...], str]:
         return tuple(path.read_text(encoding="utf-8-sig").splitlines()), "FULL_FILE"
     with path.open("rb") as stream:
         head = stream.read(HALF_SCAN_BYTES)
-        stream.seek(-HALF_SCAN_BYTES, 2)
+        _ = stream.seek(-HALF_SCAN_BYTES, 2)
         tail = stream.read(HALF_SCAN_BYTES)
     head = head[: head.rfind(b"\n") + 1]
     first_break = tail.find(b"\n")
@@ -141,6 +186,8 @@ def read_telemetry(
 ) -> TelemetrySnapshot:
     """Read a bounded full or head/tail snapshot from one direct event file."""
     event_path = directory / EVENT_FILE
+    if not event_path.is_file() or event_path.is_symlink():
+        raise FileNotFoundError(event_path)
     stat_result = event_path.stat()
     lines, sampling = _sampled_lines(event_path, stat_result.st_size)
     parsed = tuple(_parse_line(line) for line in lines if line.strip())
@@ -159,27 +206,9 @@ def read_telemetry(
     )
 
 
-def _directories(root: Path) -> tuple[tuple[str, Path], ...]:
-    try:
-        top_level = tuple(path for path in root.iterdir() if path.is_dir() and not path.is_symlink())
-    except OSError:
-        return ()
-    rows: list[tuple[str, Path]] = []
-    for directory in top_level:
-        if directory.name != "v6_daily_h1":
-            rows.append((directory.name, directory))
-            continue
-        try:
-            children = tuple(path for path in directory.iterdir() if path.is_dir() and not path.is_symlink())
-        except OSError:
-            continue
-        rows.extend((f"{directory.name}/{child.name}", child) for child in children)
-    return tuple(rows)
-
-
 def discover_telemetry_runs(root: Path) -> tuple[TelemetryRun, ...]:
     rows: list[TelemetryRun] = []
-    for run_id, directory in _directories(root):
+    for run_id, directory in discover_run_directories(root):
         event_path = directory / EVENT_FILE
         if not event_path.is_file() or event_path.is_symlink():
             continue

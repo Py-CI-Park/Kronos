@@ -3,17 +3,36 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from flask import Flask
 
+from webui.v6_research_api import create_v6_research_blueprint
 from webui.v6_telemetry_api import create_v6_telemetry_blueprint
+from webui.v6_run_telemetry import read_telemetry
 
 
 def _client(tmp_path: Path):
     run = tmp_path / "daily_close_dqn"
     run.mkdir()
     (run / "rl_live_events.jsonl").write_text(
-        json.dumps({"global_step": 7, "phase": "train", "reward": 0.04, "equity": 1.02}) + "\n",
+        json.dumps(
+            {
+                "global_step": 7,
+                "phase": "train",
+                "reward": 0.04,
+                "equity": 1.02,
+                "info": {
+                    "reward_kind": "return_fraction",
+                    "reward_unit": "fraction",
+                    "equity_kind": "normalized_nav",
+                    "equity_unit": "normalized",
+                    "action_recorded": False,
+                },
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     app = Flask(__name__)
@@ -46,7 +65,94 @@ def test_telemetry_api_lists_runs_and_returns_bounded_points(tmp_path: Path) -> 
             "exploration": None,
             "action_name": "MISSING",
             "timestamp": "MISSING",
+            "reward_kind": "return_fraction",
+            "reward_unit": "fraction",
+            "equity_kind": "normalized_nav",
+            "equity_unit": "normalized",
+            "action_recorded": False,
         }
+    ]
+
+
+def test_telemetry_api_does_not_infer_units_for_legacy_events(tmp_path: Path) -> None:
+    # Given
+    run = tmp_path / "legacy_dqn"
+    run.mkdir()
+    (run / "rl_live_events.jsonl").write_text(
+        json.dumps({"global_step": 1, "reward": 2.0, "equity": 1.1}) + "\n",
+        encoding="utf-8",
+    )
+    app = Flask(__name__)
+    app.register_blueprint(create_v6_telemetry_blueprint(runs_root=tmp_path))
+
+    # When
+    with app.test_client() as client:
+        payload = client.get("/api/v6/research-runs/legacy_dqn/telemetry").get_json()
+
+    # Then
+    assert payload["points"][0] | {
+        "reward_kind": None,
+        "reward_unit": None,
+        "equity_kind": None,
+        "equity_unit": None,
+        "action_recorded": None,
+    } == payload["points"][0]
+
+
+def test_telemetry_reader_rejects_a_symlinked_event_file(tmp_path: Path) -> None:
+    # Given
+    run = tmp_path / "symlinked"
+    run.mkdir()
+    (run / "rl_live_events.jsonl").write_text("{}\n", encoding="utf-8")
+
+    # When / Then
+    with patch.object(Path, "is_symlink", return_value=True), pytest.raises(FileNotFoundError):
+        read_telemetry(run)
+
+
+def test_integrated_research_and_telemetry_routes_do_not_collide(tmp_path: Path) -> None:
+    # Given
+    run = tmp_path / "daily_close_dqn"
+    run.mkdir()
+    (run / "rl_live_events.jsonl").write_text(
+        json.dumps({"global_step": 1, "reward": 0.1}) + "\n",
+        encoding="utf-8",
+    )
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_v6_research_blueprint(runs_root=tmp_path, name="integrated_research")
+    )
+    app.register_blueprint(
+        create_v6_telemetry_blueprint(runs_root=tmp_path, name="integrated_telemetry")
+    )
+
+    # When
+    with app.test_client() as client:
+        response = client.get("/api/v6/research-runs/daily_close_dqn/telemetry?limit=20")
+
+    # Then
+    assert response.status_code == 200
+    assert response.get_json()["schema_version"] == "kronos_v6_run_telemetry.v1"
+
+
+def test_telemetry_api_lists_event_files_inside_generic_run_groups(tmp_path: Path) -> None:
+    # Given
+    grouped = tmp_path / "daily_close_slot_train" / "market_cql_seed0"
+    grouped.mkdir(parents=True)
+    (grouped / "rl_live_events.jsonl").write_text(
+        json.dumps({"global_step": 3, "phase": "train", "action_name": "CASH"}) + "\n",
+        encoding="utf-8",
+    )
+    app = Flask(__name__)
+    app.register_blueprint(create_v6_telemetry_blueprint(runs_root=tmp_path))
+
+    # When
+    with app.test_client() as client:
+        payload = client.get("/api/v6/telemetry-runs").get_json()
+
+    # Then
+    assert [row["run_id"] for row in payload["items"]] == [
+        "daily_close_slot_train/market_cql_seed0"
     ]
 
 

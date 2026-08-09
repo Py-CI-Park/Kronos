@@ -55,6 +55,7 @@ test('evidence-heavy pages reuse the shared visualization', async () => {
 test('navigation provides mobile-safe tap targets and non-overlapping status details', async () => {
   const sidebar = await read('./components/shell/UnifiedSidebar.svelte');
   const rail = await read('./components/shell/SystemStatusRail.svelte');
+  const pageHeader = await read('./components/shell/PageHeader.svelte');
   const shellCss = await read('./unified-shell.css');
 
   assert.match(sidebar, /min-height:44px/u);
@@ -64,4 +65,5 @@ test('navigation provides mobile-safe tap targets and non-overlapping status det
   assert.match(shellCss, /overflow-x:\s*auto/u);
   assert.match(shellCss, /padding-bottom\s*:/u);
   assert.match(rail, /details>div\{position:static/u);
+  assert.match(pageHeader, /\.page-header h1\{[^}]*overflow-wrap:anywhere/u);
 });

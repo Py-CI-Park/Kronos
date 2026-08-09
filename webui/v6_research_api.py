@@ -3,17 +3,21 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from time import monotonic
-from typing import Callable, Final, Mapping, TypedDict
+from typing import Callable, Final, TypedDict
+
+from typing_extensions import override
 
 from flask import Blueprint, Response, request
 from werkzeug.datastructures import MultiDict
 
 from .v6_research_catalog import ResearchQuery, ResearchRun, discover_runs, filter_runs, resolve_run_directory
+from .v6_research_outcomes import observe_outcome
 
 DEFAULT_RUNS_ROOT: Final = Path(__file__).resolve().parent / "rl_runs"
 ALLOWED_QUERY_KEYS: Final = frozenset({"search", "lane", "status", "page", "page_size"})
@@ -37,11 +41,12 @@ class ArtifactPayload(TypedDict):
 class ResearchQueryError(Exception):
     field: str
 
+    @override
     def __str__(self) -> str:
         return f"invalid research query field: {self.field}"
 
 
-def _response(payload: Mapping, status_code: int = 200) -> Response:
+def _response(payload: Mapping[str, object], status_code: int = 200) -> Response:
     return Response(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         status=status_code,
@@ -206,6 +211,7 @@ def create_v6_research_blueprint(
                 "run": run.to_payload(),
                 "artifacts": list(_artifact_payloads(runs_root, directory)),
                 "evidence_scope": "DIRECT_DIRECTORY_METADATA_ONLY",
+                "observed_outcome": observe_outcome(directory, run.source_file),
             }
         )
 

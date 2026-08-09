@@ -16,7 +16,26 @@ def research_root(tmp_path: Path) -> Path:
     run = tmp_path / "daily_close_cql_seed0"
     run.mkdir()
     (run / "rl_live_summary.json").write_text(
-        json.dumps({"status": "NO_GO", "algorithm": "CQL", "dataset_id": "daily-close-v2"}),
+        json.dumps(
+            {
+                "status": "NO_GO",
+                "algorithm": "CQL",
+                "dataset_id": "daily-close-v2",
+                "primary_headline": "비용 후 검증 손익이 기준선을 넘지 못했습니다.",
+                "reasons": ["validation net PnL below zero", "shuffle gap too small"],
+                "summary": [
+                    {
+                        "policy": "cql_binary_controller",
+                        "date_count": 20,
+                        "filled_slots": 12,
+                        "total_net_pnl_krw": -1234.5,
+                        "total_cost_krw": 320.0,
+                        "mean_reward": -0.001,
+                        "cumulative_reward": -0.02,
+                    }
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     (run / "events.jsonl").write_text('{"step":1}\n', encoding="utf-8")
@@ -72,6 +91,28 @@ def test_run_detail_lists_bounded_artifacts_without_opening_them(client) -> None
     assert payload["run"]["algorithm"] == "CQL"
     assert [artifact["name"] for artifact in payload["artifacts"]] == ["events.jsonl", "rl_live_summary.json"]
     assert all("content" not in artifact for artifact in payload["artifacts"])
+
+
+def test_run_detail_exposes_bounded_observed_outcome_for_visualization(client) -> None:
+    # Given / When
+    response = client.get("/api/v6/research-runs/daily_close_cql_seed0")
+    outcome = response.get_json()["observed_outcome"]
+
+    # Then
+    assert outcome["scope"] == "DIRECT_SUMMARY_NUMERIC_ONLY"
+    assert outcome["headline"] == "비용 후 검증 손익이 기준선을 넘지 못했습니다."
+    assert outcome["reasons"] == ["validation net PnL below zero", "shuffle gap too small"]
+    assert outcome["series"] == [
+        {
+            "label": "cql_binary_controller",
+            "date_count": 20,
+            "filled_slots": 12,
+            "total_net_pnl_krw": -1234.5,
+            "total_cost_krw": 320.0,
+            "mean_reward": -0.001,
+            "cumulative_reward": -0.02,
+        }
+    ]
 
 
 def test_research_api_fails_closed_for_invalid_queries_methods_and_paths(client) -> None:

@@ -6,6 +6,7 @@
   import { loadTelemetry, loadTelemetryRuns, type TelemetryRun, type TelemetrySnapshot } from '../../api/telemetryApi';
   import ActionTimeline from './ActionTimeline.svelte';
   import TelemetryCharts from './TelemetryCharts.svelte';
+  import { equityPresentation, rewardPresentation } from './telemetryMetricModel';
 
   let runs = $state<readonly TelemetryRun[]>([]);
   let selected = $state('');
@@ -17,12 +18,13 @@
 
   const latest = $derived(snapshot?.points.at(-1) ?? null);
   const selectedRun = $derived(runs.find((run) => run.run_id === selected) ?? null);
-  const rewardTotal = $derived(snapshot?.points.reduce((sum, point) => sum + (point.reward ?? 0), 0) ?? 0);
+  const equityMetric = $derived(snapshot ? equityPresentation(snapshot.points) : null);
+  const rewardMetric = $derived(snapshot ? rewardPresentation(snapshot.points) : null);
   const kpis = $derived([
     { label: '최근 STEP', value: latest ? new Intl.NumberFormat('ko-KR').format(latest.step) : 'MISSING', detail: latest?.phase ?? 'phase 없음', tone: 'neutral' as const },
     { label: '실행 판정', value: selectedRun?.status ?? 'MISSING', detail: selectedRun?.algorithm ?? 'algorithm 없음', tone: selectedRun?.status.includes('NO') ? 'danger' as const : 'neutral' as const },
-    { label: '기록 에쿼티', value: latest?.equity === null || latest?.equity === undefined ? 'MISSING' : `${((latest.equity - 1) * 100).toFixed(2)}%`, detail: '초기값 1 대비 · 수익 주장 아님', tone: latest?.equity !== null && latest?.equity !== undefined && latest.equity < 1 ? 'danger' as const : 'neutral' as const },
-    { label: '표본 보상 합계', value: rewardTotal.toFixed(4), detail: '표시 point의 reward · 수익률과 다름', tone: rewardTotal < 0 ? 'warning' as const : 'neutral' as const },
+    { label: equityMetric?.title ?? '기록 equity', value: equityMetric?.latestLabel ?? 'MISSING', detail: equityMetric?.notice ?? '단위 정보 없음', tone: equityMetric?.latestLabel.startsWith('-') ? 'danger' as const : 'neutral' as const },
+    { label: '표본 보상 합계', value: rewardMetric?.latestLabel ?? 'MISSING', detail: rewardMetric?.notice ?? '단위 정보 없음', tone: rewardMetric?.latestLabel.startsWith('-') ? 'warning' as const : 'neutral' as const },
     { label: '표시 POINT', value: String(snapshot?.points.length ?? 0), detail: snapshot?.sampling ?? 'MISSING', tone: 'neutral' as const },
   ]);
 
@@ -89,7 +91,7 @@
     </aside>
     <section class="reading-order" aria-label="학습 화면 읽는 순서">
       <article><span>01</span><div><b>학습 신호</b><small>reward·loss·exploration이 안정되는지 봅니다.</small></div></article>
-      <article><span>02</span><div><b>경제 경로</b><small>equity·drawdown은 reward와 분리해 봅니다.</small></div></article>
+      <article><span>02</span><div><b>경제 경로</b><small>단위가 선언된 NAV에만 drawdown을 계산합니다.</small></div></article>
       <article><span>03</span><div><b>정책 행동</b><small>시간대별 행동·쏠림·최근 결정을 확인합니다.</small></div></article>
       <article><span>04</span><div><b>공식 판정</b><small>이 화면만으로 GO·수익성을 판정하지 않습니다.</small></div></article>
     </section>
