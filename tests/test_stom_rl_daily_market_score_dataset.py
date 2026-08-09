@@ -86,6 +86,7 @@ def test_score_dataset_freezes_causal_top10_and_preserves_leading_zero_codes(tmp
     dataset = load_market_score_dataset(
         _csv(tmp_path / "scores.csv"),
         source_manifest_path=_manifest(tmp_path / "manifest.json"),
+        artifact_root=tmp_path,
     )
 
     assert dataset.schema_version == "kronos_daily_market_score_dataset.v1"
@@ -109,10 +110,12 @@ def test_future_label_change_does_not_change_causal_dataset_hash(tmp_path: Path)
     first = load_market_score_dataset(
         _csv(tmp_path / "first.csv", future_value="-0.9"),
         source_manifest_path=manifest,
+        artifact_root=tmp_path,
     )
     second = load_market_score_dataset(
         _csv(tmp_path / "second.csv", future_value="0.9"),
         source_manifest_path=manifest,
+        artifact_root=tmp_path,
     )
 
     assert first.dataset_hash == second.dataset_hash
@@ -125,6 +128,7 @@ def test_score_dataset_rejects_unreviewed_fill_mode_and_fresh_oos(tmp_path: Path
         _ = load_market_score_dataset(
             scores,
             source_manifest_path=_manifest(tmp_path / "bad.json", fill_mode="next_open"),
+            artifact_root=tmp_path,
         )
 
     fresh_scores = _csv(tmp_path / "fresh.csv", split="fresh_oos")
@@ -132,4 +136,19 @@ def test_score_dataset_rejects_unreviewed_fill_mode_and_fresh_oos(tmp_path: Path
         _ = load_market_score_dataset(
             fresh_scores,
             source_manifest_path=_manifest(tmp_path / "fresh-manifest.json"),
+            artifact_root=tmp_path,
+        )
+
+
+def test_score_dataset_rejects_sources_outside_the_explicit_trusted_root(tmp_path: Path) -> None:
+    trusted = tmp_path / "trusted"
+    trusted.mkdir()
+    scores = _csv(trusted / "scores.csv")
+    outside_manifest = _manifest(tmp_path / "outside.json")
+
+    with pytest.raises(ValueError, match="OUTSIDE_TRUSTED_ARTIFACT_ROOT"):
+        _ = load_market_score_dataset(
+            scores,
+            source_manifest_path=outside_manifest,
+            artifact_root=trusted,
         )

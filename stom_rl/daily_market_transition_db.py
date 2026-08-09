@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import ClassVar, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from .daily_market_transition_contract import (
     DailyMarketCandidate,
@@ -27,16 +27,20 @@ from .daily_ohlcv_db import (
 )
 
 PRICE_BASIS_BLOCKER = "D0_PRICE_BASIS_NOT_VERIFIED"
-SQLITE_ROW_ADAPTER = TypeAdapter(tuple[JsonValue, ...])
-SQLITE_ROWS_ADAPTER = TypeAdapter(list[tuple[JsonValue, ...]])
+SqliteScalar = str | int | float | bool | None
+SqliteRow = tuple[SqliteScalar, ...]
+SqliteRows = list[SqliteRow]
+SqliteBoundary = SqliteRow | SqliteRows | None
+SQLITE_ROW_ADAPTER = TypeAdapter(SqliteRow)
+SQLITE_ROWS_ADAPTER = TypeAdapter(SqliteRows)
 
 
 class _ObjectCursor(Protocol):
     """Typed view over sqlite3's dynamically typed fetch boundary."""
 
-    def fetchone(self) -> object: ...
+    def fetchone(self) -> SqliteBoundary: ...
 
-    def fetchall(self) -> object: ...
+    def fetchall(self) -> SqliteBoundary: ...
 
 
 class DailyMarketCandidateBatch(BaseModel):
@@ -63,7 +67,7 @@ def _source_identity(path: Path) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _parse_db_date(value: object, *, code: str) -> date:
+def _parse_db_date(value: SqliteScalar, *, code: str) -> date:
     if isinstance(value, bool):
         raise ValueError(f"{code}:INVALID_TRADING_DATE")
     if isinstance(value, int):
@@ -78,7 +82,7 @@ def _parse_db_date(value: object, *, code: str) -> date:
         raise ValueError(f"{code}:INVALID_TRADING_DATE") from exc
 
 
-def _parse_open(value: object, *, code: str, label: str) -> Decimal:
+def _parse_open(value: SqliteScalar, *, code: str, label: str) -> Decimal:
     if isinstance(value, bool) or value is None:
         raise ValueError(f"{code}:INVALID_{label}_OPEN")
     try:
@@ -90,7 +94,7 @@ def _parse_open(value: object, *, code: str, label: str) -> Decimal:
     return price
 
 
-def _query_only_enabled(row: tuple[object, ...] | None) -> bool:
+def _query_only_enabled(row: SqliteRow | None) -> bool:
     if row is None or not row:
         return False
     value = row[0]
@@ -105,8 +109,8 @@ def _query_only_enabled(row: tuple[object, ...] | None) -> bool:
 
 def _fetch_optional_row(
     cursor: _ObjectCursor,
-) -> tuple[JsonValue, ...] | None:
-    raw: object = cursor.fetchone()
+) -> SqliteRow | None:
+    raw = cursor.fetchone()
     if raw is None:
         return None
     try:
@@ -115,8 +119,8 @@ def _fetch_optional_row(
         raise ValueError("SQLITE_ROW_SHAPE_INVALID") from exc
 
 
-def _fetch_rows(cursor: _ObjectCursor) -> list[tuple[JsonValue, ...]]:
-    raw: object = cursor.fetchall()
+def _fetch_rows(cursor: _ObjectCursor) -> SqliteRows:
+    raw = cursor.fetchall()
     try:
         return SQLITE_ROWS_ADAPTER.validate_python(raw)
     except ValueError as exc:

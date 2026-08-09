@@ -11,8 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from .daily_market_artifact_guard import (
+    MAX_PANEL_CSV_BYTES,
+    MAX_PANEL_ROWS,
+    resolve_trusted_artifact,
+)
 from .daily_market_score_dataset import DailyMarketScoreDataset
 from .daily_market_transition_contract import SplitName
 from .daily_ohlcv_db import validate_daily_table_name
@@ -93,7 +98,7 @@ def _sha_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _sha_payload(value: object) -> str:
+def _sha_payload(value: JsonValue) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -121,11 +126,13 @@ def _feature_value(row: Mapping[str, str | None], feature: str) -> float | None:
 def _selected_keys(dataset: DailyMarketScoreDataset) -> dict[tuple[str, str], SplitName]:
     selected: dict[tuple[str, str], SplitName] = {}
     for day in dataset.days:
+        if day.split == "FRESH_OOS" or any(score.split == "FRESH_OOS" for score in day.scores):
+            raise ValueError("FRESH_OOS remains sealed")
         if len(day.scores) != SLOTS:
             raise ValueError("STATE_DATASET_REQUIRES_EXACTLY_10_SCORES_PER_DAY")
         date_key = day.decision_date.strftime("%Y%m%d")
         for score in day.scores:
-            key = (date_key, score.code)
+            key = (date_key, score.table)
             if key in selected:
                 raise ValueError("DUPLICATE_SELECTED_SCORE_KEY")
             selected[key] = day.split
@@ -142,13 +149,15 @@ def _read_selected_panel(
         required = {"date", "table", "code", "split", *CAUSAL_FEATURE_COLUMNS}
         if reader.fieldnames is None or not required.issubset(reader.fieldnames):
             raise ValueError("CAUSAL_PANEL_COLUMNS_MISSING")
-        for row in reader:
-            key = ((row.get("date") or "").strip().replace("-", ""), (row.get("code") or "").strip())
+        for row_number, row in enumerate(reader, start=1):
+            if row_number > MAX_PANEL_ROWS:
+                raise ValueError("CAUSAL_PANEL_ROW_LIMIT_EXCEEDED")
+            table = validate_daily_table_name(row.get("table") or "")
+            key = ((row.get("date") or "").strip().replace("-", ""), table)
             expected_split = selected.get(key)
             if expected_split is None:
                 continue
-            table = validate_daily_table_name(row.get("table") or "")
-            if table[1:] != key[1]:
+            if table[1:] != (row.get("code") or "").strip():
                 raise ValueError("PANEL_TABLE_CODE_IDENTITY_MISMATCH")
             if not _split_matches(row.get("split") or "", expected_split):
                 raise ValueError("PANEL_SCORE_SPLIT_MISMATCH")
@@ -201,7 +210,7 @@ def _day_vector(
         missing_count = 0
         date_key = day.decision_date.strftime("%Y%m%d")
         for score in day.scores:
-            raw = rows[(date_key, score.code)]
+            raw = rows[(date_key, score.table)]
             for feature_index, statistic in enumerate(statistics):
                 raw_value = raw.values[feature_index]
                 is_missing = raw_value is None
@@ -229,11 +238,15 @@ def build_market_state_dataset(
     score_dataset: DailyMarketScoreDataset,
     *,
     panel_csv_path: Path | str,
+    artifact_root: Path | str,
 ) -> DailyMarketStateDataset:
     """Build fixed 160-value states without reading any future-label column."""
-    panel_path = Path(panel_csv_path).resolve()
-    if not panel_path.is_file():
-        raise FileNotFoundError(panel_path)
+    panel_path = resolve_trusted_artifact(
+        panel_csv_path,
+        artifact_root=artifact_root,
+        max_bytes=MAX_PANEL_CSV_BYTES,
+        label="CAUSAL_PANEL_CSV",
+    )
     selected = _selected_keys(score_dataset)
     raw_rows = _read_selected_panel(panel_path, selected)
     statistics = _fit_statistics(raw_rows)

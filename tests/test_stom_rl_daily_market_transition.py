@@ -73,6 +73,26 @@ def test_state_hash_and_ranking_do_not_depend_on_future_open_prices() -> None:
     assert original_state.feature_vector == changed_state.feature_vector
 
 
+def test_market_prefix_is_part_of_state_and_execution_identity() -> None:
+    primary = [_candidate(index) for index in range(1, 11)]
+    secondary = [candidate.model_copy(update={"market_prefix": "Q"}) for candidate in primary]
+
+    primary_state = _state(primary)
+    secondary_state = _state(secondary)
+
+    assert primary_state.state_hash != secondary_state.state_hash
+    assert primary_state.candidate_tables[0] == "A000001"
+    assert secondary_state.candidate_tables[0] == "Q000001"
+    with pytest.raises(ValueError, match="candidate identity"):
+        _ = execute_binary_transition(
+            primary_state,
+            secondary,
+            BinaryAction.INVEST_TOP10_EQUAL_SLOT,
+            previous_nav_krw=Decimal("60000000"),
+            previous_peak_nav_krw=Decimal("60000000"),
+        )
+
+
 def test_cash_action_preserves_nav_and_records_no_trade() -> None:
     candidates = [_candidate(index) for index in range(1, 13)]
 
@@ -105,6 +125,7 @@ def test_invest_action_uses_top_ten_integer_slots_and_preserves_cash_floor() -> 
 
     assert transition.executed_action == "INVEST_TOP10_EQUAL_SLOT"
     assert tuple(row.code for row in transition.ledger) == tuple(f"{index:06d}" for index in range(1, 11))
+    assert tuple(row.table for row in transition.ledger) == tuple(f"A{index:06d}" for index in range(1, 11))
     assert all(row.shares == int(row.shares) and row.shares > 0 for row in transition.ledger)
     assert transition.deployed_at_entry_krw <= Decimal("50000000")
     assert transition.cash_after_entry_krw >= Decimal("10000000")

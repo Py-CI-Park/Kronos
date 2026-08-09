@@ -64,7 +64,11 @@ def _database(path: Path) -> Path:
 
 def test_reward_audit_preserves_pass_and_blocked_days_without_silent_filtering(tmp_path: Path) -> None:
     scores, manifest = _sources(tmp_path)
-    dataset = load_market_score_dataset(scores, source_manifest_path=manifest)
+    dataset = load_market_score_dataset(
+        scores,
+        source_manifest_path=manifest,
+        artifact_root=tmp_path,
+    )
 
     audit = audit_daily_market_rewards(dataset, db_path=_database(tmp_path / "daily.db"))
 

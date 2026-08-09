@@ -4,6 +4,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from stom_rl.daily_market_score_dataset import load_market_score_dataset
 from stom_rl.daily_market_state_dataset import CAUSAL_FEATURE_COLUMNS, build_market_state_dataset
 
@@ -79,6 +81,7 @@ def _score_dataset(root: Path):
     return load_market_score_dataset(
         _scores(root / "scores.csv"),
         source_manifest_path=_manifest(root / "manifest.json"),
+        artifact_root=root,
     )
 
 
@@ -87,6 +90,7 @@ def test_state_dataset_fits_imputation_and_scaling_on_train_only(tmp_path: Path)
     state_dataset = build_market_state_dataset(
         score_dataset,
         panel_csv_path=_panel(tmp_path / "panel.csv", future_label="0.9"),
+        artifact_root=tmp_path,
     )
 
     assert state_dataset.day_count == 2
@@ -109,10 +113,12 @@ def test_future_label_is_excluded_but_test_features_use_frozen_train_statistics(
     first = build_market_state_dataset(
         score_dataset,
         panel_csv_path=_panel(tmp_path / "first.csv", future_label="-0.9"),
+        artifact_root=tmp_path,
     )
     second = build_market_state_dataset(
         score_dataset,
         panel_csv_path=_panel(tmp_path / "second.csv", future_label="0.9"),
+        artifact_root=tmp_path,
     )
     shifted = build_market_state_dataset(
         score_dataset,
@@ -121,9 +127,35 @@ def test_future_label_is_excluded_but_test_features_use_frozen_train_statistics(
             future_label="0.9",
             test_multiplier=1000.0,
         ),
+        artifact_root=tmp_path,
     )
 
     assert first.state_dataset_hash == second.state_dataset_hash
     assert first.source_panel_sha256 != second.source_panel_sha256
     assert first.statistics == shifted.statistics
     assert first.state_dataset_hash != shifted.state_dataset_hash
+
+
+def test_state_builder_rejects_direct_fresh_oos_and_outside_panel(tmp_path: Path) -> None:
+    score_dataset = _score_dataset(tmp_path)
+    first_day = score_dataset.days[0]
+    fresh_scores = tuple(score.model_copy(update={"split": "FRESH_OOS"}) for score in first_day.scores)
+    fresh_day = first_day.model_copy(update={"split": "FRESH_OOS", "scores": fresh_scores})
+    bypassed_dataset = score_dataset.model_copy(update={"days": (fresh_day,)})
+    panel = _panel(tmp_path / "panel.csv", future_label="0")
+
+    with pytest.raises(ValueError, match="FRESH_OOS"):
+        _ = build_market_state_dataset(
+            bypassed_dataset,
+            panel_csv_path=panel,
+            artifact_root=tmp_path,
+        )
+
+    trusted = tmp_path / "trusted"
+    trusted.mkdir()
+    with pytest.raises(ValueError, match="OUTSIDE_TRUSTED_ARTIFACT_ROOT"):
+        _ = build_market_state_dataset(
+            score_dataset,
+            panel_csv_path=panel,
+            artifact_root=trusted,
+        )

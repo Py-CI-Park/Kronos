@@ -11,7 +11,7 @@ from decimal import Decimal
 from enum import IntEnum
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 SplitName = Literal["TRAIN", "VALIDATION", "TEST", "FRESH_OOS"]
 ActionName = Literal["CASH", "INVEST_TOP10_EQUAL_SLOT"]
@@ -34,11 +34,6 @@ class DailyMarketScore(BaseModel):
     score: float
     split: SplitName
     market_prefix: Literal["A", "Q"] = "A"
-
-    @field_validator("split", mode="before")
-    @classmethod
-    def normalize_split(cls, value: object) -> object:
-        return value.upper() if isinstance(value, str) else value
 
     @property
     def table(self) -> str:
@@ -106,6 +101,7 @@ class MarketState(BaseModel):
     feature_vector: tuple[float, ...]
     previous_exposure_ratio: Annotated[Decimal, Field(ge=0, le=1)]
     previous_drawdown: Annotated[Decimal, Field(ge=-1, le=0)]
+    candidate_tables: tuple[str, ...]
     candidate_codes: tuple[str, ...]
     candidate_scores: tuple[float, ...]
     state_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -115,6 +111,7 @@ class SlotTransition(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
     slot: int = Field(ge=0, lt=10)
+    table: str = Field(pattern=r"^[AQ][0-9]{6}$")
     code: str = Field(pattern=r"^[0-9]{6}$")
     shares: int = Field(gt=0)
     entry_open_krw: PositiveMoney
@@ -160,7 +157,7 @@ class BinaryMarketTransition(BaseModel):
     fresh_oos_read: Literal[False]
 
 
-def _state_digest(payload: dict[str, object]) -> str:
+def _state_digest(payload: JsonValue) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -215,12 +212,14 @@ def build_market_state(
     split = ranked[0].split
     candidate_codes = tuple(candidate.code for candidate in ranked)
     candidate_scores = tuple(candidate.score for candidate in ranked)
-    digest_payload: dict[str, object] = {
+    candidate_tables = tuple(candidate.table for candidate in ranked)
+    digest_payload: dict[str, JsonValue] = {
         "decision_date": decision_date.isoformat(),
         "split": split,
         "feature_vector": list(feature_vector),
         "previous_exposure_ratio": str(previous_exposure_ratio),
         "previous_drawdown": str(previous_drawdown),
+        "candidate_tables": list(candidate_tables),
         "candidate_codes": list(candidate_codes),
         "candidate_scores": list(candidate_scores),
     }
@@ -230,6 +229,7 @@ def build_market_state(
         feature_vector=feature_vector,
         previous_exposure_ratio=previous_exposure_ratio,
         previous_drawdown=previous_drawdown,
+        candidate_tables=candidate_tables,
         candidate_codes=candidate_codes,
         candidate_scores=candidate_scores,
         state_hash=_state_digest(digest_payload),

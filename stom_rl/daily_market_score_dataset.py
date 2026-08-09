@@ -10,10 +10,16 @@ from collections import defaultdict
 from collections.abc import Mapping
 from datetime import date, datetime
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 
+from .daily_market_artifact_guard import (
+    MAX_MANIFEST_BYTES,
+    MAX_SCORE_CSV_BYTES,
+    MAX_SCORE_ROWS,
+    resolve_trusted_artifact,
+)
 from .daily_market_transition_contract import (
     DailyMarketScore,
     SplitName,
@@ -62,6 +68,12 @@ class DailyMarketScoreDataset(BaseModel):
     promotion_allowed: Literal[False]
     fresh_oos_read: Literal[False]
 
+    @model_validator(mode="after")
+    def reject_fresh_oos_days(self) -> Self:
+        if any(day.split == "FRESH_OOS" for day in self.days):
+            raise ValueError("FRESH_OOS remains sealed")
+        return self
+
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -71,7 +83,7 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _sha256_payload(value: object) -> str:
+def _sha256_payload(value: JsonValue) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -83,7 +95,7 @@ def _load_manifest(path: Path) -> dict[str, JsonValue]:
         raise ValueError("SOURCE_MANIFEST_INVALID") from exc
 
 
-def _validate_manifest(manifest: Mapping[str, object]) -> None:
+def _validate_manifest(manifest: Mapping[str, JsonValue]) -> None:
     if manifest.get("fill_mode") != SOURCE_FILL_MODE:
         raise ValueError("SOURCE_FILL_MODE_UNEXPECTED")
     if manifest.get("price_basis") != "unknown":
@@ -151,12 +163,21 @@ def load_market_score_dataset(
     candidate_csv_path: Path | str,
     *,
     source_manifest_path: Path | str,
+    artifact_root: Path | str,
 ) -> DailyMarketScoreDataset:
     """Load causal scores only; source future-label columns are never consumed."""
-    csv_path = Path(candidate_csv_path).resolve()
-    manifest_path = Path(source_manifest_path).resolve()
-    if not csv_path.is_file() or not manifest_path.is_file():
-        raise FileNotFoundError("market score source artifact missing")
+    csv_path = resolve_trusted_artifact(
+        candidate_csv_path,
+        artifact_root=artifact_root,
+        max_bytes=MAX_SCORE_CSV_BYTES,
+        label="CANDIDATE_SCORE_CSV",
+    )
+    manifest_path = resolve_trusted_artifact(
+        source_manifest_path,
+        artifact_root=artifact_root,
+        max_bytes=MAX_MANIFEST_BYTES,
+        label="SOURCE_MANIFEST",
+    )
     _validate_manifest(_load_manifest(manifest_path))
     grouped: dict[tuple[date, SplitName], list[DailyMarketScore]] = defaultdict(list)
     scored_rows = 0
@@ -167,7 +188,9 @@ def load_market_score_dataset(
         required = {"date", "table", "code", "score", "split", "eligible_for_selection"}
         if reader.fieldnames is None or not required.issubset(reader.fieldnames):
             raise ValueError("CANDIDATE_SCORE_COLUMNS_MISSING")
-        for row in reader:
+        for row_number, row in enumerate(reader, start=1):
+            if row_number > MAX_SCORE_ROWS:
+                raise ValueError("CANDIDATE_SCORE_ROW_LIMIT_EXCEEDED")
             if (row.get("eligible_for_selection") or "").strip().lower() not in {"true", "1"}:
                 ineligible_rows += 1
                 continue

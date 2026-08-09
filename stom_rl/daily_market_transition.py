@@ -48,7 +48,7 @@ def _validate_transition_identity(
     exit_dates = {candidate.exit_date for candidate in candidates}
     if len(entry_dates) != 1 or len(exit_dates) != 1:
         raise ValueError("one transition requires a shared entry and exit date")
-    return {candidate.code: candidate for candidate in candidates}
+    return {candidate.table: candidate for candidate in candidates}
 
 
 def _cash_transition(
@@ -116,6 +116,7 @@ def _slot_transition(
     net_pnl = _money(gross_pnl - buy_cost - sell_cost)
     return SlotTransition(
         slot=slot,
+        table=candidate.table,
         code=candidate.code,
         shares=shares,
         entry_open_krw=candidate.entry_open_krw,
@@ -142,7 +143,7 @@ def execute_binary_transition(
     selected_config = config or MarketTransitionConfig()
     if previous_nav_krw <= 0 or previous_peak_nav_krw <= 0:
         raise ValueError("previous NAV and peak NAV must be positive")
-    candidate_by_code = _validate_transition_identity(state, candidates)
+    candidate_by_table = _validate_transition_identity(state, candidates)
     try:
         requested = BinaryAction(action)
     except ValueError as exc:
@@ -176,8 +177,8 @@ def execute_binary_transition(
     slot_budget = investable / selected_config.max_slots
     ledger = tuple(
         row
-        for slot, code in enumerate(state.candidate_codes[: selected_config.max_slots])
-        if (candidate := candidate_by_code.get(code)) is not None
+        for slot, table in enumerate(state.candidate_tables[: selected_config.max_slots])
+        if (candidate := candidate_by_table.get(table)) is not None
         if (row := _slot_transition(slot, candidate, slot_budget, selected_config)) is not None
     )
     if not ledger:
