@@ -70,7 +70,7 @@ D 결정의 포지션은 D+2 시가까지 존재하므로 D+1 종가에 새 포�
 | gradient steps | 600 | 600 |
 | target 갱신 | 25 step hard update | 동일 |
 | CQL alpha | 0 | 1.0 |
-| 장치 | CPU, 단일 thread, deterministic algorithms |
+| 장치 | CPU, NumPy float64, 고정 RNG |
 | 모델 선택 | 고정 마지막 step; TEST 기반 재학습·조기종료 없음 | 동일 |
 
 학습 보상은 기본 비용 0.230%만 사용한다. 같은 고정 정책을 기본 비용과 스트레스 비용에서 각각 재생해 비용 강건성을 본다.
@@ -107,6 +107,6 @@ historical TEST의 CQL 연구 성과는 아래를 모두 만족할 때만 `PASS_
 
 - 생성 연구 산출물: `webui/rl_runs/daily_market_offline_rl/DAILY_MARKET_CQL_2026_08_09_001/`
 - 커밋 대상: 소스, 테스트, 사전등록, 결과·한계 문서
-- 비커밋 대상: 모델 `.pt`, 거래 ledger CSV/JSON, 실행 중간 산출물
+- 비커밋 대상: pickle을 쓰지 않는 숫자 전용 모델 `.kq`, 거래 ledger CSV/JSON, 실행 중간 산출물
 - 기능 브랜치는 삭제하지 않는다.
 - 전체 검증 뒤 `develop/v1.29.0-dev`에 `--no-ff` 병합 후보로 올리며, `main` 병합과 `v1.29.0` 태그는 가격 기준·universe 권위·Fresh OOS·사람 승인 전에는 만들지 않는다.

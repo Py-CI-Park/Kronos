@@ -110,14 +110,19 @@ def prepare_market_data(
     state_dataset: DailyMarketStateDataset,
     *,
     db_path: Path | str = DEFAULT_DAILY_DB_PATH,
+    read_splits: tuple[SplitName, ...] = ("TRAIN", "VALIDATION", "TEST"),
 ) -> PreparedMarketData:
     """Attach reward-only prices after state identity has been frozen."""
+    if not read_splits or "FRESH_OOS" in read_splits:
+        raise DailyMarketRlContractError("INVALID_REWARD_READ_SPLITS")
     if state_dataset.score_dataset_hash != score_dataset.dataset_hash:
         raise DailyMarketRlContractError("STATE_SCORE_DATASET_HASH_MISMATCH")
     states = {(day.decision_date, day.split): day for day in state_dataset.days}
     days: list[MarketDay] = []
     blocked: list[BlockedMarketDay] = []
     for score_day in score_dataset.days:
+        if score_day.split not in read_splits:
+            continue
         state_day = states.get((score_day.decision_date.isoformat(), score_day.split))
         if state_day is None:
             raise DailyMarketRlContractError("CAUSAL_STATE_DAY_MISSING", score_day.decision_date.isoformat())

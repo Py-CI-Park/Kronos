@@ -277,3 +277,22 @@ def test_market_preparation_preserves_right_censored_day_as_blocked(tmp_path: Pa
     assert prepared.days == ()
     assert len(prepared.blocked_days) == 1
     assert prepared.blocked_days[0].reason == "000010:MISSING_EXIT_OPEN"
+
+
+def test_market_preparation_reads_only_explicitly_authorized_splits(tmp_path: Path) -> None:
+    # Given: score metadata contains TRAIN and VALIDATION, but state/DB evidence is TRAIN-only.
+    score_dataset = _score_dataset()
+    train_only_state = _state_dataset(score_dataset)
+    database = _daily_db(tmp_path / "daily.db", missing_last_exit=False)
+
+    # When: the caller explicitly authorizes only TRAIN reward reads.
+    prepared = prepare_market_data(
+        score_dataset,
+        train_only_state,
+        db_path=database,
+        read_splits=("TRAIN",),
+    )
+
+    # Then: the unopened validation reward cannot affect preparation or appear as blocked.
+    assert tuple(day.split for day in prepared.days) == ("TRAIN",)
+    assert prepared.blocked_days == ()
