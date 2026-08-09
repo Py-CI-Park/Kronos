@@ -1,13 +1,14 @@
 """Bounded, read-only telemetry snapshots for recorded RL event streams."""
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Final, TypedDict, cast
+from typing import Final, TypedDict
+
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from stom_rl.rl_events import (
     EQUITY_KINDS,
@@ -21,6 +22,7 @@ from webui.v6_research_catalog import discover_run_directories, research_lane
 EVENT_FILE: Final = "rl_live_events.jsonl"
 HALF_SCAN_BYTES: Final = 2 * 1024 * 1024
 ACTIVE_WINDOW_SECONDS: Final = 30.0
+JSON_OBJECT_ADAPTER: Final = TypeAdapter(dict[str, JsonValue])
 
 
 class TelemetryPointPayload(TypedDict):
@@ -95,12 +97,12 @@ class TelemetryRun:
     updated_ns: int
 
 
-def _text(mapping: Mapping[str, object], key: str) -> str:
+def _text(mapping: Mapping[str, JsonValue], key: str) -> str:
     value = mapping.get(key)
     return value.strip() if type(value) is str and value.strip() else "MISSING"
 
 
-def _number(mapping: Mapping[str, object], key: str) -> float | None:
+def _number(mapping: Mapping[str, JsonValue], key: str) -> float | None:
     value = mapping.get(key)
     if type(value) is int:
         numeric = float(value)
@@ -127,12 +129,9 @@ def _declared_bool(metadata: Mapping[str, object], key: str) -> bool | None:
 
 def _parse_line(line: str) -> TelemetryPoint | None:
     try:
-        raw_value = cast(object, json.loads(line))
-    except json.JSONDecodeError:
+        raw = JSON_OBJECT_ADAPTER.validate_json(line)
+    except ValidationError:
         return None
-    if type(raw_value) is not dict:
-        return None
-    raw = cast(dict[str, object], raw_value)
     step = raw.get("global_step")
     if type(step) is not int or step < 0:
         return None
@@ -187,6 +186,8 @@ def read_telemetry(
 ) -> TelemetrySnapshot:
     """Read a bounded full or head/tail snapshot from one direct event file."""
     event_path = directory / EVENT_FILE
+    if not event_path.is_file() or event_path.is_symlink():
+        raise FileNotFoundError(event_path)
     stat_result = event_path.stat()
     lines, sampling = _sampled_lines(event_path, stat_result.st_size)
     parsed = tuple(_parse_line(line) for line in lines if line.strip())

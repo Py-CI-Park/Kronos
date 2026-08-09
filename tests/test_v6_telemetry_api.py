@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from flask import Flask
 
+from webui.v6_research_api import create_v6_research_blueprint
 from webui.v6_telemetry_api import create_v6_telemetry_blueprint
+from webui.v6_run_telemetry import read_telemetry
 
 
 def _client(tmp_path: Path):
@@ -93,6 +97,42 @@ def test_telemetry_api_does_not_infer_units_for_legacy_events(tmp_path: Path) ->
         "equity_unit": None,
         "action_recorded": None,
     } == payload["points"][0]
+
+
+def test_telemetry_reader_rejects_a_symlinked_event_file(tmp_path: Path) -> None:
+    # Given
+    run = tmp_path / "symlinked"
+    run.mkdir()
+    (run / "rl_live_events.jsonl").write_text("{}\n", encoding="utf-8")
+
+    # When / Then
+    with patch.object(Path, "is_symlink", return_value=True), pytest.raises(FileNotFoundError):
+        read_telemetry(run)
+
+
+def test_integrated_research_and_telemetry_routes_do_not_collide(tmp_path: Path) -> None:
+    # Given
+    run = tmp_path / "daily_close_dqn"
+    run.mkdir()
+    (run / "rl_live_events.jsonl").write_text(
+        json.dumps({"global_step": 1, "reward": 0.1}) + "\n",
+        encoding="utf-8",
+    )
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_v6_research_blueprint(runs_root=tmp_path, name="integrated_research")
+    )
+    app.register_blueprint(
+        create_v6_telemetry_blueprint(runs_root=tmp_path, name="integrated_telemetry")
+    )
+
+    # When
+    with app.test_client() as client:
+        response = client.get("/api/v6/research-runs/daily_close_dqn/telemetry?limit=20")
+
+    # Then
+    assert response.status_code == 200
+    assert response.get_json()["schema_version"] == "kronos_v6_run_telemetry.v1"
 
 
 def test_telemetry_api_lists_event_files_inside_generic_run_groups(tmp_path: Path) -> None:

@@ -126,9 +126,10 @@ export function equityPresentation(points: readonly TelemetryPoint[]): MetricPre
 export function rewardPresentation(points: readonly TelemetryPoint[]): MetricPresentation {
   const identity = metricIdentity(points, 'reward');
   let cumulative = 0;
-  const rows = points.map((point) => {
-    cumulative += point.reward ?? 0;
-    return [point.step, cumulative] as const;
+  const rows = points.flatMap((point) => {
+    if (point.reward === null) return [];
+    cumulative += point.reward;
+    return [[point.step, cumulative] as const];
   });
   const state = identity.state === 'declared'
     ? `${identity.kind}/${identity.unit}`

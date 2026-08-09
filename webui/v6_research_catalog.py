@@ -121,7 +121,6 @@ def discover_run_directories(root: Path) -> tuple[tuple[str, Path], ...]:
         children = _direct_children(directory)
         if _has_direct_file(directory) or not children:
             rows.append((directory.name, directory))
-            continue
         rows.extend(
             (f"{directory.name}/{child.name}", child)
             for child in children
@@ -182,7 +181,7 @@ def resolve_run_directory(root: Path, run_id: str) -> Path | None:
     candidate = root.joinpath(*segments)
     try:
         resolved = candidate.resolve(strict=True)
-        resolved.relative_to(root.resolve(strict=True))
+        _ = resolved.relative_to(root.resolve(strict=True))
     except (OSError, ValueError):
         return None
     if not resolved.is_dir() or resolved.is_symlink():

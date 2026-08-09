@@ -2,14 +2,14 @@
   import EChartsRenderer from '../../../charts/EChartsRenderer.svelte';
   import AccessibleBarChart from '../../components/visualization/AccessibleBarChart.svelte';
   import type { TelemetryPoint } from '../../api/telemetryApi';
-  import { actionDistribution, buildActionHourBuckets, buildActionTimelineRows } from './actionTimelineModel';
+  import { actionDistribution, buildActionHourBuckets, buildActionTimelineRows, recordedActionPoints } from './actionTimelineModel';
 
   interface Props { readonly points: readonly TelemetryPoint[]; }
   let { points }: Props = $props();
 
   const distribution = $derived(actionDistribution(points));
   const rows = $derived(buildActionTimelineRows(points));
-  const timelineEvents = $derived(points.filter((point) => point.action_name !== 'MISSING'));
+  const timelineEvents = $derived(recordedActionPoints(points));
   const recent = $derived(timelineEvents.slice(-20).reverse());
   const hourBuckets = $derived(buildActionHourBuckets(points));
   const actionNames = $derived(distribution.map((item) => item.label));

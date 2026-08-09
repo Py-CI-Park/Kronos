@@ -74,3 +74,13 @@ test('reward labels declared fractions without claiming economic return', () => 
   assert.deepEqual(presentation.rows, [[1, 0.01], [2, 0.006]]);
   assert.match(presentation.latestLabel, /0\.006/u);
 });
+
+test('missing reward points remain chart gaps instead of zero-filled observations', () => {
+  const points = [
+    point({ step: 1, reward: 0.01, reward_kind: 'raw_reward', reward_unit: 'score' }),
+    point({ step: 2, reward: null, reward_kind: 'raw_reward', reward_unit: 'score' }),
+    point({ step: 3, reward: -0.004, reward_kind: 'raw_reward', reward_unit: 'score' }),
+  ];
+
+  assert.deepEqual(rewardPresentation(points).rows, [[1, 0.01], [3, 0.006]]);
+});

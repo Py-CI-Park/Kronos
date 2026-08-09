@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from time import monotonic
-from typing import Callable, Final, Mapping, TypedDict
+from typing import Callable, Final, TypedDict
+
+from typing_extensions import override
 
 from flask import Blueprint, Response, request
 from werkzeug.datastructures import MultiDict
@@ -38,11 +41,12 @@ class ArtifactPayload(TypedDict):
 class ResearchQueryError(Exception):
     field: str
 
+    @override
     def __str__(self) -> str:
         return f"invalid research query field: {self.field}"
 
 
-def _response(payload: Mapping, status_code: int = 200) -> Response:
+def _response(payload: Mapping[str, object], status_code: int = 200) -> Response:
     return Response(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         status=status_code,

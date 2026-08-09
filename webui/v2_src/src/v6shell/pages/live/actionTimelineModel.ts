@@ -20,11 +20,21 @@ function normalizedAction(name: string): string {
   return normalized || 'MISSING';
 }
 
+export function recordedActionName(point: TelemetryPoint): string | null {
+  if (point.action_recorded === false) return null;
+  const action = normalizedAction(point.action_name);
+  return action === 'MISSING' ? null : action;
+}
+
+export function recordedActionPoints(points: readonly TelemetryPoint[]): readonly TelemetryPoint[] {
+  return points.filter((point) => recordedActionName(point) !== null);
+}
+
 export function actionDistribution(points: readonly TelemetryPoint[]): readonly ActionDistributionItem[] {
   const counts = new Map<string, number>();
   for (const point of points) {
-    const action = normalizedAction(point.action_name);
-    if (action === 'MISSING') continue;
+    const action = recordedActionName(point);
+    if (action === null) continue;
     counts.set(action, (counts.get(action) ?? 0) + 1);
   }
   const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
@@ -37,8 +47,8 @@ export function actionDistribution(points: readonly TelemetryPoint[]): readonly 
 
 export function buildActionTimelineRows(points: readonly TelemetryPoint[]): readonly ActionTimelineRow[] {
   return points.flatMap((point) => {
-    const action = normalizedAction(point.action_name);
-    if (action === 'MISSING') return [];
+    const action = recordedActionName(point);
+    if (action === null) return [];
     const x: string | number = Number.isNaN(Date.parse(point.timestamp)) ? point.step : point.timestamp;
     return [[x, action, point.step, point.phase] as const];
   });
@@ -56,8 +66,8 @@ export function buildActionHourBuckets(points: readonly TelemetryPoint[]): reado
   const buckets = new Map<number, Map<string, number>>();
   for (const point of points) {
     const timestamp = Date.parse(point.timestamp);
-    const action = normalizedAction(point.action_name);
-    if (!Number.isFinite(timestamp) || action === 'MISSING') continue;
+    const action = recordedActionName(point);
+    if (!Number.isFinite(timestamp) || action === null) continue;
     const start = Math.floor(timestamp / 3_600_000) * 3_600_000;
     const counts = buckets.get(start) ?? new Map<string, number>();
     counts.set(action, (counts.get(action) ?? 0) + 1);

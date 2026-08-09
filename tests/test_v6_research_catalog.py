@@ -128,6 +128,23 @@ def test_discover_runs_expands_generic_group_into_direct_child_runs(tmp_path: Pa
     assert rows[0].artifact_count == 1
 
 
+def test_discover_runs_keeps_child_runs_when_group_has_a_direct_index_file(tmp_path: Path) -> None:
+    # Given
+    group = tmp_path / "daily_ohlcv_scenario_batches"
+    group.mkdir()
+    (group / "index.json").write_text("{}", encoding="utf-8")
+    _write_summary(group / "scenario_001", {"status": "RECORDED", "algorithm": "RULE"})
+
+    # When
+    rows = discover_runs(tmp_path)
+
+    # Then
+    assert {row.run_id for row in rows} == {
+        "daily_ohlcv_scenario_batches",
+        "daily_ohlcv_scenario_batches/scenario_001",
+    }
+
+
 def test_filter_runs_applies_lane_status_query_and_pagination(tmp_path: Path) -> None:
     # Given
     for index in range(4):
