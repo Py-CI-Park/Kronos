@@ -106,4 +106,3 @@ def test_gate_rejects_degenerate_cash_policy_and_nonpositive_stress_return() -> 
     assert "CQL_STRESS_MEDIAN_POSITIVE" in gate.failed_checks
     assert "CQL_ACTION_DIVERSITY" in gate.failed_checks
     assert "CQL_BEATS_SHUFFLED_CONTROLS" in gate.failed_checks
-

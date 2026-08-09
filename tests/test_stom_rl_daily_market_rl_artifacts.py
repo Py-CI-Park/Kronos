@@ -68,19 +68,21 @@ def _execution() -> MarketExperimentExecution:
         promotion_allowed=False,
         fresh_oos_read=False,
     )
-    arm = ModelArmReceipt(
-        algorithm=MarketAlgorithm.CQL,
-        seed=0,
-        shuffle_seed=0,
-        loss_first=1.0,
-        loss_last=0.1,
-        checkpoint_path="models/CQL/seed-0.kq",
-        checkpoint_sha256="a" * 64,
-        validation_base=metrics.model_copy(update={"split": "VALIDATION"}),
-        validation_stress=metrics.model_copy(update={"split": "VALIDATION"}),
-        historical_test_base=metrics,
-        historical_test_stress=metrics,
-    )
+    def arm(algorithm: MarketAlgorithm) -> ModelArmReceipt:
+        algorithm_metrics = metrics.model_copy(update={"policy": algorithm.value})
+        return ModelArmReceipt(
+            algorithm=algorithm,
+            seed=0,
+            shuffle_seed=0,
+            loss_first=1.0,
+            loss_last=0.1,
+            checkpoint_path=f"models/{algorithm.value}/seed-0.kq",
+            checkpoint_sha256="a" * 64,
+            validation_base=algorithm_metrics.model_copy(update={"split": "VALIDATION"}),
+            validation_stress=algorithm_metrics.model_copy(update={"split": "VALIDATION"}),
+            historical_test_base=algorithm_metrics,
+            historical_test_stress=algorithm_metrics,
+        )
     receipt = MarketExperimentReceipt(
         schema_version="kronos_daily_market_offline_rl_experiment.v1",
         research_id="DAILY_MARKET_CQL_2026_08_09_001",
@@ -104,9 +106,9 @@ def _execution() -> MarketExperimentExecution:
         behavior_transition_count=32,
         controls_validation_base=(metrics.model_copy(update={"split": "VALIDATION"}),),
         controls_validation_stress=(metrics.model_copy(update={"split": "VALIDATION"}),),
-        controls_historical_test_base=(metrics,),
-        controls_historical_test_stress=(metrics,),
-        model_runs=(arm,),
+        controls_historical_test_base=(metrics.model_copy(update={"policy": "NO_TRADE", "policy_kind": "RULE"}),),
+        controls_historical_test_stress=(metrics.model_copy(update={"policy": "NO_TRADE", "policy_kind": "RULE"}),),
+        model_runs=tuple(arm(algorithm) for algorithm in MarketAlgorithm),
         economic_gate=gate,
         fresh_oos_state="NOT_RUN_NO_READ",
         promotion_allowed=False,
@@ -147,6 +149,11 @@ def test_artifacts_write_bounded_dashboard_summary_and_separate_action_ledger(tm
     assert summary.algorithm == "CQL"
     assert summary.promotion_allowed is False
     assert len(summary.summary) <= 16
+    assert [row.policy for row in summary.summary] == [
+        "NO_TRADE",
+        "DQN/seed-0",
+        "CQL/seed-0",
+    ]
     assert paths.receipt.is_file()
     assert paths.action_ledger.is_file()
     assert paths.action_ledger.read_text(encoding="utf-8").count("\n") == 1

@@ -150,21 +150,15 @@ def train_market_q(
 
 def load_market_q(path: Path, config: MarketTrainingConfig) -> MarketQPolicy:
     """Load only numeric arrays into the preregistered architecture."""
-    if path.is_symlink() or not path.is_file():
-        raise DailyMarketRlContractError("MODEL_CHECKPOINT_UNTRUSTED", str(path))
-    network = load_network(path)
-    expected = (
+    expected_shapes = (
         (config.input_dimension, config.hidden_dimensions[0]),
+        (config.hidden_dimensions[0],),
         (config.hidden_dimensions[0], config.hidden_dimensions[1]),
+        (config.hidden_dimensions[1],),
         (config.hidden_dimensions[1], config.action_count),
+        (config.action_count,),
     )
-    observed = (
-        network.first_weight.shape,
-        network.second_weight.shape,
-        network.output_weight.shape,
-    )
-    if observed != expected:
-        raise DailyMarketRlContractError("MODEL_CHECKPOINT_SHAPE_MISMATCH")
+    network = load_network(path, expected_shapes)
     return MarketQPolicy(config.algorithm.value, network, config.input_dimension)
 
 

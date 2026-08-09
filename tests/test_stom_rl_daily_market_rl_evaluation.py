@@ -131,4 +131,3 @@ def test_cost_aware_momentum_rule_uses_only_causal_five_day_return() -> None:
     )
     assert result.metrics.policy_kind == "RULE"
     assert result.metrics.invest_action_rate == 0.5
-
