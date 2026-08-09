@@ -65,6 +65,7 @@ D 결정의 포지션은 D+2 시가까지 존재하므로 D+1 종가에 새 포�
 | 네트워크 | 172 → 128 → 64 → 2, ReLU | 동일 |
 | optimizer | Adam, learning rate 0.0003 | 동일 |
 | discount | 0.95 | 0.95 |
+| 학습 보상 배율 | 경제 로그 보상 × 100, 평가·보고는 원래 단위 | 동일 |
 | batch | 256 | 256 |
 | gradient steps | 600 | 600 |
 | target 갱신 | 25 step hard update | 동일 |
@@ -109,4 +110,3 @@ historical TEST의 CQL 연구 성과는 아래를 모두 만족할 때만 `PASS_
 - 비커밋 대상: 모델 `.pt`, 거래 ledger CSV/JSON, 실행 중간 산출물
 - 기능 브랜치는 삭제하지 않는다.
 - 전체 검증 뒤 `develop/v1.29.0-dev`에 `--no-ff` 병합 후보로 올리며, `main` 병합과 `v1.29.0` 태그는 가격 기준·universe 권위·Fresh OOS·사람 승인 전에는 만들지 않는다.
-
