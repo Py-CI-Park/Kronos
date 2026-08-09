@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 
-from .daily_market_errors import DailyMarketTransitionError
+from .daily_market_errors import DailyMarketInvariantError, DailyMarketTransitionError
 from .daily_market_transition_contract import (
     ActionName,
     BinaryAction,
@@ -196,7 +196,7 @@ def execute_binary_transition(
     buy_cost = _money(sum((row.buy_cost_krw for row in ledger), Decimal("0")))
     cash_after_entry = _money(previous_nav_krw - deployed - buy_cost)
     if cash_after_entry < selected_config.cash_reserve_floor_krw:
-        raise AssertionError("cash reserve invariant violated")
+        raise DailyMarketInvariantError("cash reserve invariant violated")
     exit_value = _money(sum((row.exit_notional_krw for row in ledger), Decimal("0")))
     sell_cost = _money(sum((row.sell_cost_krw for row in ledger), Decimal("0")))
     gross_pnl = _money(sum((row.gross_pnl_krw for row in ledger), Decimal("0")))
