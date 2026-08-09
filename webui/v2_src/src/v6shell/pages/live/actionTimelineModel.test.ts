@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'bun:test';
-import { actionDistribution, buildActionTimelineRows } from './actionTimelineModel';
+import { actionDistribution, buildActionHourBuckets, buildActionTimelineRows } from './actionTimelineModel';
 import { TelemetryPointSchema } from '../../api/telemetryApi';
 
 const points = [
@@ -23,4 +23,17 @@ test('timeline keeps valid timestamps and falls back to deterministic step posit
   assert.equal(rows.length, 4);
   assert.deepEqual(rows[0], ['2026-08-06T09:00:00Z', 'BUY', 1, 'eval']);
   assert.deepEqual(rows[3], [4, 'EXIT', 4, 'eval']);
+});
+
+test('hour buckets visualize action frequency without inventing missing timestamps', () => {
+  const buckets = buildActionHourBuckets(points);
+
+  assert.deepEqual(buckets, [
+    {
+      start: '2026-08-06T09:00:00.000Z',
+      label: '08. 06. 18시',
+      total: 3,
+      counts: { BUY: 2, HOLD: 1 },
+    },
+  ]);
 });

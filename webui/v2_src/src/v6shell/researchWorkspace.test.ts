@@ -19,6 +19,8 @@ test('research workspace offers a catalog and permanent run detail route', async
   assert.match(detail, /Artifacts/u);
   assert.match(detail, /TelemetryCharts/u);
   assert.match(detail, /관측 결과 시각화/u);
+  assert.match(detail, /ObservedOutcomeCharts/u);
+  assert.match(detail, /직접 관측 결과 요약/u);
 });
 
 test('research library ignores stale overlapping refresh responses', async () => {

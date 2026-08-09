@@ -22,6 +22,10 @@ test('daily close process uses post-close next-open and reduced-motion safeguard
   assert.match(source, /aria-current/u);
   assert.match(source, /class="step-button"/u);
   assert.match(source, /단계 상세/u);
+  assert.match(source, /role="tablist"/u);
+  assert.match(source, /aria-selected=/u);
+  assert.match(source, /실행 진행률이 아니라/u);
+  assert.match(source, /onkeydown=/u);
 });
 
 test('unified shell maps evaluation to the focused workspace', async () => {

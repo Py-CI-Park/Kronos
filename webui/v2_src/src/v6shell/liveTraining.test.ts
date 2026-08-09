@@ -31,6 +31,9 @@ test('action timeline exposes the full observed event sequence as an accessible 
   assert.match(source, /<table/u);
   assert.match(source, /<th scope="col">기록 시각<\/th>/u);
   assert.match(source, /<th scope="col">행동<\/th>/u);
+  assert.match(source, /시간대별 행동 빈도/u);
+  assert.match(source, /buildActionHourBuckets/u);
+  assert.match(source, /최근 20개 결정/u);
 });
 
 test('unified shell replaces the legacy training stepper with the focused live page', async () => {

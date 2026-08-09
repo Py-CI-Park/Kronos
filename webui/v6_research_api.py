@@ -14,6 +14,7 @@ from flask import Blueprint, Response, request
 from werkzeug.datastructures import MultiDict
 
 from .v6_research_catalog import ResearchQuery, ResearchRun, discover_runs, filter_runs, resolve_run_directory
+from .v6_research_outcomes import observe_outcome
 
 DEFAULT_RUNS_ROOT: Final = Path(__file__).resolve().parent / "rl_runs"
 ALLOWED_QUERY_KEYS: Final = frozenset({"search", "lane", "status", "page", "page_size"})
@@ -206,6 +207,7 @@ def create_v6_research_blueprint(
                 "run": run.to_payload(),
                 "artifacts": list(_artifact_payloads(runs_root, directory)),
                 "evidence_scope": "DIRECT_DIRECTORY_METADATA_ONLY",
+                "observed_outcome": observe_outcome(directory, run.source_file),
             }
         )
 

@@ -96,28 +96,44 @@ def _artifact_count(directory: Path) -> int:
         return 0
 
 
-def _run_directories(root: Path) -> tuple[tuple[str, Path], ...]:
+def _direct_children(directory: Path) -> tuple[Path, ...]:
+    try:
+        return tuple(path for path in directory.iterdir() if path.is_dir() and not path.is_symlink())
+    except OSError:
+        return ()
+
+
+def _has_direct_file(directory: Path) -> bool:
+    try:
+        return any(path.is_file() and not path.is_symlink() for path in directory.iterdir())
+    except OSError:
+        return False
+
+
+def discover_run_directories(root: Path) -> tuple[tuple[str, Path], ...]:
+    """Expand one grouping level so the catalog represents actual runs, not containers."""
     try:
         top_level = tuple(path for path in root.iterdir() if path.is_dir() and not path.is_symlink())
     except OSError:
         return ()
     rows: list[tuple[str, Path]] = []
     for directory in top_level:
-        if directory.name != "v6_daily_h1":
+        children = _direct_children(directory)
+        if _has_direct_file(directory) or not children:
             rows.append((directory.name, directory))
             continue
-        try:
-            children = tuple(path for path in directory.iterdir() if path.is_dir() and not path.is_symlink())
-        except OSError:
-            continue
-        rows.extend((f"{directory.name}/{child.name}", child) for child in children)
+        rows.extend(
+            (f"{directory.name}/{child.name}", child)
+            for child in children
+            if _has_direct_file(child) or not _direct_children(child)
+        )
     return tuple(rows)
 
 
 def discover_runs(root: Path) -> tuple[ResearchRun, ...]:
     """Discover bounded run metadata without opening models, logs, or report chains."""
     rows: list[ResearchRun] = []
-    for run_id, directory in _run_directories(root):
+    for run_id, directory in discover_run_directories(root):
         if len(rows) >= MAX_CATALOG_RUNS:
             break
         try:

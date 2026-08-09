@@ -50,18 +50,40 @@ const ArtifactSchema = z.object({
   modified_at: z.string().min(1),
 }).readonly();
 
+const ObservedOutcomeSeriesSchema = z.object({
+  label: z.string().min(1),
+  date_count: z.number().finite().optional(),
+  filled_slots: z.number().finite().optional(),
+  total_net_pnl_krw: z.number().finite().optional(),
+  net_pnl_krw: z.number().finite().optional(),
+  total_cost_krw: z.number().finite().optional(),
+  mean_reward: z.number().finite().optional(),
+  cumulative_reward: z.number().finite().optional(),
+}).readonly();
+
+const ObservedOutcomeSchema = z.object({
+  scope: z.literal('DIRECT_SUMMARY_NUMERIC_ONLY'),
+  source_file: z.string().min(1),
+  headline: z.string().min(1),
+  reasons: z.array(z.string().min(1)).max(6).readonly(),
+  series: z.array(ObservedOutcomeSeriesSchema).max(16).readonly(),
+}).readonly();
+
 export const ResearchRunDetailSchema = z.object({
   schema_version: z.literal('kronos_v6_research_run_detail.v1'),
   status: z.literal('OK'),
   run: ResearchRunSchema,
   artifacts: z.array(ArtifactSchema).readonly(),
   evidence_scope: z.literal('DIRECT_DIRECTORY_METADATA_ONLY'),
+  observed_outcome: ObservedOutcomeSchema,
 }).readonly();
 
 export type ResearchRun = z.infer<typeof ResearchRunSchema>;
 export type ResearchSummary = z.infer<typeof ResearchSummarySchema>;
 export type ResearchPage = z.infer<typeof ResearchPageSchema>;
 export type ResearchRunDetail = z.infer<typeof ResearchRunDetailSchema>;
+export type ObservedOutcome = z.infer<typeof ObservedOutcomeSchema>;
+export type ObservedOutcomeSeries = z.infer<typeof ObservedOutcomeSeriesSchema>;
 
 export type ResearchFilters = {
   readonly search: string;

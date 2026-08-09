@@ -81,7 +81,7 @@
   {#if entries.length}
     <ResearchPanel title="동일 lane 텔레메트리" description="그래프의 point 수·표본 방식이 다르면 직접 우열을 판정하지 않습니다."><ComparisonCharts {entries} /></ResearchPanel>
     <ResearchPanel title="표본 지표 매트릭스" description="공식 OOS 통계가 아니라 선택된 telemetry point의 기술 요약입니다.">
-      <div class="table-wrap"><table><thead><tr><th>실행</th><th>판정</th><th>알고리즘</th><th>표본 reward</th><th>최근 equity</th><th>표본 낙폭</th><th>point</th><th>sampling</th></tr></thead><tbody>{#each entries as entry}{@const summary = summarizeSnapshot(entry.snapshot)}<tr><th>{entry.run.name}</th><td data-status={entry.run.status}>{entry.run.status}</td><td>{entry.run.algorithm}</td><td>{summary.sampleReward.toFixed(4)}</td><td>{summary.latestEquity === null ? 'MISSING' : `${((summary.latestEquity - 1) * 100).toFixed(2)}%`}</td><td>{summary.sampleDrawdownPct === null ? 'MISSING' : `${summary.sampleDrawdownPct.toFixed(2)}%`}</td><td>{summary.pointCount}</td><td>{summary.sampling}</td></tr>{/each}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>실행</th><th>판정</th><th>알고리즘</th><th>표본 reward</th><th>최근 equity</th><th>단위 계약</th><th>표본 낙폭</th><th>point</th><th>sampling</th></tr></thead><tbody>{#each entries as entry}{@const summary = summarizeSnapshot(entry.snapshot)}<tr><th>{entry.run.name}</th><td data-status={entry.run.status}>{entry.run.status}</td><td>{entry.run.algorithm}</td><td>{summary.sampleRewardLabel}</td><td>{summary.latestEquityLabel}</td><td>{summary.equityMetricLabel}</td><td>{summary.sampleDrawdownPct === null ? 'NOT_CALCULATED' : `${summary.sampleDrawdownPct.toFixed(2)}%`}</td><td>{summary.pointCount}</td><td>{summary.sampling}</td></tr>{/each}</tbody></table></div>
     </ResearchPanel>
   {/if}
 </div>

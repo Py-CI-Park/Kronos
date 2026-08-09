@@ -1,4 +1,5 @@
 import type { TelemetryRun, TelemetrySnapshot } from '../../api/telemetryApi';
+import { equityPresentation, rewardPresentation } from '../live/telemetryMetricModel';
 
 export type EvaluationEntry = {
   readonly run: TelemetryRun;
@@ -7,7 +8,10 @@ export type EvaluationEntry = {
 
 export type EvaluationSummary = {
   readonly sampleReward: number;
+  readonly sampleRewardLabel: string;
   readonly latestEquity: number | null;
+  readonly latestEquityLabel: string;
+  readonly equityMetricLabel: string;
   readonly sampleDrawdownPct: number | null;
   readonly pointCount: number;
   readonly sampling: TelemetrySnapshot['sampling'];
@@ -16,16 +20,17 @@ export type EvaluationSummary = {
 export function summarizeSnapshot(snapshot: TelemetrySnapshot): EvaluationSummary {
   const sampleReward = snapshot.points.reduce((sum, point) => sum + (point.reward ?? 0), 0);
   const equities = snapshot.points.flatMap((point) => point.equity === null ? [] : [point.equity]);
-  let peak = Number.NEGATIVE_INFINITY;
-  let sampleDrawdownPct: number | null = null;
-  for (const equity of equities) {
-    peak = Math.max(peak, equity);
-    const drawdown = peak > 0 ? ((equity / peak) - 1) * 100 : 0;
-    sampleDrawdownPct = sampleDrawdownPct === null ? drawdown : Math.min(sampleDrawdownPct, drawdown);
-  }
+  const equityMetric = equityPresentation(snapshot.points);
+  const rewardMetric = rewardPresentation(snapshot.points);
+  const sampleDrawdownPct = equityMetric.drawdownRows.length
+    ? Math.min(...equityMetric.drawdownRows.map((row) => row[1]))
+    : null;
   return {
     sampleReward,
+    sampleRewardLabel: rewardMetric.latestLabel,
     latestEquity: equities.at(-1) ?? null,
+    latestEquityLabel: equityMetric.latestLabel,
+    equityMetricLabel: equityMetric.axisLabel,
     sampleDrawdownPct,
     pointCount: snapshot.points.length,
     sampling: snapshot.sampling,
@@ -33,13 +38,9 @@ export function summarizeSnapshot(snapshot: TelemetrySnapshot): EvaluationSummar
 }
 
 export function sampleRewardSeries(snapshot: TelemetrySnapshot): readonly (readonly [number, number])[] {
-  let cumulative = 0;
-  return snapshot.points.map((point) => {
-    cumulative += point.reward ?? 0;
-    return [point.step, cumulative] as const;
-  });
+  return rewardPresentation(snapshot.points).rows;
 }
 
-export function equityReturnSeries(snapshot: TelemetrySnapshot): readonly (readonly [number, number])[] {
-  return snapshot.points.flatMap((point) => point.equity === null ? [] : [[point.step, (point.equity - 1) * 100] as const]);
+export function equityMetricSeries(snapshot: TelemetrySnapshot): readonly (readonly [number, number])[] {
+  return equityPresentation(snapshot.points).rows;
 }

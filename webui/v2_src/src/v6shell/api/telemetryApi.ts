@@ -28,6 +28,11 @@ export const TelemetryPointSchema = z.object({
   exploration: z.number().nullable(),
   action_name: z.string().min(1),
   timestamp: z.string().min(1),
+  reward_kind: z.enum(['raw_reward', 'return_fraction', 'return_percent', 'nav_delta', 'cumulative_pnl']).nullable().default(null),
+  reward_unit: z.enum(['score', 'fraction', 'percent', 'krw', 'normalized', 'unknown']).nullable().default(null),
+  equity_kind: z.enum(['normalized_nav', 'krw_nav', 'cumulative_pnl', 'raw_equity']).nullable().default(null),
+  equity_unit: z.enum(['score', 'fraction', 'percent', 'krw', 'normalized', 'unknown']).nullable().default(null),
+  action_recorded: z.boolean().nullable().default(null),
 }).readonly();
 
 export const TelemetrySnapshotSchema = z.object({
@@ -78,5 +83,5 @@ async function requestParsed<T>(path: string, schema: z.ZodType<T>): Promise<Res
 export const loadTelemetryRuns = (): Promise<ResearchApiResult<TelemetryRuns>> =>
   requestParsed('/api/v6/telemetry-runs', TelemetryRunsSchema);
 
-export const loadTelemetry = (runId: string, limit = 240): Promise<ResearchApiResult<TelemetrySnapshot>> =>
+export const loadTelemetry = (runId: string, limit = 500): Promise<ResearchApiResult<TelemetrySnapshot>> =>
   requestParsed(buildTelemetryUrl(runId, limit), TelemetrySnapshotSchema);
