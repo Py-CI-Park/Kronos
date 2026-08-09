@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 from collections.abc import Sequence
 from datetime import date, datetime
@@ -16,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .daily_market_transition_contract import (
     DailyMarketCandidate,
     DailyMarketScore,
+    market_score_hash,
     rank_market_scores,
 )
 from .daily_ohlcv_db import (
@@ -51,21 +51,6 @@ def _source_identity(path: Path) -> str:
     stat = path.stat()
     payload = f"{path}|{stat.st_size}|{stat.st_mtime_ns}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _split_hash(scores: Sequence[DailyMarketScore]) -> str:
-    payload = [
-        {
-            "decision_date": score.decision_date.isoformat(),
-            "split": score.split,
-            "market_prefix": score.market_prefix,
-            "code": score.code,
-            "score": repr(score.score),
-        }
-        for score in scores
-    ]
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _parse_db_date(value: object, *, code: str) -> date:
@@ -175,7 +160,7 @@ def load_daily_market_candidates(
         candidates=candidates,
         source_identity=_source_identity(resolved_path),
         source_identity_kind="path_size_mtime_lineage",
-        split_hash=_split_hash(ranked),
+        split_hash=market_score_hash(ranked),
         price_basis="unknown",
         decision_grade_status="BLOCKED_UNTIL_PRICE_BASIS_VERIFIED",
         blockers=(PRICE_BASIS_BLOCKER,),

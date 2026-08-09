@@ -182,6 +182,25 @@ def rank_market_scores(candidates: Sequence[DailyMarketScore]) -> tuple[DailyMar
     return tuple(sorted(candidates, key=lambda candidate: (-candidate.score, candidate.code))[:10])
 
 
+def market_score_hash(candidates: Sequence[DailyMarketScore]) -> str:
+    """Hash only causal score inputs after deterministic top-10 selection."""
+    ranked = rank_market_scores(candidates)
+    return _state_digest(
+        {
+            "scores": [
+                {
+                    "decision_date": candidate.decision_date.isoformat(),
+                    "split": candidate.split,
+                    "market_prefix": candidate.market_prefix,
+                    "code": candidate.code,
+                    "score": repr(candidate.score),
+                }
+                for candidate in ranked
+            ]
+        }
+    )
+
+
 def build_market_state(
     candidates: Sequence[DailyMarketScore],
     *,
@@ -228,5 +247,6 @@ __all__ = [
     "SplitName",
     "SlotTransition",
     "build_market_state",
+    "market_score_hash",
     "rank_market_scores",
 ]
