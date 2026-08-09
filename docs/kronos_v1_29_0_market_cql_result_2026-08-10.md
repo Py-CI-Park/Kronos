@@ -124,7 +124,7 @@ seed별 시간순 equity·행동 그래프는 다음 실행부터 `algorithm + s
 | 학습 | COMPLETE | 모델 20개, transition 2,432 | seed별 telemetry 계약 | 2~4시간 |
 | 평가 | COMPLETE / NO-GO | 5시드·기본/스트레스 비용·bootstrap | 동일 TEST 재튜닝 금지, 새 구간 설계 | 0.5~1일 |
 | 비교 | COMPLETE / NO-GO | DQN/CQL/규칙/두 shuffle 비교 | TRAIN/VAL 전용 abstention·top-k 연구 | 0.5~1일 |
-| 보고서 | COMPLETE | 이 문서와 세 증거 hash 연결 | 독립 리뷰 결과 추가 | 1~2시간 |
+| 보고서 | COMPLETE | 이 문서·세 증거 hash·5개 독립 리뷰 PASS 연결 | 새 가설 실행 후 결과 추가 | 이번 단계 완료 |
 | 인사이트 | DIAGNOSTIC | 종목 추천으로 승격하지 않음 | PIT universe 전 단일 종목 해석 금지 | 데이터와 동시 |
 | 다른 레인 | BUILT | 인트라데이·호가 RL과 성과 혼합 안 함 | 독립 증거 유지 | 완료 |
 | Kronos 모델 | AVAILABLE / NOT LOADED | 이번 CQL 정책과 별도 모델 계열 | 별도 사전등록 없이는 입력에 추가 금지 | 1~2일 |
@@ -160,7 +160,30 @@ py -3.11 -m stom_rl.daily_market_rl_runner
 
 생성 산출물은 `webui/rl_runs/daily_market_offline_rl/DAILY_MARKET_CQL_2026_08_09_001/`에 보존하지만 Git에는 커밋하지 않는다. 소스·테스트·문서만 커밋한다.
 
-## 10. Git·릴리스 경계
+## 10. 품질·독립 리뷰
+
+| 검증 | 결과 | 경계 |
+|---|---|---|
+| Python 핵심 회귀 | **50 passed** | 일봉 데이터·학습·게이트·API·Windows junction |
+| 프런트엔드 전체 테스트 | **466 passed, 0 failed** | `bun test src` |
+| Svelte 정적 검사 | **0 errors, 0 warnings** | V6 원본 소스 |
+| 생산 빌드 | **PASS** | Vite 1,063 modules |
+| Ruff·Basedpyright | **PASS / 0 errors, 0 warnings** | 최종 변경 생산 Python |
+| no-excuse 규칙 | **0 violations** | 최종 변경 Python·TypeScript |
+| 런타임 API | **PASS** | `NO_GO` 검색에 대상 run 포함, 산출물 23개 중 `.kq` 20개 |
+| 브라우저 UX | **PASS** | 연구·차트·모델 20개·NO-GO·미로드·미승격 표시 |
+
+| 독립 검토 | 판정 | 주요 확인 |
+|---|---|---|
+| 목표·제약 검토 | **PASS** | 사전등록, 20개 모델, 비용, TEST/Fresh OOS 경계 |
+| 코드 품질 검토 | **PASS** | 기존 MAJOR 0, 전체 466 frontend test 통과 |
+| 보안 검토 | **PASS** | CRITICAL/HIGH/MEDIUM 0, 체크포인트·JSON junction 차단 |
+| 실제 QA | **PASS** | 실제 `.kq` load, 손상 파일 거부, API·빌드·브라우저 |
+| 요구사항 맥락 검토 | **PASS** | 연구-only·fail-closed 정책과 구현 일치 |
+
+남은 낮은 위험은 두 가지다. 현재 status 필터가 부분 문자열 방식이라 미래의 `GO` 검색이 `NO_GO`까지 포함할 수 있으며, reparse guard는 Windows 구현이 주 대상이다. 현재 일봉 CQL 실행·판정·Windows 배포의 차단 조건은 아니지만 다음 개발 주기에 exact status-family 비교와 POSIX symlink 테스트를 추가한다.
+
+## 11. Git·릴리스 경계
 
 - 기능 브랜치: `codex/v1.29.0-dev-market-cql`, 삭제하지 않는다.
 - 품질 gate와 독립 리뷰가 통과하면 `develop/v1.29.0-dev`에 `--no-ff` 병합한다.
