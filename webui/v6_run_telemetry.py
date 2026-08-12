@@ -1,10 +1,12 @@
 """Bounded, read-only telemetry snapshots for recorded RL event streams."""
+
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import pairwise
 from pathlib import Path
 from typing import Final, TypedDict
 
@@ -18,6 +20,10 @@ from stom_rl.rl_events import (
 )
 from webui.v6_research_metadata import observe_metadata
 from webui.v6_research_catalog import discover_run_directories, research_lane
+from webui.v6_telemetry_file_custody import (
+    advanced_since_previous_poll,
+    sampled_lines,
+)
 
 EVENT_FILE: Final = "rl_live_events.jsonl"
 HALF_SCAN_BYTES: Final = 2 * 1024 * 1024
@@ -34,11 +40,15 @@ class TelemetryPointPayload(TypedDict):
     exploration: float | None
     action_name: str
     timestamp: str
+    decision_timestamp: str | None
+    reward_observed_at: str | None
     reward_kind: str | None
     reward_unit: str | None
     equity_kind: str | None
     equity_unit: str | None
     action_recorded: bool | None
+    telemetry_live_stream: bool | None
+    telemetry_producer_state: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,11 +61,15 @@ class TelemetryPoint:
     exploration: float | None
     action_name: str
     timestamp: str
+    decision_timestamp: str | None
+    reward_observed_at: str | None
     reward_kind: str | None
     reward_unit: str | None
     equity_kind: str | None
     equity_unit: str | None
     action_recorded: bool | None
+    telemetry_live_stream: bool | None
+    telemetry_producer_state: str | None
 
     def to_payload(self) -> TelemetryPointPayload:
         return {
@@ -67,11 +81,15 @@ class TelemetryPoint:
             "exploration": self.exploration,
             "action_name": self.action_name,
             "timestamp": self.timestamp,
+            "decision_timestamp": self.decision_timestamp,
+            "reward_observed_at": self.reward_observed_at,
             "reward_kind": self.reward_kind,
             "reward_unit": self.reward_unit,
             "equity_kind": self.equity_kind,
             "equity_unit": self.equity_unit,
             "action_recorded": self.action_recorded,
+            "telemetry_live_stream": self.telemetry_live_stream,
+            "telemetry_producer_state": self.telemetry_producer_state,
         }
 
 
@@ -113,6 +131,11 @@ def _number(mapping: Mapping[str, JsonValue], key: str) -> float | None:
     return numeric if math.isfinite(numeric) else None
 
 
+def _optional_text(mapping: Mapping[str, JsonValue], key: str) -> str | None:
+    value = mapping.get(key)
+    return value.strip() if type(value) is str and value.strip() else None
+
+
 def _declared_text(
     metadata: Mapping[str, object],
     key: str,
@@ -139,6 +162,8 @@ def _parse_line(line: str) -> TelemetryPoint | None:
     timestamp = _text(raw, "timestamp_utc")
     if timestamp == "MISSING":
         timestamp = _text(raw, "timestamp")
+    live_value = raw.get("telemetry_live_stream")
+    producer_value = raw.get("telemetry_producer_state")
     return TelemetryPoint(
         step=step,
         phase=_text(raw, "phase"),
@@ -148,33 +173,28 @@ def _parse_line(line: str) -> TelemetryPoint | None:
         exploration=_number(raw, "exploration"),
         action_name=_text(raw, "action_name"),
         timestamp=timestamp,
+        decision_timestamp=_optional_text(raw, "decision_timestamp"),
+        reward_observed_at=_optional_text(raw, "reward_observed_at"),
         reward_kind=_declared_text(metadata, "reward_kind", REWARD_KINDS),
         reward_unit=_declared_text(metadata, "reward_unit", METRIC_UNITS),
         equity_kind=_declared_text(metadata, "equity_kind", EQUITY_KINDS),
         equity_unit=_declared_text(metadata, "equity_unit", METRIC_UNITS),
         action_recorded=_declared_bool(metadata, "action_recorded"),
+        telemetry_live_stream=live_value if type(live_value) is bool else None,
+        telemetry_producer_state=(
+            producer_value if type(producer_value) is str else None
+        ),
     )
 
 
-def _sampled_lines(path: Path, size: int) -> tuple[tuple[str, ...], str]:
-    if size <= HALF_SCAN_BYTES * 2:
-        return tuple(path.read_text(encoding="utf-8-sig").splitlines()), "FULL_FILE"
-    with path.open("rb") as stream:
-        head = stream.read(HALF_SCAN_BYTES)
-        _ = stream.seek(-HALF_SCAN_BYTES, 2)
-        tail = stream.read(HALF_SCAN_BYTES)
-    head = head[: head.rfind(b"\n") + 1]
-    first_break = tail.find(b"\n")
-    tail = tail[first_break + 1 :] if first_break >= 0 else b""
-    head_lines = head.decode("utf-8-sig").splitlines()
-    tail_lines = tail.decode("utf-8").splitlines()
-    return tuple(head_lines + tail_lines), "HEAD_TAIL_SAMPLE"
-
-
-def _downsample(points: tuple[TelemetryPoint, ...], limit: int) -> tuple[TelemetryPoint, ...]:
+def _downsample(
+    points: tuple[TelemetryPoint, ...], limit: int
+) -> tuple[TelemetryPoint, ...]:
     if len(points) <= limit:
         return points
-    indices = tuple(round(index * (len(points) - 1) / (limit - 1)) for index in range(limit))
+    indices = tuple(
+        round(index * (len(points) - 1) / (limit - 1)) for index in range(limit)
+    )
     return tuple(points[index] for index in dict.fromkeys(indices))
 
 
@@ -188,18 +208,43 @@ def read_telemetry(
     event_path = directory / EVENT_FILE
     if not event_path.is_file() or event_path.is_symlink():
         raise FileNotFoundError(event_path)
-    stat_result = event_path.stat()
-    lines, sampling = _sampled_lines(event_path, stat_result.st_size)
+    lines, sampling, stat_result = sampled_lines(
+        event_path,
+        half_scan_bytes=HALF_SCAN_BYTES,
+    )
     parsed = tuple(_parse_line(line) for line in lines if line.strip())
     points = tuple(point for point in parsed if point is not None)
+    invalid_lines = len(parsed) - len(points)
     observed_now = now or datetime.now(tz=timezone.utc)
     modified = datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc)
     age = (observed_now - modified).total_seconds()
-    follow_mode = "FOLLOWING_FILE" if 0 <= age <= ACTIVE_WINDOW_SECONDS else "HISTORICAL_SNAPSHOT"
+    step_advancing = len(points) >= 2 and all(
+        right.step > left.step for left, right in pairwise(points)
+    )
+    explicitly_live = (
+        sampling == "FULL_FILE"
+        and invalid_lines == 0
+        and step_advancing
+        and all(
+            point.telemetry_live_stream is True
+            and point.telemetry_producer_state == "RUNNING"
+            for point in points
+        )
+    )
+    advanced_since_poll = advanced_since_previous_poll(
+        event_path,
+        stat_result,
+        last_step=points[-1].step if points else None,
+    )
+    follow_mode = (
+        "FOLLOWING_FILE"
+        if explicitly_live and advanced_since_poll and 0 <= age <= ACTIVE_WINDOW_SECONDS
+        else "HISTORICAL_SNAPSHOT"
+    )
     return TelemetrySnapshot(
         points=_downsample(points, limit),
         event_bytes=stat_result.st_size,
-        invalid_lines=len(parsed) - len(points),
+        invalid_lines=invalid_lines,
         sampling=sampling,
         follow_mode=follow_mode,
         updated_at=modified.isoformat().replace("+00:00", "Z"),

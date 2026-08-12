@@ -3,26 +3,39 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import sqlite3
-from datetime import datetime, timezone
+from contextlib import closing
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final, Literal, cast
 
 from pydantic import ValidationError
 
 from .daily_market_authority_contract import (
-    AuthorityFileIdentity,
     DailyMarketAuthorityError,
     PitMembershipRecord,
     PriceProvenanceRecord,
 )
+from .daily_market_authority_file_custody import (
+    authority_input_binding,
+    ensure_required_file,
+    file_identity,
+    resolve_reviewed_source_artifacts,
+    resolve_source_artifacts,
+)
+from .daily_market_candidate_eligibility import parse_candidate_eligibility
 from .daily_market_path_custody import has_reparse_component
 from .daily_ohlcv_db import connect_readonly
 
 EvidenceState = Literal["PRESENT", "MISSING", "INVALID"]
 CURRENT_METADATA_COLUMNS: Final = frozenset(
-    {"code", "name", "market", "instrument_type"}
+    {
+        "code",
+        "name",
+        "market",
+        "instrument_type",
+        "available_at",
+        "source_hash",
+    }
 )
 PIT_COLUMNS: Final = frozenset(
     {
@@ -38,33 +51,10 @@ PIT_COLUMNS: Final = frozenset(
 )
 
 
-def ensure_required_file(path: Path, code: str) -> Path:
-    resolved = path.resolve()
-    if has_reparse_component(path) or not resolved.is_file():
-        raise DailyMarketAuthorityError(code, str(path))
-    return resolved
-
-
-def file_identity(path: Path) -> AuthorityFileIdentity:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    stat = path.stat()
-    return AuthorityFileIdentity(
-        path_suffix=path.name,
-        size_bytes=stat.st_size,
-        modified_at_utc=datetime.fromtimestamp(
-            stat.st_mtime, tz=timezone.utc
-        ).isoformat(),
-        sha256=digest.hexdigest(),
-    )
-
-
 def local_columns(path: Path, tables: tuple[str, ...]) -> tuple[str, ...]:
     if not tables:
         return ()
-    with connect_readonly(path) as connection:
+    with closing(connect_readonly(path)) as connection:
         cursor = connection.execute(f'SELECT * FROM "{tables[0]}" LIMIT 0')
         description = cursor.description
     if description is None:
@@ -91,7 +81,15 @@ def candidate_pairs(path: Path) -> frozenset[tuple[str, str]]:
         if not {"date", "code", "eligible_for_selection"}.issubset(fields):
             raise DailyMarketAuthorityError("CANDIDATE_SCORE_SCHEMA_INVALID")
         for row in reader:
-            if str(row.get("eligible_for_selection", "")).casefold() != "true":
+            try:
+                eligible = parse_candidate_eligibility(
+                    row.get("eligible_for_selection", "")
+                )
+            except ValueError as exc:
+                raise DailyMarketAuthorityError(
+                    "CANDIDATE_ELIGIBILITY_INVALID"
+                ) from exc
+            if not eligible:
                 continue
             date_text = str(row.get("date", "")).replace("-", "")
             code = str(row.get("code", "")).zfill(6)
@@ -108,22 +106,63 @@ def candidate_pairs(path: Path) -> frozenset[tuple[str, str]]:
     return frozenset(pairs)
 
 
-def current_metadata_state(path: Path) -> EvidenceState:
+def current_metadata_evidence(
+    path: Path,
+) -> tuple[EvidenceState, tuple[str, ...]]:
     if not path.exists():
-        return "MISSING"
+        return "MISSING", ()
     if has_reparse_component(path) or not path.is_file():
-        return "INVALID"
+        return "INVALID", ()
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             if not CURRENT_METADATA_COLUMNS.issubset(
                 frozenset(reader.fieldnames or ())
             ):
-                return "INVALID"
-            first = next(reader, None)
-        return "PRESENT" if first is not None else "INVALID"
+                return "INVALID", ()
+            hashes: set[str] = set()
+            observed = 0
+            for row in reader:
+                code = str(row.get("code", ""))
+                market = str(row.get("market", ""))
+                instrument_type = str(row.get("instrument_type", ""))
+                available_at = str(row.get("available_at", ""))
+                source_hash = str(row.get("source_hash", ""))
+                if (
+                    len(code) != 6
+                    or not code.isdigit()
+                    or market not in {"KOSPI", "KOSDAQ", "KONEX"}
+                    or instrument_type != "common_equity"
+                    or len(available_at) != 8
+                    or not available_at.isdigit()
+                    or len(source_hash) != 64
+                    or any(
+                        character not in "0123456789abcdef" for character in source_hash
+                    )
+                ):
+                    return "INVALID", ()
+                hashes.add(source_hash)
+                observed += 1
+        return ("PRESENT", tuple(sorted(hashes))) if observed else ("INVALID", ())
     except (OSError, csv.Error):
-        return "INVALID"
+        return "INVALID", ()
+
+
+def daily_column_presence_count(
+    path: Path,
+    tables: tuple[str, ...],
+    column: str,
+) -> int:
+    with closing(connect_readonly(path)) as connection:
+        covered = 0
+        for table in tables:
+            rows = cast(
+                list[tuple[object, ...]],
+                connection.execute(f'PRAGMA table_info("{table}")').fetchall(),
+            )
+            if any(len(row) > 1 and row[1] == column for row in rows):
+                covered += 1
+        return covered
 
 
 def pit_records(path: Path) -> tuple[EvidenceState, tuple[PitMembershipRecord, ...]]:
@@ -162,7 +201,7 @@ def covered_pairs(
 def stockinfo_count(path: Path) -> int:
     uri = f"file:{path.as_posix()}?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True) as connection:
+        with closing(sqlite3.connect(uri, uri=True)) as connection:
             _ = connection.execute("PRAGMA query_only = ON")
             cursor = connection.execute("SELECT 1 FROM stockinfo LIMIT 1")
             rows = 1 if cursor.fetchone() is not None else 0
@@ -175,13 +214,17 @@ def stockinfo_count(path: Path) -> int:
 
 __all__ = [
     "EvidenceState",
+    "authority_input_binding",
     "candidate_pairs",
     "covered_pairs",
-    "current_metadata_state",
+    "current_metadata_evidence",
+    "daily_column_presence_count",
     "ensure_required_file",
     "file_identity",
     "local_columns",
     "pit_records",
     "price_provenance",
+    "resolve_reviewed_source_artifacts",
+    "resolve_source_artifacts",
     "stockinfo_count",
 ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 from typing import Final
 
@@ -42,20 +43,34 @@ def save_network(network: MarketQNetwork, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if has_reparse_component(path.parent):
         raise DailyMarketRlContractError("MODEL_CHECKPOINT_OUTPUT_UNTRUSTED")
+    if path.exists():
+        raise DailyMarketRlContractError(
+            "MODEL_CHECKPOINT_ALREADY_EXISTS",
+            str(path),
+        )
     temporary = path.with_suffix(f"{path.suffix}.tmp")
+    if temporary.exists():
+        raise DailyMarketRlContractError(
+            "MODEL_CHECKPOINT_TEMPORARY_ALREADY_EXISTS",
+            str(temporary),
+        )
     arrays = _arrays(network)
     shapes = tuple(tuple(value.shape) for value in arrays)
     _ = _payload_bytes(shapes)
     if any(not bool(np.isfinite(value).all()) for value in arrays):
         raise DailyMarketRlContractError("MODEL_CHECKPOINT_NONFINITE")
-    header = json.dumps([list(value.shape) for value in arrays], separators=(",", ":")).encode("ascii")
-    with temporary.open("wb") as handle:
+    header = json.dumps(
+        [list(value.shape) for value in arrays], separators=(",", ":")
+    ).encode("ascii")
+    with temporary.open("xb") as handle:
         _ = handle.write(MAGIC)
         _ = handle.write(len(header).to_bytes(4, byteorder="big", signed=False))
         _ = handle.write(header)
         for value in arrays:
             _ = handle.write(np.asarray(value, dtype="<f8").tobytes(order="C"))
-    _ = temporary.replace(path)
+        handle.flush()
+        os.fsync(handle.fileno())
+    _ = temporary.rename(path)
 
 
 def load_network(
@@ -80,7 +95,9 @@ def load_network(
         try:
             shapes = SHAPE_ADAPTER.validate_json(encoded_shapes)
         except ValidationError as error:
-            raise DailyMarketRlContractError("MODEL_CHECKPOINT_HEADER_INVALID") from error
+            raise DailyMarketRlContractError(
+                "MODEL_CHECKPOINT_HEADER_INVALID"
+            ) from error
         if shapes != expected_shapes:
             raise DailyMarketRlContractError("MODEL_CHECKPOINT_SHAPE_MISMATCH")
         payload_bytes = _payload_bytes(shapes)
@@ -100,7 +117,9 @@ def load_network(
             if not bool(np.isfinite(array).all()):
                 raise DailyMarketRlContractError("MODEL_CHECKPOINT_NONFINITE")
             arrays.append(array)
-    first_weight, first_bias, second_weight, second_bias, output_weight, output_bias = arrays
+    first_weight, first_bias, second_weight, second_bias, output_weight, output_bias = (
+        arrays
+    )
     return MarketQNetwork(
         first_weight,
         first_bias,

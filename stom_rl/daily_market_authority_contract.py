@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import ClassVar, Final, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import override
+
+
+# A content hash proves byte identity, not who reviewed the upstream broker/KRX
+# response.  Keep VERIFIED receipts structurally impossible until a signed
+# reviewer trust root and receipt verifier are implemented.
+SIGNED_SOURCE_REVIEW_SUPPORTED: Final = False
 
 
 class DailyMarketAuthorityError(Exception):
@@ -41,10 +47,40 @@ class AuthorityFileIdentity(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
+    identity_kind: Literal[
+        "WHOLE_FILE_SHA256",
+        "CANONICAL_SQLITE_QUERY_SHA256",
+    ] = "WHOLE_FILE_SHA256"
     path_suffix: str
     size_bytes: int = Field(gt=0)
     modified_at_utc: str
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+AuthorityInputRole = Literal[
+    "DAILY_DATABASE",
+    "STOCKINFO_DATABASE",
+    "CANDIDATE_SCORES",
+    "PRICE_PROVENANCE",
+    "CURRENT_OFFICIAL_METADATA",
+    "PIT_MEMBERSHIP",
+]
+
+
+class AuthorityInputBinding(BaseModel):
+    """Exact file identity or fail-closed absence for every audited input."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
+
+    role: AuthorityInputRole
+    state: Literal["PRESENT", "MISSING", "INVALID"]
+    identity: AuthorityFileIdentity | None
+
+    @model_validator(mode="after")
+    def _identity_matches_state(self) -> Self:
+        if (self.state == "PRESENT") != (self.identity is not None):
+            raise ValueError("authority input identity/state mismatch")
+        return self
 
 
 class PriceProvenanceRecord(BaseModel):
@@ -54,7 +90,7 @@ class PriceProvenanceRecord(BaseModel):
 
     schema_version: Literal["kronos_price_provenance.v1"]
     database_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    source_system: str = Field(min_length=1)
+    source_system: Literal["KIWOOM_OPENAPI_OPT10081"]
     source_field: Literal["수정주가구분"]
     price_basis: Literal["raw", "adjusted", "split_adjusted", "total_return_adjusted"]
     collection_option: str = Field(min_length=1)
@@ -113,10 +149,15 @@ class MarketAuthorityReceipt(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["kronos_daily_market_authority.v1"]
-    research_id: Literal["DAILY_MARKET_AUTHORITY_2026_08_10_001"]
+    schema_version: Literal["kronos_daily_market_authority.v2"]
+    research_id: Literal[
+        "DAILY_MARKET_AUTHORITY_2026_08_10_001",
+        "DAILY_MARKET_AUTHORITY_2026_08_10_002",
+    ]
     status: Literal["VERIFIED_RESEARCH_DATA_AUTHORITY", "BLOCKED_DATA_AUTHORITY"]
     daily_database: AuthorityFileIdentity
+    input_bindings: tuple[AuthorityInputBinding, ...]
+    source_artifacts: tuple[AuthorityFileIdentity, ...]
     d0_price_basis: PriceBasisAuthority
     d1_universe: UniverseAuthority
     blockers: tuple[str, ...]
@@ -126,14 +167,70 @@ class MarketAuthorityReceipt(BaseModel):
     promotion_allowed: Literal[False]
     live_ready: Literal[False]
 
+    @model_validator(mode="after")
+    def _authority_verdict_is_canonical(self) -> Self:
+        expected_roles = {
+            "DAILY_DATABASE",
+            "STOCKINFO_DATABASE",
+            "CANDIDATE_SCORES",
+            "PRICE_PROVENANCE",
+            "CURRENT_OFFICIAL_METADATA",
+            "PIT_MEMBERSHIP",
+        }
+        bindings = {binding.role: binding for binding in self.input_bindings}
+        if len(bindings) != len(self.input_bindings) or set(bindings) != expected_roles:
+            raise ValueError("authority receipt requires six unique input bindings")
+        daily_binding = bindings["DAILY_DATABASE"]
+        if (
+            daily_binding.state != "PRESENT"
+            or daily_binding.identity != self.daily_database
+        ):
+            raise ValueError("daily database identity is not canonical")
+        expected_blockers = tuple(
+            blocker
+            for blocker, verified in (
+                (
+                    "D0_PRICE_BASIS_NOT_VERIFIED",
+                    self.d0_price_basis.state == "VERIFIED",
+                ),
+                (
+                    "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED",
+                    self.d1_universe.state == "VERIFIED",
+                ),
+            )
+            if not verified
+        )
+        if self.blockers != expected_blockers:
+            raise ValueError("authority blockers do not match D0/D1 states")
+        verified = not expected_blockers
+        if (self.status == "VERIFIED_RESEARCH_DATA_AUTHORITY") != verified:
+            raise ValueError("authority status does not match D0/D1 states")
+        if verified:
+            if not SIGNED_SOURCE_REVIEW_SUPPORTED:
+                raise ValueError("signed source review verification is unsupported")
+            if any(binding.state != "PRESENT" for binding in bindings.values()):
+                raise ValueError("verified authority requires every input binding")
+            if not self.source_artifacts:
+                raise ValueError("verified authority requires source artifacts")
+            source_hashes = {identity.sha256 for identity in self.source_artifacts}
+            if len(source_hashes) != len(self.source_artifacts) or any(
+                identity.path_suffix != f"{identity.sha256}.source"
+                for identity in self.source_artifacts
+            ):
+                raise ValueError("verified source artifacts are not canonical")
+        return self
+
 
 __all__ = [
     "AuthorityCheck",
     "AuthorityFileIdentity",
+    "AuthorityInputBinding",
+    "AuthorityInputRole",
     "DailyMarketAuthorityError",
     "MarketAuthorityReceipt",
     "PitMembershipRecord",
     "PriceBasisAuthority",
     "PriceProvenanceRecord",
+    "SIGNED_SOURCE_REVIEW_SUPPORTED",
     "UniverseAuthority",
 ]

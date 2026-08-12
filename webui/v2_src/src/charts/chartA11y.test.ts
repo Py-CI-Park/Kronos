@@ -62,30 +62,42 @@ test('deriveChartTable: columns from series names, rows from xAxis categories', 
     series: [{ name: 'net', data: [1, 2] }, { name: 'mdd', data: [-1, -2] }],
   });
   assert.ok(t);
-  assert.deepEqual(t!.columns, ['항목', 'net', 'mdd']);
-  assert.deepEqual(t!.rows[0], ['d1', 1, -1]);
-  assert.deepEqual(t!.rows[1], ['d2', 2, -2]);
+  assert.deepEqual(t.columns, ['항목', 'net', 'mdd']);
+  assert.deepEqual(t.rows[0], ['d1', 1, -1]);
+  assert.deepEqual(t.rows[1], ['d2', 2, -2]);
 });
 
 test('deriveChartTable: missing points become em dash, not 0', () => {
   const t = deriveChartTable({ series: [{ name: 'a', data: [null, 3] }] });
   assert.ok(t);
-  assert.deepEqual(t!.rows[0], ['1', '—']);
-  assert.deepEqual(t!.rows[1], ['2', 3]);
+  assert.deepEqual(t.rows[0], ['1', '—']);
+  assert.deepEqual(t.rows[1], ['2', 3]);
 });
 
 test('deriveChartTable: scatter [x,y] tuples tabulate the plotted y', () => {
   const t = deriveChartTable({ series: [{ name: 'pts', data: [[0.1, 4], [0.2, 5]] }] });
   assert.ok(t);
-  assert.deepEqual(t!.rows[0], ['1', 4]);
-  assert.deepEqual(t!.rows[1], ['2', 5]);
+  assert.deepEqual(t.rows[0], ['1', 4]);
+  assert.deepEqual(t.rows[1], ['2', 5]);
+});
+
+test('deriveChartTable: scatter metadata after [x,y] does not hide the plotted y', () => {
+  const t = deriveChartTable({
+    series: [{
+      name: 'observed action',
+      data: [['15:30 · step 1', 2, 1, 'VALIDATION_REPLAY']],
+    }],
+  });
+
+  assert.ok(t);
+  assert.deepEqual(t.rows[0], ['1', 2]);
 });
 
 test('deriveChartTable: caps at 80 rows for large series', () => {
   const data = Array.from({ length: 500 }, (_, i) => i);
   const t = deriveChartTable({ series: [{ name: 'loss', data }] });
   assert.ok(t);
-  assert.equal(t!.rows.length, 80);
+  assert.equal(t.rows.length, 80);
 });
 
 test('deriveChartTable: null when no series or no data', () => {

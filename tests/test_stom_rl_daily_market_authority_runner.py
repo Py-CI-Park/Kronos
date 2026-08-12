@@ -25,7 +25,11 @@ def test_registered_authority_paths_are_fixed_under_repository(tmp_path: Path) -
         == tmp_path / "_database" / "krx_listed_products.csv"
     )
     assert paths.pit_membership == tmp_path / "_database" / "krx_pit_membership.csv"
-    assert paths.output_directory.name == "DAILY_MARKET_AUTHORITY_2026_08_10_001"
+    assert (
+        paths.source_artifact_root
+        == tmp_path / "_database" / "market_authority_sources"
+    )
+    assert paths.output_directory.name == "DAILY_MARKET_AUTHORITY_2026_08_10_002"
 
 
 def test_authority_cli_rejects_more_than_one_repository_root() -> None:

@@ -4,129 +4,62 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import replace
 from pathlib import Path
-from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
-from .daily_market_allocation_artifacts import (
-    AllocationArtifactPaths,
-    write_allocation_artifacts,
+from .daily_market_allocation_artifacts import write_allocation_artifacts
+from .daily_market_allocation_custody import (
+    assert_allocation_inputs_unchanged,
+    capture_allocation_input_snapshot,
+    ensure_allocation_output_available,
+    immutable_allocation_database_snapshot,
+    load_allocation_authority,
 )
 from .daily_market_allocation_experiment import (
     AllocationModelPlan,
     train_allocation_arms,
 )
-from .daily_market_allocation_experiment_contract import AllocationExperimentExecution
 from .daily_market_allocation_finalization import finalize_allocation_screen
-from .daily_market_authority_contract import MarketAuthorityReceipt
-from .daily_market_authority_sources import file_identity
-from .daily_market_path_custody import has_reparse_component
+from .daily_market_allocation_lineage import build_registered_allocation_lineage
+from .daily_market_allocation_reproduction import (
+    load_allocation_reproduction_reference,
+)
+from .daily_market_allocation_input_snapshot import immutable_allocation_direct_inputs
+from .daily_market_allocation_run_contract import (
+    AllocationCompletionEvent,
+    AllocationInputSnapshot,
+    AllocationModelProgressEvent,
+    DailyMarketAllocationPaths,
+    RegisteredAllocationRun,
+)
 from .daily_market_rl_contract import DailyMarketRlContractError
 from .daily_market_rl_dataset import prepare_market_data
-from .daily_market_score_dataset import load_market_score_dataset
-from .daily_market_state_dataset import build_market_state_dataset
+from .daily_market_score_dataset import (
+    DailyMarketScoreDataset,
+    load_market_score_dataset,
+)
+from .daily_market_state_dataset import (
+    DailyMarketStateDataset,
+    build_market_state_dataset,
+)
 
 
-@dataclass(frozen=True, slots=True)
-class DailyMarketAllocationPaths:
-    repository_root: Path
-    dataset_root: Path
-    candidate_scores: Path
-    source_manifest: Path
-    causal_panel: Path
-    daily_database: Path
-    authority_receipt: Path
-    output_directory: Path
-
-    @classmethod
-    def registered(cls, repository_root: Path) -> DailyMarketAllocationPaths:
-        root = repository_root.resolve()
-        dataset = (
-            root
-            / "webui"
-            / "rl_runs"
-            / "daily_close_slot_dataset"
-            / "daily_close_slot_research_dataset_2026_07_03"
-        )
-        return cls(
-            repository_root=root,
-            dataset_root=dataset,
-            candidate_scores=dataset / "candidate_score_rows.csv",
-            source_manifest=dataset / "close_slot_dataset_manifest.json",
-            causal_panel=dataset / "close_slot_panel.csv",
-            daily_database=root / "_database" / "Stock_Database_ohlcv_1day.db",
-            authority_receipt=(
-                root
-                / "webui"
-                / "rl_runs"
-                / "daily_market_authority"
-                / "DAILY_MARKET_AUTHORITY_2026_08_10_001"
-                / "authority_receipt.json"
-            ),
-            output_directory=(
-                root
-                / "webui"
-                / "rl_runs"
-                / "daily_market_allocation"
-                / "DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001"
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class RegisteredAllocationRun:
-    execution: AllocationExperimentExecution
-    artifacts: AllocationArtifactPaths
-
-
-class AllocationModelProgressEvent(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        allow_inf_nan=False,
+def load_allocation_direct_datasets(
+    frozen_inputs: DailyMarketAllocationPaths,
+) -> tuple[DailyMarketScoreDataset, DailyMarketStateDataset]:
+    """Load all small market inputs from one immutable snapshot directory."""
+    frozen_artifact_root = frozen_inputs.candidate_scores.parent
+    scores = load_market_score_dataset(
+        frozen_inputs.candidate_scores,
+        source_manifest_path=frozen_inputs.source_manifest,
+        artifact_root=frozen_artifact_root,
     )
-
-    event: Literal["ALLOCATION_MODEL_COMPLETED"]
-    algorithm: str
-    seed: int = Field(ge=0)
-    completed_models: int = Field(ge=1, le=10)
-    total_models: Literal[10]
-    elapsed_seconds: float = Field(ge=0)
-
-
-class AllocationCompletionEvent(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
-
-    event: Literal["ALLOCATION_SCREEN_COMPLETED"]
-    verdict: Literal["VALIDATION_CANDIDATE", "NO_GO_VALIDATION_SCREEN"]
-    summary_path: str
-    receipt_path: str
-    ledger_path: str
-    authority_status: str
-    historical_test_state: Literal["NOT_RUN_NO_READ"]
-    fresh_oos_state: Literal["NOT_RUN_NO_READ"]
-    promotion_allowed: Literal[False]
-
-
-def _load_authority(paths: DailyMarketAllocationPaths) -> MarketAuthorityReceipt:
-    if (
-        has_reparse_component(paths.authority_receipt)
-        or not paths.authority_receipt.is_file()
-    ):
-        raise DailyMarketRlContractError("ALLOCATION_AUTHORITY_RECEIPT_UNTRUSTED")
-    try:
-        receipt = MarketAuthorityReceipt.model_validate_json(
-            paths.authority_receipt.read_bytes()
-        )
-    except (OSError, ValidationError) as exc:
-        raise DailyMarketRlContractError(
-            "ALLOCATION_AUTHORITY_RECEIPT_INVALID"
-        ) from exc
-    if file_identity(paths.daily_database).sha256 != receipt.daily_database.sha256:
-        raise DailyMarketRlContractError("ALLOCATION_DATABASE_AUTHORITY_HASH_MISMATCH")
-    return receipt
+    states = build_market_state_dataset(
+        scores,
+        panel_csv_path=frozen_inputs.causal_panel,
+        artifact_root=frozen_artifact_root,
+    )
+    return scores, states
 
 
 def run_registered_allocation_screen(
@@ -135,34 +68,49 @@ def run_registered_allocation_screen(
     on_model_completed: Callable[[AllocationModelPlan, float], None] | None = None,
 ) -> RegisteredAllocationRun:
     """Train/validate ten models without opening historical TEST or Fresh OOS."""
-    authority = _load_authority(paths)
-    scores = load_market_score_dataset(
-        paths.candidate_scores,
-        source_manifest_path=paths.source_manifest,
-        artifact_root=paths.dataset_root,
-    )
-    states = build_market_state_dataset(
-        scores,
-        panel_csv_path=paths.causal_panel,
-        artifact_root=paths.dataset_root,
-    )
-    prepared = prepare_market_data(
-        scores,
-        states,
-        db_path=paths.daily_database,
-        read_splits=("TRAIN", "VALIDATION"),
-    )
-    behavior_count, trained = train_allocation_arms(
-        prepared,
-        output_directory=paths.output_directory,
-        on_completed=on_model_completed,
-    )
-    execution = finalize_allocation_screen(
-        prepared,
-        authority,
-        trained,
-        behavior_transition_count=behavior_count,
-    )
+    ensure_allocation_output_available(paths.output_directory)
+    input_snapshot = capture_allocation_input_snapshot(paths)
+    lineage = build_registered_allocation_lineage(input_snapshot)
+    with immutable_allocation_direct_inputs(paths, input_snapshot) as frozen_inputs:
+        reference_receipt = load_allocation_reproduction_reference(
+            frozen_inputs.source_allocation_receipt,
+            expected_sha256=next(
+                sha256
+                for role, sha256 in input_snapshot.rows
+                if role == "SOURCE_ALLOCATION_RECEIPT_001"
+            ),
+        )
+        authority_paths = replace(
+            paths,
+            authority_receipt=frozen_inputs.authority_receipt,
+        )
+        authority = load_allocation_authority(authority_paths)
+        with immutable_allocation_database_snapshot(
+            paths,
+            authority.daily_database.sha256,
+        ) as database_snapshot:
+            scores, states = load_allocation_direct_datasets(frozen_inputs)
+            prepared = prepare_market_data(
+                scores,
+                states,
+                db_path=database_snapshot,
+                read_splits=("TRAIN", "VALIDATION"),
+            )
+            behavior_count, trained = train_allocation_arms(
+                prepared,
+                output_directory=paths.output_directory,
+                on_completed=on_model_completed,
+            )
+            execution = finalize_allocation_screen(
+                prepared,
+                authority,
+                trained,
+                behavior_transition_count=behavior_count,
+                lineage=lineage,
+                reference_receipt=reference_receipt,
+            )
+    assert_allocation_inputs_unchanged(paths, input_snapshot)
+    _ = load_allocation_authority(paths)
     artifacts = write_allocation_artifacts(execution, paths.output_directory)
     return RegisteredAllocationRun(execution, artifacts)
 
@@ -205,8 +153,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             summary_path=str(result.artifacts.summary.resolve()),
             receipt_path=str(result.artifacts.receipt.resolve()),
             ledger_path=str(result.artifacts.action_ledger.resolve()),
+            telemetry_path=str(result.artifacts.telemetry.resolve()),
+            bundle_manifest_path=str(result.artifacts.bundle_manifest.resolve()),
             authority_status=receipt.authority_status,
-            historical_test_state="NOT_RUN_NO_READ",
+            historical_test_state=receipt.historical_test_state,
             fresh_oos_state="NOT_RUN_NO_READ",
             promotion_allowed=False,
         ).model_dump_json(),
@@ -220,7 +170,13 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "AllocationInputSnapshot",
     "DailyMarketAllocationPaths",
     "RegisteredAllocationRun",
+    "assert_allocation_inputs_unchanged",
+    "capture_allocation_input_snapshot",
+    "ensure_allocation_output_available",
+    "immutable_allocation_database_snapshot",
+    "load_allocation_direct_datasets",
     "run_registered_allocation_screen",
 ]

@@ -1,4 +1,5 @@
 import type { TelemetryPoint } from '../../api/telemetryApi';
+import { runStatusLabel } from '../../runStatusModel';
 
 export type TelemetryMetric = 'reward' | 'equity';
 export type MetricIdentity = {
@@ -22,6 +23,16 @@ const won = new Intl.NumberFormat('ko-KR', {
   currency: 'KRW',
   maximumFractionDigits: 0,
 });
+const compactWon = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 });
+
+export function compactRunStatus(status: string | null | undefined): string {
+  return runStatusLabel(status);
+}
+
+export function compactKrwNavLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'MISSING';
+  return `${compactWon.format(Math.round(value / 10_000))}만원`;
+}
 
 function metricValue(point: TelemetryPoint, metric: TelemetryMetric): number | null {
   return metric === 'equity' ? point.equity : point.reward;

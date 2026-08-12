@@ -4,7 +4,7 @@ import { actionDistribution, buildActionHourBuckets, buildActionTimelineRows } f
 import { TelemetryPointSchema } from '../../api/telemetryApi';
 
 const points = [
-  { step: 1, phase: 'eval', reward: 0, equity: 1, loss: null, exploration: null, action_name: 'buy', timestamp: '2026-08-06T09:00:00Z' },
+  { step: 1, phase: 'eval', reward: 0, equity: 1, loss: null, exploration: null, action_name: 'buy', timestamp: '2026-08-08T09:00:00Z', decision_timestamp: '2026-08-06T09:00:00Z', reward_observed_at: '2026-08-08T09:00:00Z' },
   { step: 2, phase: 'eval', reward: 0, equity: 1, loss: null, exploration: null, action_name: 'hold', timestamp: '2026-08-06T09:01:00Z' },
   { step: 3, phase: 'eval', reward: 0, equity: 1, loss: null, exploration: null, action_name: 'BUY', timestamp: '2026-08-06T09:02:00Z' },
   { step: 4, phase: 'eval', reward: 0, equity: 1, loss: null, exploration: null, action_name: 'exit', timestamp: 'not-a-time' },

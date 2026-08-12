@@ -13,6 +13,11 @@ from .daily_market_allocation_gate import (
     AllocationSeedOutcome,
     evaluate_allocation_validation_gate,
 )
+from .daily_market_allocation_lineage_contract import AllocationLineageEvidence
+from .daily_market_allocation_reproduction import (
+    AllocationReproductionProjection,
+    compare_allocation_reproduction,
+)
 from .daily_market_allocation_rl_contract import AllocationAlgorithm
 from .daily_market_authority_contract import MarketAuthorityReceipt
 from .daily_market_rl_contract import DailyMarketRlContractError
@@ -30,7 +35,7 @@ def _model_receipt(arm: TrainedAllocationArm) -> AllocationModelReceipt:
         seed=arm.plan.seed,
         loss_first=arm.training.losses[0],
         loss_last=arm.training.losses[-1],
-        checkpoint_path=str(checkpoint.resolve()),
+        checkpoint_path=(f"models/{arm.plan.algorithm.value}/seed-{arm.plan.seed}.kq"),
         checkpoint_sha256=checkpoint_hash,
         validation_base=arm.validation_base.metrics,
         validation_stress=arm.validation_stress.metrics,
@@ -59,6 +64,8 @@ def finalize_allocation_screen(
     trained: tuple[TrainedAllocationArm, ...],
     *,
     behavior_transition_count: int,
+    lineage: AllocationLineageEvidence,
+    reference_receipt: AllocationExperimentReceipt,
 ) -> AllocationExperimentExecution:
     """Freeze model/validation evidence while keeping TEST and Fresh OOS sealed."""
     gate = evaluate_allocation_validation_gate(
@@ -70,25 +77,78 @@ def finalize_allocation_screen(
     validation_days = tuple(row for row in prepared.days if row.split == "VALIDATION")
     if not train_days or not validation_days:
         raise DailyMarketRlContractError("ALLOCATION_SPLIT_DAYS_MISSING")
+    non_overlapping_train_days = len(
+        select_non_overlapping_days(prepared.days, split="TRAIN")
+    )
+    non_overlapping_validation_days = len(
+        select_non_overlapping_days(prepared.days, split="VALIDATION")
+    )
+    reproduction = compare_allocation_reproduction(
+        reference_receipt,
+        AllocationReproductionProjection(
+            score_dataset_hash=prepared.score_dataset_hash,
+            state_dataset_hash=prepared.state_dataset_hash,
+            authority_status=authority.status,
+            authority_blockers=authority.blockers,
+            daily_database_sha256=authority.daily_database.sha256,
+            action_space=(
+                "CASH",
+                "INVEST_TOP3_EQUAL_SLOT",
+                "INVEST_TOP5_EQUAL_SLOT",
+                "INVEST_TOP10_EQUAL_SLOT",
+            ),
+            initial_capital_krw=60_000_000,
+            cash_reserve_floor_krw=10_000_000,
+            slot_notional_krw=5_000_000,
+            base_round_trip_cost_percent=0.23,
+            stress_round_trip_cost_percent=0.46,
+            reward_read_splits=("TRAIN", "VALIDATION"),
+            available_train_days=len(train_days),
+            available_validation_days=len(validation_days),
+            blocked_train_validation_days=len(prepared.blocked_days),
+            non_overlapping_train_days=non_overlapping_train_days,
+            non_overlapping_validation_days=non_overlapping_validation_days,
+            behavior_transition_count=behavior_transition_count,
+            model_runs=model_runs,
+            validation_gate=gate,
+        ),
+        reference_receipt_sha256=next(
+            row.sha256
+            for row in lineage.input_hashes
+            if row.role == "SOURCE_ALLOCATION_RECEIPT_001"
+        ),
+    )
+    bound_lineage = lineage.model_copy(update={"reproduction": reproduction})
+    reproduction_reason = (
+        "VALIDATION_REPRODUCTION_MATCHED_001"
+        if reproduction.exact_match
+        else "VALIDATION_REPRODUCTION_MISMATCHED_001"
+    )
     reasons = (
         *gate.failed_checks,
+        reproduction_reason,
+        "VALIDATION_ALREADY_CONSUMED_BY_001",
         *authority.blockers,
-        "HISTORICAL_TEST_NOT_RUN_NO_READ",
+        "HISTORICAL_TEST_FEATURES_ALREADY_CONSUMED_REWARDS_NOT_READ",
         "FRESH_OOS_NOT_RUN_NO_READ",
     )
     receipt = AllocationExperimentReceipt(
         schema_version="kronos_daily_market_allocation_screen.v1",
-        research_id="DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001",
-        verdict=gate.verdict,
+        research_id="DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_002",
+        verdict=(
+            "REPRODUCTION_ONLY_VALIDATION_CONSUMED"
+            if reproduction.exact_match
+            else "REPRODUCTION_MISMATCH_VALIDATION_CONSUMED"
+        ),
         status="COMPLETE_RESEARCH_ONLY",
         algorithm="CQL",
         dataset_id=(
             f"{prepared.score_dataset_hash[:16]}-{prepared.state_dataset_hash[:16]}"
         ),
         primary_headline=(
-            "4행동 일봉 CQL 검증 후보: TEST 미개봉"
-            if gate.verdict == "VALIDATION_CANDIDATE"
-            else "4행동 일봉 CQL 검증 화면: NO-GO"
+            "4행동 일봉 CQL 계보 재현 일치: 기존 VALIDATION 소비됨"
+            if reproduction.exact_match
+            else "4행동 일봉 CQL 계보 재현 불일치: 연구 실패"
         ),
         reasons=reasons,
         score_dataset_hash=prepared.score_dataset_hash,
@@ -112,19 +172,16 @@ def finalize_allocation_screen(
         available_train_days=len(train_days),
         available_validation_days=len(validation_days),
         blocked_train_validation_days=len(prepared.blocked_days),
-        non_overlapping_train_days=len(
-            select_non_overlapping_days(prepared.days, split="TRAIN")
-        ),
-        non_overlapping_validation_days=len(
-            select_non_overlapping_days(prepared.days, split="VALIDATION")
-        ),
+        non_overlapping_train_days=non_overlapping_train_days,
+        non_overlapping_validation_days=non_overlapping_validation_days,
         behavior_transition_count=behavior_transition_count,
         model_runs=model_runs,
         validation_gate=gate,
-        historical_test_state="NOT_RUN_NO_READ",
+        historical_test_state="FEATURES_PARSED_REWARDS_NOT_READ_CONTAMINATED",
         fresh_oos_state="NOT_RUN_NO_READ",
         promotion_allowed=False,
         live_ready=False,
+        lineage=bound_lineage,
     )
     trajectories = tuple(
         trajectory

@@ -14,6 +14,7 @@ import json
 import re
 import sqlite3
 from collections import Counter
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -169,7 +170,7 @@ def _list_tables(conn: sqlite3.Connection) -> list[str]:
 
 
 def list_daily_tables(db_path: Path | str = DEFAULT_DAILY_DB_PATH) -> list[str]:
-    with connect_readonly(db_path) as conn:
+    with closing(connect_readonly(db_path)) as conn:
         return [name for name in _list_tables(conn) if DAILY_TABLE_RE.match(name)]
 
 

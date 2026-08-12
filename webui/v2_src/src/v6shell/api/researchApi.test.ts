@@ -25,7 +25,7 @@ const run = {
 
 const summaryPayload = {
   schema_version: 'kronos_v6_research_summary.v1', status: 'OK', generated_at: '2026-08-05T00:00:00Z',
-  program: { maturity_score: 70, implementation_score: 94, economic_model_score: 20, live_readiness_score: 0 },
+  program: { maturity_score: 71, implementation_score: 94, economic_model_score: 20, live_readiness_score: 0 },
   catalog: { total: 1, by_status: { NO_GO: 1 }, latest_run: run },
   claims: { profitability: false, live_ready: false, fresh_oos_opened: false },
 } as const;

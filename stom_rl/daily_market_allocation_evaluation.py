@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from statistics import fmean
-from typing import ClassVar, Literal, Protocol
+from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from .daily_market_allocation_contract import (
-    AllocationAction,
-    AllocationActionName,
+from .daily_market_allocation_contract import AllocationAction
+from .daily_market_allocation_evaluation_contract import (
+    AllocationPolicyKind,
+    AllocationPolicyMetrics,
+    AllocationPolicyTrajectory,
+    AllocationTrajectoryStep,
 )
 from .daily_market_allocation_transition import execute_allocation_transition
 from .daily_market_rl_contract import DailyMarketRlContractError
@@ -25,8 +28,6 @@ from .daily_market_transition_contract import (
     SplitName,
     build_market_state,
 )
-
-AllocationPolicyKind = Literal["CONTROL", "RL"]
 
 
 class AllocationDecisionPolicy(Protocol):
@@ -58,61 +59,69 @@ class ConstantAllocationPolicy:
         return self.selected_action
 
 
-class AllocationTrajectoryStep(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        allow_inf_nan=False,
+def summarize_allocation_steps(
+    *,
+    policy: str,
+    policy_kind: AllocationPolicyKind,
+    split: SplitName,
+    round_trip_cost_percent: float,
+    initial_nav_krw: float,
+    steps: tuple[AllocationTrajectoryStep, ...],
+) -> AllocationPolicyMetrics:
+    """Recompute metrics while verifying sequential reward and drawdown accounting."""
+    if not steps:
+        raise DailyMarketRlContractError("ALLOCATION_EVALUATION_STEPS_MISSING")
+    previous_nav = initial_nav_krw
+    peak_nav = initial_nav_krw
+    previous_decision: date | None = None
+    previous_exit: date | None = None
+    for step in steps:
+        if not (
+            step.decision_date < step.entry_date < step.exit_date
+            and (previous_decision is None or previous_decision < step.decision_date)
+            and (previous_exit is None or previous_exit <= step.decision_date)
+        ):
+            raise DailyMarketRlContractError("ALLOCATION_STEP_TIME_ORDER_INVALID")
+        expected_reward = math.log(step.final_nav_krw / previous_nav)
+        peak_nav = max(peak_nav, step.final_nav_krw)
+        expected_drawdown = ((step.final_nav_krw / peak_nav) - 1.0) * 100.0
+        if not math.isclose(
+            step.reward_log_nav, expected_reward, rel_tol=0.0, abs_tol=1e-12
+        ) or not math.isclose(
+            step.drawdown_percent,
+            expected_drawdown,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        ):
+            raise DailyMarketRlContractError("ALLOCATION_STEP_ACCOUNTING_MISMATCH")
+        previous_nav = step.final_nav_krw
+        previous_decision = step.decision_date
+        previous_exit = step.exit_date
+    counts = _action_counts(steps)
+    final_nav = steps[-1].final_nav_krw
+    rewards = tuple(row.reward_log_nav for row in steps)
+    return AllocationPolicyMetrics(
+        policy=policy,
+        policy_kind=policy_kind,
+        split=split,
+        round_trip_cost_percent=round_trip_cost_percent,
+        date_count=len(steps),
+        initial_nav_krw=initial_nav_krw,
+        final_nav_krw=final_nav,
+        total_net_pnl_krw=final_nav - initial_nav_krw,
+        net_return_percent=((final_nav / initial_nav_krw) - 1.0) * 100.0,
+        max_drawdown_percent=min(row.drawdown_percent for row in steps),
+        action_cash_count=counts[0],
+        action_top3_count=counts[1],
+        action_top5_count=counts[2],
+        action_top10_count=counts[3],
+        distinct_action_count=sum(value > 0 for value in counts),
+        filled_slots=sum(row.filled_slots for row in steps),
+        total_cost_krw=sum(row.total_cost_krw for row in steps),
+        turnover=sum(row.deployed_at_entry_krw for row in steps) / initial_nav_krw,
+        mean_reward=fmean(rewards),
+        cumulative_reward=sum(rewards),
     )
-
-    decision_date: str
-    action: AllocationActionName
-    final_nav_krw: float = Field(gt=0)
-    deployed_at_entry_krw: float = Field(ge=0)
-    total_cost_krw: float = Field(ge=0)
-    reward_log_nav: float
-    drawdown_percent: float = Field(ge=-100, le=0)
-    filled_slots: int = Field(ge=0, le=10)
-
-
-class AllocationPolicyMetrics(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        allow_inf_nan=False,
-    )
-
-    policy: str
-    policy_kind: AllocationPolicyKind
-    split: SplitName
-    round_trip_cost_percent: float = Field(ge=0)
-    date_count: int = Field(gt=0)
-    initial_nav_krw: float = Field(gt=0)
-    final_nav_krw: float = Field(gt=0)
-    total_net_pnl_krw: float
-    net_return_percent: float
-    max_drawdown_percent: float = Field(ge=-100, le=0)
-    action_cash_count: int = Field(ge=0)
-    action_top3_count: int = Field(ge=0)
-    action_top5_count: int = Field(ge=0)
-    action_top10_count: int = Field(ge=0)
-    distinct_action_count: int = Field(ge=1, le=4)
-    filled_slots: int = Field(ge=0)
-    total_cost_krw: float = Field(ge=0)
-    turnover: float = Field(ge=0)
-    mean_reward: float
-    cumulative_reward: float
-
-
-class AllocationPolicyTrajectory(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
-
-    metrics: AllocationPolicyMetrics
-    steps: tuple[AllocationTrajectoryStep, ...]
-    research_scope: Literal["LOCAL_RETROSPECTIVE_RESEARCH"]
-    historical_test_read: Literal[False]
-    fresh_oos_read: Literal[False]
-    promotion_allowed: Literal[False]
 
 
 def _action_counts(
@@ -170,7 +179,9 @@ def simulate_allocation_policy(
         accounting = result.accounting
         steps.append(
             AllocationTrajectoryStep(
-                decision_date=day.decision_date.isoformat(),
+                decision_date=day.decision_date,
+                entry_date=day.entry_date,
+                exit_date=day.exit_date,
                 action=result.executed_action,
                 final_nav_krw=float(accounting.final_nav_krw),
                 deployed_at_entry_krw=float(accounting.deployed_at_entry_krw),
@@ -185,32 +196,13 @@ def simulate_allocation_policy(
         exposure = accounting.deployed_at_entry_krw / accounting.previous_nav_krw
         drawdown = accounting.drawdown_fraction
     frozen_steps = tuple(steps)
-    counts = _action_counts(frozen_steps)
-    final_nav = frozen_steps[-1].final_nav_krw
-    rewards = tuple(row.reward_log_nav for row in frozen_steps)
-    metrics = AllocationPolicyMetrics(
+    metrics = summarize_allocation_steps(
         policy=policy.name,
         policy_kind=policy.policy_kind,
         split=split,
         round_trip_cost_percent=float(cost_config.round_trip_cost_percent),
-        date_count=len(frozen_steps),
         initial_nav_krw=float(initial_nav),
-        final_nav_krw=final_nav,
-        total_net_pnl_krw=final_nav - float(initial_nav),
-        net_return_percent=((final_nav / float(initial_nav)) - 1.0) * 100.0,
-        max_drawdown_percent=min(row.drawdown_percent for row in frozen_steps),
-        action_cash_count=counts[0],
-        action_top3_count=counts[1],
-        action_top5_count=counts[2],
-        action_top10_count=counts[3],
-        distinct_action_count=sum(value > 0 for value in counts),
-        filled_slots=sum(row.filled_slots for row in frozen_steps),
-        total_cost_krw=sum(row.total_cost_krw for row in frozen_steps),
-        turnover=(
-            sum(row.deployed_at_entry_krw for row in frozen_steps) / float(initial_nav)
-        ),
-        mean_reward=fmean(rewards),
-        cumulative_reward=sum(rewards),
+        steps=frozen_steps,
     )
     return AllocationPolicyTrajectory(
         metrics=metrics,
@@ -220,13 +212,3 @@ def simulate_allocation_policy(
         fresh_oos_read=False,
         promotion_allowed=False,
     )
-
-
-__all__ = [
-    "AllocationDecisionPolicy",
-    "AllocationPolicyMetrics",
-    "AllocationPolicyTrajectory",
-    "AllocationTrajectoryStep",
-    "ConstantAllocationPolicy",
-    "simulate_allocation_policy",
-]

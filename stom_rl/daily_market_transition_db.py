@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from collections.abc import Sequence
+from contextlib import closing
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -19,6 +20,7 @@ from .daily_market_transition_contract import (
     market_score_hash,
     rank_market_scores,
 )
+from .daily_market_path_custody import has_reparse_component
 from .daily_ohlcv_db import (
     DECISION_GRADE_RETURN_STATUS,
     DEFAULT_DAILY_DB_PATH,
@@ -178,18 +180,27 @@ def load_daily_market_candidates(
     """Freeze a causal top-10, then attach the exact next two valid opens."""
     ranked = rank_market_scores(scores)
     raw_path = Path(db_path)
-    if raw_path.is_symlink():
-        raise DailyMarketDataError("daily market transition DB must not be a symbolic link")
+    if has_reparse_component(raw_path):
+        raise DailyMarketDataError(
+            "daily market transition DB must not cross a symlink, junction, or reparse point"
+        )
     resolved_path = raw_path.resolve()
     if not resolved_path.is_file():
         raise FileNotFoundError(resolved_path)
-    with connect_readonly(resolved_path) as connection:
+    with closing(connect_readonly(resolved_path)) as connection:
         query_only = _fetch_optional_row(connection.execute("PRAGMA query_only"))
         if not _query_only_enabled(query_only):
-            raise DailyMarketInvariantError("daily market transition DB is not query-only")
+            raise DailyMarketInvariantError(
+                "daily market transition DB is not query-only"
+            )
         candidates = tuple(_load_candidate(connection, score) for score in ranked)
-    if PRICE_BASIS != "unknown" or DECISION_GRADE_RETURN_STATUS != "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED":
-        raise DailyMarketInvariantError("market transition authority contract changed; explicit review required")
+    if (
+        PRICE_BASIS != "unknown"
+        or DECISION_GRADE_RETURN_STATUS != "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED"
+    ):
+        raise DailyMarketInvariantError(
+            "market transition authority contract changed; explicit review required"
+        )
     return DailyMarketCandidateBatch(
         schema_version="kronos_daily_market_candidate_batch.v1",
         candidates=candidates,

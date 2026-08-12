@@ -1,4 +1,5 @@
 """Read-only, lightweight research catalog API for the unified V6 dashboard."""
+
 from __future__ import annotations
 
 import json
@@ -31,7 +32,7 @@ DEFAULT_RUNS_ROOT: Final = Path(__file__).resolve().parent / "rl_runs"
 ALLOWED_QUERY_KEYS: Final = frozenset({"search", "lane", "status", "page", "page_size"})
 MAX_ARTIFACTS: Final = 100
 PROGRAM_SCORES: Final = {
-    "maturity_score": 70,
+    "maturity_score": 71,
     "implementation_score": 94,
     "economic_model_score": 20,
     "live_readiness_score": 0,
@@ -64,7 +65,9 @@ def _response(payload: Mapping[str, JsonValue], status_code: int = 200) -> Respo
 
 
 def _error(status_code: int, code: str) -> Response:
-    payload = JSON_OBJECT_ADAPTER.validate_python({"status": "ERROR", "error": {"code": code}})
+    payload = JSON_OBJECT_ADAPTER.validate_python(
+        {"status": "ERROR", "error": {"code": code}}
+    )
     return _response(payload, status_code)
 
 
@@ -81,7 +84,9 @@ def _single(args: MultiDict[str, str], key: str, default: str = "") -> str:
     return values[0] if values else default
 
 
-def _positive_int(args: MultiDict[str, str], key: str, default: int, maximum: int) -> int:
+def _positive_int(
+    args: MultiDict[str, str], key: str, default: int, maximum: int
+) -> int:
     raw = _single(args, key, str(default))
     if not raw.isascii() or not raw.isdecimal():
         raise ResearchQueryError(field=key)
@@ -112,7 +117,11 @@ def _artifact_payloads(root: Path, directory: Path) -> tuple[ArtifactPayload, ..
             stat_result = path.stat()
         except OSError:
             continue
-        modified = datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        modified = (
+            datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
         payloads.append(
             {
                 "name": path.name,
@@ -168,10 +177,20 @@ def create_v6_research_blueprint(
             {
                 "schema_version": "kronos_v6_research_summary.v1",
                 "status": "OK",
-                "generated_at": datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+                "generated_at": datetime.now(tz=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
                 "program": PROGRAM_SCORES,
-                "catalog": {"total": len(rows), "by_status": by_status, "latest_run": latest},
-                "claims": {"profitability": False, "live_ready": False, "fresh_oos_opened": False},
+                "catalog": {
+                    "total": len(rows),
+                    "by_status": by_status,
+                    "latest_run": latest,
+                },
+                "claims": {
+                    "profitability": False,
+                    "live_ready": False,
+                    "fresh_oos_opened": False,
+                },
             },
         )
         return _response(payload)
@@ -203,8 +222,12 @@ def create_v6_research_blueprint(
             return _error(400, "BAD_REQUEST")
         directory = resolve_run_directory(runs_root, run_id)
         if directory is None:
-            invalid = ".." in run_id or any(not segment for segment in run_id.split("/"))
-            return _error(400 if invalid else 404, "BAD_REQUEST" if invalid else "RUN_NOT_FOUND")
+            invalid = ".." in run_id or any(
+                not segment for segment in run_id.split("/")
+            )
+            return _error(
+                400 if invalid else 404, "BAD_REQUEST" if invalid else "RUN_NOT_FOUND"
+            )
         rows = catalog_snapshot()
         run = _run_by_id(rows, run_id)
         if run is None:
@@ -221,9 +244,27 @@ def create_v6_research_blueprint(
         )
         return _response(payload)
 
-    blueprint.add_url_rule("/summary", endpoint="summary", view_func=summary_handler, methods=["GET", "POST"], provide_automatic_options=False)
-    blueprint.add_url_rule("/research-runs", endpoint="runs", view_func=catalog_handler, methods=["GET", "POST"], provide_automatic_options=False)
-    blueprint.add_url_rule("/research-runs/<path:run_id>", endpoint="run_detail", view_func=detail_handler, methods=["GET", "POST"], provide_automatic_options=False)
+    blueprint.add_url_rule(
+        "/summary",
+        endpoint="summary",
+        view_func=summary_handler,
+        methods=["GET", "POST"],
+        provide_automatic_options=False,
+    )
+    blueprint.add_url_rule(
+        "/research-runs",
+        endpoint="runs",
+        view_func=catalog_handler,
+        methods=["GET", "POST"],
+        provide_automatic_options=False,
+    )
+    blueprint.add_url_rule(
+        "/research-runs/<path:run_id>",
+        endpoint="run_detail",
+        view_func=detail_handler,
+        methods=["GET", "POST"],
+        provide_automatic_options=False,
+    )
     return blueprint
 
 

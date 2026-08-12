@@ -45,10 +45,10 @@ test('page matrix describes every completed V6 surface in navigation order', () 
   assert.ok(PROGRAM_PAGE_MATRIX.every((page) => page.mergeGate.length > 0));
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'home')?.evidenceState, 'UNIFIED_COMMAND_8_PAGES_PRODUCT_94');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'scorecard')?.evidenceState, 'PROGRAM_71_IMPLEMENTATION_94_ECONOMIC_20_LIVE_0');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-data')?.evidenceState, 'G2_LOCAL_ANCHOR_19_STABLE_1_EXCLUDED_4_EXTERNAL_BLOCKERS');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'MARKET_DQN_CQL_20_CHECKPOINTS_CREATED_RESEARCH_ONLY');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'MARKET_CQL_TEST_NO_GO_MEDIAN_NEG_10_19155');
-  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'NATIVE_CQL_BEATS_SHUFFLES_BUT_NO_TRADE_WINS');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-data')?.evidenceState, 'D0_BLOCKED_D1_0_OF_28182_SIGNED_REVIEW_TRUST_ROOT_MISSING');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-training')?.evidenceState, 'PRIOR_20_TEST_NO_GO_PLUS_001_CONSUMED_VALIDATION_PLUS_002_REPRODUCTION');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-evaluation')?.evidenceState, 'VALIDATION_CONSUMED_001_002_REPRO_TEST_FEATURES_CONTAMINATED');
+  assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'rl-compare')?.evidenceState, 'FOUR_ACTION_CQL_VALIDATION_BEATS_DQN_NOT_OOS');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'lanes')?.nextAction, '레인 간 성과 전이를 금지하고 독립 증거를 유지한다');
   assert.equal(PROGRAM_PAGE_MATRIX.find((page) => page.id === 'kronos')?.evidenceState, 'AVAILABLE_NOT_LOADED_NOT_RL_POLICY');
   assert.match(PROGRAM_LANES.find((lane) => lane.id === 'live')?.nextAction ?? '', /G7/u);

@@ -12,7 +12,8 @@ export interface ChartDataTable {
   readonly rows: ReadonlyArray<ReadonlyArray<string | number>>;
 }
 
-type AnyOption = Record<string, any> | null | undefined;
+type ChartRecord = Readonly<Record<string, unknown>>;
+type AnyOption = ChartRecord | null | undefined;
 
 // Cap the SR data table so a huge series (e.g. a multi-thousand-point loss
 // curve) cannot inflate the DOM; the summary still reflects the full series.
@@ -23,12 +24,21 @@ function asArray<T>(value: T | readonly T[] | undefined | null): T[] {
   return Array.isArray(value) ? [...value] : [value as T];
 }
 
-function seriesList(option: AnyOption): any[] {
-  return asArray(option?.series).filter((s) => s && typeof s === 'object');
+function chartRecord(value: unknown): ChartRecord | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function seriesList(option: AnyOption): ChartRecord[] {
+  return asArray<unknown>(option?.series).flatMap((value) => {
+    const series = chartRecord(value);
+    return series === null ? [] : [series];
+  });
 }
 
 function xAxisCategories(option: AnyOption): string[] {
-  const axis = asArray(option?.xAxis)[0];
+  const axis = chartRecord(asArray<unknown>(option?.xAxis)[0]);
   const data = axis?.data;
   return Array.isArray(data) ? data.map((d: unknown) => String(d)) : [];
 }
@@ -38,8 +48,10 @@ function xAxisCategories(option: AnyOption): string[] {
 function numericValue(point: unknown): number | null {
   if (typeof point === 'number') return Number.isFinite(point) ? point : null;
   if (Array.isArray(point)) {
-    const last = point[point.length - 1];
-    return typeof last === 'number' && Number.isFinite(last) ? last : null;
+    // ECharts scatter tuples are [x, y, ...metadata]. Metadata may include
+    // numeric step identifiers, so the plotted y must be read by position.
+    const plotted = point.length >= 2 ? point[1] : point[0];
+    return typeof plotted === 'number' && Number.isFinite(plotted) ? plotted : null;
   }
   if (point && typeof point === 'object' && 'value' in (point as Record<string, unknown>)) {
     const v = (point as Record<string, unknown>).value;
@@ -52,7 +64,7 @@ function round(n: number): number {
   return Math.round(n * 10000) / 10000;
 }
 
-function seriesName(series: any, index: number): string {
+function seriesName(series: ChartRecord, index: number): string {
   const raw = series?.name ?? series?.type;
   const name = raw == null ? '' : String(raw).trim();
   return name || `series ${index + 1}`;
@@ -60,7 +72,7 @@ function seriesName(series: any, index: number): string {
 
 export function chartAccessibleName(option: AnyOption, caption?: string): string {
   if (caption && caption.trim()) return caption.trim();
-  const title = asArray(option?.title)[0];
+  const title = chartRecord(asArray<unknown>(option?.title)[0]);
   const parts = [title?.text, title?.subtext]
     .map((p) => (p == null ? '' : String(p).trim()))
     .filter((p) => p.length > 0);

@@ -7,10 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 
-from .daily_market_allocation_evaluation import (
-    AllocationPolicyTrajectory,
-    simulate_allocation_policy,
-)
+from .daily_market_allocation_evaluation import simulate_allocation_policy
+from .daily_market_allocation_evaluation_contract import AllocationPolicyTrajectory
 from .daily_market_allocation_q import AllocationQTrainingResult, train_allocation_q
 from .daily_market_allocation_rl_contract import (
     ALLOCATION_MODEL_SEEDS,

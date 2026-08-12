@@ -9,7 +9,9 @@ import pytest
 from stom_rl.daily_market_score_dataset import load_market_score_dataset
 
 
-def _manifest(path: Path, *, fill_mode: str = "close_to_next_close_research_label") -> Path:
+def _manifest(
+    path: Path, *, fill_mode: str = "close_to_next_close_research_label"
+) -> Path:
     _ = path.write_text(
         json.dumps(
             {
@@ -29,7 +31,13 @@ def _manifest(path: Path, *, fill_mode: str = "close_to_next_close_research_labe
     return path
 
 
-def _csv(path: Path, *, future_value: str = "0.1", split: str = "train") -> Path:
+def _csv(
+    path: Path,
+    *,
+    future_value: str = "0.1",
+    split: str = "train",
+    eligible_token: str = "True",
+) -> Path:
     fieldnames = [
         "date",
         "table",
@@ -49,7 +57,7 @@ def _csv(path: Path, *, future_value: str = "0.1", split: str = "train") -> Path
                 "code": code,
                 "score": "1.0" if index in {0, 10} else str(100 - index),
                 "split": split,
-                "eligible_for_selection": "True",
+                "eligible_for_selection": eligible_token,
                 "future_return_1d": future_value,
             }
         )
@@ -60,7 +68,7 @@ def _csv(path: Path, *, future_value: str = "0.1", split: str = "train") -> Path
             "code": "000099",
             "score": "",
             "split": split,
-            "eligible_for_selection": "True",
+            "eligible_for_selection": eligible_token,
             "future_return_1d": future_value,
         }
     )
@@ -82,7 +90,9 @@ def _csv(path: Path, *, future_value: str = "0.1", split: str = "train") -> Path
     return path
 
 
-def test_score_dataset_freezes_causal_top10_and_preserves_leading_zero_codes(tmp_path: Path) -> None:
+def test_score_dataset_freezes_causal_top10_and_preserves_leading_zero_codes(
+    tmp_path: Path,
+) -> None:
     dataset = load_market_score_dataset(
         _csv(tmp_path / "scores.csv"),
         source_manifest_path=_manifest(tmp_path / "manifest.json"),
@@ -105,7 +115,9 @@ def test_score_dataset_freezes_causal_top10_and_preserves_leading_zero_codes(tmp
     assert "STATE_FEATURE_VECTOR_NOT_BUILT" in dataset.blockers
 
 
-def test_future_label_change_does_not_change_causal_dataset_hash(tmp_path: Path) -> None:
+def test_future_label_change_does_not_change_causal_dataset_hash(
+    tmp_path: Path,
+) -> None:
     manifest = _manifest(tmp_path / "manifest.json")
     first = load_market_score_dataset(
         _csv(tmp_path / "first.csv", future_value="-0.9"),
@@ -122,12 +134,16 @@ def test_future_label_change_does_not_change_causal_dataset_hash(tmp_path: Path)
     assert first.source_candidate_csv_sha256 != second.source_candidate_csv_sha256
 
 
-def test_score_dataset_rejects_unreviewed_fill_mode_and_fresh_oos(tmp_path: Path) -> None:
+def test_score_dataset_rejects_unreviewed_fill_mode_and_fresh_oos(
+    tmp_path: Path,
+) -> None:
     scores = _csv(tmp_path / "scores.csv")
     with pytest.raises(ValueError, match="SOURCE_FILL_MODE_UNEXPECTED"):
         _ = load_market_score_dataset(
             scores,
-            source_manifest_path=_manifest(tmp_path / "bad.json", fill_mode="next_open"),
+            source_manifest_path=_manifest(
+                tmp_path / "bad.json", fill_mode="next_open"
+            ),
             artifact_root=tmp_path,
         )
 
@@ -140,7 +156,9 @@ def test_score_dataset_rejects_unreviewed_fill_mode_and_fresh_oos(tmp_path: Path
         )
 
 
-def test_score_dataset_rejects_sources_outside_the_explicit_trusted_root(tmp_path: Path) -> None:
+def test_score_dataset_rejects_sources_outside_the_explicit_trusted_root(
+    tmp_path: Path,
+) -> None:
     trusted = tmp_path / "trusted"
     trusted.mkdir()
     scores = _csv(trusted / "scores.csv")
@@ -151,4 +169,23 @@ def test_score_dataset_rejects_sources_outside_the_explicit_trusted_root(tmp_pat
             scores,
             source_manifest_path=outside_manifest,
             artifact_root=trusted,
+        )
+
+
+def test_score_dataset_uses_the_strict_shared_eligibility_tokens(
+    tmp_path: Path,
+) -> None:
+    accepted = load_market_score_dataset(
+        _csv(tmp_path / "accepted.csv", eligible_token="1"),
+        source_manifest_path=_manifest(tmp_path / "accepted-manifest.json"),
+        artifact_root=tmp_path,
+    )
+
+    assert accepted.scored_row_count == 12
+
+    with pytest.raises(ValueError, match="CANDIDATE_ELIGIBILITY_INVALID"):
+        _ = load_market_score_dataset(
+            _csv(tmp_path / "invalid.csv", eligible_token="yes"),
+            source_manifest_path=_manifest(tmp_path / "invalid-manifest.json"),
+            artifact_root=tmp_path,
         )

@@ -12,7 +12,14 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import ClassVar, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    model_validator,
+)
 
 from .daily_market_artifact_guard import (
     MAX_MANIFEST_BYTES,
@@ -20,6 +27,7 @@ from .daily_market_artifact_guard import (
     MAX_SCORE_ROWS,
     resolve_trusted_artifact,
 )
+from .daily_market_candidate_eligibility import parse_candidate_eligibility
 from .daily_market_errors import DailyMarketScoreError
 from .daily_market_transition_contract import (
     DailyMarketScore,
@@ -85,7 +93,9 @@ def _sha256_file(path: Path) -> str:
 
 
 def _sha256_payload(value: JsonValue) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -101,7 +111,10 @@ def _validate_manifest(manifest: Mapping[str, JsonValue]) -> None:
         raise DailyMarketScoreError("SOURCE_FILL_MODE_UNEXPECTED")
     if manifest.get("price_basis") != "unknown":
         raise DailyMarketScoreError("SOURCE_PRICE_BASIS_REQUIRES_REVIEW")
-    if manifest.get("decision_grade_return_status") != "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED":
+    if (
+        manifest.get("decision_grade_return_status")
+        != "BLOCKED_UNTIL_PRICE_BASIS_VERIFIED"
+    ):
         raise DailyMarketScoreError("SOURCE_DECISION_GRADE_STATUS_REQUIRES_REVIEW")
     if manifest.get("promotion_allowed") is not False:
         raise DailyMarketScoreError("SOURCE_PROMOTION_LOCK_MISSING")
@@ -192,7 +205,13 @@ def load_market_score_dataset(
         for row_number, row in enumerate(reader, start=1):
             if row_number > MAX_SCORE_ROWS:
                 raise DailyMarketScoreError("CANDIDATE_SCORE_ROW_LIMIT_EXCEEDED")
-            if (row.get("eligible_for_selection") or "").strip().lower() not in {"true", "1"}:
+            try:
+                eligible = parse_candidate_eligibility(
+                    row.get("eligible_for_selection", "")
+                )
+            except ValueError as exc:
+                raise DailyMarketScoreError("CANDIDATE_ELIGIBILITY_INVALID") from exc
+            if not eligible:
                 ineligible_rows += 1
                 continue
             if not (row.get("score") or "").strip():
@@ -224,7 +243,14 @@ def load_market_score_dataset(
     for day in days:
         split_counts[day.split] += 1
     dataset_hash = _sha256_payload(
-        [{"date": day.decision_date.isoformat(), "split": day.split, "hash": day.day_hash} for day in days]
+        [
+            {
+                "date": day.decision_date.isoformat(),
+                "split": day.split,
+                "hash": day.day_hash,
+            }
+            for day in days
+        ]
     )
     return DailyMarketScoreDataset(
         schema_version="kronos_daily_market_score_dataset.v1",
@@ -246,4 +272,8 @@ def load_market_score_dataset(
     )
 
 
-__all__ = ["CausalMarketScoreDay", "DailyMarketScoreDataset", "load_market_score_dataset"]
+__all__ = [
+    "CausalMarketScoreDay",
+    "DailyMarketScoreDataset",
+    "load_market_score_dataset",
+]

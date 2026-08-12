@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stom_rl.daily_market_allocation_evaluation import AllocationPolicyMetrics
+from stom_rl.daily_market_allocation_evaluation_contract import AllocationPolicyMetrics
 from stom_rl.daily_market_allocation_gate import (
     AllocationSeedOutcome,
     evaluate_allocation_validation_gate,
@@ -76,6 +76,14 @@ def test_validation_candidate_requires_all_six_preregistered_checks() -> None:
     # Then: candidate status still forbids TEST access and promotion.
     assert result.verdict == "VALIDATION_CANDIDATE"
     assert all(check.passed for check in result.checks)
+    assert tuple(check.check_id for check in result.checks) == (
+        "CQL_VALIDATION_MEDIAN_BEATS_NO_TRADE",
+        "CQL_VALIDATION_FOUR_OF_FIVE_POSITIVE",
+        "CQL_VALIDATION_STRESS_MEDIAN_POSITIVE",
+        "CQL_VALIDATION_ACTION_DIVERSITY",
+        "CQL_VALIDATION_BEATS_DQN_MEDIAN",
+        "CQL_VALIDATION_MDD_WITHIN_20_PERCENT",
+    )
     assert result.historical_test_read is False
     assert result.promotion_allowed is False
 
@@ -95,7 +103,7 @@ def test_validation_screen_reports_economic_and_action_failures() -> None:
 
     # Then: it fails closed with exact failed checks.
     assert result.verdict == "NO_GO_VALIDATION_SCREEN"
-    assert "CQL_VALIDATION_MEDIAN_POSITIVE" in result.failed_checks
-    assert "CQL_STRESS_MEDIAN_POSITIVE" in result.failed_checks
-    assert "CQL_ACTION_DIVERSITY_FOUR_OF_FIVE" in result.failed_checks
-    assert "CQL_BEATS_DQN_MEDIAN" in result.failed_checks
+    assert "CQL_VALIDATION_MEDIAN_BEATS_NO_TRADE" in result.failed_checks
+    assert "CQL_VALIDATION_STRESS_MEDIAN_POSITIVE" in result.failed_checks
+    assert "CQL_VALIDATION_ACTION_DIVERSITY" in result.failed_checks
+    assert "CQL_VALIDATION_BEATS_DQN_MEDIAN" in result.failed_checks

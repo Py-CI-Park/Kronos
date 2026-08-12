@@ -1,7 +1,9 @@
 """Behavior coverage for the lightweight V6 research catalog."""
+
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 from pathlib import Path
@@ -9,14 +11,22 @@ from pathlib import Path
 import pytest
 
 from webui.v6_research_catalog import ResearchQuery, discover_runs, filter_runs
+from tests.daily_market_allocation_fixtures import (
+    write_valid_allocation_bundle,
+    write_valid_reproduction_bundle,
+)
 
 
 def _write_summary(directory: Path, payload: dict[str, str]) -> None:
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "rl_live_summary.json").write_text(json.dumps(payload), encoding="utf-8")
+    (directory / "rl_live_summary.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
 
 
-def test_discover_runs_preserves_recorded_status_and_nested_v6_identity(tmp_path: Path) -> None:
+def test_discover_runs_preserves_recorded_status_and_nested_v6_identity(
+    tmp_path: Path,
+) -> None:
     # Given
     _write_summary(
         tmp_path / "stom_orderbook_dqn_smoke",
@@ -45,7 +55,9 @@ def test_discover_runs_preserves_recorded_status_and_nested_v6_identity(tmp_path
     assert orderbook.source_file == "rl_live_summary.json"
 
 
-def test_discover_runs_keeps_corrupt_or_missing_summaries_visible(tmp_path: Path) -> None:
+def test_discover_runs_keeps_corrupt_or_missing_summaries_visible(
+    tmp_path: Path,
+) -> None:
     # Given
     corrupt = tmp_path / "daily_ohlcv_broken"
     corrupt.mkdir()
@@ -62,7 +74,9 @@ def test_discover_runs_keeps_corrupt_or_missing_summaries_visible(tmp_path: Path
     assert {row.run_id for row in rows} == {"daily_ohlcv_broken", "rl_discovery"}
 
 
-def test_discover_runs_prefers_official_verdict_and_supplements_algorithm(tmp_path: Path) -> None:
+def test_discover_runs_prefers_official_verdict_and_supplements_algorithm(
+    tmp_path: Path,
+) -> None:
     # Given
     run = tmp_path / "stom_orderbook_dqn_smoke"
     _write_summary(run, {"algorithms": {"orderbook_dqn": 4352}})
@@ -80,7 +94,9 @@ def test_discover_runs_prefers_official_verdict_and_supplements_algorithm(tmp_pa
     assert row.source_file == "orderbook_oos_verdict.json"
 
 
-def test_discover_runs_uses_valid_verdict_when_another_evidence_file_is_corrupt(tmp_path: Path) -> None:
+def test_discover_runs_uses_valid_verdict_when_another_evidence_file_is_corrupt(
+    tmp_path: Path,
+) -> None:
     # Given
     run = tmp_path / "daily_close_cql"
     run.mkdir()
@@ -99,7 +115,9 @@ def test_discover_runs_uses_valid_verdict_when_another_evidence_file_is_corrupt(
     assert row.source_file == "daily_close_verdict.json"
 
 
-def test_discover_runs_accepts_utf8_bom_from_windows_research_artifacts(tmp_path: Path) -> None:
+def test_discover_runs_accepts_utf8_bom_from_windows_research_artifacts(
+    tmp_path: Path,
+) -> None:
     # Given
     run = tmp_path / "stom_orderbook_dqn_windows"
     run.mkdir()
@@ -116,7 +134,9 @@ def test_discover_runs_accepts_utf8_bom_from_windows_research_artifacts(tmp_path
     assert row.algorithm == "orderbook_dqn"
 
 
-def test_discover_runs_expands_generic_group_into_direct_child_runs(tmp_path: Path) -> None:
+def test_discover_runs_expands_generic_group_into_direct_child_runs(
+    tmp_path: Path,
+) -> None:
     # Given
     grouped_run = tmp_path / "daily_close_slot_train" / "policy_2026_08_07"
     _write_summary(
@@ -132,7 +152,9 @@ def test_discover_runs_expands_generic_group_into_direct_child_runs(tmp_path: Pa
     assert rows[0].artifact_count == 1
 
 
-def test_discover_runs_keeps_child_runs_when_group_has_a_direct_index_file(tmp_path: Path) -> None:
+def test_discover_runs_keeps_child_runs_when_group_has_a_direct_index_file(
+    tmp_path: Path,
+) -> None:
     # Given
     group = tmp_path / "daily_ohlcv_scenario_batches"
     group.mkdir()
@@ -164,6 +186,125 @@ def test_discover_runs_counts_bounded_nested_model_checkpoints(tmp_path: Path) -
     assert row.artifact_count == 2
 
 
+def test_daily_market_bundle_is_visible_only_after_full_manifest_validation(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001"
+    write_valid_allocation_bundle(run)
+
+    complete = discover_runs(tmp_path)[0]
+    (run / "models" / "CQL" / "seed-0.kq").write_bytes(b"tampered")
+    tampered = discover_runs(tmp_path)[0]
+
+    assert complete.status == (
+        "LEGACY_EXPLORATORY_CANDIDATE_TEST_FEATURES_CONSUMED"
+    )
+    assert tampered.status == "CORRUPT_EVIDENCE"
+    assert tampered.source_file == "bundle_manifest.json"
+
+
+def test_recomputed_manifest_cannot_publish_semantically_forged_gate(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001"
+    write_valid_allocation_bundle(run)
+    receipt_path = run / "validation_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["validation_gate"]["cql_base_median_return_percent"] = 999.0
+    payload = json.dumps(receipt).encode()
+    receipt_path.write_bytes(payload)
+    manifest_path = run / "bundle_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    artifact = next(
+        row
+        for row in manifest["artifacts"]
+        if row["relative_path"] == "validation_receipt.json"
+    )
+    artifact["size_bytes"] = len(payload)
+    artifact["sha256"] = hashlib.sha256(payload).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    row = discover_runs(tmp_path)[0]
+
+    assert row.status == "CORRUPT_EVIDENCE"
+    assert row.source_file == "bundle_manifest.json"
+
+
+def test_recomputed_manifest_cannot_publish_invalid_telemetry(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001"
+    write_valid_allocation_bundle(run)
+    telemetry_path = run / "rl_live_events.jsonl"
+    payload = b"{}\n"
+    telemetry_path.write_bytes(payload)
+    manifest_path = run / "bundle_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    artifact = next(
+        row
+        for row in manifest["artifacts"]
+        if row["relative_path"] == "rl_live_events.jsonl"
+    )
+    artifact["size_bytes"] = len(payload)
+    artifact["sha256"] = hashlib.sha256(payload).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    row = discover_runs(tmp_path)[0]
+
+    assert row.status == "CORRUPT_EVIDENCE"
+
+
+def test_reproduction_publication_recomputes_001_and_002_evidence_hashes(
+    tmp_path: Path,
+) -> None:
+    reference = tmp_path / "DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001"
+    reproduction = tmp_path / "DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_002"
+    write_valid_allocation_bundle(reference)
+    write_valid_reproduction_bundle(
+        reproduction,
+        reference_directory=reference,
+    )
+    complete = {row.name: row for row in discover_runs(tmp_path)}[reproduction.name]
+
+    receipt_path = reproduction / "validation_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["lineage"]["reproduction"]["reference_evidence_sha256"] = "9" * 64
+    receipt["lineage"]["reproduction"]["observed_evidence_sha256"] = "9" * 64
+    payload = json.dumps(receipt).encode()
+    receipt_path.write_bytes(payload)
+    manifest_path = reproduction / "bundle_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    artifact = next(
+        row
+        for row in manifest["artifacts"]
+        if row["relative_path"] == "validation_receipt.json"
+    )
+    artifact["size_bytes"] = len(payload)
+    artifact["sha256"] = hashlib.sha256(payload).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    forged = {row.name: row for row in discover_runs(tmp_path)}[reproduction.name]
+
+    assert complete.status == "REPRODUCTION_ONLY_VALIDATION_CONSUMED"
+    assert forged.status == "CORRUPT_EVIDENCE"
+
+
+def test_incomplete_daily_market_publication_never_exposes_a_candidate(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001"
+    run.mkdir()
+    (run / "validation_receipt.json").write_text("{}", encoding="utf-8")
+    (run / "summary.json").write_text(
+        json.dumps({"verdict": "VALIDATION_CANDIDATE", "algorithm": "CQL"}),
+        encoding="utf-8",
+    )
+
+    row = discover_runs(tmp_path)[0]
+
+    assert row.status == "CORRUPT_EVIDENCE"
+    assert row.source_file == "publication_incomplete"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows junction boundary")
 def test_discover_runs_rejects_junction_outside_research_root(tmp_path: Path) -> None:
     root = tmp_path / "runs"
@@ -193,7 +334,9 @@ def test_filter_runs_applies_lane_status_query_and_pagination(tmp_path: Path) ->
             {"status": "NO_GO" if index < 3 else "COMPLETE", "algorithm": "CQL"},
         )
     rows = discover_runs(tmp_path)
-    query = ResearchQuery(search="close", lane="daily_close", status="NO_GO", page=2, page_size=2)
+    query = ResearchQuery(
+        search="close", lane="daily_close", status="NO_GO", page=2, page_size=2
+    )
 
     # When
     page = filter_runs(rows, query)

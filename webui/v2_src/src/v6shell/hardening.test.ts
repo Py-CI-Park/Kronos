@@ -44,7 +44,29 @@ test('system status distinguishes created checkpoints from an economic GO model'
   const safety = await readFile(new URL('./V6SafetyStrip.svelte', import.meta.url), 'utf8');
 
   assert.match(rail, /경제성 통과 모델 없음/u);
+  assert.match(rail, /PRIOR TEST: NO-GO/u);
+  assert.match(rail, /TEST FEATURES CONSUMED/u);
+  assert.match(rail, /001 VAL CONSUMED ≠ GO/u);
+  assert.match(rail, /002 CUSTODY REPRO/u);
   assert.doesNotMatch(rail, /· 미생성/u);
-  assert.match(safety, /20개 체크포인트/u);
-  assert.match(safety, /경제성 gate/u);
+  assert.match(safety, /이전 이진 DQN\/CQL 20개/u);
+  assert.match(safety, /4행동 001\/002도 TEST feature를 파싱/u);
+  assert.match(safety, /보상·체결만 미열람/u);
+});
+
+test('live telemetry pairs each response with the selected run and handles an empty catalog', async () => {
+  const live = await readFile(new URL('./pages/live/LiveTrainingPage.svelte', import.meta.url), 'utf8');
+
+  assert.match(live, /const requestedId = selected/u);
+  assert.match(live, /const generation = \+\+refreshGeneration/u);
+  assert.match(live, /generation !== refreshGeneration \|\| requestedId !== selected/u);
+  assert.match(live, /if \(!selected\) \{[\s\S]*?loading = false;/u);
+  assert.match(live, /runStatusTone/u);
+});
+
+test('desktop sidebar clips hover motion without creating a horizontal scrollbar', async () => {
+  const sidebar = await readFile(new URL('./components/shell/UnifiedSidebar.svelte', import.meta.url), 'utf8');
+
+  assert.match(sidebar, /nav\{[^}]*overflow-y:auto[^}]*overflow-x:clip/u);
+  assert.match(sidebar, /@media\(max-width:680px\)[\s\S]*?\.sidebar nav\{[^}]*overflow-x:auto/u);
 });

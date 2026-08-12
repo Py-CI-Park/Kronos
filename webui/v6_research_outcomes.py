@@ -1,4 +1,5 @@
 """Bounded outcome extraction from one directly observed research summary."""
+
 from __future__ import annotations
 
 import math
@@ -9,6 +10,7 @@ from typing import Final, TypedDict
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from webui.v6_research_metadata import MAX_SUMMARY_BYTES
+from webui.v6_daily_market_publication import observe_daily_market_publication
 
 MAX_OUTCOME_ROWS: Final = 16
 MAX_REASONS: Final = 6
@@ -21,11 +23,15 @@ NUMERIC_FIELDS: Final = (
     "total_cost_krw",
     "mean_reward",
     "cumulative_reward",
+    "required_membership_pairs",
+    "covered_membership_pairs",
+    "coverage_percent",
 )
 JSON_OBJECT_ADAPTER: Final = TypeAdapter(dict[str, JsonValue])
 
 
 class OutcomeSeriesOptional(TypedDict, total=False):
+    state: str
     date_count: float
     filled_slots: float
     total_net_pnl_krw: float
@@ -33,6 +39,9 @@ class OutcomeSeriesOptional(TypedDict, total=False):
     total_cost_krw: float
     mean_reward: float
     cumulative_reward: float
+    required_membership_pairs: float
+    covered_membership_pairs: float
+    coverage_percent: float
 
 
 class OutcomeSeriesPayload(OutcomeSeriesOptional):
@@ -71,7 +80,12 @@ def _headline(mapping: Mapping[str, JsonValue]) -> str:
 
 def _reasons(mapping: Mapping[str, JsonValue]) -> list[str]:
     rows: list[str] = []
-    for key in ("reasons", "gate_validation_errors", "upstream_gate_blockers", "errors"):
+    for key in (
+        "reasons",
+        "gate_validation_errors",
+        "upstream_gate_blockers",
+        "errors",
+    ):
         values = mapping.get(key)
         if not isinstance(values, list):
             continue
@@ -84,8 +98,13 @@ def _reasons(mapping: Mapping[str, JsonValue]) -> list[str]:
     return rows
 
 
-def _series_row(mapping: Mapping[str, JsonValue], label: str) -> OutcomeSeriesPayload | None:
+def _series_row(
+    mapping: Mapping[str, JsonValue], label: str
+) -> OutcomeSeriesPayload | None:
     row: OutcomeSeriesPayload = {"label": label}
+    state = _bounded_text(mapping.get("state"))
+    if state is not None:
+        row["state"] = state
     for field in NUMERIC_FIELDS:
         observed = _finite_number(mapping.get(field))
         if observed is None:
@@ -105,6 +124,12 @@ def _series_row(mapping: Mapping[str, JsonValue], label: str) -> OutcomeSeriesPa
                 row["mean_reward"] = observed
             case "cumulative_reward":
                 row["cumulative_reward"] = observed
+            case "required_membership_pairs":
+                row["required_membership_pairs"] = observed
+            case "covered_membership_pairs":
+                row["covered_membership_pairs"] = observed
+            case "coverage_percent":
+                row["coverage_percent"] = observed
     return row if len(row) > 1 else None
 
 
@@ -132,7 +157,9 @@ def _summary_rows(mapping: Mapping[str, JsonValue]) -> list[OutcomeSeriesPayload
     return rows
 
 
-def _split_rows(mapping: Mapping[str, JsonValue], available: int) -> list[OutcomeSeriesPayload]:
+def _split_rows(
+    mapping: Mapping[str, JsonValue], available: int
+) -> list[OutcomeSeriesPayload]:
     splits = mapping.get("primary_split_summary")
     if not isinstance(splits, dict) or available <= 0:
         return []
@@ -160,11 +187,34 @@ def _empty(source_file: str) -> ObservedOutcomePayload:
 
 def observe_outcome(directory: Path, source_file: str) -> ObservedOutcomePayload:
     """Return only bounded scalar values from the direct metadata source file."""
+    publication = observe_daily_market_publication(directory)
+    if publication.state == "INVALID":
+        return _empty(source_file)
     if source_file == "MISSING" or Path(source_file).name != source_file:
         return _empty(source_file)
+    if publication.state == "VALID":
+        if publication.source_file != source_file or publication.summary_bytes is None:
+            return _empty(source_file)
+        try:
+            raw = JSON_OBJECT_ADAPTER.validate_json(publication.summary_bytes)
+        except ValidationError:
+            return _empty(source_file)
+        rows = _summary_rows(raw)
+        rows.extend(_split_rows(raw, MAX_OUTCOME_ROWS - len(rows)))
+        return {
+            "scope": "DIRECT_SUMMARY_NUMERIC_ONLY",
+            "source_file": source_file,
+            "headline": _headline(raw),
+            "reasons": _reasons(raw),
+            "series": rows,
+        }
     source = directory / source_file
     try:
-        if source.is_symlink() or not source.is_file() or source.stat().st_size > MAX_SUMMARY_BYTES:
+        if (
+            source.is_symlink()
+            or not source.is_file()
+            or source.stat().st_size > MAX_SUMMARY_BYTES
+        ):
             return _empty(source_file)
         raw = JSON_OBJECT_ADAPTER.validate_json(source.read_bytes())
     except (OSError, ValidationError):

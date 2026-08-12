@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 from statistics import median
-from typing import ClassVar, Literal
+from typing import ClassVar, Final, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .daily_market_allocation_evaluation import AllocationPolicyMetrics
+from .daily_market_allocation_evaluation_contract import AllocationPolicyMetrics
 from .daily_market_allocation_rl_contract import (
     ALLOCATION_MODEL_SEEDS,
     AllocationAlgorithm,
 )
 from .daily_market_rl_contract import DailyMarketRlContractError
+
+ALLOCATION_GATE_CHECK_IDS: Final = (
+    "CQL_VALIDATION_MEDIAN_BEATS_NO_TRADE",
+    "CQL_VALIDATION_FOUR_OF_FIVE_POSITIVE",
+    "CQL_VALIDATION_STRESS_MEDIAN_POSITIVE",
+    "CQL_VALIDATION_ACTION_DIVERSITY",
+    "CQL_VALIDATION_BEATS_DQN_MEDIAN",
+    "CQL_VALIDATION_MDD_WITHIN_20_PERCENT",
+)
 
 
 class AllocationSeedOutcome(BaseModel):
@@ -49,6 +58,19 @@ class AllocationValidationGate(BaseModel):
     historical_test_read: Literal[False]
     fresh_oos_read: Literal[False]
     promotion_allowed: Literal[False]
+
+    @model_validator(mode="after")
+    def _gate_verdict_is_canonical(self) -> Self:
+        check_ids = tuple(check.check_id for check in self.checks)
+        if check_ids != ALLOCATION_GATE_CHECK_IDS:
+            raise ValueError("allocation gate check set or order is invalid")
+        failed = tuple(check.check_id for check in self.checks if not check.passed)
+        if self.failed_checks != failed:
+            raise ValueError("allocation gate failed checks are inconsistent")
+        expected = "VALIDATION_CANDIDATE" if not failed else "NO_GO_VALIDATION_SCREEN"
+        if self.verdict != expected:
+            raise ValueError("allocation gate verdict is inconsistent")
+        return self
 
 
 def _validate(
@@ -95,7 +117,7 @@ def evaluate_allocation_validation_gate(
     worst_drawdown = min(row.validation_base.max_drawdown_percent for row in cql)
     checks = (
         AllocationGateCheck(
-            check_id="CQL_VALIDATION_MEDIAN_POSITIVE",
+            check_id="CQL_VALIDATION_MEDIAN_BEATS_NO_TRADE",
             passed=cql_median > 0,
             observed=f"median={cql_median:.6f}",
         ),
@@ -105,22 +127,22 @@ def evaluate_allocation_validation_gate(
             observed=f"positive_seeds={positive_seeds}/5",
         ),
         AllocationGateCheck(
-            check_id="CQL_STRESS_MEDIAN_POSITIVE",
+            check_id="CQL_VALIDATION_STRESS_MEDIAN_POSITIVE",
             passed=stress_median > 0,
             observed=f"median={stress_median:.6f}",
         ),
         AllocationGateCheck(
-            check_id="CQL_ACTION_DIVERSITY_FOUR_OF_FIVE",
+            check_id="CQL_VALIDATION_ACTION_DIVERSITY",
             passed=diverse_seeds >= 4,
             observed=f"diverse_seeds={diverse_seeds}/5",
         ),
         AllocationGateCheck(
-            check_id="CQL_BEATS_DQN_MEDIAN",
+            check_id="CQL_VALIDATION_BEATS_DQN_MEDIAN",
             passed=cql_median > dqn_median,
             observed=f"cql={cql_median:.6f},dqn={dqn_median:.6f}",
         ),
         AllocationGateCheck(
-            check_id="CQL_MAX_DRAWDOWN_WITHIN_20_PERCENT",
+            check_id="CQL_VALIDATION_MDD_WITHIN_20_PERCENT",
             passed=worst_drawdown >= -20,
             observed=f"worst={worst_drawdown:.6f}",
         ),
@@ -142,6 +164,7 @@ def evaluate_allocation_validation_gate(
 
 __all__ = [
     "AllocationGateCheck",
+    "ALLOCATION_GATE_CHECK_IDS",
     "AllocationSeedOutcome",
     "AllocationValidationGate",
     "evaluate_allocation_validation_gate",

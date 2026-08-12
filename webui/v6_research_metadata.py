@@ -1,10 +1,13 @@
 """Bounded metadata extraction for heterogeneous research evidence files."""
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+
+from webui.v6_daily_market_publication import observe_daily_market_publication
 
 MAX_SUMMARY_BYTES: Final = 512 * 1024
 SUMMARY_NAMES: Final = (
@@ -26,15 +29,27 @@ class ObservedMetadata:
 
 def _candidates(directory: Path) -> tuple[Path, ...]:
     try:
-        files = tuple(path for path in directory.iterdir() if path.is_file() and not path.is_symlink())
+        files = tuple(
+            path
+            for path in directory.iterdir()
+            if path.is_file() and not path.is_symlink()
+        )
     except OSError:
         return ()
     verdicts = sorted(
-        (path for path in files if path.suffix.lower() == ".json" and "verdict" in path.name.lower()),
+        (
+            path
+            for path in files
+            if path.suffix.lower() == ".json" and "verdict" in path.name.lower()
+        ),
         key=lambda path: path.name,
     )
     by_name = {path.name: path for path in files}
-    summaries = [by_name[name] for name in SUMMARY_NAMES if name in by_name and by_name[name] not in verdicts]
+    summaries = [
+        by_name[name]
+        for name in SUMMARY_NAMES
+        if name in by_name and by_name[name] not in verdicts
+    ]
     remaining = sorted(
         (
             path
@@ -42,7 +57,10 @@ def _candidates(directory: Path) -> tuple[Path, ...]:
             if path not in verdicts
             and path not in summaries
             and path.suffix.lower() == ".json"
-            and any(token in path.name.lower() for token in ("summary", "manifest", "receipt"))
+            and any(
+                token in path.name.lower()
+                for token in ("summary", "manifest", "receipt")
+            )
         ),
         key=lambda path: path.name,
     )
@@ -58,7 +76,9 @@ def _first_text(mapping, keys: tuple[str, ...]) -> str:
 
 
 def _algorithm(mapping) -> str:
-    direct = _first_text(mapping, ("algorithm", "algorithm_family", "model_family", "policy"))
+    direct = _first_text(
+        mapping, ("algorithm", "algorithm_family", "model_family", "policy")
+    )
     if direct != "MISSING":
         return direct
     algorithms = mapping.get("algorithms")
@@ -83,6 +103,39 @@ def _read_mapping(source: Path) -> tuple[dict | None, str | None]:
 
 def observe_metadata(directory: Path) -> ObservedMetadata:
     """Prefer explicit verdicts while supplementing missing descriptive fields."""
+    publication = observe_daily_market_publication(directory)
+    if publication.state == "INVALID":
+        source = (
+            "bundle_manifest.json"
+            if (directory / "bundle_manifest.json").exists()
+            else "publication_incomplete"
+        )
+        return ObservedMetadata("CORRUPT_EVIDENCE", "MISSING", "MISSING", source)
+    if publication.state == "VALID" and publication.summary_bytes is not None:
+        try:
+            mapping = json.loads(publication.summary_bytes.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return ObservedMetadata(
+                "CORRUPT_EVIDENCE", "MISSING", "MISSING", "summary.json"
+            )
+        if type(mapping) is not dict:
+            return ObservedMetadata(
+                "CORRUPT_EVIDENCE", "MISSING", "MISSING", "summary.json"
+            )
+        observed_status = _first_text(
+            mapping,
+            ("verdict", "state", "status", "result"),
+        )
+        if directory.name == "DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001":
+            observed_status = (
+                "LEGACY_EXPLORATORY_CANDIDATE_TEST_FEATURES_CONSUMED"
+            )
+        return ObservedMetadata(
+            observed_status,
+            _algorithm(mapping),
+            _first_text(mapping, ("dataset_id", "dataset_run_id", "dataset")),
+            publication.source_file or "summary.json",
+        )
     candidates = _candidates(directory)
     if not candidates:
         return ObservedMetadata("RECORDED", "MISSING", "MISSING", "MISSING")
@@ -101,19 +154,25 @@ def observe_metadata(directory: Path) -> ObservedMetadata:
             continue
         if valid_source == "MISSING":
             valid_source = source.name
-        candidate_status = _first_text(mapping, ("verdict", "state", "status", "result"))
+        candidate_status = _first_text(
+            mapping, ("verdict", "state", "status", "result")
+        )
         if status == "MISSING" and candidate_status != "MISSING":
             status = candidate_status
             source_file = source.name
         if algorithm == "MISSING":
             algorithm = _algorithm(mapping)
         if dataset_id == "MISSING":
-            dataset_id = _first_text(mapping, ("dataset_id", "dataset_run_id", "dataset"))
+            dataset_id = _first_text(
+                mapping, ("dataset_id", "dataset_run_id", "dataset")
+            )
 
     if status != "MISSING":
         return ObservedMetadata(status, algorithm, dataset_id, source_file)
     if valid_source != "MISSING":
         return ObservedMetadata("RECORDED", algorithm, dataset_id, valid_source)
     if first_failure is not None:
-        return ObservedMetadata(first_failure[0], "MISSING", "MISSING", first_failure[1])
+        return ObservedMetadata(
+            first_failure[0], "MISSING", "MISSING", first_failure[1]
+        )
     return ObservedMetadata("RECORDED", "MISSING", "MISSING", "MISSING")
