@@ -6,7 +6,8 @@
   import { loadTelemetry, loadTelemetryRuns, type TelemetryRun, type TelemetrySnapshot } from '../../api/telemetryApi';
   import ActionTimeline from './ActionTimeline.svelte';
   import TelemetryCharts from './TelemetryCharts.svelte';
-  import { equityPresentation, rewardPresentation } from './telemetryMetricModel';
+  import { compactKrwNavLabel, compactRunStatus, equityPresentation, rewardPresentation } from './telemetryMetricModel';
+  import { runStatusTone } from '../../runStatusModel';
 
   let runs = $state<readonly TelemetryRun[]>([]);
   let selected = $state('');
@@ -15,6 +16,7 @@
   let error = $state<string | null>(null);
   let autoRefresh = $state(true);
   let timer: ReturnType<typeof setInterval> | null = null;
+  let refreshGeneration = 0;
 
   const latest = $derived(snapshot?.points.at(-1) ?? null);
   const selectedRun = $derived(runs.find((run) => run.run_id === selected) ?? null);
@@ -22,15 +24,22 @@
   const rewardMetric = $derived(snapshot ? rewardPresentation(snapshot.points) : null);
   const kpis = $derived([
     { label: '최근 STEP', value: latest ? new Intl.NumberFormat('ko-KR').format(latest.step) : 'MISSING', detail: latest?.phase ?? 'phase 없음', tone: 'neutral' as const },
-    { label: '실행 판정', value: selectedRun?.status ?? 'MISSING', detail: selectedRun?.algorithm ?? 'algorithm 없음', tone: selectedRun?.status.includes('NO') ? 'danger' as const : 'neutral' as const },
-    { label: equityMetric?.title ?? '기록 equity', value: equityMetric?.latestLabel ?? 'MISSING', detail: equityMetric?.notice ?? '단위 정보 없음', tone: equityMetric?.latestLabel.startsWith('-') ? 'danger' as const : 'neutral' as const },
+    { label: '실행 판정', value: compactRunStatus(selectedRun?.status), detail: `${selectedRun?.status ?? 'MISSING'} · ${selectedRun?.algorithm ?? 'algorithm 없음'}`, tone: runStatusTone(selectedRun?.status) },
+    { label: equityMetric?.title ?? '기록 equity', value: equityMetric?.identity.kind === 'krw_nav' && equityMetric.identity.unit === 'krw' ? compactKrwNavLabel(latest?.equity) : equityMetric?.latestLabel ?? 'MISSING', detail: equityMetric ? `${equityMetric.latestLabel} · ${equityMetric.notice}` : '단위 정보 없음', tone: equityMetric?.latestLabel.startsWith('-') ? 'danger' as const : 'neutral' as const },
     { label: '표본 보상 합계', value: rewardMetric?.latestLabel ?? 'MISSING', detail: rewardMetric?.notice ?? '단위 정보 없음', tone: rewardMetric?.latestLabel.startsWith('-') ? 'warning' as const : 'neutral' as const },
     { label: '표시 POINT', value: String(snapshot?.points.length ?? 0), detail: snapshot?.sampling ?? 'MISSING', tone: 'neutral' as const },
   ]);
 
   async function refresh(): Promise<void> {
-    if (!selected) return;
-    const result = await loadTelemetry(selected);
+    if (!selected) {
+      snapshot = null;
+      loading = false;
+      return;
+    }
+    const requestedId = selected;
+    const generation = ++refreshGeneration;
+    const result = await loadTelemetry(requestedId);
+    if (generation !== refreshGeneration || requestedId !== selected) return;
     if (result.ok === false) error = result.message;
     else {
       snapshot = result.data;

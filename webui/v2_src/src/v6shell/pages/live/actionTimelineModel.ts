@@ -49,7 +49,8 @@ export function buildActionTimelineRows(points: readonly TelemetryPoint[]): read
   return points.flatMap((point) => {
     const action = recordedActionName(point);
     if (action === null) return [];
-    const x: string | number = Number.isNaN(Date.parse(point.timestamp)) ? point.step : point.timestamp;
+    const decisionTime = point.decision_timestamp ?? point.timestamp;
+    const x: string | number = Number.isNaN(Date.parse(decisionTime)) ? point.step : decisionTime;
     return [[x, action, point.step, point.phase] as const];
   });
 }
@@ -65,7 +66,7 @@ function koreanHourLabel(start: string): string {
 export function buildActionHourBuckets(points: readonly TelemetryPoint[]): readonly ActionHourBucket[] {
   const buckets = new Map<number, Map<string, number>>();
   for (const point of points) {
-    const timestamp = Date.parse(point.timestamp);
+    const timestamp = Date.parse(point.decision_timestamp ?? point.timestamp);
     const action = recordedActionName(point);
     if (!Number.isFinite(timestamp) || action === null) continue;
     const start = Math.floor(timestamp / 3_600_000) * 3_600_000;

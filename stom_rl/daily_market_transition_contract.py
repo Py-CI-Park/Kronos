@@ -29,7 +29,9 @@ class BinaryAction(IntEnum):
 class DailyMarketScore(BaseModel):
     """One causal D-close score; safe to use for state and ranking."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True, extra="forbid", allow_inf_nan=False
+    )
 
     decision_date: date
     code: str = Field(pattern=r"^[0-9]{6}$")
@@ -53,7 +55,9 @@ class DailyMarketCandidate(DailyMarketScore):
     @model_validator(mode="after")
     def validate_horizon(self) -> DailyMarketCandidate:
         if not self.decision_date < self.entry_date < self.exit_date:
-            raise DailyMarketContractError("expected decision_date < entry_date < exit_date")
+            raise DailyMarketContractError(
+                "expected decision_date < entry_date < exit_date"
+            )
         return self
 
 
@@ -70,10 +74,17 @@ class MarketTransitionConfig:
     sell_slippage_percent: Decimal = Decimal("0")
 
     def __post_init__(self) -> None:
-        if self.initial_capital_krw <= 0 or self.max_slots != 10:
-            raise DailyMarketContractError("market transition requires positive capital and exactly 10 slots")
-        if self.stock_exposure_cap_krw + self.cash_reserve_floor_krw > self.initial_capital_krw:
-            raise DailyMarketContractError("exposure cap plus cash reserve exceeds initial capital")
+        if self.initial_capital_krw <= 0 or not 1 <= self.max_slots <= 10:
+            raise DailyMarketContractError(
+                "market transition requires positive capital and one to ten slots"
+            )
+        if (
+            self.stock_exposure_cap_krw + self.cash_reserve_floor_krw
+            > self.initial_capital_krw
+        ):
+            raise DailyMarketContractError(
+                "exposure cap plus cash reserve exceeds initial capital"
+            )
         costs = (
             self.buy_commission_percent,
             self.sell_commission_percent,
@@ -96,7 +107,9 @@ class MarketTransitionConfig:
 
 
 class MarketState(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True, extra="forbid", allow_inf_nan=False
+    )
 
     decision_date: date
     split: SplitName
@@ -160,11 +173,15 @@ class BinaryMarketTransition(BaseModel):
 
 
 def _state_digest(payload: JsonValue) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def rank_market_scores(candidates: Sequence[DailyMarketScore]) -> tuple[DailyMarketScore, ...]:
+def rank_market_scores(
+    candidates: Sequence[DailyMarketScore],
+) -> tuple[DailyMarketScore, ...]:
     if not candidates:
         raise DailyMarketContractError("market state requires candidates")
     decision_date = candidates[0].decision_date
@@ -173,12 +190,22 @@ def rank_market_scores(candidates: Sequence[DailyMarketScore]) -> tuple[DailyMar
         candidate.decision_date != decision_date or candidate.split != split
         for candidate in candidates
     ):
-        raise DailyMarketContractError("all candidates must share one decision date and split")
+        raise DailyMarketContractError(
+            "all candidates must share one decision date and split"
+        )
     if split == "FRESH_OOS":
-        raise DailyMarketContractError("FRESH_OOS remains sealed until preregistration and human approval")
+        raise DailyMarketContractError(
+            "FRESH_OOS remains sealed until preregistration and human approval"
+        )
     if len({candidate.code for candidate in candidates}) != len(candidates):
-        raise DailyMarketContractError("candidate codes must be unique within one decision date")
-    return tuple(sorted(candidates, key=lambda candidate: (-candidate.score, candidate.code))[:10])
+        raise DailyMarketContractError(
+            "candidate codes must be unique within one decision date"
+        )
+    return tuple(
+        sorted(candidates, key=lambda candidate: (-candidate.score, candidate.code))[
+            :10
+        ]
+    )
 
 
 def market_score_hash(candidates: Sequence[DailyMarketScore]) -> str:

@@ -7,6 +7,7 @@
   import AccessibleBarChart from '../../components/visualization/AccessibleBarChart.svelte';
   import { loadResearchRunDetail, loadResearchRuns, type ResearchRun, type ResearchRunDetail } from '../../api/researchApi';
   import { getV6ModelStatus, type V6ModelStatus } from '../../v6Api';
+  import { runStatusTone } from '../../runStatusModel';
 
   let runs = $state<readonly ResearchRun[]>([]);
   let selected = $state('');
@@ -15,6 +16,7 @@
   let kronos = $state<V6ModelStatus | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let detailGeneration = 0;
 
   function formatBytes(value: number): string {
     if (value >= 1_048_576) return `${(value / 1_048_576).toFixed(2)} MB`;
@@ -38,24 +40,38 @@
     const current = runs.find((run) => run.run_id === selected);
     return [current, ...filtered].filter((run, index, rows): run is ResearchRun => run !== undefined && rows.findIndex((item) => item?.run_id === run.run_id) === index).slice(0, 50);
   });
+  const validationCandidate = $derived(detail?.run.status === 'VALIDATION_CANDIDATE');
+  const custodyReproduction = $derived(detail?.run.status === 'REPRODUCTION_ONLY_VALIDATION_CONSUMED');
+  const reproductionMismatch = $derived(detail?.run.status === 'REPRODUCTION_MISMATCH_VALIDATION_CONSUMED');
   const kpis = $derived([
     { label: 'FILE PRESENT', value: String(modelArtifacts.length), detail: 'bounded models 하위 체크포인트', tone: modelArtifacts.length ? 'positive' as const : 'warning' as const },
     { label: 'LOADED', value: kronos?.loaded === true ? 'YES' : 'NO', detail: 'Kronos Core 프로세스 상태', tone: kronos?.loaded === true ? 'positive' as const : 'neutral' as const },
     { label: 'PROMOTED', value: 'NO', detail: '자동 승격 금지', tone: 'danger' as const },
-    { label: 'RUN VERDICT', value: detail?.run.status ?? 'MISSING', detail: detail?.run.algorithm ?? 'algorithm 없음', tone: detail?.run.status.includes('NO') ? 'danger' as const : 'neutral' as const },
+    { label: 'RUN VERDICT', value: reproductionMismatch ? 'REPRODUCTION FAILED' : custodyReproduction ? 'REPRODUCTION ONLY' : detail?.run.status ?? 'MISSING', detail: reproductionMismatch ? '001↔002 evidence digest 불일치' : custodyReproduction ? '001 exact match · consumed validation · 성능 후보 아님' : detail?.run.algorithm ?? 'algorithm 없음', tone: runStatusTone(detail?.run.status) },
   ]);
   const states = $derived<readonly StateItem[]>([
     { label: 'RUN MODEL FILE', state: modelArtifacts.length ? 'FILE PRESENT' : 'MISSING', detail: '파일 존재는 로드 성공·성능·안전성을 증명하지 않습니다.', tone: modelArtifacts.length ? 'ok' : 'warning' },
     { label: 'KRONOS CORE', state: kronos?.available === true ? (kronos.loaded === true ? 'LOADED' : 'AVAILABLE / NOT LOADED') : 'UNAVAILABLE', detail: kronos?.message ?? '모델 상태 API 메시지가 없습니다.', tone: kronos?.available === true ? 'ok' : 'warning' },
-    { label: 'ECONOMIC GATE', state: 'NO-GO', detail: '현재 모델 파일과 텔레메트리는 경제적 성능 승격 gate를 통과하지 못했습니다.', tone: 'danger' },
+    { label: 'ECONOMIC GATE', state: reproductionMismatch ? 'REPRODUCTION FAILED' : custodyReproduction ? 'REPRODUCTION ONLY' : validationCandidate ? 'VALIDATION CANDIDATE' : 'NO-GO', detail: reproductionMismatch ? '002가 hash-bound 001의 10모델·gate와 일치하지 않아 재현 실패입니다.' : custodyReproduction ? '002는 001에서 소비한 VALIDATION과 exact match지만 새 경제 성능 후보가 아닙니다.' : validationCandidate ? '6개 VALIDATION 화면을 통과했지만 D0/D1·historical TEST·Fresh OOS는 차단 상태입니다.' : '현재 모델 파일과 텔레메트리는 경제적 성능 승격 gate를 통과하지 못했습니다.', tone: reproductionMismatch ? 'danger' : validationCandidate || custodyReproduction ? 'warning' : 'danger' },
     { label: 'PROMOTION', state: 'HUMAN APPROVAL REQUIRED', detail: 'OOS·통제군·비용·강건성 통과 전 자동 배포나 broker 연결을 하지 않습니다.', tone: 'warning' },
   ]);
 
   async function loadSelected(): Promise<void> {
-    if (!selected) return;
+    if (!selected) {
+      detail = null;
+      loading = false;
+      return;
+    }
+    const generation = ++detailGeneration;
+    const requestedId = selected;
     loading = true;
-    const result = await loadResearchRunDetail(selected);
-    if (result.ok === false) error = result.message;
+    detail = null;
+    const result = await loadResearchRunDetail(requestedId);
+    if (generation !== detailGeneration) return;
+    if (result.ok === false) {
+      detail = null;
+      error = result.message;
+    }
     else {
       detail = result.data;
       error = null;
@@ -75,7 +91,7 @@
     }
     runs = runsResult.data.items;
     kronos = modelResult.ok ? modelResult.data ?? null : null;
-    selected = runs.find((run) => run.run_id === 'stom_orderbook_dqn_smoke')?.run_id ?? runs[0]?.run_id ?? '';
+    selected = runs.find((run) => run.run_id === 'daily_market_allocation/DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_002')?.run_id ?? runs.find((run) => run.run_id === 'stom_orderbook_dqn_smoke')?.run_id ?? runs[0]?.run_id ?? '';
     await loadSelected();
   });
 </script>

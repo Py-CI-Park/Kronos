@@ -30,7 +30,7 @@ export const V6_BRAND = {
   name: 'Kronos Reinforcement Learning',
   subtitle: 'Evidence-first Quant Research Command Center',
   version: 'v1.29.0-dev',
-  updateDate: '2026-08-07',
+  updateDate: '2026-08-10',
 } as const;
 
 export const V6_NAV_GROUPS: readonly V6PageGroup[] = ['COMMAND', 'RESEARCH', 'EVIDENCE', 'GOVERNANCE', 'ADVANCED'];

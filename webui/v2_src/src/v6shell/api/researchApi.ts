@@ -52,6 +52,7 @@ const ArtifactSchema = z.object({
 
 const ObservedOutcomeSeriesSchema = z.object({
   label: z.string().min(1),
+  state: z.string().min(1).optional(),
   date_count: z.number().finite().optional(),
   filled_slots: z.number().finite().optional(),
   total_net_pnl_krw: z.number().finite().optional(),
@@ -59,6 +60,9 @@ const ObservedOutcomeSeriesSchema = z.object({
   total_cost_krw: z.number().finite().optional(),
   mean_reward: z.number().finite().optional(),
   cumulative_reward: z.number().finite().optional(),
+  required_membership_pairs: z.number().finite().nonnegative().optional(),
+  covered_membership_pairs: z.number().finite().nonnegative().optional(),
+  coverage_percent: z.number().finite().min(0).max(100).optional(),
 }).readonly();
 
 const ObservedOutcomeSchema = z.object({

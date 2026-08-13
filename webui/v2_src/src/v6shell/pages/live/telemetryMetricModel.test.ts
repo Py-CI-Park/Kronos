@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'bun:test';
 import { TelemetryPointSchema } from '../../api/telemetryApi';
 import {
+  compactKrwNavLabel,
+  compactRunStatus,
   equityPresentation,
   metricIdentity,
   metricOverlayCompatible,
@@ -18,6 +20,16 @@ const point = (overrides: Record<string, unknown>) => TelemetryPointSchema.parse
   action_name: 'hold',
   timestamp: '2026-08-09T00:00:00Z',
   ...overrides,
+});
+
+test('live KPI labels remain compact while preserving exact detail elsewhere', () => {
+  assert.equal(compactRunStatus('VALIDATION_CANDIDATE'), 'CANDIDATE');
+  assert.equal(compactRunStatus('REPRODUCTION_ONLY_VALIDATION_CONSUMED'), 'REPRO ONLY');
+  assert.equal(compactRunStatus('REPRODUCTION_MISMATCH_VALIDATION_CONSUMED'), 'REPRO FAIL');
+  assert.equal(compactRunStatus('NO_GO_VALIDATION_SCREEN'), 'NO-GO');
+  assert.equal(compactRunStatus('COMPLETED'), 'COMPLETED');
+  assert.equal(compactKrwNavLabel(65_021_291.29365), '6,502만원');
+  assert.equal(compactKrwNavLabel(null), 'MISSING');
 });
 
 test('normalized NAV converts to percent and permits drawdown', () => {

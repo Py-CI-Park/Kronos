@@ -26,7 +26,7 @@
   const kpis = $derived([
     { label: '제품 구현·UX', value: `${PROGRAM_EXECUTION.implementationScore}/100`, detail: '통합 페이지·API·QA 점수', tone: 'positive' as const },
     { label: '연구 프로그램', value: `${PROGRAM_EXECUTION.overallScore}/100`, detail: 'RL·거버넌스·live 포함', tone: 'warning' as const },
-    { label: '경제 모델', value: `${PROGRAM_EXECUTION.economicModelScore}/100`, detail: '체크포인트 20개 · 비용 후 GO 없음', tone: 'danger' as const },
+    { label: '경제 모델', value: `${PROGRAM_EXECUTION.economicModelScore}/100`, detail: '이전 20 TEST NO-GO · 001 VAL 소비 · 002 계보 재현', tone: 'danger' as const },
     { label: '실거래 준비', value: `${PROGRAM_EXECUTION.liveReadinessScore}/100`, detail: 'Fresh OOS·paper·broker 차단', tone: 'danger' as const },
   ]);
   const states = $derived<readonly StateItem[]>([
@@ -44,7 +44,7 @@
   const phase = (id: string): string => ({ command: 'P0', research: 'P0', live: 'P1', evaluation: 'P1', evidence: 'P2', models: 'P2', governance: 'P2', settings: 'P2' })[id] ?? 'P2';
   const nextAction = (id: string): string => ({
     command: '최종 회귀·릴리스 증거 유지', research: '새 가설 사전등록·PIT 권위 확보', live: '다음 실행에 seed별 telemetry 연결', evaluation: '동일 TEST 재튜닝 금지·새 검증 구간 설계',
-    evidence: '가격·universe custody 확보', models: '20개 체크포인트와 경제성 NO-GO 분리 검토', governance: 'Fresh OOS 사람 승인', settings: '접근성 사용자 검수',
+    evidence: '서명된 D0·D1 source review 결속', models: '001 성능 탐색과 002 계보 재현 분리 검토', governance: 'Fresh OOS 사람 승인', settings: '접근성 사용자 검수',
   })[id] ?? '근거 유지';
 
   async function load(): Promise<void> {
@@ -66,16 +66,16 @@
   <PageHeader eyebrow="RESEARCH COMMAND CENTER" title="통합 현황" description="연구 실행, 학습 성과, 실패 원인, 증거와 다음 행동을 한 화면에서 봅니다." status={loading ? 'LOADING' : error ? 'UNAVAILABLE' : 'READ-ONLY'} />
   <KpiStrip items={kpis} />
   <ResearchPanel title="프로그램 성숙도 지도" description="제품 UX와 경제 모델·실거래 준비도를 분리한 공식 5개 영역 점수입니다.">
-    <AccessibleBarChart title="영역별 근거 점수" ariaLabel="플랫폼 UX, 강화학습 증거, 엔지니어링, 거버넌스, 실거래 준비도 점수 비교" summary="가중 종합은 70점입니다. 플랫폼 구현이 높아도 경제성·Fresh OOS·실거래 gate를 대신하지 않습니다." items={programChartItems} valueHeader="점수" />
+    <AccessibleBarChart title="영역별 근거 점수" ariaLabel="플랫폼 UX, 강화학습 증거, 엔지니어링, 거버넌스, 실거래 준비도 점수 비교" summary="가중 종합은 71점입니다. 플랫폼 구현이 높아도 경제성·Fresh OOS·실거래 gate를 대신하지 않습니다." items={programChartItems} valueHeader="점수" />
   </ResearchPanel>
   {#if error}<p class="error" role="alert">{error}<button type="button" onclick={() => void load()}>다시 불러오기</button></p>{/if}
   <ResearchPanel title="현재 연구 판정" description="제품 완성도와 수익 모델 성공 여부를 섞지 않습니다."><StateMatrix items={states} /></ResearchPanel>
   <div class="grid">
     <ResearchPanel title="지금 할 수 있는 것" description="모든 기능은 로컬 연구·증거 검토 범위입니다.">
-      <ul><li>과거·현재 RL run 98개를 검색하고 상세 artifact를 확인</li><li>학습 reward·equity·drawdown·loss·action을 그래프로 추적</li><li>같은 데이터 lane 안에서만 알고리즘·seed·통제군 비교</li><li>종가 결정 → 다음 거래일 시가 체결 흐름과 0.230% 비용 검토</li><li>모델 파일 존재·로드·승격과 사전등록·결과 hash를 분리 감사</li></ul>
+      <ul><li>로컬 카탈로그의 과거·현재 run을 검색하고 상세 artifact를 확인</li><li>학습 reward·equity·drawdown·loss·action을 그래프로 추적</li><li>같은 데이터 lane 안에서만 알고리즘·seed·통제군 비교</li><li>종가 결정 → 다음 거래일 시가 체결 흐름과 0.230% 연구 비용 가정 검토</li><li>모델 파일 존재·로드·승격과 사전등록·결과 hash를 분리 감사</li></ul>
     </ResearchPanel>
     <ResearchPanel title="성공에 필요한 다음 gate" description="학습 반복만으로 데이터 권위와 경제성이 자동 해결되지는 않습니다.">
-      <ol><li><b>1</b><span>날짜별 PIT universe·available-at·공식 수정주가 확정</span></li><li><b>2</b><span>23bp 비용·체결 계약을 고정하고 train/validation 재실행</span></li><li><b>3</b><span>DQN·CQL·rule·random·shuffle을 동일 조건으로 비교</span></li><li><b>4</b><span>사전등록 gate 통과 뒤 사람 승인으로 Fresh OOS 1회 개봉</span></li></ol>
+      <ol><li><b>1</b><span>reviewer trust root·서명 검증기·원천 extraction receipt 구현</span></li><li><b>2</b><span>0.230% 연구 비용 가정과 실제 증권사 비용을 별도 검증</span></li><li><b>3</b><span>002 재현 모델을 동결하고 아직 보지 않은 Fresh OOS 생성</span></li><li><b>4</b><span>사람 승인 후 Fresh OOS를 1회 개봉해 경제성 판정</span></li></ol>
     </ResearchPanel>
   </div>
   <ResearchPanel title="전체 페이지 진행표" description={`P0→P2 구현 완료 · 거버넌스 ${governance?.preregistrations.length ?? 0}건 사전등록`}>

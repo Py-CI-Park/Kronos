@@ -14,6 +14,27 @@ test('evaluation compares only runs in the same evidence lane without ranking cl
   assert.match(source, /NO-GO/u);
 });
 
+test('a single telemetry run finishes loading and remains inspectable without a peer', async () => {
+  const source = await readFile(new URL('pages/evaluation/EvaluationWorkspace.svelte', root), 'utf8');
+
+  assert.match(source, /if \(!rightId\)/u);
+  assert.match(source, /left = leftResult\.data/u);
+  assert.match(source, /right = null/u);
+  assert.match(source, /loading = false/u);
+  assert.match(source, /같은 lane의 두 번째 실행이 아직 없습니다/u);
+  assert.match(source, /disabled=\{loading\}/u);
+  assert.match(source, /기준 실행 새로고침/u);
+});
+
+test('dual-run refresh commits one current pair or clears both snapshots', async () => {
+  const source = await readFile(new URL('pages/evaluation/EvaluationWorkspace.svelte', root), 'utf8');
+
+  assert.match(source, /const generation = \+\+refreshGeneration/u);
+  assert.match(source, /if \(generation !== refreshGeneration\) return/u);
+  assert.match(source, /if \(leftResult\.ok === false\) \{[\s\S]*?left = null;[\s\S]*?right = null;/u);
+  assert.match(source, /else if \(rightResult\.ok === false\) \{[\s\S]*?left = null;[\s\S]*?right = null;/u);
+});
+
 test('daily close process uses post-close next-open and reduced-motion safeguards', async () => {
   const source = await readFile(new URL('pages/evaluation/DailyCloseProcessFlow.svelte', root), 'utf8');
 

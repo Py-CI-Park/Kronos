@@ -17,7 +17,7 @@ export type ProgramExecution = {
   readonly eta: string;
   readonly freshOos: 'NOT_RUN_NO_READ';
   readonly liveTrading: 'BLOCKED';
-  readonly authority: 'REVIEWED_SNAPSHOT';
+  readonly authority: 'BOUND_LOCAL_AUDIT_BLOCKED';
   readonly reviewedRun: string;
   readonly reviewedEvidenceManifest: string;
 };
@@ -33,12 +33,12 @@ export const PROGRAM_EXECUTION: ProgramExecution = {
   latestRelease: 'v1.28.0',
   versionPolicy: 'ONE_DEV_LINE_TASK_BRANCH_NO_FF_PRESERVE',
   branchRetentionPolicy: 'KEEP_MERGED_BRANCHES',
-  stage: 'V1_29_DEV_ACTIVE_MODEL_NO_GO',
-  nextAction: 'KRX Open API 인증·활용 승인과 OpenDART 키를 준비해 날짜별 PIT·가격·기업행사 원본을 수집한다',
-  eta: '외부 키·승인 대기 / 확보 후 G2 1~2일 / G3 재실행 2~4시간',
+  stage: 'V1_29_DEV_CUSTODY_REPRODUCTION_AUTHORITY_BLOCKED',
+  nextAction: '서명된 reviewer trust root·검토자 key·raw-to-normalized extraction receipt를 구현한 뒤 PIT·가격 원천을 재감사하고 Fresh OOS를 20~60거래일 축적한다',
+  eta: '외부 원천 확보·검토 1~3일 / Fresh OOS 표본 축적 4~12주 / 판정 실행 2~4시간 / 사람 승인 별도',
   freshOos: 'NOT_RUN_NO_READ',
   liveTrading: 'BLOCKED',
-  authority: 'REVIEWED_SNAPSHOT',
-  reviewedRun: 'DAILY_CLOSE_OFFLINE_RL_G2_PIT_AUTHORITY_AUDIT_V1',
-  reviewedEvidenceManifest: 'LOCAL_AUTHORITY_20_CODES_19_STABLE_1_EXCLUDED_EXTERNAL_BLOCKED',
+  authority: 'BOUND_LOCAL_AUDIT_BLOCKED',
+  reviewedRun: 'DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_002',
+  reviewedEvidenceManifest: 'POST_HOC_REPRO_002_D0_BLOCKED_D1_0_OF_28182_TEST_FEATURES_CONSUMED_REWARDS_SEALED',
 };

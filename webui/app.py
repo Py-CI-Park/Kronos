@@ -2729,7 +2729,7 @@ def _create_v6_platform_blueprint():
     try:
         from .v6_platform_api import create_v6_platform_blueprint
     except ImportError:
-        from v6_platform_api import create_v6_platform_blueprint
+        from webui.v6_platform_api import create_v6_platform_blueprint
     return create_v6_platform_blueprint()
 
 
@@ -2737,7 +2737,7 @@ def _create_v6_insight_blueprint():
     try:
         from .v6_insight_api import create_v6_insight_blueprint
     except ImportError:
-        from v6_insight_api import create_v6_insight_blueprint
+        from webui.v6_insight_api import create_v6_insight_blueprint
     return create_v6_insight_blueprint()
 
 
@@ -2745,15 +2745,21 @@ def _create_v6_research_blueprint():
     try:
         from .v6_research_api import create_v6_research_blueprint
     except ImportError:
-        from v6_research_api import create_v6_research_blueprint
-    return create_v6_research_blueprint()
+        from webui.v6_research_api import create_v6_research_blueprint
+    configured_root = os.environ.get("KRONOS_V6_RESEARCH_RUNS_ROOT", "").strip()
+    if not configured_root:
+        return create_v6_research_blueprint()
+    runs_root = Path(configured_root).expanduser().resolve(strict=True)
+    if not runs_root.is_dir():
+        raise RuntimeError("KRONOS_V6_RESEARCH_RUNS_ROOT must be a directory")
+    return create_v6_research_blueprint(runs_root=runs_root)
 
 
 def _create_v6_telemetry_blueprint():
     try:
         from .v6_telemetry_api import create_v6_telemetry_blueprint
     except ImportError:
-        from v6_telemetry_api import create_v6_telemetry_blueprint
+        from webui.v6_telemetry_api import create_v6_telemetry_blueprint
     return create_v6_telemetry_blueprint()
 
 
@@ -2761,7 +2767,7 @@ def _create_v6_governance_blueprint():
     try:
         from .v6_governance_api import create_v6_governance_blueprint
     except ImportError:
-        from v6_governance_api import create_v6_governance_blueprint
+        from webui.v6_governance_api import create_v6_governance_blueprint
     return create_v6_governance_blueprint()
 
 

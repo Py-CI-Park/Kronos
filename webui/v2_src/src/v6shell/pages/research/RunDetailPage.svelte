@@ -9,6 +9,7 @@
   import ActionTimeline from '../live/ActionTimeline.svelte';
   import TelemetryCharts from '../live/TelemetryCharts.svelte';
   import ObservedOutcomeCharts from './ObservedOutcomeCharts.svelte';
+  import { runStatusLabel, runStatusTone } from '../../runStatusModel';
 
   interface Props {
     readonly runId: string;
@@ -21,9 +22,15 @@
   let telemetryReason = $state<string | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  const historicalTestContaminated = $derived(
+    detail?.run.status.includes('TEST_FEATURES_CONSUMED')
+    || detail?.run.status === 'REPRODUCTION_ONLY_VALIDATION_CONSUMED'
+    || detail?.run.status === 'REPRODUCTION_MISMATCH_VALIDATION_CONSUMED'
+    || runId.endsWith('DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001'),
+  );
 
   const kpis = $derived([
-    { label: '판정', value: detail?.run.status ?? 'MISSING', detail: '관측된 상태 원문', tone: detail?.run.status.includes('NO') ? 'danger' as const : 'neutral' as const },
+    { label: '판정', value: runStatusLabel(detail?.run.status), detail: detail?.run.status ?? 'MISSING', tone: runStatusTone(detail?.run.status) },
     { label: '알고리즘', value: detail?.run.algorithm ?? 'MISSING', detail: 'summary metadata', tone: 'neutral' as const },
     { label: '산출물', value: String(detail?.artifacts.length ?? 0), detail: '직접 증거 + bounded 모델 metadata', tone: 'neutral' as const },
     { label: '결과 시각화', value: telemetry || detail?.observed_outcome.series.length ? 'AVAILABLE' : 'MISSING', detail: telemetry ? `${telemetry.points.length} telemetry point` : `${detail?.observed_outcome.series.length ?? 0} summary row`, tone: telemetry || detail?.observed_outcome.series.length ? 'neutral' as const : 'warning' as const },
@@ -53,6 +60,7 @@
   <KpiStrip items={kpis} />
   {#if error}<p class="error">{error}</p>{/if}
   {#if detail}
+    {#if historicalTestContaminated}<aside class="known-limitation" role="alert"><strong>KNOWN LIMITATION · HISTORICAL TEST CONTAMINATED</strong><span>이 실행은 historical TEST 후보 점수·상태 feature를 파싱했습니다. reward·가격·체결·행동 평가는 미열람이지만 historical TEST는 독립 OOS가 아닙니다. 경제 판정은 Fresh OOS만 사용합니다.</span></aside>{/if}
     <ResearchPanel title="직접 관측 결과 요약" description="summary 원문의 판정 이유와 허용된 숫자만 읽어 정책·split별 손익·비용·reward를 시각화합니다.">
       <ObservedOutcomeCharts outcome={detail.observed_outcome} />
     </ResearchPanel>
@@ -80,6 +88,7 @@
 </div>
 
 <style>
+  .known-limitation{display:flex;flex-direction:column;gap:5px;border:1px solid var(--danger);border-radius:10px;padding:12px 14px;background:var(--surface-raised)}.known-limitation strong{color:var(--danger);font:900 .68rem var(--font-mono)}.known-limitation span{color:var(--fg);font-size:.72rem}
   .detail{display:flex;flex-direction:column;gap:16px;min-width:0}.back{align-self:flex-start;border:0;background:transparent;color:var(--accent-strong);font-weight:800;cursor:pointer}.result-stack{display:flex;flex-direction:column;gap:12px}.missing-result{border:1px dashed var(--warn);border-radius:10px;padding:18px;background:var(--surface-sunken)}.missing-result strong{color:var(--warn);font:900 .68rem var(--font-mono)}.missing-result p{margin:6px 0;color:var(--fg);font-size:.74rem}.missing-result small{color:var(--muted)}.grid{display:grid;grid-template-columns:minmax(280px,.85fr) minmax(0,1.4fr);gap:16px;min-width:0}dl{display:grid;gap:10px;margin:0}dl div{min-width:0;border-bottom:1px solid var(--border);padding-bottom:8px}dt{color:var(--dim);font:700 .58rem var(--font-mono)}dd{margin:4px 0 0;color:var(--fg);font-size:.74rem;overflow-wrap:anywhere}code{font-family:var(--font-mono);overflow-wrap:anywhere}.artifacts{display:grid;gap:8px;margin-top:12px}.artifacts article{min-width:0;display:grid;grid-template-columns:minmax(150px,1fr) minmax(220px,1.5fr) auto;gap:6px 12px;border:1px solid var(--border);border-radius:9px;padding:10px;background:var(--surface-sunken)}.artifacts strong,.artifacts code{min-width:0;overflow-wrap:anywhere}.artifacts code{color:var(--muted);font-size:.65rem}.artifacts span{color:var(--fg);font:.65rem var(--font-mono)}.artifacts small{grid-column:1/-1;color:var(--dim)}.error{border:1px solid var(--danger);padding:12px;color:var(--danger)}
   @media(max-width:900px){.grid{grid-template-columns:1fr}}
   @media(max-width:620px){.artifacts article{grid-template-columns:1fr}.artifacts small{grid-column:auto}}

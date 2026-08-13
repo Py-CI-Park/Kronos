@@ -1,4 +1,5 @@
 """HTTP contract coverage for the lightweight V6 research API."""
+
 from __future__ import annotations
 
 import json
@@ -54,7 +55,9 @@ def client(research_root: Path):
         yield test_client
 
 
-def test_summary_is_lightweight_and_separates_program_from_economic_score(client) -> None:
+def test_summary_is_lightweight_and_separates_program_from_economic_score(
+    client,
+) -> None:
     # Given / When
     response = client.get("/api/v6/summary")
     payload = response.get_json()
@@ -63,7 +66,7 @@ def test_summary_is_lightweight_and_separates_program_from_economic_score(client
     assert response.status_code == 200
     assert payload["schema_version"] == "kronos_v6_research_summary.v1"
     assert payload["program"] == {
-        "maturity_score": 70,
+        "maturity_score": 71,
         "implementation_score": 94,
         "economic_model_score": 20,
         "live_readiness_score": 0,
@@ -74,14 +77,19 @@ def test_summary_is_lightweight_and_separates_program_from_economic_score(client
 
 def test_catalog_filters_and_exposes_permanent_detail_url(client) -> None:
     # Given / When
-    response = client.get("/api/v6/research-runs?lane=daily_close&status=NO_GO&page=1&page_size=20")
+    response = client.get(
+        "/api/v6/research-runs?lane=daily_close&status=NO_GO&page=1&page_size=20"
+    )
     payload = response.get_json()
 
     # Then
     assert response.status_code == 200
     assert payload["total"] == 1
     assert payload["items"][0]["run_id"] == "daily_close_cql_seed0"
-    assert payload["items"][0]["detail_url"] == "/api/v6/research-runs/daily_close_cql_seed0"
+    assert (
+        payload["items"][0]["detail_url"]
+        == "/api/v6/research-runs/daily_close_cql_seed0"
+    )
 
 
 def test_run_detail_lists_bounded_artifacts_without_opening_them(client) -> None:
@@ -98,7 +106,9 @@ def test_run_detail_lists_bounded_artifacts_without_opening_them(client) -> None
         "daily_close_cql_seed0/rl_live_summary.json",
     ]
     assert all("content" not in artifact for artifact in payload["artifacts"])
-    assert payload["evidence_scope"] == "DIRECT_EVIDENCE_AND_BOUNDED_MODEL_METADATA_ONLY"
+    assert (
+        payload["evidence_scope"] == "DIRECT_EVIDENCE_AND_BOUNDED_MODEL_METADATA_ONLY"
+    )
 
 
 def test_run_detail_exposes_bounded_observed_outcome_for_visualization(client) -> None:
@@ -109,7 +119,10 @@ def test_run_detail_exposes_bounded_observed_outcome_for_visualization(client) -
     # Then
     assert outcome["scope"] == "DIRECT_SUMMARY_NUMERIC_ONLY"
     assert outcome["headline"] == "비용 후 검증 손익이 기준선을 넘지 못했습니다."
-    assert outcome["reasons"] == ["validation net PnL below zero", "shuffle gap too small"]
+    assert outcome["reasons"] == [
+        "validation net PnL below zero",
+        "shuffle gap too small",
+    ]
     assert outcome["series"] == [
         {
             "label": "cql_binary_controller",
@@ -123,7 +136,9 @@ def test_run_detail_exposes_bounded_observed_outcome_for_visualization(client) -
     ]
 
 
-def test_research_api_fails_closed_for_invalid_queries_methods_and_paths(client) -> None:
+def test_research_api_fails_closed_for_invalid_queries_methods_and_paths(
+    client,
+) -> None:
     # Given / When / Then
     assert client.get("/api/v6/research-runs?page=0").status_code == 400
     assert client.get("/api/v6/research-runs?page_size=1000").status_code == 400
@@ -148,7 +163,9 @@ def test_official_dashboard_registers_the_research_catalog_routes() -> None:
     assert "/api/v6/research-runs/<path:run_id>" in routes
 
 
-def test_summary_catalog_and_detail_share_one_warmed_snapshot(monkeypatch, research_root: Path) -> None:
+def test_summary_catalog_and_detail_share_one_warmed_snapshot(
+    monkeypatch, research_root: Path
+) -> None:
     # Given
     calls = 0
     now = [0.0]
@@ -161,14 +178,19 @@ def test_summary_catalog_and_detail_share_one_warmed_snapshot(monkeypatch, resea
 
     monkeypatch.setattr(v6_research_api, "discover_runs", counted)
     app = Flask(__name__)
-    app.register_blueprint(create_v6_research_blueprint(runs_root=research_root, clock=lambda: now[0]))
+    app.register_blueprint(
+        create_v6_research_blueprint(runs_root=research_root, clock=lambda: now[0])
+    )
     now[0] = 10.0
 
     # When
     with app.test_client() as test_client:
         assert test_client.get("/api/v6/summary").status_code == 200
         assert test_client.get("/api/v6/research-runs").status_code == 200
-        assert test_client.get("/api/v6/research-runs/daily_close_cql_seed0").status_code == 200
+        assert (
+            test_client.get("/api/v6/research-runs/daily_close_cql_seed0").status_code
+            == 200
+        )
 
     # Then
     assert calls == 1

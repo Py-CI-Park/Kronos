@@ -18,7 +18,7 @@ test('telemetry schemas preserve follow mode sampling and metric points', () => 
     event_bytes: 2048,
     invalid_lines: 0,
     updated_at: '2026-08-05T00:00:00Z',
-    points: [{ step: 7, phase: 'train', reward: 0.1, equity: 1.02, loss: null, exploration: 0.5, action_name: 'buy', timestamp: '2026-08-05T00:00:00Z' }],
+    points: [{ step: 7, phase: 'train', reward: 0.1, equity: 1.02, loss: null, exploration: 0.5, action_name: 'buy', timestamp: '2026-08-05T00:00:00Z', telemetry_live_stream: false, telemetry_producer_state: null }],
     claims: { live_stream: false, profitability: false },
   });
 

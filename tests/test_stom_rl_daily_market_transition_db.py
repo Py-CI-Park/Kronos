@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import os
 import sqlite3
+from contextlib import closing
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-from stom_rl.daily_market_transition_contract import DailyMarketScore, build_market_state
+from stom_rl.daily_market_transition_contract import (
+    DailyMarketScore,
+    build_market_state,
+)
 from stom_rl.daily_market_transition_db import load_daily_market_candidates
 
 
@@ -17,7 +22,7 @@ def _database(
     omit_exit_for_second: bool = False,
     zero_entry_for_first: bool = False,
 ) -> Path:
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         for table, base in (("A000020", 100), ("A000040", 200)):
             _ = connection.execute(
                 f'CREATE TABLE "{table}" (date INTEGER, open REAL, high REAL, low REAL, close REAL, volume REAL)'
@@ -31,18 +36,27 @@ def _database(
                 _ = rows.pop()
             if zero_entry_for_first and table == "A000020":
                 rows[1] = (20260105, 0, base + 10, base + 10, base + 10, 1_100)
-            _ = connection.executemany(f'INSERT INTO "{table}" VALUES (?, ?, ?, ?, ?, ?)', rows)
+            _ = connection.executemany(
+                f'INSERT INTO "{table}" VALUES (?, ?, ?, ?, ?, ?)', rows
+            )
+        connection.commit()
     return path
 
 
 def _scores() -> list[DailyMarketScore]:
     return [
-        DailyMarketScore(decision_date=date(2026, 1, 2), code="000020", score=0.9, split="TRAIN"),
-        DailyMarketScore(decision_date=date(2026, 1, 2), code="000040", score=0.8, split="TRAIN"),
+        DailyMarketScore(
+            decision_date=date(2026, 1, 2), code="000020", score=0.9, split="TRAIN"
+        ),
+        DailyMarketScore(
+            decision_date=date(2026, 1, 2), code="000040", score=0.8, split="TRAIN"
+        ),
     ]
 
 
-def test_db_adapter_loads_exact_next_two_opens_without_changing_state_identity(tmp_path: Path) -> None:
+def test_db_adapter_loads_exact_next_two_opens_without_changing_state_identity(
+    tmp_path: Path,
+) -> None:
     scores = _scores()
     before = build_market_state(
         scores,
@@ -51,7 +65,9 @@ def test_db_adapter_loads_exact_next_two_opens_without_changing_state_identity(t
         previous_drawdown=Decimal("0"),
     )
 
-    batch = load_daily_market_candidates(scores, db_path=_database(tmp_path / "daily.db"))
+    batch = load_daily_market_candidates(
+        scores, db_path=_database(tmp_path / "daily.db")
+    )
     after = build_market_state(
         batch.candidates,
         feature_vector=(0.1, 0.2),
@@ -71,7 +87,9 @@ def test_db_adapter_loads_exact_next_two_opens_without_changing_state_identity(t
     assert len(batch.split_hash) == 64
 
 
-def test_db_adapter_fails_the_whole_transition_instead_of_future_filtering(tmp_path: Path) -> None:
+def test_db_adapter_fails_the_whole_transition_instead_of_future_filtering(
+    tmp_path: Path,
+) -> None:
     db_path = _database(tmp_path / "missing.db", omit_exit_for_second=True)
 
     with pytest.raises(ValueError, match="000040.*MISSING_EXIT_OPEN"):
@@ -89,8 +107,9 @@ def test_future_price_change_does_not_change_state_hash(tmp_path: Path) -> None:
     scores = _scores()
     first_db = _database(tmp_path / "first.db")
     second_db = _database(tmp_path / "second.db")
-    with sqlite3.connect(second_db) as connection:
+    with closing(sqlite3.connect(second_db)) as connection:
         _ = connection.execute('UPDATE "A000020" SET open = 999 WHERE date = 20260106')
+        connection.commit()
     first = load_daily_market_candidates(scores, db_path=first_db)
     second = load_daily_market_candidates(scores, db_path=second_db)
 
@@ -109,3 +128,14 @@ def test_future_price_change_does_not_change_state_hash(tmp_path: Path) -> None:
 
     assert first_state.state_hash == second_state.state_hash
     assert first.candidates[0].exit_open_krw != second.candidates[0].exit_open_krw
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows file-handle semantics")
+def test_db_adapter_closes_snapshot_handle_before_return(tmp_path: Path) -> None:
+    db_path = _database(tmp_path / "ephemeral.db")
+
+    for _ in range(5):
+        _ = load_daily_market_candidates(_scores(), db_path=db_path)
+
+    db_path.unlink()
+    assert not db_path.exists()

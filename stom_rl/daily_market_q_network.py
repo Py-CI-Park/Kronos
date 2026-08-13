@@ -70,7 +70,9 @@ class MarketQNetwork:
         """Initialize deterministic He-scaled weights and zero biases."""
         first, second = hidden_dimensions
         return cls(
-            generator.normal(0.0, math.sqrt(2.0 / input_dimension), (input_dimension, first)),
+            generator.normal(
+                0.0, math.sqrt(2.0 / input_dimension), (input_dimension, first)
+            ),
             np.zeros(first, dtype=np.float64),
             generator.normal(0.0, math.sqrt(2.0 / first), (first, second)),
             np.zeros(second, dtype=np.float64),
@@ -104,20 +106,28 @@ class MarketQNetwork:
         second_pre = first_hidden @ self.second_weight + self.second_bias
         second_hidden = np.maximum(second_pre, 0.0)
         q_values = second_hidden @ self.output_weight + self.output_bias
-        return NetworkForward(states, first_pre, first_hidden, second_pre, second_hidden, q_values)
+        return NetworkForward(
+            states, first_pre, first_hidden, second_pre, second_hidden, q_values
+        )
 
     def predict(self, states: FloatArray) -> FloatArray:
         return self.forward(states).q_values
 
-    def gradients(self, forward: NetworkForward, q_gradient: FloatArray) -> NetworkGradients:
+    def gradients(
+        self, forward: NetworkForward, q_gradient: FloatArray
+    ) -> NetworkGradients:
         output_weight = forward.second_hidden.T @ q_gradient
         output_bias = _sum_rows(q_gradient)
         second_hidden_gradient = q_gradient @ self.output_weight.T
-        second_pre_gradient = second_hidden_gradient * (forward.second_pre_activation > 0.0)
+        second_pre_gradient = second_hidden_gradient * (
+            forward.second_pre_activation > 0.0
+        )
         second_weight = forward.first_hidden.T @ second_pre_gradient
         second_bias = _sum_rows(second_pre_gradient)
         first_hidden_gradient = second_pre_gradient @ self.second_weight.T
-        first_pre_gradient = first_hidden_gradient * (forward.first_pre_activation > 0.0)
+        first_pre_gradient = first_hidden_gradient * (
+            forward.first_pre_activation > 0.0
+        )
         return NetworkGradients(
             first_weight=forward.states.T @ first_pre_gradient,
             first_bias=_sum_rows(first_pre_gradient),
@@ -142,21 +152,27 @@ def q_loss_and_gradients(
     observed = forward.q_values[rows, actions]
     difference = observed - targets
     absolute = np.abs(difference)
-    temporal = float(np.mean(np.where(absolute <= 1.0, 0.5 * difference**2, absolute - 0.5)))
-    observed_gradient = np.where(absolute <= 1.0, difference, np.sign(difference)) / actions.size
-    cash_values: FloatArray = forward.q_values @ np.asarray((1.0, 0.0), dtype=np.float64)
-    invest_values: FloatArray = forward.q_values @ np.asarray((0.0, 1.0), dtype=np.float64)
-    row_max_vector: FloatArray = np.maximum(cash_values, invest_values)
+    temporal = float(
+        np.mean(np.where(absolute <= 1.0, 0.5 * difference**2, absolute - 0.5))
+    )
+    observed_gradient = (
+        np.where(absolute <= 1.0, difference, np.sign(difference)) / actions.size
+    )
+    row_max_vector: FloatArray = np.asarray(
+        np.max(forward.q_values, axis=1),
+        dtype=np.float64,
+    )
     row_max: FloatArray = np.reshape(row_max_vector, (-1, 1))
     shifted: FloatArray = forward.q_values - row_max
     exponentials: FloatArray = np.exp(shifted)
-    exponential_sum: FloatArray = exponentials @ np.ones((2, 1), dtype=np.float64)
-    probabilities: FloatArray = exponentials / exponential_sum
-    exponential_sum_vector: FloatArray = exponential_sum @ np.ones(1, dtype=np.float64)
-    logsumexp: FloatArray = row_max_vector + np.log(exponential_sum_vector)
-    conservative = float(
-        (np.ones(actions.size, dtype=np.float64) @ (logsumexp - observed)) / actions.size
+    exponential_sum: FloatArray = np.asarray(
+        np.sum(exponentials, axis=1, keepdims=True),
+        dtype=np.float64,
     )
+    probabilities: FloatArray = exponentials / exponential_sum
+    exponential_sum_vector: FloatArray = np.reshape(exponential_sum, (-1,))
+    logsumexp: FloatArray = row_max_vector + np.log(exponential_sum_vector)
+    conservative = float(np.mean(logsumexp - observed))
     q_gradient: FloatArray = probabilities * (cql_alpha / actions.size)
     q_gradient[rows, actions] += observed_gradient - (cql_alpha / actions.size)
     loss = float(temporal + cql_alpha * conservative)
@@ -170,11 +186,17 @@ class AdamOptimizer:
     """Stateful Adam updater whose mutation is limited to model optimization."""
 
     def __init__(self, network: MarketQNetwork) -> None:
-        self.first = NetworkGradients(*(np.zeros_like(value) for value in _parameters(network)))
-        self.second = NetworkGradients(*(np.zeros_like(value) for value in _parameters(network)))
+        self.first = NetworkGradients(
+            *(np.zeros_like(value) for value in _parameters(network))
+        )
+        self.second = NetworkGradients(
+            *(np.zeros_like(value) for value in _parameters(network))
+        )
         self.step_count = 0
 
-    def step(self, network: MarketQNetwork, gradients: NetworkGradients, learning_rate: float) -> None:
+    def step(
+        self, network: MarketQNetwork, gradients: NetworkGradients, learning_rate: float
+    ) -> None:
         self.step_count += 1
         updated_parameters: list[FloatArray] = []
         next_first: list[FloatArray] = []
@@ -191,7 +213,8 @@ class AdamOptimizer:
             corrected_first = first_value / (1.0 - 0.9**self.step_count)
             corrected_second = second_value / (1.0 - 0.999**self.step_count)
             updated_parameters.append(
-                parameter - learning_rate * corrected_first / (np.sqrt(corrected_second) + 1e-8)
+                parameter
+                - learning_rate * corrected_first / (np.sqrt(corrected_second) + 1e-8)
             )
             next_first.append(first_value)
             next_second.append(second_value)
@@ -212,7 +235,7 @@ def _parameters(network: MarketQNetwork) -> tuple[FloatArray, ...]:
 
 
 def _sum_rows(values: FloatArray) -> FloatArray:
-    return np.ones(values.shape[0], dtype=np.float64) @ values
+    return np.asarray(np.sum(values, axis=0), dtype=np.float64)
 
 
 def _gradients(gradients: NetworkGradients) -> tuple[FloatArray, ...]:
