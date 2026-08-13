@@ -80,5 +80,5 @@ navigation들에서 console/page error를 보고하지 않았다.
 
 검사 가능한 session transcript는
 `.omx/artifacts/v1.29.0-dev-market-authority/browser-qa-20260813.json`이며
-SHA-256은 `fb79051ece3b452524ae5964b4a4a72a6d16068e6870c93891184c79cad6d2f4`다.
+SHA-256은 `c510e830037afad4862dc53c1108dfe37398901527161901bd1377950caf485e`다.
 이 생성 QA evidence는 Git에 넣지 않았다.
