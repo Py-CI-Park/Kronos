@@ -2746,7 +2746,13 @@ def _create_v6_research_blueprint():
         from .v6_research_api import create_v6_research_blueprint
     except ImportError:
         from webui.v6_research_api import create_v6_research_blueprint
-    return create_v6_research_blueprint()
+    configured_root = os.environ.get("KRONOS_V6_RESEARCH_RUNS_ROOT", "").strip()
+    if not configured_root:
+        return create_v6_research_blueprint()
+    runs_root = Path(configured_root).expanduser().resolve(strict=True)
+    if not runs_root.is_dir():
+        raise RuntimeError("KRONOS_V6_RESEARCH_RUNS_ROOT must be a directory")
+    return create_v6_research_blueprint(runs_root=runs_root)
 
 
 def _create_v6_telemetry_blueprint():

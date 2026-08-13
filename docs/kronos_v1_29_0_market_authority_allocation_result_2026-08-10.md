@@ -54,3 +54,20 @@ authority receipt와 summary, allocation validation receipt, 14-file manifest, 1
 - D0/D1을 해시 존재만으로 `VERIFIED`로 바꾸지 않는다.
 - paper/live/broker 주문 또는 자동 승격을 하지 않는다.
 - 002 exact match를 수익성·live readiness·경제 모델 점수 상승으로 해석하지 않는다.
+
+## 5. 2026-08-13 대시보드 QA
+
+Flask는 `KRONOS_V6_RESEARCH_RUNS_ROOT`로 canonical `webui/rl_runs`를 read-only
+catalog root로 받도록 재시작했다. API는 allocation 002
+`REPRODUCTION_ONLY_VALIDATION_CONSUMED`와 authority 002 `BLOCKED_DATA_AUTHORITY`를
+각각 실제 run identity로 반환했다. Vite 최종 bundle은
+`index-QdNxgJi0.js`이며, bundle diff의 trailing whitespace를 제거해
+`git diff --check 929fc47^..HEAD`를 통과시켰다.
+
+1440×1000 Chromium에서 통합 현황, 연구 라이브러리, 실시간 학습, 평가·비교,
+데이터·증거, 모델·산출물, 보고서·거버넌스, 설정 URL을 매 navigation 뒤 새
+page observation으로 확인했다. 각 확인 viewport에는 horizontal overflow가 없었다.
+연구 library의 deterministic source test는 002 exact/mismatch
+상태 모두 `HISTORICAL TEST CONTAMINATED` danger warning과 Fresh OOS-only 문구를
+요구한다. canonical artifact receipt는 exact 002 identity, 10 checkpoint, 14-file
+manifest, D0/D1 BLOCKED, economic 20/100, live 0/100을 유지한다.

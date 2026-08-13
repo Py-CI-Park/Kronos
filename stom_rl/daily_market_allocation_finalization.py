@@ -67,7 +67,7 @@ def finalize_allocation_screen(
     lineage: AllocationLineageEvidence,
     reference_receipt: AllocationExperimentReceipt,
 ) -> AllocationExperimentExecution:
-    """Freeze model/validation evidence while keeping TEST and Fresh OOS sealed."""
+    """Freeze evidence while disclosing contaminated TEST features and unread Fresh OOS."""
     gate = evaluate_allocation_validation_gate(
         _outcomes(trained, AllocationAlgorithm.DQN),
         _outcomes(trained, AllocationAlgorithm.CQL),

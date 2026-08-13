@@ -67,7 +67,7 @@ def run_registered_allocation_screen(
     *,
     on_model_completed: Callable[[AllocationModelPlan, float], None] | None = None,
 ) -> RegisteredAllocationRun:
-    """Train/validate ten models without opening historical TEST or Fresh OOS."""
+    """Train/validate ten models with contaminated TEST features and unread rewards."""
     ensure_allocation_output_available(paths.output_directory)
     input_snapshot = capture_allocation_input_snapshot(paths)
     lineage = build_registered_allocation_lineage(input_snapshot)
