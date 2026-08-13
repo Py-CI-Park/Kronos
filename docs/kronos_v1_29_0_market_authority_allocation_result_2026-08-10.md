@@ -14,7 +14,7 @@
 
 D0 가격 기준과 D1 시점별 종목군은 signed reviewer trust root·공식 원본에서 정규화 입력으로 이어지는 extraction receipt가 없으므로 계속 `BLOCKED`다. Fresh OOS는 상태·행동·reward 모두 미열람이며, 다음 유일한 독립 경제 증거 후보다.
 
-002는 새 성능 검증이 아니라 같은 오염 경계를 보존한 코드·입력·설정·산출물 결정성 검사다. `DAILY_MARKET_AUTHORITY_2026_08_10_002`와 `DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_002`는 이 문서 갱신 시점에 아직 실행하지 않았다. 아래 표의 결과 칸은 실행 전 구조이며 결과를 미리 주장하지 않는다.
+002는 새 성능 검증이 아니라 같은 오염 경계를 보존한 코드·입력·설정·산출물 결정성 검사다. 2026-08-13 KST에 canonical root `D:/Chanil_Park/Project/Programming/Kronos`에서 authority 다음 allocation 순서로 한 번씩 실행했다. 002 exact match는 보관된 001 evidence의 결정성만 확인하며 경제 점수와 live readiness를 바꾸지 않는다.
 
 | 질문 | 확인된 답 |
 |---|---|
@@ -38,13 +38,14 @@ D0 가격 기준과 D1 시점별 종목군은 signed reviewer trust root·공식
 | 확인 항목 | authority 002 | allocation 002 |
 |---|---|---|
 | 실행 ID | `DAILY_MARKET_AUTHORITY_2026_08_10_002` | `DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_002` |
-| 실행 상태 | 실행 전 | 실행 전 |
-| 예상 판정 범위 | D0/D1 `BLOCKED` 또는 signed review가 갖춰진 경우에만 verified | `REPRODUCTION_ONLY_VALIDATION_CONSUMED` 또는 `REPRODUCTION_MISMATCH_VALIDATION_CONSUMED` |
-| historical TEST disclosure | score/state feature parsed; rewards/prices/action evaluation not read; contaminated | 같은 경계의 post-hoc reproduction |
-| Fresh OOS | 미열람 | 미열람 |
+| 실행 상태 | `BLOCKED_DATA_AUTHORITY` | `REPRODUCTION_ONLY_VALIDATION_CONSUMED` |
+| D0/D1 | 모두 `BLOCKED` | authority receipt의 `BLOCKED`를 결속 |
+| historical TEST disclosure | score/state feature parsed; rewards/prices/action evaluation not read; contaminated | score/state feature consumed; rewards/prices/action evaluation not read; contaminated |
+| Fresh OOS | 미열람 (`false`) | 미열람 (`NOT_RUN_NO_READ`) |
+| 검산 | receipt·summary immutable 생성 | 10 checkpoint, 14-file manifest, 001 receipt SHA/evidence digest exact match |
 | 경제 해석 | 권위 custody 검사 | 새 경제 검증 아님 |
 
-실행 후에는 authority receipt/summary, allocation validation receipt, 14-file manifest, 10 checkpoints, 001 receipt SHA와 canonical 10모델·checkpoint·gate 지문 비교 결과만으로 표를 채운다. exact match여도 economic score 20/100과 live readiness 0/100은 변경하지 않는다. mismatch면 재현 실패로 차단하며 동일 ID를 다시 실행하지 않는다.
+authority receipt와 summary, allocation validation receipt, 14-file manifest, 10 checkpoints를 생성했다. allocation의 001 reference receipt SHA는 `6dfb4d6703af6f0d26b18b00feb85fc17c8bb2ffc7e2b866296d9d5468cdd09d`이고 reference/observed evidence digest는 모두 `751b82d9f67c2df08c8cf8062320f35b842d0980ba785088b81448b30f1fee0b`로 exact match다. economic score 20/100과 live readiness 0/100은 변경하지 않는다. mismatch였으면 재현 실패로 차단하고 동일 ID를 다시 실행하지 않았어야 한다.
 
 ## 4. 계속 차단되는 행동
 
