@@ -84,7 +84,9 @@ class AuthorityCompletionEvent(BaseModel):
     d1_universe: Literal["VERIFIED", "BLOCKED"]
     summary_path: str
     receipt_path: str
-    historical_test_read: Literal[False]
+    historical_test_state: Literal[
+        "FEATURES_PARSED_REWARDS_PRICES_ACTION_EVALUATION_NOT_READ_CONTAMINATED"
+    ]
     fresh_oos_read: Literal[False]
     promotion_allowed: Literal[False]
 
@@ -134,7 +136,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             d1_universe=result.receipt.d1_universe.state,
             summary_path=str(result.artifacts.summary.resolve()),
             receipt_path=str(result.artifacts.receipt.resolve()),
-            historical_test_read=False,
+            historical_test_state=result.receipt.historical_test_state,
             fresh_oos_read=False,
             promotion_allowed=False,
         ).model_dump_json(),

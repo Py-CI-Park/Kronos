@@ -52,6 +52,9 @@ class AuthorityDashboardSummary(BaseModel):
     primary_headline: str
     reasons: tuple[str, ...]
     summary: tuple[AuthorityDashboardRow, ...]
+    historical_test_state: Literal[
+        "FEATURES_PARSED_REWARDS_PRICES_ACTION_EVALUATION_NOT_READ_CONTAMINATED"
+    ]
     promotion_allowed: Literal[False]
     fresh_oos_read: Literal[False]
 
@@ -106,6 +109,7 @@ def build_authority_dashboard_summary(
                 coverage_percent=receipt.d1_universe.coverage_percent,
             ),
         ),
+        historical_test_state=receipt.historical_test_state,
         promotion_allowed=False,
         fresh_oos_read=False,
     )

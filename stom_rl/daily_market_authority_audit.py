@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from .daily_market_authority_bound_sources import (
+    bound_candidate_pairs,
+    bound_current_metadata,
+    bound_pit_records,
+    bound_price_provenance,
+)
 from .daily_market_authority_contract import (
     AuthorityCheck,
     AuthorityInputBinding,
@@ -13,19 +19,9 @@ from .daily_market_authority_contract import (
     PriceBasisAuthority,
     UniverseAuthority,
 )
-from .daily_market_authority_bound_sources import (
-    bound_candidate_pairs,
-    bound_current_metadata,
-    bound_pit_records,
-    bound_price_provenance,
-)
 from .daily_market_authority_snapshot import (
     AuthorityDatabaseSnapshots,
     immutable_authority_database_snapshots,
-)
-from .daily_market_stockinfo_authority import (
-    StockinfoAuthorityEvidence,
-    observe_stockinfo_authority,
 )
 from .daily_market_authority_sources import (
     covered_pairs,
@@ -33,6 +29,10 @@ from .daily_market_authority_sources import (
     ensure_required_file,
     local_columns,
     resolve_reviewed_source_artifacts,
+)
+from .daily_market_stockinfo_authority import (
+    StockinfoAuthorityEvidence,
+    observe_stockinfo_authority,
 )
 from .daily_ohlcv_db import list_daily_tables
 
@@ -240,7 +240,9 @@ def _audit_database_snapshots(
         d1_universe=d1,
         blockers=blockers,
         source_urls=(KIWOOM_GUIDE_URL, KRX_MARKET_URL, KRX_LISTED_URL),
-        historical_test_read=False,
+        historical_test_state=(
+            "FEATURES_PARSED_REWARDS_PRICES_ACTION_EVALUATION_NOT_READ_CONTAMINATED"
+        ),
         fresh_oos_read=False,
         promotion_allowed=False,
         live_ready=False,

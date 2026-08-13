@@ -7,7 +7,6 @@ from typing import ClassVar, Final, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import override
 
-
 # A content hash proves byte identity, not who reviewed the upstream broker/KRX
 # response.  Keep VERIFIED receipts structurally impossible until a signed
 # reviewer trust root and receipt verifier are implemented.
@@ -162,7 +161,9 @@ class MarketAuthorityReceipt(BaseModel):
     d1_universe: UniverseAuthority
     blockers: tuple[str, ...]
     source_urls: tuple[str, ...]
-    historical_test_read: Literal[False]
+    historical_test_state: Literal[
+        "FEATURES_PARSED_REWARDS_PRICES_ACTION_EVALUATION_NOT_READ_CONTAMINATED"
+    ]
     fresh_oos_read: Literal[False]
     promotion_allowed: Literal[False]
     live_ready: Literal[False]
@@ -222,6 +223,7 @@ class MarketAuthorityReceipt(BaseModel):
 
 
 __all__ = [
+    "SIGNED_SOURCE_REVIEW_SUPPORTED",
     "AuthorityCheck",
     "AuthorityFileIdentity",
     "AuthorityInputBinding",
@@ -231,6 +233,5 @@ __all__ = [
     "PitMembershipRecord",
     "PriceBasisAuthority",
     "PriceProvenanceRecord",
-    "SIGNED_SOURCE_REVIEW_SUPPORTED",
     "UniverseAuthority",
 ]

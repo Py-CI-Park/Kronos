@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from stom_rl.daily_market_authority_artifacts import (
     AuthorityDashboardSummary,
@@ -18,8 +19,6 @@ from stom_rl.daily_market_authority_audit import (
     MarketAuthorityInputs,
     audit_market_authority,
 )
-from pydantic import ValidationError
-
 from stom_rl.daily_market_authority_contract import (
     DailyMarketAuthorityError,
     MarketAuthorityReceipt,
@@ -153,7 +152,9 @@ def test_authority_audit_blocks_missing_price_and_pit_evidence(tmp_path: Path) -
         "D0_PRICE_BASIS_NOT_VERIFIED",
         "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED",
     )
-    assert receipt.historical_test_read is False
+    assert receipt.historical_test_state == (
+        "FEATURES_PARSED_REWARDS_PRICES_ACTION_EVALUATION_NOT_READ_CONTAMINATED"
+    )
     assert receipt.fresh_oos_read is False
 
 
@@ -311,6 +312,7 @@ def test_authority_artifacts_publish_bounded_catalog_summary(tmp_path: Path) -> 
     assert summary.verdict == "BLOCKED_DATA_AUTHORITY"
     assert summary.algorithm == "DATA_AUTHORITY"
     assert summary.dataset_id == receipt.daily_database.sha256
+    assert summary.historical_test_state == receipt.historical_test_state
     assert summary.reasons == (
         "D0_PRICE_BASIS_NOT_VERIFIED",
         "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED",

@@ -3,25 +3,19 @@
 from __future__ import annotations
 
 import hashlib
-import math
-from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
-from stom_rl.daily_market_allocation_contract import AllocationActionName
 from stom_rl.daily_market_allocation_artifacts import (
     write_allocation_artifacts,
 )
-from stom_rl.daily_market_allocation_evaluation import summarize_allocation_steps
 from stom_rl.daily_market_allocation_evaluation_contract import (
     AllocationPolicyMetrics,
     AllocationPolicyTrajectory,
-    AllocationTrajectoryStep,
 )
 from stom_rl.daily_market_allocation_experiment_contract import (
     AllocationExperimentExecution,
     AllocationExperimentReceipt,
-    AllocationModelReceipt,
     LabeledAllocationTrajectory,
 )
 from stom_rl.daily_market_allocation_gate import (
@@ -31,6 +25,7 @@ from stom_rl.daily_market_allocation_gate import (
 from stom_rl.daily_market_allocation_lineage_contract import (
     AllocationInputHash,
     AllocationLineageEvidence,
+    AllocationLineageInputRole,
     AllocationTrainingEvidence,
 )
 from stom_rl.daily_market_allocation_reproduction import (
@@ -39,115 +34,16 @@ from stom_rl.daily_market_allocation_reproduction import (
 )
 from stom_rl.daily_market_allocation_rl_contract import AllocationAlgorithm
 from stom_rl.daily_market_rl_contract import BEHAVIOR_SEEDS
-
-
-def _steps(
-    *,
-    initial_nav_krw: float,
-    final_nav_krw: float,
-    total_cost_krw: float,
-) -> tuple[AllocationTrajectoryStep, ...]:
-    rows: list[AllocationTrajectoryStep] = []
-    actions: tuple[tuple[AllocationActionName, int], ...] = (
-        ("CASH", 0),
-        ("INVEST_TOP3_EQUAL_SLOT", 3),
-        ("INVEST_TOP5_EQUAL_SLOT", 5),
-        ("INVEST_TOP10_EQUAL_SLOT", 10),
-    )
-    previous_nav = initial_nav_krw
-    ratio = math.exp(math.log(final_nav_krw / initial_nav_krw) / 24.0)
-    first_day = date(2026, 1, 1)
-    for index in range(24):
-        action, slots = actions[index % len(actions)]
-        final_nav = (
-            final_nav_krw if index == 23 else initial_nav_krw * ratio ** (index + 1)
-        )
-        decision = first_day + timedelta(days=index * 3)
-        rows.append(
-            AllocationTrajectoryStep(
-                decision_date=decision,
-                entry_date=decision + timedelta(days=1),
-                exit_date=decision + timedelta(days=2),
-                action=action,
-                final_nav_krw=final_nav,
-                deployed_at_entry_krw=float(slots * 5_000_000),
-                total_cost_krw=0.0 if action == "CASH" else total_cost_krw / 18.0,
-                reward_log_nav=math.log(final_nav / previous_nav),
-                drawdown_percent=0.0,
-                filled_slots=slots,
-            )
-        )
-        previous_nav = final_nav
-    return tuple(rows)
-
-
-def _metrics(
-    algorithm: AllocationAlgorithm,
-    seed: int,
-    *,
-    cost_percent: float,
-    return_percent: float,
-) -> AllocationPolicyMetrics:
-    initial = 60_000_000.0
-    pnl = initial * return_percent / 100.0
-    return summarize_allocation_steps(
-        policy=algorithm.value,
-        policy_kind="RL",
-        split="VALIDATION",
-        round_trip_cost_percent=cost_percent,
-        initial_nav_krw=initial,
-        steps=_steps(
-            initial_nav_krw=initial,
-            final_nav_krw=initial + pnl,
-            total_cost_krw=100_000.0 + seed,
-        ),
-    )
-
-
-def _models(payloads: dict[str, bytes]) -> tuple[AllocationModelReceipt, ...]:
-    rows: list[AllocationModelReceipt] = []
-    for algorithm in AllocationAlgorithm:
-        for seed in range(5):
-            relative = f"models/{algorithm.value}/seed-{seed}.kq"
-            payload = f"{algorithm.value}-{seed}".encode()
-            payloads[relative] = payload
-            base_return = (
-                (0.1 + seed * 0.01)
-                if algorithm is AllocationAlgorithm.DQN
-                else (1.0 + seed * 0.1)
-            )
-            stress_return = (
-                0.05 if algorithm is AllocationAlgorithm.DQN else (0.5 + seed * 0.05)
-            )
-            rows.append(
-                AllocationModelReceipt(
-                    algorithm=algorithm,
-                    seed=seed,
-                    loss_first=1.0,
-                    loss_last=0.1,
-                    checkpoint_path=relative,
-                    checkpoint_sha256=hashlib.sha256(payload).hexdigest(),
-                    validation_base=_metrics(
-                        algorithm,
-                        seed,
-                        cost_percent=0.23,
-                        return_percent=base_return,
-                    ),
-                    validation_stress=_metrics(
-                        algorithm,
-                        seed,
-                        cost_percent=0.46,
-                        return_percent=stress_return,
-                    ),
-                )
-            )
-    return tuple(rows)
+from tests.daily_market_allocation_fixture_models import (
+    allocation_models,
+    allocation_steps,
+)
 
 
 def canonical_allocation_receipt(
     payloads: dict[str, bytes],
 ) -> AllocationExperimentReceipt:
-    models = _models(payloads)
+    models = allocation_models(payloads)
     outcomes = {
         algorithm: tuple(
             AllocationSeedOutcome(
@@ -232,6 +128,13 @@ def write_valid_reproduction_bundle(
     reference = AllocationExperimentReceipt.model_validate_json(reference_payload)
     execution = canonical_allocation_execution(directory)
     reference_receipt_sha256 = hashlib.sha256(reference_payload).hexdigest()
+    input_hash_rows: tuple[tuple[AllocationLineageInputRole, str], ...] = (
+        ("CANDIDATE_SCORES", "1" * 64),
+        ("SOURCE_MANIFEST", "2" * 64),
+        ("CAUSAL_PANEL", "3" * 64),
+        ("AUTHORITY_RECEIPT", "4" * 64),
+        ("SOURCE_ALLOCATION_RECEIPT_001", reference_receipt_sha256),
+    )
     lineage = AllocationLineageEvidence(
         evidence_classification="POST_HOC_CUSTODY_REPRODUCTION",
         preregistration_path=(
@@ -242,13 +145,7 @@ def write_valid_reproduction_bundle(
         source_bundle_sha256="f" * 64,
         input_hashes=tuple(
             AllocationInputHash(role=role, sha256=value)
-            for role, value in (
-                ("CANDIDATE_SCORES", "1" * 64),
-                ("SOURCE_MANIFEST", "2" * 64),
-                ("CAUSAL_PANEL", "3" * 64),
-                ("AUTHORITY_RECEIPT", "4" * 64),
-                ("SOURCE_ALLOCATION_RECEIPT_001", reference_receipt_sha256),
-            )
+            for role, value in input_hash_rows
         ),
         training=AllocationTrainingEvidence(
             model_seeds=(0, 1, 2, 3, 4),
@@ -325,7 +222,7 @@ def canonical_allocation_execution(
         for scenario, metrics in scenarios:
             trajectory = AllocationPolicyTrajectory(
                 metrics=metrics,
-                steps=_steps(
+                steps=allocation_steps(
                     initial_nav_krw=metrics.initial_nav_krw,
                     final_nav_krw=metrics.final_nav_krw,
                     total_cost_krw=100_000.0 + model.seed,

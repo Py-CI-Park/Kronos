@@ -22,7 +22,12 @@
   let telemetryReason = $state<string | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  const historicalTestContaminated = $derived(detail?.run.status.includes('TEST_FEATURES_CONSUMED') || runId.endsWith('DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001'));
+  const historicalTestContaminated = $derived(
+    detail?.run.status.includes('TEST_FEATURES_CONSUMED')
+    || detail?.run.status === 'REPRODUCTION_ONLY_VALIDATION_CONSUMED'
+    || detail?.run.status === 'REPRODUCTION_MISMATCH_VALIDATION_CONSUMED'
+    || runId.endsWith('DAILY_MARKET_ALLOCATION_SCREEN_2026_08_10_001'),
+  );
 
   const kpis = $derived([
     { label: '판정', value: runStatusLabel(detail?.run.status), detail: detail?.run.status ?? 'MISSING', tone: runStatusTone(detail?.run.status) },
@@ -55,7 +60,7 @@
   <KpiStrip items={kpis} />
   {#if error}<p class="error">{error}</p>{/if}
   {#if detail}
-    {#if historicalTestContaminated}<aside class="known-limitation" role="alert"><strong>KNOWN LIMITATION · TEST FEATURES CONSUMED</strong><span>이 실행은 historical TEST 후보 점수·상태 feature를 파싱했습니다. reward·체결은 미열람이지만 독립 OOS 자격은 없으며 Fresh OOS만 경제 판정에 사용합니다.</span></aside>{/if}
+    {#if historicalTestContaminated}<aside class="known-limitation" role="alert"><strong>KNOWN LIMITATION · HISTORICAL TEST CONTAMINATED</strong><span>이 실행은 historical TEST 후보 점수·상태 feature를 파싱했습니다. reward·가격·체결·행동 평가는 미열람이지만 historical TEST는 독립 OOS가 아닙니다. 경제 판정은 Fresh OOS만 사용합니다.</span></aside>{/if}
     <ResearchPanel title="직접 관측 결과 요약" description="summary 원문의 판정 이유와 허용된 숫자만 읽어 정책·split별 손익·비용·reward를 시각화합니다.">
       <ObservedOutcomeCharts outcome={detail.observed_outcome} />
     </ResearchPanel>
