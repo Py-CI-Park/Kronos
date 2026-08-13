@@ -77,3 +77,8 @@ Research detail의 canonical allocation 002를 실제로 열었을 때
 `KNOWN LIMITATION · HISTORICAL TEST CONTAMINATED`, reward·가격·체결·행동 평가
 미열람 및 Fresh OOS-only 문구가 보였다. 브라우저 runtime diagnostics는 이
 navigation들에서 console/page error를 보고하지 않았다.
+
+검사 가능한 session transcript는
+`.omx/artifacts/v1.29.0-dev-market-authority/browser-qa-20260813.json`이며
+SHA-256은 `fb79051ece3b452524ae5964b4a4a72a6d16068e6870c93891184c79cad6d2f4`다.
+이 생성 QA evidence는 Git에 넣지 않았다.

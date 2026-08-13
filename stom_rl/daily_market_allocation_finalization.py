@@ -1,4 +1,4 @@
-"""Validation-only allocation screen finalization without TEST access."""
+"""Finalize 002 validation evidence with contaminated TEST features disclosed."""
 
 from __future__ import annotations
 
