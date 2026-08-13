@@ -71,3 +71,9 @@ page observation으로 확인했다. 각 확인 viewport에는 horizontal overfl
 상태 모두 `HISTORICAL TEST CONTAMINATED` danger warning과 Fresh OOS-only 문구를
 요구한다. canonical artifact receipt는 exact 002 identity, 10 checkpoint, 14-file
 manifest, D0/D1 BLOCKED, economic 20/100, live 0/100을 유지한다.
+
+Research detail의 canonical allocation 002를 실제로 열었을 때
+`REPRODUCTION_ONLY_VALIDATION_CONSUMED`, 15 bounded artifacts, CQL identity,
+`KNOWN LIMITATION · HISTORICAL TEST CONTAMINATED`, reward·가격·체결·행동 평가
+미열람 및 Fresh OOS-only 문구가 보였다. 브라우저 runtime diagnostics는 이
+navigation들에서 console/page error를 보고하지 않았다.
