@@ -43,10 +43,20 @@ def _git(*arguments: str) -> str:
     return result.stdout.strip()
 
 
-def _identity(path: Path) -> dict[str, object]:
-    payload = path.read_bytes()
+def _git_bytes(*arguments: str) -> bytes:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+
+
+def _tracked_identity(path: Path, revision: str) -> dict[str, object]:
+    relative = path.relative_to(REPO_ROOT).as_posix()
+    payload = _git_bytes("show", f"{revision}:{relative}")
     return {
-        "path": path.relative_to(REPO_ROOT).as_posix(),
+        "path": relative,
         "size_bytes": len(payload),
         "sha256": hashlib.sha256(payload).hexdigest(),
     }
@@ -88,14 +98,22 @@ def build_manifest() -> dict[str, object]:
         "generated_from_commit_time": _git("show", "-s", "--format=%cI", source_commit),
         "build_command": "npm run build",
         "frontend_source_tree": _git("rev-parse", f"{source_commit}:webui/v2_src"),
-        "build_source": _identity(REPO_ROOT / "webui" / "v2_src" / "vite.config.ts"),
-        "package_lock": _identity(REPO_ROOT / "webui" / "v2_src" / "package-lock.json"),
-        "index": _identity(index),
+        "build_source": _tracked_identity(
+            REPO_ROOT / "webui" / "v2_src" / "vite.config.ts", source_commit
+        ),
+        "package_lock": _tracked_identity(
+            REPO_ROOT / "webui" / "v2_src" / "package-lock.json", source_commit
+        ),
+        "index": _tracked_identity(index, source_commit),
         "referenced_assets": [
-            _identity(DIST_DIR / path) for path in references if path not in missing
+            _tracked_identity(DIST_DIR / path, source_commit)
+            for path in references
+            if path not in missing
         ],
         "tracked_dist_files": [
-            _identity(REPO_ROOT / path) for path in tracked if path not in stale
+            _tracked_identity(REPO_ROOT / path, source_commit)
+            for path in tracked
+            if path not in stale
         ],
         "missing_references": list(missing),
         "untracked_references": list(untracked),

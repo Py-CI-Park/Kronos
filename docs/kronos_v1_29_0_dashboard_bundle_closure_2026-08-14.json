@@ -2,8 +2,8 @@
   "build_command": "npm run build",
   "build_source": {
     "path": "webui/v2_src/vite.config.ts",
-    "sha256": "c1649e3bf44675b17600643e7193202f0d83827a94e25db5a0fe4cdd54f2e352",
-    "size_bytes": 2088
+    "sha256": "98a5804bbf897f6b3100949225764690b5f4e49a731617f2ef57782e5344794f",
+    "size_bytes": 2025
   },
   "closure_passed": true,
   "frontend_source_tree": "c45fd04c889ae3fb63578f6eb48cb4102fa2bec2",
@@ -17,8 +17,8 @@
   "missing_references": [],
   "package_lock": {
     "path": "webui/v2_src/package-lock.json",
-    "sha256": "b2c6ca1b7d1097a8da6c75bc499c883a018d93597890e635dc9ab5f4a15d992c",
-    "size_bytes": 100050
+    "sha256": "b1dd32114f6ba09edbd0266ff130e94b6d225575e2af1fdb2ed138ea876e5fb3",
+    "size_bytes": 97124
   },
   "referenced_assets": [
     {
