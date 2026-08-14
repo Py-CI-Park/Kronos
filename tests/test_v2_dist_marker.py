@@ -1,17 +1,23 @@
 """Verify official dashboard markers are preserved after Vite build."""
+
+import json
 from html.parser import HTMLParser
 from pathlib import Path
 from pathlib import PurePosixPath
 import subprocess
+from typing import cast
 from urllib.parse import unquote, urlsplit
 
 import pytest
+from typing_extensions import override
 
+from scripts.generate_dashboard_bundle_closure import (
+    OUTPUT as CLOSURE_MANIFEST,
+    build_manifest,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DIST_INDEX = (
-    REPO_ROOT / "webui" / "static" / "v2" / "dist" / "index.html"
-)
+DIST_INDEX = REPO_ROOT / "webui" / "static" / "v2" / "dist" / "index.html"
 DIST_URL_PREFIX = "/static/v2/dist/"
 OFFICIAL_SHELL_MARKER = "kronos-dashboard-shell"
 LEGACY_PUBLIC_MARKERS = (
@@ -26,10 +32,15 @@ class _DistReferenceParser(HTMLParser):
         super().__init__()
         self.references: list[tuple[str, str]] = []
 
+    @override
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
         reference = attributes.get("src" if tag == "script" else "href")
-        if tag in {"script", "link"} and reference and reference.startswith(DIST_URL_PREFIX):
+        if (
+            tag in {"script", "link"}
+            and reference
+            and reference.startswith(DIST_URL_PREFIX)
+        ):
             self.references.append((tag, reference))
 
 
@@ -55,7 +66,9 @@ def _tracked_dist_paths(repo_root: Path, dist_dir: Path) -> frozenset[str]:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise AssertionError(f"could not inspect tracked dist files with git: {detail}")
     return frozenset(
-        path for path in result.stdout.decode("utf-8", errors="strict").split("\0") if path
+        path
+        for path in result.stdout.decode("utf-8", errors="strict").split("\0")
+        if path
     )
 
 
@@ -78,7 +91,7 @@ def _resolve_dist_reference(reference: str, dist_dir: Path) -> Path:
     dist_root = dist_dir.resolve()
     candidate = (dist_dir / relative_path).resolve()
     try:
-        candidate.relative_to(dist_root)
+        _ = candidate.relative_to(dist_root)
     except ValueError as error:
         raise AssertionError(
             f"dist reference resolves outside {dist_root}: {reference!r}"
@@ -163,6 +176,20 @@ def test_tracked_dist_references_are_closed():
     )
 
 
+def test_bundle_closure_manifest_matches_tracked_build():
+    assert CLOSURE_MANIFEST.is_file()
+    recorded = cast(
+        dict[str, object],
+        json.loads(CLOSURE_MANIFEST.read_text(encoding="utf-8")),
+    )
+
+    assert recorded == build_manifest()
+    assert recorded["closure_passed"] is True
+    assert recorded["missing_references"] == []
+    assert recorded["untracked_references"] == []
+    assert recorded["stale_tracked_files"] == []
+
+
 def test_dist_reference_closure_rejects_missing_file(tmp_path: Path):
     repo_root, dist_dir = _fixture_dist(tmp_path)
 
@@ -179,7 +206,7 @@ def test_dist_reference_closure_rejects_untracked_file(tmp_path: Path):
     repo_root, dist_dir = _fixture_dist(tmp_path)
     asset = dist_dir / "assets" / "bundle.js"
     asset.parent.mkdir()
-    asset.write_text("", encoding="utf-8")
+    _ = asset.write_text("", encoding="utf-8")
 
     with pytest.raises(AssertionError, match="untracked dist file"):
         _assert_dist_references_closed(
@@ -228,7 +255,7 @@ def test_dist_source_maps_are_checked_only_when_tracked(tmp_path: Path):
     repo_root, dist_dir = _fixture_dist(tmp_path)
     asset = dist_dir / "assets" / "bundle.js"
     asset.parent.mkdir()
-    asset.write_text("", encoding="utf-8")
+    _ = asset.write_text("", encoding="utf-8")
     asset_path = "webui/static/v2/dist/assets/bundle.js"
     source_map_path = f"{asset_path}.map"
     body = '<script src="/static/v2/dist/assets/bundle.js"></script>'
