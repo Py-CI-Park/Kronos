@@ -72,6 +72,10 @@ def _inputs(tmp_path: Path) -> MarketAuthorityInputs:
     _daily_database(daily)
     _stockinfo_database(stockinfo)
     _candidate_scores(scores)
+    trust_store = tmp_path / "reviewer_trust.json"
+    _ = trust_store.write_bytes(
+        b'{"keys":[],"schema":"kronos_daily_market_reviewer_trust.v1"}'
+    )
     return MarketAuthorityInputs(
         daily,
         stockinfo,
@@ -80,6 +84,8 @@ def _inputs(tmp_path: Path) -> MarketAuthorityInputs:
         tmp_path / "krx_current.csv",
         tmp_path / "pit_membership.csv",
         tmp_path / "authority_sources",
+        trust_store,
+        tmp_path / "authority_reviews",
     )
 
 
@@ -211,7 +217,38 @@ def test_authority_receipt_rejects_forged_verified_state(tmp_path: Path) -> None
     forged["d1_universe"]["state"] = "VERIFIED"
     forged["blockers"] = []
 
-    with pytest.raises(ValidationError, match="signed source review"):
+    with pytest.raises(ValidationError, match="verified"):
+        _ = MarketAuthorityReceipt.model_validate(forged)
+
+
+def test_historical_v2_blocked_wire_remains_readable_but_cannot_be_verified() -> None:
+    wire = (
+        Path(__file__).parent / "fixtures" / "daily_market_authority_002_blocked.json"
+    ).read_bytes()
+    parsed = MarketAuthorityReceipt.model_validate_json(wire)
+
+    assert parsed.schema_version == "kronos_daily_market_authority.v2"
+    assert parsed.status == "BLOCKED_DATA_AUTHORITY"
+    forged = parsed.model_dump(mode="json")
+    forged["schema_version"] = "kronos_daily_market_authority.v2"
+    forged["status"] = "VERIFIED_RESEARCH_DATA_AUTHORITY"
+    forged["d0_price_basis"] = {
+        **forged["d0_price_basis"],
+        "state": "VERIFIED",
+    }
+    forged["d1_universe"] = {
+        **forged["d1_universe"],
+        "state": "VERIFIED",
+    }
+    forged["blockers"] = []
+    for field in (
+        "verified_at_utc",
+        "reviewer_trust_store_sha256",
+        "reviewer_trust_store",
+        "signed_extraction_reviews",
+    ):
+        del forged[field]
+    with pytest.raises(ValidationError, match="legacy authority receipt"):
         _ = MarketAuthorityReceipt.model_validate(forged)
 
 
@@ -325,7 +362,7 @@ def test_authority_artifacts_publish_bounded_catalog_summary(tmp_path: Path) -> 
     assert paths.receipt.read_text(encoding="utf-8").endswith("\n")
     with pytest.raises(
         DailyMarketAuthorityError,
-        match="AUTHORITY_IMMUTABLE_ARTIFACT_ALREADY_EXISTS",
+        match="AUTHORITY_OUTPUT_ALREADY_EXISTS",
     ):
         _ = write_authority_artifacts(receipt, tmp_path / "run")
 

@@ -19,7 +19,6 @@ from .daily_market_authority_file_custody import (
     authority_input_binding,
     ensure_required_file,
     file_identity,
-    resolve_reviewed_source_artifacts,
     resolve_source_artifacts,
 )
 from .daily_market_candidate_eligibility import parse_candidate_eligibility
@@ -224,7 +223,6 @@ __all__ = [
     "local_columns",
     "pit_records",
     "price_provenance",
-    "resolve_reviewed_source_artifacts",
     "resolve_source_artifacts",
     "stockinfo_count",
 ]

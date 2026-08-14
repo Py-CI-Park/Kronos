@@ -15,6 +15,7 @@ from .daily_market_allocation_run_contract import (
 )
 from .daily_market_allocation_lineage_contract import AllocationLineageInputRole
 from .daily_market_authority_bound_sources import (
+    bound_candidate_pairs,
     bound_current_metadata,
     bound_pit_records,
     bound_price_provenance,
@@ -22,10 +23,19 @@ from .daily_market_authority_bound_sources import (
 from .daily_market_authority_contract import (
     DailyMarketAuthorityError,
     MarketAuthorityReceipt,
-    SIGNED_SOURCE_REVIEW_SUPPORTED,
 )
 from .daily_market_authority_file_custody import file_identity
+from .daily_market_authority_local_verdict import (
+    d0_authority_verified,
+    d1_authority_verified,
+)
+from .daily_market_authority_sources import (
+    covered_pairs,
+    daily_column_presence_count,
+    local_columns,
+)
 from .daily_market_path_custody import has_reparse_component
+from .daily_ohlcv_db import list_daily_tables
 from .daily_market_rl_contract import DailyMarketRlContractError
 from .daily_market_stockinfo_authority import observe_stockinfo_authority
 
@@ -140,6 +150,47 @@ def _verify_verified_source_set(
     receipt_hashes = {identity.sha256 for identity in receipt.source_artifacts}
     if not declared_hashes or receipt_hashes != declared_hashes:
         raise DailyMarketRlContractError("ALLOCATION_AUTHORITY_SOURCE_SET_MISMATCH")
+    tables = tuple(list_daily_tables(paths.daily_database))
+    explicit_basis_count = daily_column_presence_count(
+        paths.daily_database,
+        tables,
+        "수정주가구분",
+    )
+    required_pairs, _score_binding = bound_candidate_pairs(paths.candidate_scores)
+    covered = covered_pairs(required_pairs, pit_rows)
+    stockinfo_rows = observe_stockinfo_authority(paths.stockinfo_database).row_count
+    if (
+        not d0_authority_verified(
+            table_count=len(tables),
+            explicit_basis_table_count=explicit_basis_count,
+            provenance_present=provenance_state == "PRESENT",
+            provenance_matches_database=(
+                provenance.database_sha256 == receipt.daily_database.sha256
+            ),
+            raw_sources_resolved=receipt_hashes == declared_hashes,
+            signed_review_verified=True,
+        )
+        or not d1_authority_verified(
+            current_metadata_present=current_state == "PRESENT",
+            pit_membership_present=pit_state == "PRESENT",
+            required_membership_pairs=len(required_pairs),
+            covered_membership_pairs=covered,
+            stockinfo_rows=stockinfo_rows,
+            raw_sources_resolved=receipt_hashes == declared_hashes,
+            current_review_verified=True,
+            pit_review_verified=True,
+        )
+        or receipt.d0_price_basis.price_basis != provenance.price_basis
+        or receipt.d0_price_basis.local_columns
+        != local_columns(paths.daily_database, tables)
+        or receipt.d1_universe.daily_table_count != len(tables)
+        or receipt.d1_universe.required_membership_pairs != len(required_pairs)
+        or receipt.d1_universe.covered_membership_pairs != covered
+        or covered != len(required_pairs)
+        or receipt.d1_universe.coverage_percent != 100.0
+        or stockinfo_rows <= 0
+    ):
+        raise DailyMarketRlContractError("ALLOCATION_AUTHORITY_LOCAL_VERDICT_MISMATCH")
 
 
 def load_allocation_authority(
@@ -158,13 +209,6 @@ def load_allocation_authority(
         raise DailyMarketRlContractError(
             "ALLOCATION_AUTHORITY_RECEIPT_INVALID"
         ) from exc
-    if (
-        receipt.status == "VERIFIED_RESEARCH_DATA_AUTHORITY"
-        and not SIGNED_SOURCE_REVIEW_SUPPORTED
-    ):
-        raise DailyMarketRlContractError(
-            "ALLOCATION_AUTHORITY_SIGNED_REVIEW_UNSUPPORTED"
-        )
     _verify_authority_bindings(paths, receipt)
     _verify_verified_source_set(paths, receipt)
     if receipt.status == "VERIFIED_RESEARCH_DATA_AUTHORITY" and (

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final
 
@@ -28,7 +29,17 @@ from .daily_market_authority_sources import (
     daily_column_presence_count,
     ensure_required_file,
     local_columns,
-    resolve_reviewed_source_artifacts,
+    resolve_source_artifacts,
+)
+from .daily_market_authority_review import PINNED_REVIEWER_TRUST_STORE_SHA256
+from .daily_market_authority_review_contract import ReviewerTrustStore
+from .daily_market_authority_review_custody import (
+    load_pinned_reviewer_trust_store,
+    load_verified_extraction_review,
+)
+from .daily_market_authority_local_verdict import (
+    d0_authority_verified,
+    d1_authority_verified,
 )
 from .daily_market_stockinfo_authority import (
     StockinfoAuthorityEvidence,
@@ -58,10 +69,20 @@ class MarketAuthorityInputs:
     current_official_metadata: Path
     pit_membership: Path
     source_artifact_root: Path
+    reviewer_trust_store: Path
+    review_receipt_root: Path
 
 
-def audit_market_authority(inputs: MarketAuthorityInputs) -> MarketAuthorityReceipt:
+def audit_market_authority(
+    inputs: MarketAuthorityInputs,
+    *,
+    verification_time: datetime | None = None,
+) -> MarketAuthorityReceipt:
     """Build a fail-closed receipt from local and independent authority evidence."""
+    observed_at = verification_time or datetime.now(timezone.utc)
+    if observed_at.tzinfo != timezone.utc:
+        raise ValueError("authority verification time must be UTC")
+    trust_store = load_pinned_reviewer_trust_store(inputs.reviewer_trust_store)
     daily_source = ensure_required_file(
         inputs.daily_database,
         "DAILY_DATABASE_UNTRUSTED",
@@ -74,7 +95,9 @@ def audit_market_authority(inputs: MarketAuthorityInputs) -> MarketAuthorityRece
     )
     stockinfo = observe_stockinfo_authority(stockinfo_source)
     with immutable_authority_database_snapshots(daily_source) as snapshots:
-        return _audit_database_snapshots(inputs, score_path, snapshots, stockinfo)
+        return _audit_database_snapshots(
+            inputs, score_path, snapshots, stockinfo, trust_store, observed_at
+        )
 
 
 def _audit_database_snapshots(
@@ -82,6 +105,8 @@ def _audit_database_snapshots(
     score_path: Path,
     snapshots: AuthorityDatabaseSnapshots,
     stockinfo: StockinfoAuthorityEvidence,
+    trust_store: ReviewerTrustStore,
+    verification_time: datetime,
 ) -> MarketAuthorityReceipt:
     daily_path = snapshots.daily_path
     identity = snapshots.daily_identity
@@ -101,16 +126,26 @@ def _audit_database_snapshots(
     declared_source_hashes = frozenset(
         {provenance.source_sha256} if provenance is not None else set()
     )
-    d0_source_resolved, d0_source_artifacts = resolve_reviewed_source_artifacts(
+    d0_source_resolved, d0_source_artifacts = resolve_source_artifacts(
         inputs.source_artifact_root,
         declared_source_hashes,
     )
+    d0_review = load_verified_extraction_review(
+        inputs.review_receipt_root,
+        trust_store,
+        scope="D0_PRICE_PROVENANCE",
+        target=provenance_binding.identity,
+        raw_sources=d0_source_artifacts,
+        verification_time=verification_time,
+    )
     local_basis_explicit = bool(tables) and explicit_basis_table_count == len(tables)
-    d0_verified = (
-        provenance_state == "PRESENT"
-        and provenance_matches
-        and local_basis_explicit
-        and d0_source_resolved
+    d0_verified = d0_authority_verified(
+        table_count=len(tables),
+        explicit_basis_table_count=explicit_basis_table_count,
+        provenance_present=provenance_state == "PRESENT",
+        provenance_matches_database=provenance_matches,
+        raw_sources_resolved=d0_source_resolved,
+        signed_review_verified=d0_review is not None,
     )
     d0 = PriceBasisAuthority(
         state="VERIFIED" if d0_verified else "BLOCKED",
@@ -137,9 +172,10 @@ def _audit_database_snapshots(
             ),
             AuthorityCheck(
                 check_id="PROVENANCE_SOURCE_REVIEW_VERIFIED",
-                passed=d0_source_resolved,
+                passed=d0_review is not None,
                 observed=(
-                    f"content_bound={len(d0_source_artifacts)}/{len(declared_source_hashes)};signed_review=missing"
+                    f"content_bound={len(d0_source_artifacts)}/{len(declared_source_hashes)};"
+                    f"signed_review={'verified' if d0_review is not None else 'missing_or_invalid'}"
                 ),
             ),
         ),
@@ -152,19 +188,47 @@ def _audit_database_snapshots(
     d1_declared_hashes = frozenset(
         (*current_source_hashes, *(row.source_hash for row in pit_rows))
     )
-    d1_sources_resolved, d1_source_artifacts = resolve_reviewed_source_artifacts(
+    d1_sources_resolved, d1_source_artifacts = resolve_source_artifacts(
         inputs.source_artifact_root,
         d1_declared_hashes,
+    )
+    current_review = load_verified_extraction_review(
+        inputs.review_receipt_root,
+        trust_store,
+        scope="D1_CURRENT_METADATA",
+        target=current_binding.identity,
+        raw_sources=tuple(
+            source
+            for source in d1_source_artifacts
+            if source.sha256 in current_source_hashes
+        ),
+        verification_time=verification_time,
+    )
+    pit_source_hashes = frozenset(row.source_hash for row in pit_rows)
+    pit_review = load_verified_extraction_review(
+        inputs.review_receipt_root,
+        trust_store,
+        scope="D1_PIT_MEMBERSHIP",
+        target=pit_binding.identity,
+        raw_sources=tuple(
+            source
+            for source in d1_source_artifacts
+            if source.sha256 in pit_source_hashes
+        ),
+        verification_time=verification_time,
     )
     covered = covered_pairs(required, pit_rows)
     coverage = (covered / len(required)) * 100.0
     stockinfo_rows = stockinfo.row_count
-    d1_verified = (
-        current_state == "PRESENT"
-        and pit_state == "PRESENT"
-        and covered == len(required)
-        and stockinfo_rows > 0
-        and d1_sources_resolved
+    d1_verified = d1_authority_verified(
+        current_metadata_present=current_state == "PRESENT",
+        pit_membership_present=pit_state == "PRESENT",
+        required_membership_pairs=len(required),
+        covered_membership_pairs=covered,
+        stockinfo_rows=stockinfo_rows,
+        raw_sources_resolved=d1_sources_resolved,
+        current_review_verified=current_review is not None,
+        pit_review_verified=pit_review is not None,
     )
     d1 = UniverseAuthority(
         state="VERIFIED" if d1_verified else "BLOCKED",
@@ -192,9 +256,11 @@ def _audit_database_snapshots(
             ),
             AuthorityCheck(
                 check_id="KRX_SOURCE_REVIEWS_VERIFIED",
-                passed=d1_sources_resolved,
+                passed=current_review is not None and pit_review is not None,
                 observed=(
-                    f"content_bound={len(d1_source_artifacts)}/{len(d1_declared_hashes)};signed_review=missing"
+                    f"content_bound={len(d1_source_artifacts)}/{len(d1_declared_hashes)};"
+                    "signed_reviews="
+                    f"{int(current_review is not None) + int(pit_review is not None)}/2"
                 ),
             ),
         ),
@@ -208,8 +274,8 @@ def _audit_database_snapshots(
         if not passed
     )
     return MarketAuthorityReceipt(
-        schema_version="kronos_daily_market_authority.v2",
-        research_id="DAILY_MARKET_AUTHORITY_2026_08_10_002",
+        schema_version="kronos_daily_market_authority.v3",
+        research_id="DAILY_MARKET_AUTHORITY_2026_08_14_003",
         status="VERIFIED_RESEARCH_DATA_AUTHORITY"
         if not blockers
         else "BLOCKED_DATA_AUTHORITY",
@@ -240,6 +306,19 @@ def _audit_database_snapshots(
         d1_universe=d1,
         blockers=blockers,
         source_urls=(KIWOOM_GUIDE_URL, KRX_MARKET_URL, KRX_LISTED_URL),
+        verified_at_utc=verification_time.isoformat(timespec="seconds").replace(
+            "+00:00", "Z"
+        ),
+        reviewer_trust_store_sha256=PINNED_REVIEWER_TRUST_STORE_SHA256,
+        reviewer_trust_store=trust_store,
+        signed_extraction_reviews=(
+            (d0_review, current_review, pit_review)
+            if not blockers
+            and d0_review is not None
+            and current_review is not None
+            and pit_review is not None
+            else ()
+        ),
         historical_test_state=(
             "FEATURES_PARSED_REWARDS_PRICES_ACTION_EVALUATION_NOT_READ_CONTAMINATED"
         ),

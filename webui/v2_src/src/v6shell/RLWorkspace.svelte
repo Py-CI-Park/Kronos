@@ -76,7 +76,7 @@
 
 <section class="workspace" aria-labelledby="rl-title">
   <header>
-    <div><p class="eyebrow">RESEARCH WORKSPACE</p><h1 id="rl-title">강화학습</h1><p>공식 탐색은 <code>V6_PAGES</code>의 {officialPageCount}개 registry 페이지이며, 아래 {workflowStageCount}개 항목은 Research Library 안의 워크플로 단계입니다.</p><p>연구 단계별 원본 상태 토큰과 읽기 전용 근거를 함께 확인합니다.</p></div>
+    <div><p class="eyebrow">RESEARCH WORKSPACE</p><h1 id="rl-title">강화학습</h1><p>Kronos 대시보드의 공식 탐색 화면은 {officialPageCount}개이며, 아래 {workflowStageCount}개 항목은 연구 라이브러리 안의 워크플로 단계입니다.</p><p>연구 단계별 원본 상태 토큰과 읽기 전용 근거를 함께 확인합니다.</p></div>
     {#if newestRun?.verdict_candidate?.value}<span class="verdict">{newestRun.verdict_candidate.value}</span>{/if}
   </header>
   <DailyCloseResearchStatus />

@@ -12,7 +12,6 @@ from .daily_market_authority_contract import (
     AuthorityInputBinding,
     AuthorityInputRole,
     DailyMarketAuthorityError,
-    SIGNED_SOURCE_REVIEW_SUPPORTED,
 )
 from .daily_market_path_custody import has_reparse_component
 
@@ -155,21 +154,11 @@ def resolve_source_artifacts(
     return True, tuple(identities)
 
 
-def resolve_reviewed_source_artifacts(
-    root: Path,
-    declared_hashes: frozenset[str],
-) -> tuple[bool, tuple[AuthorityFileIdentity, ...]]:
-    """Keep authority blocked until a pinned signed-review trust root exists."""
-    content_resolved, identities = resolve_source_artifacts(root, declared_hashes)
-    return content_resolved and SIGNED_SOURCE_REVIEW_SUPPORTED, identities
-
-
 __all__ = [
     "authority_input_binding",
     "copy_stable_file",
     "ensure_required_file",
     "file_identity",
     "read_stable_file_bytes",
-    "resolve_reviewed_source_artifacts",
     "resolve_source_artifacts",
 ]

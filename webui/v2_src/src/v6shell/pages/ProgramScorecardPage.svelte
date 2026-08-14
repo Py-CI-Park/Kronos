@@ -27,7 +27,7 @@
   </section>
 
   <section class="panel" aria-labelledby="page-matrix-title">
-    <header><div><p class="eyebrow">CAPABILITY DELIVERY TABLE</p><h2 id="page-matrix-title">{capabilityCount}개 기능·워크플로 단계 진행·증거·남은 행동</h2></div><span>공식 탐색은 <code>V6_PAGES</code>에 정의된 {officialPageCount}개 registry 페이지입니다. 아래 항목은 별도 페이지가 아닌 기능 또는 워크플로 단계입니다.</span></header>
+    <header><div><p class="eyebrow">CAPABILITY DELIVERY TABLE</p><h2 id="page-matrix-title">{capabilityCount}개 기능·워크플로 단계 진행·증거·남은 행동</h2></div><span>Kronos 대시보드의 공식 탐색 화면은 {officialPageCount}개입니다. 아래 항목은 별도 화면이 아닌 기능 또는 워크플로 단계입니다.</span></header>
     <div class="table-wrap"><table><thead><tr><th>우선</th><th>기능·단계</th><th>목적</th><th>진행</th><th>현재 증거</th><th>다음 행동</th><th>예상 시간</th><th>병합 조건</th></tr></thead><tbody>
       {#each PROGRAM_PAGE_MATRIX as row}
         <tr><td><span class="priority">{row.priority}</span></td><td><small>{row.group}</small><strong>{row.page}</strong></td><td>{row.purpose}</td><td><div class="progress"><span><i style:width={`${row.progress}%`}></i></span><b>{row.progress}%</b></div></td><td><code>{row.evidenceState}</code></td><td>{row.nextAction}</td><td>{row.eta}</td><td>{row.mergeGate}</td></tr>

@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Final, Literal, Self
+import hashlib
+from datetime import datetime
+from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import override
 
-# A content hash proves byte identity, not who reviewed the upstream broker/KRX
-# response.  Keep VERIFIED receipts structurally impossible until a signed
-# reviewer trust root and receipt verifier are implemented.
-SIGNED_SOURCE_REVIEW_SUPPORTED: Final = False
+from .daily_market_authority_review import (
+    PINNED_REVIEWER_TRUST_STORE_SHA256,
+    verify_extraction_review,
+)
+from .daily_market_authority_review_contract import (
+    ReviewerScope,
+    ReviewerTrustStore,
+    SignedExtractionReviewProof,
+    canonical_bytes,
+)
+
+
+def _empty_reviewer_trust_store() -> ReviewerTrustStore:
+    return ReviewerTrustStore(
+        schema="kronos_daily_market_reviewer_trust.v1",
+        keys=(),
+    )
 
 
 class DailyMarketAuthorityError(Exception):
@@ -148,10 +163,14 @@ class MarketAuthorityReceipt(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["kronos_daily_market_authority.v2"]
+    schema_version: Literal[
+        "kronos_daily_market_authority.v2",
+        "kronos_daily_market_authority.v3",
+    ]
     research_id: Literal[
         "DAILY_MARKET_AUTHORITY_2026_08_10_001",
         "DAILY_MARKET_AUTHORITY_2026_08_10_002",
+        "DAILY_MARKET_AUTHORITY_2026_08_14_003",
     ]
     status: Literal["VERIFIED_RESEARCH_DATA_AUTHORITY", "BLOCKED_DATA_AUTHORITY"]
     daily_database: AuthorityFileIdentity
@@ -161,6 +180,15 @@ class MarketAuthorityReceipt(BaseModel):
     d1_universe: UniverseAuthority
     blockers: tuple[str, ...]
     source_urls: tuple[str, ...]
+    verified_at_utc: str = "1970-01-01T00:00:00Z"
+    reviewer_trust_store_sha256: str = Field(
+        default=PINNED_REVIEWER_TRUST_STORE_SHA256,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    reviewer_trust_store: ReviewerTrustStore = Field(
+        default_factory=_empty_reviewer_trust_store
+    )
+    signed_extraction_reviews: tuple[SignedExtractionReviewProof, ...] = ()
     historical_test_state: Literal[
         "FEATURES_PARSED_REWARDS_PRICES_ACTION_EVALUATION_NOT_READ_CONTAMINATED"
     ]
@@ -206,9 +234,48 @@ class MarketAuthorityReceipt(BaseModel):
         verified = not expected_blockers
         if (self.status == "VERIFIED_RESEARCH_DATA_AUTHORITY") != verified:
             raise ValueError("authority status does not match D0/D1 states")
+        if self.schema_version == "kronos_daily_market_authority.v2":
+            if verified or self.signed_extraction_reviews:
+                raise ValueError("legacy authority receipt cannot be verified")
+            return self
+        trust_bytes = canonical_bytes(self.reviewer_trust_store)
+        if (
+            hashlib.sha256(trust_bytes).hexdigest() != self.reviewer_trust_store_sha256
+            or self.reviewer_trust_store_sha256 != PINNED_REVIEWER_TRUST_STORE_SHA256
+        ):
+            raise ValueError("reviewer trust store is not pinned")
         if verified:
-            if not SIGNED_SOURCE_REVIEW_SUPPORTED:
-                raise ValueError("signed source review verification is unsupported")
+            expected_d0_checks = (
+                "ALL_DAILY_TABLES_EXPLICIT_PRICE_BASIS",
+                "INDEPENDENT_PROVENANCE_PRESENT",
+                "PROVENANCE_BINDS_DATABASE_SHA256",
+                "PROVENANCE_SOURCE_REVIEW_VERIFIED",
+            )
+            expected_d1_checks = (
+                "STOCKINFO_METADATA_PRESENT",
+                "CURRENT_OFFICIAL_METADATA_PRESENT",
+                "PIT_MEMBERSHIP_COMPLETE_AND_AVAILABLE",
+                "KRX_SOURCE_REVIEWS_VERIFIED",
+            )
+            if (
+                tuple(check.check_id for check in self.d0_price_basis.checks)
+                != expected_d0_checks
+                or not all(check.passed for check in self.d0_price_basis.checks)
+                or self.d0_price_basis.price_basis == "unknown"
+            ):
+                raise ValueError("verified D0 checks are not canonical")
+            if (
+                tuple(check.check_id for check in self.d1_universe.checks)
+                != expected_d1_checks
+                or not all(check.passed for check in self.d1_universe.checks)
+                or self.d1_universe.current_metadata_state != "PRESENT"
+                or self.d1_universe.pit_membership_state != "PRESENT"
+                or self.d1_universe.required_membership_pairs <= 0
+                or self.d1_universe.covered_membership_pairs
+                != self.d1_universe.required_membership_pairs
+                or self.d1_universe.coverage_percent != 100.0
+            ):
+                raise ValueError("verified D1 checks are not canonical")
             if any(binding.state != "PRESENT" for binding in bindings.values()):
                 raise ValueError("verified authority requires every input binding")
             if not self.source_artifacts:
@@ -219,11 +286,64 @@ class MarketAuthorityReceipt(BaseModel):
                 for identity in self.source_artifacts
             ):
                 raise ValueError("verified source artifacts are not canonical")
+            scope_roles: dict[ReviewerScope, AuthorityInputRole] = {
+                "D0_PRICE_PROVENANCE": "PRICE_PROVENANCE",
+                "D1_CURRENT_METADATA": "CURRENT_OFFICIAL_METADATA",
+                "D1_PIT_MEMBERSHIP": "PIT_MEMBERSHIP",
+            }
+            proofs = {
+                proof.review.statement.scope: proof
+                for proof in self.signed_extraction_reviews
+            }
+            if set(proofs) != set(scope_roles) or len(proofs) != len(
+                self.signed_extraction_reviews
+            ):
+                raise ValueError("verified authority requires three unique reviews")
+            receipt_ids = tuple(
+                proof.review.statement.receipt_id for proof in proofs.values()
+            )
+            nonces = tuple(proof.review.statement.nonce for proof in proofs.values())
+            if len(set(receipt_ids)) != 3 or len(set(nonces)) != 3:
+                raise ValueError("signed reviews require unique receipt IDs and nonces")
+            verification_time = datetime.fromisoformat(
+                self.verified_at_utc.replace("Z", "+00:00")
+            )
+            sources = {identity.sha256: identity for identity in self.source_artifacts}
+            for scope, role in scope_roles.items():
+                proof = proofs[scope]
+                review_bytes = canonical_bytes(proof.review)
+                if (
+                    hashlib.sha256(review_bytes).hexdigest() != proof.receipt_sha256
+                    or len(review_bytes) != proof.receipt_size_bytes
+                ):
+                    raise ValueError("signed review receipt identity mismatch")
+                target = bindings[role].identity
+                if target is None:
+                    raise ValueError("signed review target input is absent")
+                raw_bindings = tuple(
+                    (raw.sha256, raw.size_bytes)
+                    for raw in proof.review.statement.raw_sources
+                )
+                if any(
+                    raw_hash not in sources or sources[raw_hash].size_bytes != raw_size
+                    for raw_hash, raw_size in raw_bindings
+                ):
+                    raise ValueError("signed review raw source identity mismatch")
+                _ = verify_extraction_review(
+                    self.reviewer_trust_store,
+                    proof.review,
+                    expected_scope=scope,
+                    target_sha256=target.sha256,
+                    target_size_bytes=target.size_bytes,
+                    raw_sources=raw_bindings,
+                    verification_time=verification_time,
+                )
+        elif self.signed_extraction_reviews:
+            raise ValueError("blocked authority must not publish verified reviews")
         return self
 
 
 __all__ = [
-    "SIGNED_SOURCE_REVIEW_SUPPORTED",
     "AuthorityCheck",
     "AuthorityFileIdentity",
     "AuthorityInputBinding",
