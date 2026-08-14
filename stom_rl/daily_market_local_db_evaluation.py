@@ -137,38 +137,54 @@ def evaluate_local_db_baseline(
     ):
         raise DailyMarketRlContractError("LOCAL_DB_SOURCE_VERDICT_INVALID")
     matrix: dict[str, tuple[int, ...]] = {}
-    observed_costs: set[float] = set()
     for item in _sequence(source.get("model_runs"), "model_runs"):
         run = _mapping(item, "model_run")
         algorithm, seed = run.get("algorithm"), run.get("seed")
-        if isinstance(algorithm, str) and isinstance(seed, int):
+        if isinstance(algorithm, str) and type(seed) is int:
             _ = matrix.setdefault(algorithm, ())
             matrix[algorithm] = (*matrix[algorithm], seed)
-        for scenario in ("historical_test_base", "historical_test_stress"):
+        for scenario, expected_cost in (
+            ("historical_test_base", 0.23),
+            ("historical_test_stress", 0.46),
+        ):
             result = _mapping(run.get(scenario), scenario)
             cost = result.get("round_trip_cost_percent")
-            if isinstance(cost, (int, float)):
-                observed_costs.add(float(cost))
+            if (
+                isinstance(cost, bool)
+                or not isinstance(cost, (int, float))
+                or float(cost) != expected_cost
+            ):
+                raise DailyMarketRlContractError(
+                    "LOCAL_DB_COST_SCENARIOS_INVALID", scenario
+                )
     canonical_matrix = {
         algorithm: tuple(sorted(matrix.get(algorithm, ())))
         for algorithm in _REQUIRED_ALGORITHMS
     }
     if any(seeds != _REQUIRED_SEEDS for seeds in canonical_matrix.values()):
         raise DailyMarketRlContractError("LOCAL_DB_MODEL_SEED_MATRIX_INVALID")
-    if observed_costs != {0.23, 0.46}:
-        raise DailyMarketRlContractError("LOCAL_DB_COST_SCENARIOS_INVALID")
-    controls = tuple(
-        sorted(
-            {
-                str(_mapping(item, "control").get("policy"))
-                for item in _sequence(
-                    source.get("controls_historical_test_base"), "controls"
-                )
-            }
-        )
-    )
-    if any(control not in controls for control in _REQUIRED_CONTROLS):
-        raise DailyMarketRlContractError("LOCAL_DB_REQUIRED_CONTROL_MISSING")
+    control_names: set[str] = set()
+    for field, expected_cost in (
+        ("controls_historical_test_base", 0.23),
+        ("controls_historical_test_stress", 0.46),
+    ):
+        scenario_controls: dict[str, float] = {}
+        for item in _sequence(source.get(field), field):
+            control = _mapping(item, "control")
+            policy, cost = control.get("policy"), control.get("round_trip_cost_percent")
+            if (
+                isinstance(policy, str)
+                and isinstance(cost, (int, float))
+                and not isinstance(cost, bool)
+            ):
+                scenario_controls[policy] = float(cost)
+                control_names.add(policy)
+        if any(
+            scenario_controls.get(control) != expected_cost
+            for control in _REQUIRED_CONTROLS
+        ):
+            raise DailyMarketRlContractError("LOCAL_DB_REQUIRED_CONTROL_MISSING", field)
+    controls = tuple(sorted(control_names))
     gate = _mapping(source.get("economic_gate"), "economic_gate")
     failed = tuple(
         str(value) for value in _sequence(gate.get("failed_checks"), "failed_checks")

@@ -100,7 +100,12 @@ def _gate() -> LocalDbEconomicGateReceipt:
     )
 
 
-def _paths(tmp_path: Path, *, database_hash: str = "a" * 64) -> LocalDbHoldoutPaths:
+def _paths(
+    tmp_path: Path,
+    *,
+    database_hash: str = "a" * 64,
+    boolean_seed: bool = False,
+) -> LocalDbHoldoutPaths:
     custody, gate, allocation = (
         tmp_path / "custody.json",
         tmp_path / "gate.json",
@@ -119,7 +124,11 @@ def _paths(tmp_path: Path, *, database_hash: str = "a" * 64) -> LocalDbHoldoutPa
             "INVEST_TOP10_EQUAL_SLOT",
         ],
         "model_runs": [
-            {"algorithm": "CQL", "seed": seed, "checkpoint_sha256": f"{seed + 1:064x}"}
+            {
+                "algorithm": "CQL",
+                "seed": True if boolean_seed and seed == 1 else seed,
+                "checkpoint_sha256": f"{seed + 1:064x}",
+            }
             for seed in range(5)
         ],
     }
@@ -164,6 +173,15 @@ def test_local_holdout_rejects_database_identity_mismatch(tmp_path: Path) -> Non
     ):
         _ = build_local_holdout_descriptor(
             _paths(tmp_path, database_hash="e" * 64),
+            source_git_sha="f" * 40,
+            registered_at_utc="2026-08-14T00:00:00Z",
+        )
+
+
+def test_local_holdout_rejects_boolean_checkpoint_seed(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="policy matrix is incomplete"):
+        _ = build_local_holdout_descriptor(
+            _paths(tmp_path, boolean_seed=True),
             source_git_sha="f" * 40,
             registered_at_utc="2026-08-14T00:00:00Z",
         )

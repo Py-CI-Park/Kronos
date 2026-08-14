@@ -60,29 +60,56 @@ def _custody() -> LocalDbCustodyReceipt:
     )
 
 
-def _experiment(*, omit_seed: bool = False) -> dict[str, object]:
+def _experiment(
+    *,
+    omit_seed: bool = False,
+    swapped_costs: bool = False,
+    boolean_seed: bool = False,
+    omit_stress_control: bool = False,
+) -> dict[str, object]:
     models: list[dict[str, object]] = []
     for algorithm in ("DQN", "CQL", "CQL_REWARD_SHUFFLED", "CQL_ACTION_SHUFFLED"):
         for seed in range(5):
             if omit_seed and algorithm == "CQL" and seed == 4:
                 continue
+            encoded_seed: int | bool = (
+                True if boolean_seed and algorithm == "CQL" and seed == 1 else seed
+            )
             models.append(
                 {
                     "algorithm": algorithm,
-                    "seed": seed,
-                    "historical_test_base": {"round_trip_cost_percent": 0.23},
-                    "historical_test_stress": {"round_trip_cost_percent": 0.46},
+                    "seed": encoded_seed,
+                    "historical_test_base": {
+                        "round_trip_cost_percent": 0.46 if swapped_costs else 0.23
+                    },
+                    "historical_test_stress": {
+                        "round_trip_cost_percent": 0.23 if swapped_costs else 0.46
+                    },
                 }
             )
+    base_controls = [
+        {"policy": "NO_TRADE", "round_trip_cost_percent": 0.23},
+        {
+            "policy": "COST_AWARE_MOMENTUM_RULE",
+            "round_trip_cost_percent": 0.23,
+        },
+    ]
+    stress_controls = [
+        {"policy": "NO_TRADE", "round_trip_cost_percent": 0.46},
+        {
+            "policy": "COST_AWARE_MOMENTUM_RULE",
+            "round_trip_cost_percent": 0.46,
+        },
+    ]
+    if omit_stress_control:
+        _ = stress_controls.pop()
     return {
         "schema_version": "kronos_daily_market_offline_rl_experiment.v1",
         "research_id": "DAILY_MARKET_CQL_2026_08_09_001",
         "verdict": "NO_GO_HISTORICAL_ECONOMIC_GATE",
         "model_runs": models,
-        "controls_historical_test_base": [
-            {"policy": "NO_TRADE"},
-            {"policy": "COST_AWARE_MOMENTUM_RULE"},
-        ],
+        "controls_historical_test_base": base_controls,
+        "controls_historical_test_stress": stress_controls,
         "economic_gate": {
             "failed_checks": ["CQL_MEDIAN_BEATS_ZERO_AND_BEST_CONTROL"],
             "best_control_return_percent": 0.0,
@@ -92,11 +119,26 @@ def _experiment(*, omit_seed: bool = False) -> dict[str, object]:
     }
 
 
-def _paths(tmp_path: Path, *, omit_seed: bool = False) -> LocalDbEvaluationPaths:
+def _paths(
+    tmp_path: Path,
+    *,
+    omit_seed: bool = False,
+    swapped_costs: bool = False,
+    boolean_seed: bool = False,
+    omit_stress_control: bool = False,
+) -> LocalDbEvaluationPaths:
     experiment = tmp_path / "experiment.json"
     custody = tmp_path / "custody.json"
     _ = experiment.write_text(
-        json.dumps(_experiment(omit_seed=omit_seed)), encoding="utf-8"
+        json.dumps(
+            _experiment(
+                omit_seed=omit_seed,
+                swapped_costs=swapped_costs,
+                boolean_seed=boolean_seed,
+                omit_stress_control=omit_stress_control,
+            )
+        ),
+        encoding="utf-8",
     )
     _ = custody.write_text(_custody().model_dump_json(), encoding="utf-8")
     return LocalDbEvaluationPaths(experiment, custody, tmp_path / "output")
@@ -129,6 +171,23 @@ def test_local_db_evaluation_rejects_incomplete_seed_matrix(tmp_path: Path) -> N
         match="LOCAL_DB_MODEL_SEED_MATRIX_INVALID",
     ):
         _ = evaluate_local_db_baseline(_paths(tmp_path, omit_seed=True))
+
+
+@pytest.mark.parametrize(
+    "path_kwargs, error",
+    [
+        ({"swapped_costs": True}, "LOCAL_DB_COST_SCENARIOS_INVALID"),
+        ({"boolean_seed": True}, "LOCAL_DB_MODEL_SEED_MATRIX_INVALID"),
+        ({"omit_stress_control": True}, "LOCAL_DB_REQUIRED_CONTROL_MISSING"),
+    ],
+)
+def test_local_db_evaluation_rejects_noncanonical_matrix_evidence(
+    tmp_path: Path,
+    path_kwargs: dict[str, bool],
+    error: str,
+) -> None:
+    with pytest.raises(DailyMarketRlContractError, match=error):
+        _ = evaluate_local_db_baseline(_paths(tmp_path, **path_kwargs))
 
 
 def test_local_db_evaluation_cli_requires_explicit_root() -> None:
