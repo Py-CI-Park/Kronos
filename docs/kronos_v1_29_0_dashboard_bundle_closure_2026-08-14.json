@@ -1,0 +1,135 @@
+{
+  "build_command": "npm run build",
+  "build_source": {
+    "path": "webui/v2_src/vite.config.ts",
+    "sha256": "c1649e3bf44675b17600643e7193202f0d83827a94e25db5a0fe4cdd54f2e352",
+    "size_bytes": 2088
+  },
+  "closure_passed": true,
+  "frontend_source_tree": "c45fd04c889ae3fb63578f6eb48cb4102fa2bec2",
+  "generated_from_commit": "3ebacf12edb0ab44202a6a4dee39ea16a82721e3",
+  "generated_from_commit_time": "2026-08-14T11:48:51+09:00",
+  "index": {
+    "path": "webui/static/v2/dist/index.html",
+    "sha256": "e10311994ef5a4e911a8d1e3ed93c3acc0e6946c3c724230199883da83417bdb",
+    "size_bytes": 1476
+  },
+  "missing_references": [],
+  "package_lock": {
+    "path": "webui/v2_src/package-lock.json",
+    "sha256": "b2c6ca1b7d1097a8da6c75bc499c883a018d93597890e635dc9ab5f4a15d992c",
+    "size_bytes": 100050
+  },
+  "referenced_assets": [
+    {
+      "path": "webui/static/v2/dist/assets/index-B1xpJVZA.css",
+      "sha256": "29fce05df46bb676936fae852b93c04c9a702cdf8f211726d2abd751416cb419",
+      "size_bytes": 282286
+    },
+    {
+      "path": "webui/static/v2/dist/assets/index-Bxz-17hn.js",
+      "sha256": "a6ab1bafb33cbf3964cdfa89777fc99a2a51af1f0a56998ad456d197221be938",
+      "size_bytes": 1221851
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-content-zDLx3kb5.js",
+      "sha256": "346ad6cd9b5a920eccc1a00b8d5bde0f5da972e9fa82e3fccfb48e09cae4afd3",
+      "size_bytes": 70704
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-echarts-B0mHPo05.js",
+      "sha256": "7cc8cb2d78ca7c33c840ced957075a3781b56ca43f0d0583836ae1da1b9a18de",
+      "size_bytes": 1127200
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-svelte-BwtUMpGE.js",
+      "sha256": "65355798abacbca33a8b528a87b632d48ae916d7bceb947880e4d00e6fb4d951",
+      "size_bytes": 49620
+    }
+  ],
+  "schema": "kronos_dashboard_bundle_closure.v1",
+  "stale_tracked_files": [],
+  "tracked_dist_files": [
+    {
+      "path": "webui/static/v2/dist/assets/LearningNowTab-DvpbnBt8.css",
+      "sha256": "d0372d6f71fdb53fabf87f4f4ad1f71e0ab4c563871a97a5e0291286d6a46086",
+      "size_bytes": 6428
+    },
+    {
+      "path": "webui/static/v2/dist/assets/LearningNowTab-FlgsEkJA.js",
+      "sha256": "27803770cf43febfc6cbda707989c7cb4414ad80616416de7ec950281999d0a5",
+      "size_bytes": 22011
+    },
+    {
+      "path": "webui/static/v2/dist/assets/LearningNowTab-FlgsEkJA.js.map",
+      "sha256": "e908146a53502032b3361d64d249486aa1de8804206e20a2f3540e2862d554a3",
+      "size_bytes": 57184
+    },
+    {
+      "path": "webui/static/v2/dist/assets/index-B1xpJVZA.css",
+      "sha256": "29fce05df46bb676936fae852b93c04c9a702cdf8f211726d2abd751416cb419",
+      "size_bytes": 282286
+    },
+    {
+      "path": "webui/static/v2/dist/assets/index-Bxz-17hn.js",
+      "sha256": "a6ab1bafb33cbf3964cdfa89777fc99a2a51af1f0a56998ad456d197221be938",
+      "size_bytes": 1221851
+    },
+    {
+      "path": "webui/static/v2/dist/assets/index-Bxz-17hn.js.map",
+      "sha256": "fc1835f9bd8004710e2fb8301de7d1a898885aca8a303d7951b479d543314737",
+      "size_bytes": 3421820
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-content-zDLx3kb5.js",
+      "sha256": "346ad6cd9b5a920eccc1a00b8d5bde0f5da972e9fa82e3fccfb48e09cae4afd3",
+      "size_bytes": 70704
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-content-zDLx3kb5.js.map",
+      "sha256": "ad9eed2a2505b1222df5e70d11c7d137d1376f59733c0251db8a158b386fde7f",
+      "size_bytes": 249942
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-echarts-B0mHPo05.js",
+      "sha256": "7cc8cb2d78ca7c33c840ced957075a3781b56ca43f0d0583836ae1da1b9a18de",
+      "size_bytes": 1127200
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-echarts-B0mHPo05.js.map",
+      "sha256": "17f79307332d282e681540858eb862a5f12e7cc5c76c2c7f9b71ad3ba720ee71",
+      "size_bytes": 6605413
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-svelte-BwtUMpGE.js",
+      "sha256": "65355798abacbca33a8b528a87b632d48ae916d7bceb947880e4d00e6fb4d951",
+      "size_bytes": 49620
+    },
+    {
+      "path": "webui/static/v2/dist/assets/vendor-svelte-BwtUMpGE.js.map",
+      "sha256": "f5a98f6c7a0acce035c49a6c9ab05e2e4362db3afb0633ed065ef151c1fcc7ad",
+      "size_bytes": 506898
+    },
+    {
+      "path": "webui/static/v2/dist/fonts/JetBrainsMono-latin-ext.woff2",
+      "sha256": "79bfdab9ba467e26eea4122e6f2567e188dd8a09a8c730d501fc487c4ab99c6e",
+      "size_bytes": 15196
+    },
+    {
+      "path": "webui/static/v2/dist/fonts/JetBrainsMono-latin.woff2",
+      "sha256": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+      "size_bytes": 40404
+    },
+    {
+      "path": "webui/static/v2/dist/fonts/PretendardVariable.woff2",
+      "sha256": "9599f12fd42fc0bce1cd50b47a0c022e108d7aa64dd0d1bb0ed44f3282d900b4",
+      "size_bytes": 2057688
+    },
+    {
+      "path": "webui/static/v2/dist/index.html",
+      "sha256": "e10311994ef5a4e911a8d1e3ed93c3acc0e6946c3c724230199883da83417bdb",
+      "size_bytes": 1476
+    }
+  ],
+  "untracked_references": []
+}

@@ -1,0 +1,148 @@
+{
+  "schema_version": "kronos_daily_market_authority.v2",
+  "research_id": "DAILY_MARKET_AUTHORITY_2026_08_10_002",
+  "status": "BLOCKED_DATA_AUTHORITY",
+  "daily_database": {
+    "identity_kind": "WHOLE_FILE_SHA256",
+    "path_suffix": "Stock_Database_ohlcv_1day.db",
+    "size_bytes": 1009057792,
+    "modified_at_utc": "2026-06-12T08:00:46.386895+00:00",
+    "sha256": "9a363b33a9c2d125f3df7010e54efcec9d53fd6a40dbf16a39b538c20247a09c"
+  },
+  "input_bindings": [
+    {
+      "role": "DAILY_DATABASE",
+      "state": "PRESENT",
+      "identity": {
+        "identity_kind": "WHOLE_FILE_SHA256",
+        "path_suffix": "Stock_Database_ohlcv_1day.db",
+        "size_bytes": 1009057792,
+        "modified_at_utc": "2026-06-12T08:00:46.386895+00:00",
+        "sha256": "9a363b33a9c2d125f3df7010e54efcec9d53fd6a40dbf16a39b538c20247a09c"
+      }
+    },
+    {
+      "role": "STOCKINFO_DATABASE",
+      "state": "PRESENT",
+      "identity": {
+        "identity_kind": "CANONICAL_SQLITE_QUERY_SHA256",
+        "path_suffix": "stockinfo-authority-extract.json",
+        "size_bytes": 152240,
+        "modified_at_utc": "2026-03-18T04:21:17.056220+00:00",
+        "sha256": "ce76f768eae993d910eeb66d8b1cdd58748cd35127f3e2c2b3efb6524105f144"
+      }
+    },
+    {
+      "role": "CANDIDATE_SCORES",
+      "state": "PRESENT",
+      "identity": {
+        "identity_kind": "WHOLE_FILE_SHA256",
+        "path_suffix": "candidate_score_rows.csv",
+        "size_bytes": 2886124,
+        "modified_at_utc": "2026-07-03T14:50:22.281536+00:00",
+        "sha256": "8007ee7cae93970eed42203e12fe6394a2db6aa4c71681a2301878e34f071e18"
+      }
+    },
+    {
+      "role": "PRICE_PROVENANCE",
+      "state": "MISSING",
+      "identity": null
+    },
+    {
+      "role": "CURRENT_OFFICIAL_METADATA",
+      "state": "MISSING",
+      "identity": null
+    },
+    {
+      "role": "PIT_MEMBERSHIP",
+      "state": "MISSING",
+      "identity": null
+    }
+  ],
+  "source_artifacts": [],
+  "d0_price_basis": {
+    "state": "BLOCKED",
+    "price_basis": "unknown",
+    "provenance_state": "MISSING",
+    "local_columns": [
+      "date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "상장주식수",
+      "외국인주문한도수량",
+      "외국인현보유수량",
+      "외국인현보유비율",
+      "기관순매수",
+      "기관누적순매수"
+    ],
+    "checks": [
+      {
+        "check_id": "ALL_DAILY_TABLES_EXPLICIT_PRICE_BASIS",
+        "passed": false,
+        "observed": "covered=0/4727"
+      },
+      {
+        "check_id": "INDEPENDENT_PROVENANCE_PRESENT",
+        "passed": false,
+        "observed": "MISSING"
+      },
+      {
+        "check_id": "PROVENANCE_BINDS_DATABASE_SHA256",
+        "passed": false,
+        "observed": "missing_or_mismatch"
+      },
+      {
+        "check_id": "PROVENANCE_SOURCE_REVIEW_VERIFIED",
+        "passed": false,
+        "observed": "content_bound=0/0;signed_review=missing"
+      }
+    ]
+  },
+  "d1_universe": {
+    "state": "BLOCKED",
+    "current_metadata_state": "MISSING",
+    "pit_membership_state": "MISSING",
+    "daily_table_count": 4727,
+    "required_membership_pairs": 28182,
+    "covered_membership_pairs": 0,
+    "coverage_percent": 0.0,
+    "checks": [
+      {
+        "check_id": "STOCKINFO_METADATA_PRESENT",
+        "passed": true,
+        "observed": "rows=4229"
+      },
+      {
+        "check_id": "CURRENT_OFFICIAL_METADATA_PRESENT",
+        "passed": false,
+        "observed": "MISSING"
+      },
+      {
+        "check_id": "PIT_MEMBERSHIP_COMPLETE_AND_AVAILABLE",
+        "passed": false,
+        "observed": "covered=0/28182"
+      },
+      {
+        "check_id": "KRX_SOURCE_REVIEWS_VERIFIED",
+        "passed": false,
+        "observed": "content_bound=0/0;signed_review=missing"
+      }
+    ]
+  },
+  "blockers": [
+    "D0_PRICE_BASIS_NOT_VERIFIED",
+    "D1_UNIVERSE_NOT_OFFICIAL_OR_MANUAL_REVIEWED"
+  ],
+  "source_urls": [
+    "https://download.kiwoom.com/web/openapi/kiwoom_openapi_plus_devguide_ver_1.1.pdf",
+    "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd?screenId=MDCSTAT015",
+    "https://global.krx.co.kr/contents/GLB/03/0308/0308010000/GLB0308010000.jsp"
+  ],
+  "historical_test_state": "FEATURES_PARSED_REWARDS_PRICES_ACTION_EVALUATION_NOT_READ_CONTAMINATED",
+  "fresh_oos_read": false,
+  "promotion_allowed": false,
+  "live_ready": false
+}

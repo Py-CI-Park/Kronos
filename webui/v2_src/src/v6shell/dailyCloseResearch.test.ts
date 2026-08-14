@@ -32,6 +32,10 @@ test('RL workspace exposes the same status panel on every research step', async 
   const dataPage = await readFile(new URL('./pages/DataPage.svelte', import.meta.url), 'utf8');
 
   assert.match(workspace, /DailyCloseResearchStatus/u);
+  assert.match(workspace, /V6_PAGES/u);
+  assert.match(workspace, /V6_PAGES\.length/u);
+  assert.match(workspace, /V6_RL_STEPS\.length/u);
+  assert.match(workspace, /워크플로 단계/u);
   assert.match(panel, /일봉 종가매매 강화학습/u);
   assert.match(scorecard, /DailyCloseResearchStatus/u);
   assert.match(command, /경제 모델/u);

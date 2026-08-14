@@ -9,9 +9,16 @@ const outDir = configuredOutDir
   ? path.resolve(configuredOutDir)
   : path.resolve(__dirname, '../static/v2/dist');
 
+const normalizeChunkWhitespace = {
+  name: 'normalize-chunk-whitespace',
+  renderChunk(code: string) {
+    return { code: code.replace(/[ \t]+$/gm, ''), map: null };
+  },
+};
+
 export default defineConfig({
   base: '/static/v2/dist/',
-  plugins: [svelte()],
+  plugins: [svelte(), normalizeChunkWhitespace],
   build: {
     outDir,
     emptyOutDir: true,

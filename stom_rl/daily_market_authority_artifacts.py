@@ -122,7 +122,10 @@ def write_authority_artifacts(
     """Write a bounded catalog summary and the complete authority receipt."""
     if has_reparse_component(output_directory):
         raise DailyMarketAuthorityError("AUTHORITY_OUTPUT_UNTRUSTED")
-    output_directory.mkdir(parents=True, exist_ok=True)
+    try:
+        output_directory.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise DailyMarketAuthorityError("AUTHORITY_OUTPUT_ALREADY_EXISTS") from error
     if has_reparse_component(output_directory):
         raise DailyMarketAuthorityError("AUTHORITY_OUTPUT_UNTRUSTED")
     summary_path = output_directory / "summary.json"

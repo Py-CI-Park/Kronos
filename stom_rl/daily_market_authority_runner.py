@@ -34,6 +34,8 @@ class DailyMarketAuthorityPaths:
     current_official_metadata: Path
     pit_membership: Path
     source_artifact_root: Path
+    reviewer_trust_store: Path
+    review_receipt_root: Path
     output_directory: Path
 
     @classmethod
@@ -55,12 +57,18 @@ class DailyMarketAuthorityPaths:
             current_official_metadata=root / "_database" / "krx_listed_products.csv",
             pit_membership=root / "_database" / "krx_pit_membership.csv",
             source_artifact_root=root / "_database" / "market_authority_sources",
+            reviewer_trust_store=(
+                Path(__file__).resolve().parent
+                / "data"
+                / "daily_market_reviewer_trust.v1.json"
+            ),
+            review_receipt_root=root / "_database" / "market_authority_reviews",
             output_directory=(
                 root
                 / "webui"
                 / "rl_runs"
                 / "daily_market_authority"
-                / "DAILY_MARKET_AUTHORITY_2026_08_10_002"
+                / "DAILY_MARKET_AUTHORITY_2026_08_14_003"
             ),
         )
 
@@ -95,14 +103,7 @@ def run_authority_audit(paths: DailyMarketAuthorityPaths) -> CompletedAuthorityA
     """Run the registered read-only audit and publish its evidence."""
     if has_reparse_component(paths.output_directory):
         raise DailyMarketAuthorityError("AUTHORITY_OUTPUT_UNTRUSTED")
-    if (
-        paths.output_directory.exists()
-        and next(
-            paths.output_directory.iterdir(),
-            None,
-        )
-        is not None
-    ):
+    if paths.output_directory.exists():
         raise DailyMarketAuthorityError("AUTHORITY_OUTPUT_ALREADY_EXISTS")
     receipt = audit_market_authority(
         MarketAuthorityInputs(
@@ -113,6 +114,8 @@ def run_authority_audit(paths: DailyMarketAuthorityPaths) -> CompletedAuthorityA
             current_official_metadata=paths.current_official_metadata,
             pit_membership=paths.pit_membership,
             source_artifact_root=paths.source_artifact_root,
+            reviewer_trust_store=paths.reviewer_trust_store,
+            review_receipt_root=paths.review_receipt_root,
         )
     )
     artifacts = write_authority_artifacts(receipt, paths.output_directory)
