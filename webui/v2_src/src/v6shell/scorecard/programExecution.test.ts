@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { V6_PAGES } from '../registry';
 import { PROGRAM_EXECUTION } from './programExecution';
 import { PROGRAM_LANES, PROGRAM_PAGE_MATRIX, programOverallScore } from './programScorecard';
 
@@ -14,7 +15,7 @@ test('execution banner preserves current daily-close research boundary and linea
   assert.equal(PROGRAM_EXECUTION.implementationScore, 94);
   assert.equal(PROGRAM_EXECUTION.economicModelScore, 20);
   assert.equal(PROGRAM_EXECUTION.liveReadinessScore, 0);
-  assert.equal(PROGRAM_EXECUTION.pageCount, 8);
+  assert.equal(PROGRAM_EXECUTION.pageCount, V6_PAGES.length);
   assert.equal(PROGRAM_EXECUTION.freshOos, 'NOT_RUN_NO_READ');
   assert.equal(PROGRAM_EXECUTION.liveTrading, 'BLOCKED');
   assert.match(PROGRAM_EXECUTION.deliveryLane, /codex\/v1.29.0-dev-<task>/);
@@ -45,5 +46,10 @@ test('execution banner preserves current daily-close research boundary and linea
   assert.match(scorecardPage, /병합된 작업 브랜치는 MERGED 이력으로 보존합니다/);
   assert.match(scorecardPage, /다음 개발선은 develop\/v1.29.0-dev/);
   assert.match(scorecardPage, /모델 GO를 뜻하지 않습니다/);
+  assert.match(scorecardPage, /V6_PAGES/u);
+  assert.match(scorecardPage, /V6_PAGES\.length/u);
+  assert.match(scorecardPage, /기능·워크플로 단계/u);
+  assert.match(scorecardPage, /capabilityLabel\(item\.id, item\.capability\)/u);
+  assert.doesNotMatch(scorecardPage, /13개 페이지/u);
   assert.doesNotMatch(scorecardPage, /작업 브랜치는 삭제합니다/);
 });
