@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from pydantic import JsonValue
-
+from typing import cast
 from .daily_market_existing_db_sim_contract import (
+    ExistingDbSimulationArtifactRecord,
+    ExistingDbSimulationBundleManifest,
     ExistingDbSimulationReceipt,
     ExistingDbSimulationStep,
+    ExistingDbSimulationSummary,
+    SimulationArtifactName,
 )
 from .daily_market_path_custody import has_reparse_component
 from .daily_market_rl_contract import DailyMarketRlContractError
@@ -32,13 +34,13 @@ def _write_exclusive(path: Path, payload: bytes) -> None:
         os.fsync(handle.fileno())
 
 
-def _identity(path: Path) -> dict[str, JsonValue]:
+def _identity(path: Path) -> ExistingDbSimulationArtifactRecord:
     payload = path.read_bytes()
-    return {
-        "path": path.name,
-        "size_bytes": len(payload),
-        "sha256": hashlib.sha256(payload).hexdigest(),
-    }
+    return ExistingDbSimulationArtifactRecord(
+        path=cast(SimulationArtifactName, path.name),
+        size_bytes=len(payload),
+        sha256=hashlib.sha256(payload).hexdigest(),
+    )
 
 
 def write_existing_db_simulation_artifacts(
@@ -56,30 +58,30 @@ def write_existing_db_simulation_artifacts(
         ledger=output_directory / "action_ledger.jsonl",
         bundle_manifest=output_directory / "bundle_manifest.json",
     )
-    summary: dict[str, JsonValue] = {
-        "schema_version": "kronos_existing_db_60_historical_summary.v1",
-        "research_id": receipt.research_id,
-        "verdict": receipt.verdict,
-        "status": receipt.status,
-        "research_scope": "POST_HOC_EXISTING_DB_HISTORICAL_SIMULATION",
-        "window_start": receipt.window.start_decision_date.isoformat(),
-        "window_end": receipt.window.end_decision_date.isoformat(),
-        "requested_score_days": receipt.window.requested_score_days,
-        "available_reward_days": receipt.window.available_reward_days,
-        "non_overlapping_decisions": receipt.window.non_overlapping_decisions,
-        "technical_gate_passed": receipt.gate.technical_gate_passed,
-        "cql_base_median_return_percent": receipt.gate.cql_base_median_return_percent,
-        "cql_stress_median_return_percent": receipt.gate.cql_stress_median_return_percent,
-        "best_base_control_return_percent": receipt.gate.best_base_control_return_percent,
-        "failed_checks": list(receipt.gate.failed_checks),
-        "future_data_used": False,
-        "independent_oos_claim_allowed": False,
-        "promotion_allowed": False,
-        "paper_live_allowed": False,
-    }
+    summary = ExistingDbSimulationSummary(
+        schema_version="kronos_existing_db_60_historical_summary.v1",
+        research_id=receipt.research_id,
+        verdict=receipt.verdict,
+        status=receipt.status,
+        research_scope="POST_HOC_EXISTING_DB_HISTORICAL_SIMULATION",
+        window_start="2026-03-09",
+        window_end="2026-06-11",
+        requested_score_days=receipt.window.requested_score_days,
+        available_reward_days=receipt.window.available_reward_days,
+        non_overlapping_decisions=receipt.window.non_overlapping_decisions,
+        technical_gate_passed=receipt.gate.technical_gate_passed,
+        cql_base_median_return_percent=receipt.gate.cql_base_median_return_percent,
+        cql_stress_median_return_percent=receipt.gate.cql_stress_median_return_percent,
+        best_base_control_return_percent=receipt.gate.best_base_control_return_percent,
+        failed_checks=receipt.gate.failed_checks,
+        future_data_used=False,
+        independent_oos_claim_allowed=False,
+        promotion_allowed=False,
+        paper_live_allowed=False,
+    )
     _write_exclusive(
         paths.summary,
-        f"{json.dumps(summary, ensure_ascii=False, indent=2)}\n".encode("utf-8"),
+        f"{summary.model_dump_json(indent=2)}\n".encode("utf-8"),
     )
     _write_exclusive(
         paths.receipt,
@@ -87,21 +89,21 @@ def write_existing_db_simulation_artifacts(
     )
     ledger = b"".join(f"{step.model_dump_json()}\n".encode("utf-8") for step in steps)
     _write_exclusive(paths.ledger, ledger)
-    manifest: dict[str, JsonValue] = {
-        "schema_version": "kronos_existing_db_60_historical_bundle.v1",
-        "research_id": receipt.research_id,
-        "artifacts": [
+    manifest = ExistingDbSimulationBundleManifest(
+        schema_version="kronos_existing_db_60_historical_bundle.v1",
+        research_id=receipt.research_id,
+        artifacts=(
             _identity(paths.summary),
             _identity(paths.receipt),
             _identity(paths.ledger),
-        ],
-        "artifact_count": 3,
-        "ledger_row_count": len(steps),
-        "complete": True,
-    }
+        ),
+        artifact_count=3,
+        ledger_row_count=len(steps),
+        complete=True,
+    )
     _write_exclusive(
         paths.bundle_manifest,
-        f"{json.dumps(manifest, ensure_ascii=False, indent=2)}\n".encode("utf-8"),
+        f"{manifest.model_dump_json(indent=2)}\n".encode("utf-8"),
     )
     return paths
 

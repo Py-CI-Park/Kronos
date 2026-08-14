@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -41,6 +43,8 @@ from stom_rl.daily_market_transition_contract import (
     DailyMarketScore,
     market_score_hash,
 )
+from webui.v6_daily_market_publication import observe_daily_market_publication
+from webui import v6_existing_db_sim_publication
 
 
 def _market_day(decision: date, return_ratio: Decimal | None = None) -> MarketDay:
@@ -221,19 +225,52 @@ def _receipt() -> tuple[
     return receipt, steps
 
 
-def test_artifacts_are_create_exclusive_and_keep_no_promotion(tmp_path: Path) -> None:
+def test_artifacts_are_create_exclusive_and_keep_no_promotion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     receipt, steps = _receipt()
-    output = tmp_path / "run"
+    output = tmp_path / "DAILY_MARKET_EXISTING_DB_60_SIM_2026_08_14_001"
 
     paths = write_existing_db_simulation_artifacts(receipt, steps, output)
+    manifest_sha256 = hashlib.sha256(paths.bundle_manifest.read_bytes()).hexdigest()
+    monkeypatch.setattr(
+        v6_existing_db_sim_publication,
+        "EXPECTED_MANIFEST_SHA256",
+        manifest_sha256,
+    )
 
     assert paths.receipt.is_file()
     assert paths.ledger.read_text(encoding="utf-8").count("\n") == len(steps)
     assert '"future_data_used": false' in paths.summary.read_text(encoding="utf-8")
+    assert observe_daily_market_publication(output).state == "VALID"
     with pytest.raises(
         DailyMarketRlContractError, match="HISTORICAL_SIMULATION_OUTPUT_UNTRUSTED"
     ):
         _ = write_existing_db_simulation_artifacts(receipt, steps, output)
+
+    summary = json.loads(paths.summary.read_text(encoding="utf-8"))
+    forged_receipt = json.loads(paths.receipt.read_text(encoding="utf-8"))
+    manifest = json.loads(paths.bundle_manifest.read_text(encoding="utf-8"))
+    summary["technical_gate_passed"] = True
+    forged_receipt["gate"]["technical_gate_passed"] = True
+    for path, payload in (
+        (paths.summary, summary),
+        (paths.receipt, forged_receipt),
+    ):
+        _ = path.write_text(
+            f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n",
+            encoding="utf-8",
+        )
+    for artifact in manifest["artifacts"]:
+        path = output / artifact["path"]
+        payload = path.read_bytes()
+        artifact["size_bytes"] = len(payload)
+        artifact["sha256"] = hashlib.sha256(payload).hexdigest()
+    _ = paths.bundle_manifest.write_text(
+        f"{json.dumps(manifest, ensure_ascii=False, indent=2)}\n",
+        encoding="utf-8",
+    )
+    assert observe_daily_market_publication(output).state == "INVALID"
 
 
 def test_window_and_cli_fail_closed(tmp_path: Path) -> None:

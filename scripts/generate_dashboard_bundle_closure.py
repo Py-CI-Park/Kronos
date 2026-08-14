@@ -132,9 +132,16 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     _ = parser.add_argument("--check", action="store_true")
     arguments = parser.parse_args()
-    expected = _canonical(build_manifest())
+    manifest = build_manifest()
+    expected = _canonical(manifest)
     if cast(bool, arguments.check):
-        return 0 if OUTPUT.is_file() and OUTPUT.read_bytes() == expected else 1
+        if not OUTPUT.is_file():
+            return 1
+        try:
+            recorded = cast(object, json.loads(OUTPUT.read_text(encoding="utf-8")))
+        except json.JSONDecodeError:
+            return 1
+        return 0 if recorded == manifest else 1
     _ = OUTPUT.write_bytes(expected)
     return 0
 

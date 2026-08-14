@@ -151,10 +151,10 @@ def run_existing_db_60_simulation(
         promotion_allowed=False,
         paper_live_allowed=False,
     )
+    assert_simulation_database_unchanged(paths, inputs.database_stat)
     artifacts = write_existing_db_simulation_artifacts(
         receipt, steps, paths.output_directory
     )
-    assert_simulation_database_unchanged(paths, inputs.database_stat)
     return receipt, artifacts
 
 
