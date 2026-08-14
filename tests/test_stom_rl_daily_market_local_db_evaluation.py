@@ -10,6 +10,7 @@ from stom_rl.daily_market_local_db_audit import LocalDbCustodyReceipt, LocalDbQu
 from stom_rl.daily_market_local_db_evaluation import (
     LocalDbEvaluationPaths,
     evaluate_local_db_baseline,
+    main,
     write_local_db_evaluation,
 )
 from stom_rl.daily_market_rl_contract import DailyMarketRlContractError
@@ -128,3 +129,11 @@ def test_local_db_evaluation_rejects_incomplete_seed_matrix(tmp_path: Path) -> N
         match="LOCAL_DB_MODEL_SEED_MATRIX_INVALID",
     ):
         _ = evaluate_local_db_baseline(_paths(tmp_path, omit_seed=True))
+
+
+def test_local_db_evaluation_cli_requires_explicit_root() -> None:
+    with pytest.raises(
+        DailyMarketRlContractError,
+        match="LOCAL_DB_EVALUATION_REQUIRES_REPOSITORY_ROOT",
+    ):
+        _ = main(())

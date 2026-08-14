@@ -11,6 +11,7 @@ from stom_rl.daily_market_local_db_evaluation import LocalDbEconomicGateReceipt
 from stom_rl.daily_market_local_holdout import (
     LocalDbHoldoutPaths,
     build_local_holdout_descriptor,
+    main,
     register_local_holdout,
 )
 from stom_rl.daily_market_rl_contract import DailyMarketRlContractError
@@ -166,3 +167,11 @@ def test_local_holdout_rejects_database_identity_mismatch(tmp_path: Path) -> Non
             source_git_sha="f" * 40,
             registered_at_utc="2026-08-14T00:00:00Z",
         )
+
+
+def test_local_holdout_cli_requires_explicit_root() -> None:
+    with pytest.raises(
+        DailyMarketRlContractError,
+        match="LOCAL_HOLDOUT_REQUIRES_REPOSITORY_ROOT",
+    ):
+        _ = main(())

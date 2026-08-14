@@ -241,3 +241,7 @@ __all__ = [
     "audit_local_databases",
     "write_local_db_custody",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -359,3 +359,7 @@ __all__ = [
     "build_local_holdout_descriptor",
     "register_local_holdout",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

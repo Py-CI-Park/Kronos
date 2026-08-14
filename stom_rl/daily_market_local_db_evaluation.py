@@ -244,3 +244,7 @@ __all__ = [
     "evaluate_local_db_baseline",
     "write_local_db_evaluation",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

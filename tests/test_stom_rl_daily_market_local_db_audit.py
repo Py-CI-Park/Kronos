@@ -9,6 +9,7 @@ import pytest
 from stom_rl.daily_market_local_db_audit import (
     LocalDbCustodyPaths,
     audit_local_databases,
+    main,
     write_local_db_custody,
 )
 from stom_rl.daily_market_rl_contract import DailyMarketRlContractError
@@ -88,3 +89,11 @@ def test_registered_local_db_paths_require_explicit_canonical_root(
     )
     assert paths.output_directory.name == "DAILY_MARKET_LOCAL_DB_CUSTODY_2026_08_14_001"
     assert replace(paths, repository_root=tmp_path).repository_root == tmp_path
+
+
+def test_local_db_audit_cli_requires_explicit_root() -> None:
+    with pytest.raises(
+        DailyMarketRlContractError,
+        match="LOCAL_DB_RUNNER_REQUIRES_REPOSITORY_ROOT",
+    ):
+        _ = main(())
