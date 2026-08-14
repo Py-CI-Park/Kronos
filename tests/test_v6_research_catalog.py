@@ -17,7 +17,7 @@ from tests.daily_market_allocation_fixtures import (
 )
 
 
-def _write_summary(directory: Path, payload: dict[str, str]) -> None:
+def _write_summary(directory: Path, payload: dict[str, object]) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "rl_live_summary.json").write_text(
         json.dumps(payload), encoding="utf-8"
@@ -152,6 +152,28 @@ def test_discover_runs_expands_generic_group_into_direct_child_runs(
     assert rows[0].artifact_count == 1
 
 
+def test_discover_runs_labels_existing_db_historical_simulation(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "daily_market_existing_db_sim" / "existing_db_historical_fixture"
+    run.mkdir(parents=True)
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "kronos_existing_db_60_historical_summary.v1",
+                "verdict": "HISTORICAL_SIMULATION_ONLY_NO_PROMOTION",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = discover_runs(tmp_path)[0]
+
+    assert row.algorithm == "CQL"
+    assert row.dataset_id == "EXISTING_DB_60_SCORE_DAYS_20260309_20260611"
+    assert row.status == "HISTORICAL_SIMULATION_ONLY_NO_PROMOTION"
+
+
 def test_discover_runs_keeps_child_runs_when_group_has_a_direct_index_file(
     tmp_path: Path,
 ) -> None:
@@ -196,9 +218,7 @@ def test_daily_market_bundle_is_visible_only_after_full_manifest_validation(
     (run / "models" / "CQL" / "seed-0.kq").write_bytes(b"tampered")
     tampered = discover_runs(tmp_path)[0]
 
-    assert complete.status == (
-        "LEGACY_EXPLORATORY_CANDIDATE_TEST_FEATURES_CONSUMED"
-    )
+    assert complete.status == ("LEGACY_EXPLORATORY_CANDIDATE_TEST_FEATURES_CONSUMED")
     assert tampered.status == "CORRUPT_EVIDENCE"
     assert tampered.source_file == "bundle_manifest.json"
 

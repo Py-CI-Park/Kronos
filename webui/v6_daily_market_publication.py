@@ -37,6 +37,9 @@ from stom_rl.daily_market_path_custody import has_reparse_component
 from webui.v6_daily_market_stream_validation import (
     allocation_streams_are_canonical,
 )
+from webui.v6_existing_db_sim_publication import (
+    observe_existing_db_simulation_publication,
+)
 
 PublicationState = Literal["NOT_APPLICABLE", "VALID", "INVALID"]
 MAX_PUBLICATION_MANIFEST_BYTES: Final = 512 * 1024
@@ -224,6 +227,11 @@ def _authority_publication(directory: Path) -> DailyMarketPublication:
 
 
 def observe_daily_market_publication(directory: Path) -> DailyMarketPublication:
+    state, source_file, summary_bytes = observe_existing_db_simulation_publication(
+        directory
+    )
+    if state != "NOT_APPLICABLE":
+        return DailyMarketPublication(state, source_file, summary_bytes)
     allocation = _allocation_publication(directory)
     if allocation.state != "NOT_APPLICABLE":
         return allocation
