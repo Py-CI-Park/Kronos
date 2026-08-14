@@ -74,7 +74,14 @@ def build_manifest() -> dict[str, object]:
         if f"webui/static/v2/dist/{reference}" not in tracked_set
     )
     stale = tuple(path for path in tracked if not (REPO_ROOT / path).is_file())
-    source_commit = _git("rev-parse", "HEAD^{commit}")
+    source_commit = _git(
+        "log",
+        "-1",
+        "--format=%H",
+        "--",
+        "webui/v2_src",
+        "webui/static/v2/dist",
+    )
     return {
         "schema": "kronos_dashboard_bundle_closure.v1",
         "generated_from_commit": source_commit,
